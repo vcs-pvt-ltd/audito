@@ -1,0 +1,592 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { capApi } from "@/lib/api";
+import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Building2,
+  Camera,
+  Video,
+  Music,
+  Paperclip,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  CheckCircle2,
+  User,
+  Clock,
+} from "lucide-react";
+
+// ── Interfaces ────────────────────────────────────────────────────
+
+interface Cap {
+  id: number;
+  cap_plan_code: string;
+  audit_code: string;
+  audit_title: string;
+  title: string;
+  description: string | null;
+  status: string;
+  created_at: string;
+}
+
+interface CapQuestionOption {
+  id: number;
+  option_text: string;
+  marks: number;
+  order_index: number;
+}
+
+interface CapQuestion {
+  id: number;
+  cap_id: number;
+  entity_code: string;
+  org_tree_id?: number | null;
+  question_text: string;
+  status: string;
+  ca_description: string | null;
+  responsible_person_name: string | null;
+  due_date: string | null;
+  severity: string;
+  marks?: number;
+  total_marks?: number;
+  answer_type: "free_text" | "single_option" | "multiple_options" | "dropdown";
+  options?: CapQuestionOption[];
+}
+
+interface CapResponse {
+  id: number;
+  cap_question_id: number;
+  response_text: string | null;
+  selected_option_ids: string | null | number[];
+  marks_obtained?: number;
+  remarks?: string | null;
+  status: string;
+  evidence?: { id: number; file_type: string; file_path: string; file_name: string }[];
+}
+
+interface TreeNode {
+  entity_type: string;
+  code: string;
+  name: string;
+  edge_id?: number | null;
+  children?: TreeNode[];
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+
+function normalizeSelectedOptionIds(ids: any): string[] {
+  if (!ids) return [];
+  if (Array.isArray(ids)) return ids.map(String);
+  if (typeof ids === "string") {
+    try {
+      const parsed = JSON.parse(ids);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return [ids];
+    }
+  }
+  return [String(ids)];
+}
+
+function formatAnswer(q: CapQuestion, r?: CapResponse): string {
+  const answerText = (r?.response_text || "").trim();
+  const selected = normalizeSelectedOptionIds(r?.selected_option_ids || null);
+  const selectedText = (q.options || [])
+    .filter((o) => selected.includes(String(o.id)))
+    .map((o) => o.option_text);
+  const optStr = selectedText.length ? selectedText.join(", ") : "";
+  if (answerText && optStr) return `${answerText} (${optStr})`;
+  if (answerText) return answerText;
+  if (optStr) return optStr;
+  return "";
+}
+
+function progressKey(entityCode: string, orgTreeId: number | null | undefined) {
+  return `${entityCode}__${orgTreeId ?? "null"}`;
+}
+
+function getCapQuestionsForNode(
+  node: Pick<TreeNode, "code" | "edge_id">,
+  capsMap: Record<string, CapQuestion[]>
+) {
+  const direct = capsMap[progressKey(node.code, node.edge_id ?? null)] || [];
+  if (direct.length > 0) return direct;
+  return capsMap[progressKey(node.code, null)] || [];
+}
+
+function subtreeHasCaps(
+  node: TreeNode | null,
+  capsMap: Record<string, CapQuestion[]>
+): boolean {
+  if (!node) return false;
+  if (getCapQuestionsForNode(node, capsMap).length > 0) return true;
+  return (node.children || []).some((c) => subtreeHasCaps(c, capsMap));
+}
+
+function findNodeByEdgeId(node: TreeNode, edgeId: number): TreeNode | null {
+  if (node.edge_id === edgeId) return node;
+  for (const c of node.children || []) {
+    const f = findNodeByEdgeId(c, edgeId);
+    if (f) return f;
+  }
+  return null;
+}
+
+const SEVERITY_COLORS: Record<string, string> = {
+  low: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  medium: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  high: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  critical: "bg-red-500/10 text-red-400 border-red-500/20",
+};
+
+function ProgressRing({ pct, size = 48 }: { pct: number; size?: number }) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const radius = (size - 8) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (clamped / 100) * circumference;
+  let color = "#ef4444";
+  if (clamped >= 100) color = "#34d399";
+  else if (clamped > 0) color = "#38bdf8";
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.06)" strokeWidth="4" fill="transparent" />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth="4"
+          fill="transparent"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className="transition-all duration-500"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white">{clamped}%</div>
+    </div>
+  );
+}
+
+// ── Components ────────────────────────────────────────────────────
+
+function EntityCard({
+  node,
+  index,
+  capsMap,
+  onClick,
+}: {
+  node: TreeNode;
+  index: number;
+  capsMap: Record<string, CapQuestion[]>;
+  onClick: () => void;
+}) {
+  const getSubtreeProgress = (n: TreeNode) => {
+    let t = 0;
+    let a = 0;
+    const walk = (nd: TreeNode) => {
+      const qs = getCapQuestionsForNode(nd, capsMap);
+      t += qs.length;
+      a += qs.filter(q => q.status === "completed").length;
+      (nd.children || []).forEach(walk);
+    };
+    walk(n);
+    return { total: t, answered: a };
+  };
+
+  const { total, answered } = getSubtreeProgress(node);
+  const pct = total > 0 ? Math.round((answered / total) * 100) : 0;
+
+  const subsections = (node.children ?? []).filter((c) => subtreeHasCaps(c, capsMap)).length;
+  const status = pct >= 100 ? "Completed" : answered > 0 ? "In Progress" : "Not Started";
+  const statusCls = pct >= 100 ? "bg-emerald-500 text-white" : answered > 0 ? "bg-blue-500 text-white" : "bg-gray-600 text-white";
+
+  return (
+    <div
+      onClick={onClick}
+      className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group"
+    >
+      <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
+        <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-secondary-500/30">
+          {index}
+        </span>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-semibold text-white truncate block">{node.name || node.code}</span>
+          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded inline-block mt-0.5 bg-white/10 text-gray-300">
+            {node.entity_type}
+          </span>
+        </div>
+        <ChevronRight size={18} className="text-white/60 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+      </div>
+      <div className="p-4">
+        <div className="flex items-center gap-5">
+          <ProgressRing pct={pct} />
+          <div className="space-y-2 flex-1">
+            {subsections > 0 && (
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <Building2 size={13} className="text-gray-500" />
+                <span>{subsections} Subsection{subsections !== 1 ? "s" : ""}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-xs">
+              <CheckCircle2 size={13} className="text-emerald-500" />
+              <span className="text-gray-400">{answered} / {total} Answered</span>
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 flex justify-center">
+          <span className={`text-[10px] font-semibold px-3 py-1 rounded-full ${statusCls}`}>{status}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionPreviewCard({
+  action,
+  response,
+  index,
+}: {
+  action: CapQuestion;
+  response?: CapResponse;
+  index: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const completed = action.status === "completed";
+  const ans = formatAnswer(action, response);
+  const pending = !ans;
+
+  return (
+    <div className={`rounded-xl border overflow-hidden transition-all ${!completed ? "border-white/[0.06] bg-white/[0.02]" : "border-emerald-500/20 bg-white/[0.03]"}`}>
+      <button
+        onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-white/[0.03] transition-colors"
+      >
+        <span className="shrink-0 w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-xs text-gray-500 font-mono">
+          {index}
+        </span>
+        <p className={`text-sm flex-1 ${open ? "text-white font-medium" : "text-gray-300 truncate"}`}>{action.question_text}</p>
+        <div className="flex items-center gap-2">
+          {action.marks != null && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded border border-white/10 bg-white/5 font-medium text-gray-300">
+              Marks: {action.marks}
+            </span>
+          )}
+          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${!completed ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"}`}>
+            {!completed ? "Pending" : "Answered"}
+          </span>
+          <ChevronDown size={14} className={`text-gray-500 transition-transform ${open ? "rotate-180" : ""}`} />
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 pt-0 border-t border-white/[0.06]">
+          <div className="pt-3 space-y-3">
+            <div>
+              <p className="text-[11px] text-gray-500 mb-1 uppercase tracking-wider">Answer</p>
+              {ans ? (
+                <p className="text-sm text-secondary-400 font-medium">{ans}</p>
+              ) : (
+                <p className="text-sm text-gray-500 italic">No answer yet</p>
+              )}
+            </div>
+            {Number(action.total_marks ?? 0) > 0 && ans && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-gray-500 uppercase tracking-wider">Score</span>
+                <span className="text-sm font-semibold text-white">{response?.marks_obtained ?? 0}</span>
+                <span className="text-sm text-gray-500">/ {Number(action.total_marks ?? 0)}</span>
+              </div>
+            )}
+            {response?.remarks && (
+              <div>
+                <p className="text-[11px] text-gray-500 mb-1 uppercase tracking-wider">Remarks</p>
+                <p className="text-xs text-gray-400 bg-white/[0.03] rounded-lg px-3 py-2">{response.remarks}</p>
+              </div>
+            )}
+            {(response?.evidence || []).length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                  <Camera size={12} className="text-secondary-400" />
+                  <span>{response?.evidence?.length} evidence file{(response?.evidence?.length ?? 0) !== 1 ? "s" : ""} attached</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(response?.evidence || []).map((ev) => {
+                    const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
+                    const url = getEvidenceUrl(ev.file_path);
+                    return (
+                      <a key={ev.id} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20">
+                        {kind === "image" ? (
+                          <img src={url} alt={ev.file_name || "evidence"} className="w-full h-24 object-cover rounded-md" />
+                        ) : (
+                          <div className="w-full h-24 rounded-md bg-white/[0.04] flex items-center justify-center text-gray-300">
+                            {kind === "video" ? <Video size={18} /> : kind === "audio" ? <Music size={18} /> : <Paperclip size={18} />}
+                          </div>
+                        )}
+                        <p className="mt-1 text-[11px] text-gray-400 truncate">{ev.file_name || "Evidence"}</p>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────
+
+export default function EntityHeadCapPreviewPage() {
+  const { admin, accessToken, isLoading } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const capId = searchParams.get("id") as string;
+
+  const [cap, setCap] = useState<Cap | null>(null);
+  const [tree, setTree] = useState<TreeNode | null>(null);
+  const [questions, setQuestions] = useState<CapQuestion[]>([]);
+  const [responsesByQuestion, setResponsesByQuestion] = useState<Record<number, CapResponse>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!isLoading && (!admin || admin.role !== "entity_head")) router.push("/login");
+  }, [isLoading, admin, router]);
+
+  const load = useCallback(async () => {
+    if (!accessToken || !capId) return;
+    setLoading(true);
+    setError("");
+    try {
+      const [itemsRes, detailRes] = await Promise.all([
+        capApi.getItems(accessToken, capId),
+        capApi.get(accessToken, capId),
+      ]);
+
+      if (detailRes.success && detailRes.data) {
+        setCap((detailRes.data as any).cap || null);
+      }
+
+      if (!itemsRes.success || !itemsRes.data) {
+        setError(itemsRes.message || "Failed to load CAP preview.");
+        setLoading(false);
+        return;
+      }
+
+      const items = itemsRes.data as { questions: CapQuestion[]; responses: CapResponse[]; tree: TreeNode | null };
+      setQuestions(items.questions || []);
+      
+      const rMap: Record<number, CapResponse> = {};
+      for (const r of items.responses || []) {
+        rMap[r.cap_question_id] = r;
+      }
+      setResponsesByQuestion(rMap);
+      setTree(items.tree || null);
+    } catch {
+      setError("Network error.");
+    }
+    setLoading(false);
+  }, [accessToken, capId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const capsMap = useMemo(() => {
+    const m: Record<string, CapQuestion[]> = {};
+    for (const q of questions) {
+      const k = progressKey(q.entity_code, q.org_tree_id ?? null);
+      if (!m[k]) m[k] = [];
+      m[k].push(q);
+    }
+    return m;
+  }, [questions]);
+
+  const [stepHistory, setStepHistory] = useState<
+    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: number | null })[]
+  >([{ mode: "cards", parentCode: null }]);
+
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (!admin || admin.role !== "entity_head") return null;
+
+  return (
+    <div className="h-screen bg-transparent flex">
+      <main className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto">
+        <div className="flex items-center gap-3 mb-6">
+          <button
+            onClick={() => router.push("/entity-head/caps")}
+            className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+              <ClipboardList size={22} className="text-secondary-400" />
+              CAP Preview
+            </h1>
+            {cap && (
+              <p className="text-sm text-gray-400 mt-0.5 font-mono truncate">
+                {cap.title}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="glass rounded-xl p-8 text-center">
+            <AlertCircle size={32} className="text-red-400 mx-auto mb-2" />
+            <p className="text-red-400">{error}</p>
+          </div>
+        ) : tree ? (
+          <div className="max-w-5xl mx-auto">
+            {(() => {
+              const step = stepHistory[stepHistory.length - 1];
+              const isRoot = step.mode === "cards" && step.parentCode === null;
+
+              const findInTree = (code: string) => {
+                const walk = (n: TreeNode): TreeNode | null => {
+                  if (n.code === code) return n;
+                  for (const c of n.children || []) {
+                    const f = walk(c);
+                    if (f) return f;
+                  }
+                  return null;
+                };
+                return tree ? walk(tree) : null;
+              };
+
+              const breadcrumbNodes: { label: string; goTo: () => void }[] = [];
+              if (!isRoot) {
+                const seen = new Set<string>();
+                for (let i = 0; i < stepHistory.length; i++) {
+                  const s = stepHistory[i];
+                  const code = s.mode === "questions" ? s.entityCode : s.parentCode;
+                  if (code && !seen.has(code)) {
+                    seen.add(code);
+                    const nd = findInTree(code);
+                    const idx = i;
+                    breadcrumbNodes.push({ label: nd?.name || code, goTo: () => setStepHistory((h) => h.slice(0, idx + 1)) });
+                  }
+                }
+              }
+
+              const navigateNode = (nd: TreeNode) => {
+                const hasQ = getCapQuestionsForNode(nd, capsMap).length > 0;
+                const hasKids = (nd.children || []).some((c) => subtreeHasCaps(c, capsMap));
+                if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: nd.code }]);
+                else setStepHistory((h) => [...h, { mode: "questions", entityCode: nd.code, orgTreeId: nd.edge_id ?? null }]);
+              };
+
+              if (step.mode === "cards") {
+                const parent = step.parentCode ? findInTree(step.parentCode) : tree;
+                const cards = parent
+                  ? (step.parentCode === null
+                    ? ([parent].filter((n) => subtreeHasCaps(n, capsMap))
+                      .length
+                      ? [parent]
+                      : (parent.children || []).filter((c) => subtreeHasCaps(c, capsMap)))
+                    : (parent.children || []).filter((c) => subtreeHasCaps(c, capsMap)))
+                  : [];
+
+                return (
+                  <div className="space-y-5">
+                    {!isRoot && (
+                      <nav className="flex items-center gap-1.5 flex-wrap mb-2 text-xs">
+                        <button
+                          onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                          className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
+                        >
+                          <ArrowLeft size={12} /> All Entities
+                        </button>
+                        {breadcrumbNodes.map((bc, i) => (
+                          <span key={i} className="flex items-center gap-1.5">
+                            <ChevronRight size={12} className="text-gray-600" />
+                            <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">{bc.label}</button>
+                          </span>
+                        ))}
+                      </nav>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {cards.map((n, i) => (
+                        <EntityCard
+                          key={`${n.code}__${n.edge_id ?? "null"}`}
+                          node={n}
+                          index={i + 1}
+                          capsMap={capsMap}
+                          onClick={() => navigateNode(n)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              const node = step.orgTreeId != null
+                ? findNodeByEdgeId(tree, Number(step.orgTreeId))
+                : findInTree(step.entityCode);
+              const entityCode = step.entityCode;
+              const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
+              const key = progressKey(entityCode, edgeId);
+              const qs = (capsMap[key] || []);
+
+              return (
+                <div className="space-y-5">
+                  <nav className="flex items-center gap-1.5 flex-wrap mb-2 text-xs">
+                    <button
+                      onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                      className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
+                    >
+                      <ArrowLeft size={12} /> All Entities
+                    </button>
+                    {breadcrumbNodes.map((bc, i) => (
+                      <span key={i} className="flex items-center gap-1.5">
+                        <ChevronRight size={12} className="text-gray-600" />
+                        <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">{bc.label}</button>
+                      </span>
+                    ))}
+                  </nav>
+
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-white/10 text-gray-300 border-white/10">
+                        {node?.entity_type || ""}
+                      </span>
+                      <h2 className="text-base font-semibold text-white flex-1 truncate">{node?.name || entityCode}</h2>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {qs.map((q, idx) => (
+                      <ActionPreviewCard key={q.id} action={q} response={responsesByQuestion[q.id]} index={idx + 1} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        ) : (
+          <div className="glass rounded-xl p-8 text-center">
+            <p className="text-gray-400">Entity tree unavailable.</p>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
