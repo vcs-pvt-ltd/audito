@@ -42,9 +42,6 @@ node_modules/
 **/node_modules/
 jspm_packages/
 
-assets/
-**/assets/
-
 uploads/
 **/uploads/
 
