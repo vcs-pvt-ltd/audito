@@ -81,6 +81,15 @@ const AdminModel = {
        WHERE id = ?`,
       [completed ? 1 : 0, skipped ? 1 : 0, completed ? 1 : 0, id]
     );
+  },
+
+  async resetOnboardingStatus(id) {
+    await db.query(
+      `UPDATE admins
+       SET onboarding_completed = 0, onboarding_skipped = 0, onboarding_completed_at = NULL
+       WHERE id = ?`,
+      [id]
+    );
   }
 };
 

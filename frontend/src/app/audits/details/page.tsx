@@ -606,15 +606,7 @@ function AuditDetailsContent() {
           </div>
         ) : tree ? (
           <div className="space-y-6">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setShowPreview(false)}
-                className="flex items-center gap-2 text-sm text-gray-400 hover:text-secondary-400 transition-colors"
-              >
-                <ArrowLeft size={14} /> Back to Audit Details
-              </button>
-            </div>
+            
             {(() => {
               const step = stepHistory[stepHistory.length - 1];
               const isRoot = step.mode === "cards" && step.parentCode === null;

@@ -12,7 +12,7 @@ import EntityTable, {
 import AddEditEntityModal, {
   type EntityFormData,
 } from "@/components/structure/AddEditEntityModal";
-import { Plus, RefreshCw, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, RefreshCw, Pencil, Trash2, Search, Crown } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
 
@@ -281,7 +281,13 @@ export default function SetupStructurePage() {
     admin.account_type === "Audit Firm Company" ? "Audit Firm" : admin.account_type || "";
   const canCreateEntities = config.accountTypes[0] === normalizedAccountType;
 
-  // ─── Handlers ──────────────────────────────────────────────────
+  const isLimitExceeded = (() => {
+    if (!admin?.plan_limits) return false;
+    if (config.entityTypeBody === "Company") return entities.length >= (admin.plan_limits.company_level || 0);
+    if (admin.plan_limits.department !== undefined) return entities.length >= admin.plan_limits.department;
+    return false;
+  })();
+
   const handleAdd = async () => {
     if (orderBlockMessage) {
       await alert({
@@ -296,7 +302,8 @@ export default function SetupStructurePage() {
         setLimitModalOpen(true);
         return;
       }
-      if (config.entityTypeBody === "Department" && entities.length >= admin.plan_limits.department) {
+      // For non-company entity types, enforce the department quota per entity type
+      if (config.entityTypeBody !== "Company" && admin.plan_limits.department !== undefined && entities.length >= admin.plan_limits.department) {
         setLimitModalOpen(true);
         return;
       }
@@ -383,8 +390,16 @@ export default function SetupStructurePage() {
         <LimitReachedModal
           isOpen={limitModalOpen}
           onClose={() => setLimitModalOpen(false)}
-          title={`${config.label} Limit Reached`}
-          message={`Your current plan has reached the maximum number of ${config.labelPlural.toLowerCase()} allowed.`}
+          title={
+            config.entityTypeBody === "Company"
+              ? `${config.label} Limit Reached`
+              : "Structure Entity Limit Reached"
+          }
+          message={
+            config.entityTypeBody === "Company"
+              ? `Your current plan has reached the maximum number of ${config.labelPlural.toLowerCase()} allowed.`
+              : "Your current plan has reached the maximum number of structure entities allowed across your organizational structure."
+          }
           limit={
             config.entityTypeBody === "Company"
               ? admin?.plan_limits?.company_level || 0
@@ -416,11 +431,11 @@ export default function SetupStructurePage() {
                 disabled={!!orderBlockMessage}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10 disabled:opacity-20"
               >
-                <Plus size={16} />
-                <span className="sm:hidden">Add</span>
-                <span className="hidden sm:block">Add {config.label}</span>
+                {isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
+                <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Add"}</span>
+                <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : `Add ${config.label}`}</span>
               </button>
-            )}
+            )} 
           </div>
         </div>
 

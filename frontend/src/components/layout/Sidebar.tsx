@@ -552,18 +552,20 @@ export default function Sidebar() {
   }, [notificationsOpen]);
 
   const loadNotices = async () => {
-    if (!accessToken || admin?.role !== "admin") return;
+    if (!accessToken || admin?.role === "admin") return; // Admins don't receive notices, only create them
     setLoadingNotices(true);
     try {
       const res = await noticeApi.getMyNotices(accessToken);
       if (res.success && res.data) setNotices(res.data.notices || []);
       else setNotices([]);
-    } catch { setNotices([]); }
+    } catch {
+      setNotices([]);
+    }
     setLoadingNotices(false);
   };
 
   useEffect(() => {
-    if (accessToken && admin?.role === "admin") {
+    if (accessToken && admin?.role !== "admin") { // Only load notices for non-admin users
       void loadNotices();
     }
   }, [accessToken, admin?.role]);

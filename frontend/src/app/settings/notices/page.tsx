@@ -87,9 +87,9 @@ function AddNoticeModal({
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative w-full max-w-2xl glass border border-white/10 rounded-2xl p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Bell size={20} className="text-secondary-400" />
-            <h2 className="text-white font-bold uppercase tracking-tight">Create New Notice</h2>
+            <h2 className="text-lg font-semibold text-white">Create New Notice</h2>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors">
             <X size={20} />
@@ -98,7 +98,7 @@ function AddNoticeModal({
 
         <div className="space-y-5">
            <div>
-              <label className="block text-[10px] text-gray-500 mb-2 font-black uppercase tracking-widest">Notice Title <span className="text-secondary-400">*</span></label>
+              <label className="block text-xs text-gray-400 mb-2 font-medium">Notice Title <span className="text-secondary-400">*</span></label>
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -108,7 +108,7 @@ function AddNoticeModal({
            </div>
 
            <div>
-              <label className="block text-[10px] text-gray-500 mb-2 font-black uppercase tracking-widest">Message <span className="text-secondary-400">*</span></label>
+              <label className="block text-xs text-gray-400 mb-2 font-medium">Message <span className="text-secondary-400">*</span></label>
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
@@ -120,7 +120,7 @@ function AddNoticeModal({
 
            <div className="grid grid-cols-2 gap-4">
               <div>
-                 <label className="block text-[10px] text-gray-500 mb-2 font-black uppercase tracking-widest">Release Date</label>
+                 <label className="block text-xs text-gray-400 mb-2 font-medium">Release Date</label>
                  <input
                    type="date"
                    value={noticeDate}
@@ -136,7 +136,7 @@ function AddNoticeModal({
                       onChange={(e) => setAssignToAll(e.target.checked)}
                       className="w-4 h-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0"
                     />
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">All Auditors</span>
+                    <span className="text-xs font-medium text-gray-400">Assign to all auditors</span>
                  </label>
               </div>
            </div>
@@ -158,8 +158,8 @@ function AddNoticeModal({
                     {filteredAuditors.map(a => (
                        <label key={a.user_code} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-transparent hover:border-white/10 hover:bg-white/5 cursor-pointer transition-all group">
                           <div className="min-w-0">
-                             <p className="text-[11px] font-bold text-white group-hover:text-secondary-400 transition-colors uppercase tracking-tight">{a.first_name} {a.last_name}</p>
-                             <p className="text-[9px] text-gray-600 font-mono italic truncate">{a.email}</p>
+                             <p className="text-xs font-medium text-white group-hover:text-secondary-400 transition-colors">{a.first_name} {a.last_name}</p>
+                             <p className="text-[9px] text-gray-500 truncate">{a.email}</p>
                           </div>
                           <input
                             type="checkbox"
@@ -169,7 +169,7 @@ function AddNoticeModal({
                           />
                        </label>
                     ))}
-                    {filteredAuditors.length === 0 && <p className="text-[10px] text-gray-500 font-mono text-center py-4 uppercase">No matches found</p>}
+                    {filteredAuditors.length === 0 && <p className="text-xs text-gray-500 text-center py-4">No matches found</p>}
                  </div>
               </div>
            )}
@@ -178,7 +178,7 @@ function AddNoticeModal({
         <div className="mt-8 flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 transition-all font-mono"
+            className="px-6 py-2.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-all"
           >
             Cancel
           </button>
@@ -190,7 +190,7 @@ function AddNoticeModal({
               setSaving(false);
               onClose();
             }}
-            className="px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all shadow-lg shadow-secondary-500/10"
+            className="px-6 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all shadow-lg shadow-secondary-500/10"
           >
             {saving ? "Publishing..." : "Publish Notice"}
           </button>
@@ -364,21 +364,21 @@ export default function SettingsNoticesPage() {
             <Bell size={24} className="text-secondary-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.3)]" />
             Auditor Notices
           </h1>
-          <p className="hidden sm:block text-sm text-gray-400 mt-1 ml-8 italic uppercase tracking-wider font-medium text-[10px] opacity-70">Push announcements and global updates to legal teams</p>
+          <p className="hidden sm:block text-sm text-gray-400 mt-2">Broadcast announcements and updates to auditors</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={fetchData}
-            className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all font-black uppercase tracking-widest text-[10px]"
-            title="Refresh List"
+            className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
+            title="Refresh"
           >
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
           </button>
           <button
             onClick={() => setAddOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10"
           >
-            <Plus size={16} strokeWidth={2.5} />
+            <Plus size={16} />
             <span className="hidden sm:block">Publish Notice</span>
             <span className="sm:hidden">New</span>
           </button>
@@ -392,18 +392,18 @@ export default function SettingsNoticesPage() {
             <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : notices.length === 0 ? (
-          <div className="glass rounded-xl p-20 text-center border border-white/5">
-             <div className="w-16 h-16 rounded-2xl bg-secondary-500/10 flex items-center justify-center mx-auto mb-5">
+          <div className="glass rounded-xl p-16 text-center border border-white/5">
+             <div className="w-16 h-16 rounded-2xl bg-secondary-500/10 flex items-center justify-center mx-auto mb-4">
                <Bell size={32} className="text-gray-600" />
             </div>
-            <p className="text-white font-semibold text-lg mb-1 uppercase tracking-tight">No Active Notices</p>
-            <p className="text-gray-500 text-sm max-w-sm mx-auto mb-6 opacity-60">Broadcast important information to your auditors instantly.</p>
+            <p className="text-white font-semibold text-lg mb-2">No Active Notices</p>
+            <p className="text-gray-400 text-sm max-w-sm mx-auto mb-6">Create and send announcements to your auditors.</p>
              <button
               onClick={() => setAddOpen(true)}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
             >
               <Plus size={16} />
-              Publish First Notice
+              Create Notice
             </button>
           </div>
         ) : (
@@ -412,11 +412,11 @@ export default function SettingsNoticesPage() {
             <div className="glass rounded-xl overflow-hidden hidden md:block border border-white/10 shadow-2xl">
               <table className="w-full text-left font-sans text-sm">
                 <thead className="bg-white/[0.03]">
-                  <tr className="border-b border-white/10 text-gray-500 font-bold uppercase tracking-widest text-[10px] italic">
-                    <th className="px-5 py-4 w-12 text-center">ID</th>
-                    <th className="px-5 py-4">Notice Context</th>
-                    <th className="px-5 py-4 text-center">Visibility</th>
-                    <th className="px-5 py-4 text-center">Published</th>
+                  <tr className="border-b border-white/10 text-gray-400 font-medium text-xs">
+                    <th className="px-5 py-4 w-12 text-center">#</th>
+                    <th className="px-5 py-4">Title</th>
+                    <th className="px-5 py-4 text-center">Scope</th>
+                    <th className="px-5 py-4 text-center">Released</th>
                     <th className="px-5 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -426,28 +426,25 @@ export default function SettingsNoticesPage() {
                       <td className="px-5 py-5 text-gray-600 text-center font-mono text-[11px]">{n.id}</td>
                       <td className="px-5 py-5">
                         <div className="min-w-[250px]">
-                           <h3 className="text-sm font-bold text-white uppercase tracking-tight group-hover:text-secondary-400 transition-colors">{n.title}</h3>
-                           <p className="text-[11px] text-gray-500 line-clamp-1 mt-0.5 leading-relaxed font-medium italic">{n.message}</p>
+                           <h3 className="text-sm font-semibold text-white group-hover:text-secondary-400 transition-colors">{n.title}</h3>
+                           <p className="text-xs text-gray-400 line-clamp-1 mt-0.5 leading-relaxed">{n.message}</p>
                         </div>
                       </td>
                       <td className="px-5 py-5 text-center">
                          {n.assign_to_all ? (
-                            <span className="text-[9px] font-black text-indigo-400 px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 uppercase tracking-widest">Broadcast</span>
+                            <span className="text-xs font-medium text-indigo-300 px-2.5 py-1 rounded bg-indigo-500/10 border border-indigo-500/20">All Auditors</span>
                          ) : (
-                            <span className="text-[9px] font-black text-amber-500 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 uppercase tracking-widest">Selective</span>
+                            <span className="text-xs font-medium text-amber-300 px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/20">Selective</span>
                          )}
                       </td>
                       <td className="px-5 py-5 text-center">
-                         <div className="flex flex-col items-center gap-0.5">
-                            <span className="text-[10px] text-gray-400 font-mono font-bold">{new Date(n.notice_date).toLocaleDateString()}</span>
-                            <span className="text-[8px] text-gray-600 font-black uppercase tracking-tighter">Verified</span>
-                         </div>
+                         <span className="text-xs text-gray-400">{new Date(n.notice_date).toLocaleDateString()}</span>
                       </td>
                       <td className="px-5 py-5 text-right font-sans">
                         <div className="flex items-center gap-2 justify-end">
                            <button
                              onClick={() => setViewId(n.id)}
-                              className="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest text-secondary-400 hover:bg-secondary-500/10 border border-secondary-500/20 transition-all font-mono"
+                              className="px-3 py-1.5 rounded-lg text-xs font-medium text-secondary-300 hover:text-secondary-200 hover:bg-secondary-500/10 border border-secondary-500/20 transition-all"
                            >
                               {n.assign_to_all ? "Auditors" : `${n.assigned_count} Assigned`}
                            </button>
@@ -471,20 +468,20 @@ export default function SettingsNoticesPage() {
                   <div key={n.id} className="glass rounded-xl border border-white/10 p-4 space-y-4 shadow-xl relative overflow-hidden">
                      <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                           <p className="text-[9px] text-gray-600 font-mono uppercase tracking-widest">Pub: {new Date(n.notice_date).toLocaleDateString()}</p>
-                           <h3 className="text-sm font-bold text-white uppercase tracking-tight mt-0.5 line-clamp-1">{n.title}</h3>
+                           <p className="text-xs text-gray-500">{new Date(n.notice_date).toLocaleDateString()}</p>
+                           <h3 className="text-sm font-semibold text-white mt-0.5 line-clamp-1">{n.title}</h3>
                         </div>
-                        <div className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-tighter italic border ${n.assign_to_all ? 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' : 'text-amber-500 bg-amber-500/10 border-amber-500/20'}`}>
-                           {n.assign_to_all ? 'Global' : 'Selective'}
+                        <div className={`text-xs font-medium px-2 py-1 rounded border ${n.assign_to_all ? 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20' : 'text-amber-300 bg-amber-500/10 border-amber-500/20'}`}>
+                           {n.assign_to_all ? 'All Auditors' : 'Selective'}
                         </div>
                      </div>
 
-                     <p className="text-[11px] text-gray-500 font-medium italic line-clamp-3 leading-relaxed bg-white/[0.02] border border-white/5 p-2 rounded-lg">{n.message}</p>
+                     <p className="text-xs text-gray-400 line-clamp-3 leading-relaxed">{n.message}</p>
 
                      <div className="pt-2 flex items-center justify-between gap-2 border-t border-white/5">
                         <button
                           onClick={() => setViewId(n.id)}
-                          className="flex-1 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-secondary-400 bg-white/5 border border-white/10"
+                          className="flex-1 px-3 py-2 rounded-lg text-xs font-medium text-secondary-300 hover:text-secondary-200 hover:bg-secondary-500/10 border border-secondary-500/20 transition-all"
                         >
                            {n.assign_to_all ? "Auditors" : `${n.assigned_count} Assigned`}
                         </button>

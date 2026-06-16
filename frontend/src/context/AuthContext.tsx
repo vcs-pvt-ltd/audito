@@ -75,11 +75,31 @@ function normalizeAccountType(accountType: string | null | undefined): string | 
   return accountType;
 }
 
+function normalizeBoolean(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.toLowerCase().trim();
+    return normalized === "yes" || normalized === "true" || normalized === "1";
+  }
+  if (typeof value === "number") return value === 1;
+  return false;
+}
+
 function normalizeAuthState(input: AuthState): AuthState {
   return {
     ...input,
     admin: input.admin
-      ? { ...input.admin, account_type: normalizeAccountType(input.admin.account_type) }
+      ? {
+          ...input.admin,
+          account_type: normalizeAccountType(input.admin.account_type),
+          plan_limits: input.admin.plan_limits
+            ? {
+                ...input.admin.plan_limits,
+                auditor_eval: normalizeBoolean(input.admin.plan_limits.auditor_eval),
+                company_to_company: normalizeBoolean(input.admin.plan_limits.company_to_company),
+              }
+            : undefined,
+        }
       : null,
     accounts: (input.accounts || []).map((a) => ({
       ...a,

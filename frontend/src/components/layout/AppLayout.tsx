@@ -15,39 +15,43 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { admin } = useAuth();
   const { isActive, steps, currentStep, showCompletionModal, closeCompletionModal } = useOnboarding();
 
-  const isOnboardingFlow = isActive || pathname.startsWith("/onboarding") || searchParams.get("onboarding") === "1";
+  const isOnboardingUrl = pathname.startsWith("/onboarding") || searchParams.get("onboarding") === "1";
+  const isOnboardingFlow = (admin?.role === "admin" && isActive) || isOnboardingUrl;
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || admin?.role !== "admin") return;
     const step = steps[currentStep];
     if (!step) return;
     if (pathname === "/onboarding") {
       router.replace(`${step.href}?onboarding=1`);
     }
-  }, [isActive, steps, currentStep, pathname, router]);
+  }, [isActive, steps, currentStep, pathname, router, admin?.role]);
+
+  const showAdminOnboardingGuide = isOnboardingFlow && admin?.role === "admin";
 
   return (
     <div className="flex h-screen bg-transparent overflow-hidden">
-      {isOnboardingFlow ? (
+      {showAdminOnboardingGuide ? (
         /* Desktop sidebar — lg+ only */
         <aside className="hidden lg:block w-[360px] shrink-0 border-r border-white/10 bg-primary-950/50 backdrop-blur-md overflow-hidden">
           <OnboardingGuide />
         </aside>
       ) : (
-        <Sidebar />
+        !isOnboardingFlow && <Sidebar />
       )}
 
       <div className="flex-1 flex flex-col min-h-0 bg-transparent overflow-hidden">
-        {isOnboardingFlow && <OnboardingTopProgress />}
-        <main className={`flex-1 overflow-y-auto scroll-smooth ${isOnboardingFlow ? "pb-[280px] lg:pb-0" : "pb-[88px] lg:pb-0"}`}>
+        {showAdminOnboardingGuide && <OnboardingTopProgress />}
+        <main className={`flex-1 overflow-y-auto scroll-smooth ${showAdminOnboardingGuide ? "pb-[280px] lg:pb-0" : "pb-[88px] lg:pb-0"}`}>
           {children}
         </main>
       </div>
 
       {/* Mobile bottom panel — only mounted during onboarding, hidden on lg+ */}
-      {isOnboardingFlow && <OnboardingGuideMobile />}
+      {showAdminOnboardingGuide && <OnboardingGuideMobile />}
 
       {!isOnboardingFlow && <MobileBottomNav />}
       <OnboardingCompletedModal open={showCompletionModal} onClose={closeCompletionModal} />
@@ -79,22 +83,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isLoading || !admin) return;
-    const isAdmin = admin.role === "admin";
     const onboardingDone = !!admin.onboarding_completed || !!admin.onboarding_skipped;
-    const exemptRoutes = ["/onboarding", "/profile", "/settings/organization", "/organization", "/structure", "/users", "/checklists", "/audits"];
+    const adminExemptRoutes = ["/onboarding", "/profile", "/settings/organization", "/organization", "/structure", "/users", "/checklists", "/audits"];
+    const userExemptRoutes = ["/onboarding", "/profile", "/settings/organization"];
+    const exemptRoutes = admin.role === "admin" ? adminExemptRoutes : userExemptRoutes;
     const isExempt = exemptRoutes.some((r) => pathname.startsWith(r));
-    if (isAdmin && !onboardingDone && !isExempt) router.replace("/onboarding");
+    if (!onboardingDone && !isExempt) router.replace("/onboarding");
   }, [admin, isLoading, pathname, router]);
 
   if (isPublicRoute) return <>{children}</>;
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#053B36]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500" />
-      </div>
-    );
-  }
 
   return (
     <Suspense fallback={null}>

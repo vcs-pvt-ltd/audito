@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { auditFirmLearningApi } from "@/lib/api";
 import { ArrowLeft, Plus, Upload, Download, X, FileText, Loader2, AlertCircle } from "lucide-react";
 
@@ -155,6 +156,7 @@ export default function CreateEvaluationPaperPage() {
   const [createdPaperId, setCreatedPaperId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [excelUploading, setExcelUploading] = useState(false);
@@ -213,7 +215,27 @@ export default function CreateEvaluationPaperPage() {
     if (!isLoading && !admin) router.push("/login");
   }, [isLoading, admin, router]);
 
+  useEffect(() => {
+    if (!isLoading && admin?.plan_limits && !admin.plan_limits.auditor_eval) {
+      setLimitModalOpen(true);
+    }
+  }, [isLoading, admin]);
+
   if (isLoading || !admin) return null;
+
+  if (admin.plan_limits && !admin.plan_limits.auditor_eval) {
+    return (
+      <div className="h-screen bg-transparent flex items-center justify-center p-6">
+        <LimitReachedModal
+          isOpen={limitModalOpen}
+          onClose={() => router.push("/learning/evaluation-papers")}
+          title="Auditor Evaluation Disabled"
+          message="Your current plan does not allow access to the Auditor Evaluation System. Upgrade your subscription to enable this feature."
+          limit={0}
+        />
+      </div>
+    );
+  }
 
   if (admin.role !== "admin") {
     return (

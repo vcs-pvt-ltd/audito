@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
+import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { countriesApi, linksApi, type Country } from "@/lib/api";
 
 import {
@@ -21,6 +22,7 @@ import {
   Building2,
   User,
   Users,
+  Crown,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -705,6 +707,7 @@ export default function LinksPage() {
   const [viewDataLoading, setViewDataLoading] = useState(false);
   const [viewDataError, setViewDataError] = useState("");
   const [acceptingLink, setAcceptingLink] = useState<OrgLink | null>(null);
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -752,6 +755,14 @@ export default function LinksPage() {
     toast("Link request sent successfully.", "success");
     await fetchData();
     return res.data as LinkCreateResult;
+  };
+
+  const handleOpenCreateLink = () => {
+    if (admin?.plan_limits && !admin.plan_limits.company_to_company) {
+      setLimitModalOpen(true);
+      return;
+    }
+    setModalOpen(true);
   };
 
   const handlePreviewTarget = async (targetEmail: string) => {
@@ -855,11 +866,11 @@ export default function LinksPage() {
             </button>
             {canRequest && (
               <button
-                onClick={() => setModalOpen(true)}
+                onClick={handleOpenCreateLink}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10"
               >
-                <Plus size={16} />
-                Request
+                {admin?.plan_limits && !admin.plan_limits.company_to_company ? <Crown size={16} /> : <Plus size={16} />}
+                {admin?.plan_limits && !admin.plan_limits.company_to_company ? "Upgrade" : "Request"}
               </button>
             )}
           </div>
@@ -1056,6 +1067,14 @@ export default function LinksPage() {
           data={viewData}
           loading={viewDataLoading}
           error={viewDataError}
+        />
+
+        <LimitReachedModal
+          isOpen={limitModalOpen}
+          onClose={() => setLimitModalOpen(false)}
+          title="Company-to-Company Linking Disabled"
+          message="Your current plan does not allow company-to-company links. Upgrade your subscription to enable organization linking."
+          limit={0}
         />
 
         <AcceptLinkModal

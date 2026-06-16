@@ -65,6 +65,20 @@ const ENTITY_TYPE_TABLE_MAP = {
   'audit-firm-department': { table: 'audit_firm_company_departments', codeField: 'afc_dept_code' }
 };
 
+// Display name -> slug mapping
+const DISPLAY_TO_SLUG = {
+  'Buying Office': 'buying-office',
+  'Supplier': 'supplier',
+  'Company': 'company',
+  'Cluster': 'cluster',
+  'Factory': 'factory',
+  'Unit': 'unit',
+  'Department': 'department',
+  'Section': 'section',
+  'Branch': 'branch',
+  'Audit Firm Department': 'audit-firm-department'
+};
+
 // Account type → the owner column that type uses when creating sub-entities
 const PARTNER_ACCOUNT_OWNER_FIELD = {
   Customer: 'cust_code',
@@ -137,6 +151,33 @@ const createSubEntity = async (req, res) => {
     const limitError = await LimitsEnforcer.checkStructureLimits(adminCode, entity_type);
     if (limitError) {
       return errorResponse(res, limitError, 403);
+    }
+
+    // --- Uniqueness check: prevent duplicate names within the same owner (company/customer/firm)
+    try {
+      const slug = DISPLAY_TO_SLUG[entity_type];
+      const typeConfig = slug ? ENTITY_TYPE_TABLE_MAP[slug] : null;
+      if (typeConfig) {
+        // choose owner field by account type preference
+        const validOwnerFields = ENTITY_TYPE_OWNER_FIELDS[slug] || [];
+        let ownerField = null;
+        if (accountType === 'Company' && validOwnerFields.includes('comp_code')) ownerField = 'comp_code';
+        else if (accountType === 'Customer' && validOwnerFields.includes('cust_code')) ownerField = 'cust_code';
+        else if (validOwnerFields.length > 0) ownerField = validOwnerFields[0];
+
+        if (ownerField) {
+          const [rows] = await db.query(
+            `SELECT id FROM \`${typeConfig.table}\` WHERE name = ? AND \`${ownerField}\` = ? AND is_active = TRUE LIMIT 1`,
+            [name, adminCode]
+          );
+          if (rows.length > 0) {
+            return errorResponse(res, `An entity with the name "${name}" already exists in your organization.`, 409);
+          }
+        }
+      }
+    } catch (uniqErr) {
+      console.error('Structure uniqueness check failed:', uniqErr);
+      // proceed — uniqueness check is best-effort but errors should not block normal flow
     }
 
     const common = {
