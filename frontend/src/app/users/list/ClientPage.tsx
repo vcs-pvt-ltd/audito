@@ -4,9 +4,9 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
-import { usersApi, orgTreeApi, countriesApi, type Country } from "@/lib/api";
+import { usersApi, orgTreeApi, countriesApi, authApi, type Country } from "@/lib/api";
 
-import { Plus, RefreshCw, Pencil, Trash2, Mail, CheckCircle, Clock, X, UserCheck, Users, Search } from "lucide-react";
+import { Plus, RefreshCw, Pencil, Trash2, Mail, CheckCircle, Clock, X, UserCheck, Users, Search, Crown } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
 
@@ -183,6 +183,7 @@ function UserModal({
   treeSteps,
   accessToken,
   accountType,
+  admin,
 }: {
   open: boolean;
   onClose: () => void;
@@ -192,6 +193,7 @@ function UserModal({
   treeSteps: string[];
   accessToken: string | null;
   accountType: string;
+  admin: any;
 }) {
   const [form, setForm] = useState<UserFormData>({
     first_name: "",
@@ -206,6 +208,7 @@ function UserModal({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [orgCountry, setOrgCountry] = useState<string>("");
 
   // Countries
   const [countries, setCountries] = useState<Country[]>([]);
@@ -331,6 +334,23 @@ function UserModal({
     }
   };
 
+  // Fetch organization country on modal open
+  useEffect(() => {
+    if (!open || !accessToken || editData) return;
+    const fetchOrgCountry = async () => {
+      try {
+        const res = await authApi.getMe(accessToken);
+        if (res.success && res.data) {
+          const data = res.data as { organization: { country?: string } | null };
+          setOrgCountry(data.organization?.country || "");
+        }
+      } catch {
+        // no-op
+      }
+    };
+    fetchOrgCountry();
+  }, [open, accessToken, editData]);
+
   useEffect(() => {
     if (editData) {
       setForm({
@@ -351,7 +371,7 @@ function UserModal({
         email: "",
         phone_number: "",
         nic: "",
-        country: "",
+        country: orgCountry,
         assigned_entity_code: "",
         assigned_entity_type: "",
         assigned_org_tree_id: undefined,
@@ -361,7 +381,7 @@ function UserModal({
     setCountrySearch("");
     setShowCountryDropdown(false);
     setError("");
-  }, [editData, open]);
+  }, [editData, open, orgCountry]);
 
   if (!open) return null;
 
@@ -943,6 +963,8 @@ export default function UsersClientPage() {
     setModalOpen(true);
   };
 
+  const isLimitExceeded = config && config.backendType === "Auditor" && admin?.plan_limits && users.length >= admin.plan_limits.auditors;
+
 
 
   const handleEdit = (user: User) => {
@@ -1111,9 +1133,9 @@ export default function UsersClientPage() {
               onClick={handleAdd}
               className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 shadow-lg shadow-secondary-500/10 transition-all active:scale-95"
             >
-              <Plus size={18} />
-              <span className="sm:hidden">Add</span>
-              <span className="hidden sm:block">Add {config.label}</span>
+              {isLimitExceeded ? <Crown size={18} /> : <Plus size={18} />}
+              <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Add"}</span>
+              <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : `Add ${config.label}`}</span>
             </button>
           </div>
         </div>
@@ -1318,6 +1340,7 @@ export default function UsersClientPage() {
           treeSteps={effectiveTreeSteps}
           accessToken={accessToken}
           accountType={admin.account_type || ""}
+          admin={admin}
         />
 
         {/* Register self confirmation */}

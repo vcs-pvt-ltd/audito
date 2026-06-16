@@ -82,6 +82,9 @@ CREATE TABLE `auditors` (
   `email_token` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email_token_expires` datetime DEFAULT NULL,
   `is_active` tinyint(1) DEFAULT '1',
+  `onboarding_completed` tinyint(1) DEFAULT '0',
+  `onboarding_skipped` tinyint(1) DEFAULT '0',
+  `onboarding_completed_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `profile_image` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
@@ -858,6 +861,9 @@ CREATE TABLE `entity_heads` (
   `email_token` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email_token_expires` datetime DEFAULT NULL,
   `is_active` tinyint(1) DEFAULT '1',
+  `onboarding_completed` tinyint(1) DEFAULT '0',
+  `onboarding_skipped` tinyint(1) DEFAULT '0',
+  `onboarding_completed_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `profile_image` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL

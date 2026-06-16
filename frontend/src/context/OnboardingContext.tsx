@@ -171,8 +171,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const pathname = usePathname();
+  const isAdmin = admin?.role === "admin";
 
   const steps = useMemo<StepItem[]>(() => {
+    if (!isAdmin) return [];
+
     const order = filteredEntityOrder;
     const headLevels = filteredHeadOrder;
 
@@ -225,14 +228,15 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
           description: "Invite users to manage your specific organizational units.",
           instructions: [
             "Add users for different head roles",
-          "Assign each user to their respective entity",
-          "One head assignment is enough to complete this mission"
-        ],
-        href: `/users/list?type=${headLevels[0].slug}`,
-        state: headCount > 0 ? "done" : "pending",
-        optional: true,
-      });
-    }}
+            "Assign each user to their respective entity",
+            "One head assignment is enough to complete this mission"
+          ],
+          href: `/users/list?type=${headLevels[0].slug}`,
+          state: headCount > 0 ? "done" : "pending",
+          optional: true,
+        });
+      }
+    }
 
     // Mission 5: Checklists (Optional or skipped for Audit Firms)
     if (admin?.account_type !== "Audit Firm") {
@@ -261,9 +265,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       });
     }
 
-
     return baseSteps;
-  }, [filteredEntityOrder, filteredHeadOrder, entityCount, orgDone, headCount, auditorCount, checklistCount, auditCount]);
+  }, [isAdmin, filteredEntityOrder, filteredHeadOrder, entityCount, orgDone, headCount, auditorCount, checklistCount, auditCount]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -309,7 +312,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   const progressPct = Math.round((doneCount / Math.max(steps.length, 1)) * 100);
 
   const nextPending = steps.findIndex((s) => s.state === "pending" && !s.optional);
-  const nextRecommendedStep = nextPending === -1 ? steps.length - 1 : nextPending;
+  const nextRecommendedStep = nextPending === -1 ? Math.max(steps.length - 1, 0) : nextPending;
 
   const canEnterStep = useCallback((index: number) => {
     if (index === 0) return true;

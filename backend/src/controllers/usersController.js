@@ -182,9 +182,40 @@ const createUser = async (req, res) => {
       return errorResponse(res, `You cannot create "${user_type}" users for this account type.`, 403);
     }
 
+    // NIC uniqueness: ensure NIC (if provided) is not already used by any user/admin
+    if (nic) {
+      try {
+        const [aRows] = await db.query('SELECT id FROM auditors WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
+        if (aRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
+        const [hRows] = await db.query('SELECT id FROM entity_heads WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
+        if (hRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
+        const [uRows] = await db.query('SELECT id FROM users WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
+        if (uRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
+        const [admRows] = await db.query('SELECT id FROM admins WHERE nic = ? LIMIT 1', [nic]);
+        if (admRows.length > 0) return errorResponse(res, 'NIC is already in use by another account.', 409);
+      } catch (nicErr) {
+        console.error('NIC uniqueness check failed:', nicErr);
+      }
+    }
+
     if (isAuditor(user_type)) {
       const limitError = await LimitsEnforcer.checkAuditorLimit(req.user.entityCode);
       if (limitError) return errorResponse(res, limitError, 403);
+    }
+
+    // If admin account has NIC, enforce uniqueness across users
+    if (admin && admin.nic) {
+      try {
+        const nic = admin.nic;
+        const [aRows] = await db.query('SELECT id FROM auditors WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
+        if (aRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
+        const [hRows] = await db.query('SELECT id FROM entity_heads WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
+        if (hRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
+        const [uRows] = await db.query('SELECT id FROM users WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
+        if (uRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
+      } catch (nicErr) {
+        console.error('NIC uniqueness check failed (createFromAdmin):', nicErr);
+      }
     }
 
     // Check email not already used in the same table
@@ -337,6 +368,24 @@ const updateUser = async (req, res) => {
     }
 
     const Model = user._table === 'auditor' ? AuditorModel : EntityHeadModel;
+    // NIC uniqueness on update
+    if (req.body.nic) {
+      try {
+        const nic = req.body.nic;
+        const [aRows] = await db.query('SELECT id FROM auditors WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
+        if (aRows.length > 0 && user._table !== 'auditor') return errorResponse(res, 'NIC is already in use by another user.', 409);
+        if (aRows.length > 0 && user._table === 'auditor' && aRows[0].id !== user.id) return errorResponse(res, 'NIC is already in use by another user.', 409);
+        const [hRows] = await db.query('SELECT id FROM entity_heads WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
+        if (hRows.length > 0 && user._table !== 'entity_head') return errorResponse(res, 'NIC is already in use by another user.', 409);
+        if (hRows.length > 0 && user._table === 'entity_head' && hRows[0].id !== user.id) return errorResponse(res, 'NIC is already in use by another user.', 409);
+        const [uRows] = await db.query('SELECT id FROM users WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
+        if (uRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
+        const [admRows] = await db.query('SELECT id FROM admins WHERE nic = ? LIMIT 1', [nic]);
+        if (admRows.length > 0) return errorResponse(res, 'NIC is already in use by another account.', 409);
+      } catch (nicErr) {
+        console.error('NIC uniqueness check failed (update):', nicErr);
+      }
+    }
     // Audit Firm auditor reassignment validation
     if (
       user._table === 'auditor' &&

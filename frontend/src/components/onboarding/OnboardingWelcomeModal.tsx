@@ -9,16 +9,29 @@ import Image from "next/image";
 export default function OnboardingWelcomeModal({
   open,
   busy,
+  heading,
+  description,
+  notes,
   progressText,
+  primaryLabel,
+  secondaryLabel,
+  showSkip,
   onStart,
   onSkip,
 }: {
   open: boolean;
   busy: boolean;
-  progressText: string;
+  heading: string;
+  description: string;
+  notes: string[];
+  progressText?: string;
+  primaryLabel: string;
+  secondaryLabel?: string;
+  showSkip?: boolean;
   onStart: () => void;
   onSkip: () => void;
 }) {
+  const showSkipButton = showSkip && secondaryLabel;
   if (!open) return null;
   return (
     <div className="glass rounded-3xl border border-white/10 p-8 md:p-12 relative overflow-hidden group animate-in zoom-in-95 fade-in duration-700 shadow-2xl">
@@ -34,11 +47,19 @@ export default function OnboardingWelcomeModal({
         </div>
 
         <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight leading-[1.1]">
-          Master Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-secondary-400 to-amber-500">Audit Ecosystem</span>
+          {heading}
         </h1>
         <p className="text-lg text-gray-400 mt-6 max-w-2xl leading-relaxed">
-          Welcome to Audito. We've designed a step-by-step professional onboarding to help you configure your entities, users, and checklists with precision.
+          {description}
         </p>
+
+        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          {notes.map((note, idx) => (
+            <div key={idx} className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-gray-300">
+              {note}
+            </div>
+          ))}
+        </div>
 
         <div className="mt-10 flex flex-col md:flex-row items-center gap-6">
           <button
@@ -46,38 +67,42 @@ export default function OnboardingWelcomeModal({
             disabled={busy}
             className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-lg font-bold bg-secondary-500 text-primary-950 hover:bg-secondary-400 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-secondary-500/20"
           >
-            {busy ? "Starting..." : "Begin Setup Flow"}
+            {busy ? "Starting..." : primaryLabel}
             <ArrowRight size={20} />
           </button>
           
-          <button
-            onClick={onSkip}
-            disabled={busy}
-            className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-lg font-bold border border-white/10 text-gray-400 hover:text-white hover:border-white/20 active:scale-95 transition-all"
-          >
-            <SkipForward size={20} />
-            Explore Dashboard
-          </button>
+          {showSkipButton ? (
+            <button
+              onClick={onSkip}
+              disabled={busy}
+              className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-lg font-bold border border-white/10 text-gray-400 hover:text-white hover:border-white/20 active:scale-95 transition-all"
+            >
+              <SkipForward size={20} />
+              {secondaryLabel}
+            </button>
+          ) : null}
         </div>
 
-        <div className="mt-12 flex flex-wrap items-center gap-6 border-t border-white/5 pt-8">
-          <div className="flex items-center gap-3 text-sm text-gray-500">
-            <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-              <CheckCircle2 size={14} className="text-emerald-400" />
-            </div>
-            <span className="font-medium">{progressText}</span>
-          </div>
-          <div className="flex -space-x-3 overflow-hidden">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="inline-block h-8 w-8 rounded-full ring-2 ring-primary-950 bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-bold text-gray-500 uppercase tracking-tighter">
-                {String.fromCharCode(64 + i)}
+        {progressText ? (
+          <div className="mt-12 flex flex-wrap items-center gap-6 border-t border-white/5 pt-8">
+            <div className="flex items-center gap-3 text-sm text-gray-500">
+              <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                <CheckCircle2 size={14} className="text-emerald-400" />
               </div>
-            ))}
+              <span className="font-medium">{progressText}</span>
+            </div>
+            <div className="flex -space-x-3 overflow-hidden">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="inline-block h-8 w-8 rounded-full ring-2 ring-primary-950 bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-bold text-gray-500 uppercase tracking-tighter">
+                  {String.fromCharCode(64 + i)}
+                </div>
+              ))}
+            </div>
+            <span className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">
+              Trusted by Enterprise Teams
+            </span>
           </div>
-          <span className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">
-            Trusted by Enterprise Teams
-          </span>
-        </div>
+        ) : null}
       </div>
     </div>
   );

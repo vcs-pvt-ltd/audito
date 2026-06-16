@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { X, ShieldAlert, ArrowUpCircle } from "lucide-react";
+import { X, ShieldAlert, ArrowUpCircle, Crown } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface LimitReachedModalProps {
@@ -85,8 +85,9 @@ export default function LimitReachedModal({
               onClose();
               router.push("/settings/billing");
             }}
-            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
+            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20 flex items-center justify-center gap-2"
           >
+            <Crown size={16} />
             Upgrade Plan
           </button>
         </div>

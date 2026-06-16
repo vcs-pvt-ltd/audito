@@ -23,6 +23,7 @@ import {
   Building,
   Briefcase,
   ExternalLink,
+  Crown,
 } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { structureApi, usersApi } from "@/lib/api";
@@ -176,6 +177,8 @@ export default function AuditsPage() {
     }
   };
 
+  const isLimitExceeded = admin?.plan_limits && audits.length >= admin.plan_limits.audits;
+
   const handleCancel = async (id: number, title: string) => {
     if (!accessToken) return;
     const currentAudit = audits.find(a => a.id === id);
@@ -309,9 +312,9 @@ export default function AuditsPage() {
                 onClick={handleNewAuditClick}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10"
               >
-                <Plus size={16} />
-                <span className="sm:hidden">Create</span>
-                <span className="hidden sm:block">Create New Audit</span>
+                {isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
+                <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Create"}</span>
+                <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : "Create New Audit"}</span>
               </button>
             )}
           </div>
@@ -383,8 +386,8 @@ export default function AuditsPage() {
                 onClick={handleNewAuditClick}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
               >
-                <Plus size={16} />
-                Go to Checklists
+                {isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
+                {isLimitExceeded ? "Upgrade" : "Go to Checklists"}
               </button>
             )}
           </div>

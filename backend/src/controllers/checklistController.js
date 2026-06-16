@@ -97,6 +97,17 @@ const createChecklistType = async (req, res) => {
     const missing = validateRequiredFields(req.body, ['name']);
     if (missing) return errorResponse(res, missing, 400);
 
+    // Uniqueness: checklist type name must be unique per organization
+    try {
+      const [rows] = await db.query(
+        'SELECT id FROM checklist_types WHERE name = ? AND created_by = ? AND is_active = TRUE LIMIT 1',
+        [name, req.user.entityCode]
+      );
+      if (rows.length > 0) return errorResponse(res, 'A checklist type with this name already exists for your organization.', 409);
+    } catch (err) {
+      console.error('Checklist type uniqueness check failed:', err);
+    }
+
     const id = await ChecklistModel.createType({
       name,
       description,
@@ -131,6 +142,17 @@ const updateChecklistType = async (req, res) => {
     const type = await ChecklistModel.findTypeById(id);
     if (!type || type.created_by !== req.user.entityCode) {
       return errorResponse(res, 'Checklist type not found.', 404);
+    }
+
+    // Ensure uniqueness of name within this organization on update
+    try {
+      const [conflict] = await db.query(
+        'SELECT id FROM checklist_types WHERE name = ? AND created_by = ? AND is_active = TRUE AND id != ? LIMIT 1',
+        [name, req.user.entityCode, id]
+      );
+      if (conflict.length > 0) return errorResponse(res, 'A checklist type with this name already exists for your organization.', 409);
+    } catch (err) {
+      console.error('Checklist type update uniqueness check failed:', err);
     }
 
     await ChecklistModel.updateType(id, { name, description });
@@ -217,6 +239,17 @@ const createChecklist = async (req, res) => {
       }
     }
 
+    // Uniqueness: checklist name must be unique per creating organization
+    try {
+      const [existing] = await db.query(
+        'SELECT id FROM checklists WHERE name = ? AND created_by = ? AND is_active = TRUE LIMIT 1',
+        [name, req.user.entityCode]
+      );
+      if (existing.length > 0) return errorResponse(res, 'A checklist with this name already exists for your organization.', 409);
+    } catch (err) {
+      console.error('Checklist uniqueness check failed:', err);
+    }
+
     const limitError = await LimitsEnforcer.checkChecklistLimit(req.user.entityCode);
     if (limitError) return errorResponse(res, limitError, 403);
 
@@ -286,6 +319,17 @@ const updateChecklist = async (req, res) => {
     } = req.body;
 
     if (!name) return errorResponse(res, 'Name is required.', 400);
+
+    // Ensure new name is unique within this organization
+    try {
+      const [conflict] = await db.query(
+        'SELECT id FROM checklists WHERE name = ? AND created_by = ? AND is_active = TRUE AND id != ? LIMIT 1',
+        [name, req.user.entityCode, id]
+      );
+      if (conflict.length > 0) return errorResponse(res, 'A checklist with this name already exists for your organization.', 409);
+    } catch (err) {
+      console.error('Checklist update uniqueness check failed:', err);
+    }
 
     await ChecklistModel.update(id, {
       name, description,

@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
+import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, RefreshCw, Trash2, Users, X, Trophy, AlertTriangle, CheckCircle2, Clock, Calendar, BookOpen, ClipboardList, Search } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Users, X, Trophy, AlertTriangle, CheckCircle2, Clock, Calendar, BookOpen, ClipboardList, Search, Crown } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 
 interface Paper {
@@ -195,6 +196,7 @@ export default function AuditFirmEvaluationPapersPage() {
   const [auditors, setAuditors] = useState<Auditor[]>([]);
   const [loading, setLoading] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [assignPaperId, setAssignPaperId] = useState<number | null>(null);
   const [viewAssignmentsId, setViewAssignmentsId] = useState<number | null>(null);
   const [viewAssignmentsOpen, setViewAssignmentsOpen] = useState(false);
@@ -272,11 +274,17 @@ export default function AuditFirmEvaluationPapersPage() {
           <button onClick={load} className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all" title="Refresh">
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
           </button>
-          <button onClick={() => router.push("/learning/evaluation-papers/create")}
+          <button onClick={() => {
+              if (admin?.plan_limits && !admin.plan_limits.auditor_eval) {
+                setLimitModalOpen(true);
+                return;
+              }
+              router.push("/learning/evaluation-papers/create");
+            }}
             className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 shadow-lg shadow-secondary-500/10 transition-all active:scale-95">
-            <Plus size={18} />
-            <span className="hidden sm:block">New Paper</span>
-            <span className="sm:hidden">Add</span>
+            {admin?.plan_limits && !admin.plan_limits.auditor_eval ? <Crown size={18} /> : <Plus size={18} />}
+            <span className="hidden sm:block">{admin?.plan_limits && !admin.plan_limits.auditor_eval ? "Upgrade" : "New Paper"}</span>
+            <span className="sm:hidden">{admin?.plan_limits && !admin.plan_limits.auditor_eval ? "Upgrade" : "Add"}</span>
           </button>
         </div>
       </div>
@@ -439,6 +447,14 @@ export default function AuditFirmEvaluationPapersPage() {
         onClose={() => setViewAssignmentsOpen(false)}
         assignments={filteredAssignments}
         title={selectedPaper?.title || ""}
+      />
+
+      <LimitReachedModal
+        isOpen={limitModalOpen}
+        onClose={() => setLimitModalOpen(false)}
+        title="Auditor Evaluation Disabled"
+        message="Your current plan does not allow the Auditor Evaluation System. Upgrade your subscription to create evaluation papers."
+        limit={0}
       />
     </div>
   );

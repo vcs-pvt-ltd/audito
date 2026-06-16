@@ -220,7 +220,7 @@ export default function CapsPage() {
               <div className="w-9 h-9 rounded-lg bg-secondary-500/20 flex items-center justify-center">
                 <ClipboardList size={20} className="text-secondary-400" />
               </div>
-              Corrective Action
+              Corrective Action Plans
             </h1>
             <p className="text-sm text-gray-400 mt-1 ml-[46px]">
               Manage and track CAP created from audit findings

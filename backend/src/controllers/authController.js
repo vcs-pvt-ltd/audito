@@ -182,6 +182,9 @@ function buildUserResponse(role, record) {
     assigned_entity_code: record.assigned_entity_code || null,
     assigned_org_tree_id: role === 'entity_head' ? (record.assigned_org_tree_id || null) : null,
     created_by_entity_code: record.created_by_entity_code,
+    onboarding_completed: !!record.onboarding_completed,
+    onboarding_skipped: !!record.onboarding_skipped,
+    onboarding_completed_at: record.onboarding_completed_at || null,
     profile_image: record.profile_image || null,
   };
 }
@@ -1084,16 +1087,30 @@ const updateProfile = async (req, res) => {
  */
 const getOnboardingStatus = async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return errorResponse(res, 'Only administrators can access onboarding status.', 403);
+    const role = req.user.role;
+    let record = null;
+    let status = null;
+
+    if (role === 'admin') {
+      record = await AdminModel.findById(req.user.id);
+      status = await AdminModel.getOnboardingStatus(req.user.id);
+    } else if (role === 'auditor') {
+      record = await AuditorModel.findById(req.user.id);
+      status = await AuditorModel.getOnboardingStatus(req.user.id);
+    } else if (role === 'entity_head') {
+      record = await EntityHeadModel.findById(req.user.id);
+      status = await EntityHeadModel.getOnboardingStatus(req.user.id);
+    } else {
+      return errorResponse(res, 'Only valid system users can access onboarding status.', 403);
     }
-    const admin = await AdminModel.findById(req.user.id);
-    if (!admin) return errorResponse(res, 'Admin not found.', 404);
+
+    if (!record) return errorResponse(res, `${role.replace('_', ' ')} not found.`, 404);
+    if (!status) return errorResponse(res, 'Onboarding status not available.', 404);
 
     return successResponse(res, {
-      onboarding_completed: !!admin.onboarding_completed,
-      onboarding_skipped: !!admin.onboarding_skipped,
-      onboarding_completed_at: admin.onboarding_completed_at || null,
+      onboarding_completed: !!status.onboarding_completed,
+      onboarding_skipped: !!status.onboarding_skipped,
+      onboarding_completed_at: status.onboarding_completed_at || null,
     });
   } catch (error) {
     console.error('getOnboardingStatus error:', error);
@@ -1107,34 +1124,62 @@ const getOnboardingStatus = async (req, res) => {
  */
 const updateOnboardingStatus = async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return errorResponse(res, 'Only administrators can update onboarding status.', 403);
-    }
+    const role = req.user.role;
     const { action } = req.body;
     if (!['complete', 'skip', 'reset'].includes(action)) {
       return errorResponse(res, "Invalid action. Use 'complete', 'skip', or 'reset'.", 400);
     }
-    const admin = await AdminModel.findById(req.user.id);
-    if (!admin) return errorResponse(res, 'Admin not found.', 404);
 
-    if (action === 'complete') {
-      await AdminModel.updateOnboardingStatus(admin.id, { completed: true, skipped: false });
-    } else if (action === 'skip') {
-      await AdminModel.updateOnboardingStatus(admin.id, { completed: false, skipped: true });
+    let record = null;
+    if (role === 'admin') {
+      record = await AdminModel.findById(req.user.id);
+    } else if (role === 'auditor') {
+      record = await AuditorModel.findById(req.user.id);
+    } else if (role === 'entity_head') {
+      record = await EntityHeadModel.findById(req.user.id);
     } else {
-      await db.query(
-        `UPDATE admins
-         SET onboarding_completed = 0, onboarding_skipped = 0, onboarding_completed_at = NULL
-         WHERE id = ?`,
-        [admin.id]
-      );
+      return errorResponse(res, 'Only valid system users can update onboarding status.', 403);
     }
 
-    const updated = await AdminModel.findById(admin.id);
+    if (!record) return errorResponse(res, `${role.replace('_', ' ')} not found.`, 404);
+
+    if (role === 'admin') {
+      if (action === 'complete') {
+        await AdminModel.updateOnboardingStatus(record.id, { completed: true, skipped: false });
+      } else if (action === 'skip') {
+        await AdminModel.updateOnboardingStatus(record.id, { completed: false, skipped: true });
+      } else {
+        await AdminModel.resetOnboardingStatus(record.id);
+      }
+    } else if (role === 'auditor') {
+      if (action === 'complete') {
+        await AuditorModel.updateOnboardingStatus(record.id, { completed: true, skipped: false });
+      } else if (action === 'skip') {
+        await AuditorModel.updateOnboardingStatus(record.id, { completed: false, skipped: true });
+      } else {
+        await AuditorModel.resetOnboardingStatus(record.id);
+      }
+    } else if (role === 'entity_head') {
+      if (action === 'complete') {
+        await EntityHeadModel.updateOnboardingStatus(record.id, { completed: true, skipped: false });
+      } else if (action === 'skip') {
+        await EntityHeadModel.updateOnboardingStatus(record.id, { completed: false, skipped: true });
+      } else {
+        await EntityHeadModel.resetOnboardingStatus(record.id);
+      }
+    }
+
+    const updatedStatus =
+      role === 'admin'
+        ? await AdminModel.getOnboardingStatus(record.id)
+        : role === 'auditor'
+          ? await AuditorModel.getOnboardingStatus(record.id)
+          : await EntityHeadModel.getOnboardingStatus(record.id);
+
     return successResponse(res, {
-      onboarding_completed: !!updated.onboarding_completed,
-      onboarding_skipped: !!updated.onboarding_skipped,
-      onboarding_completed_at: updated.onboarding_completed_at || null,
+      onboarding_completed: !!updatedStatus.onboarding_completed,
+      onboarding_skipped: !!updatedStatus.onboarding_skipped,
+      onboarding_completed_at: updatedStatus.onboarding_completed_at || null,
     }, 'Onboarding status updated.');
   } catch (error) {
     console.error('updateOnboardingStatus error:', error);

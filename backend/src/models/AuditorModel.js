@@ -42,6 +42,35 @@ const AuditorModel = {
     return rows[0] || null;
   },
 
+  async getOnboardingStatus(id) {
+    const [rows] = await db.query(
+      `SELECT onboarding_completed, onboarding_skipped, onboarding_completed_at
+       FROM auditors
+       WHERE id = ?`,
+      [id]
+    );
+    return rows[0] || null;
+  },
+
+  async updateOnboardingStatus(id, { completed, skipped }) {
+    await db.query(
+      `UPDATE auditors
+       SET onboarding_completed = ?, onboarding_skipped = ?,
+           onboarding_completed_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE onboarding_completed_at END
+       WHERE id = ?`,
+      [completed ? 1 : 0, skipped ? 1 : 0, completed ? 1 : 0, id]
+    );
+  },
+
+  async resetOnboardingStatus(id) {
+    await db.query(
+      `UPDATE auditors
+       SET onboarding_completed = 0, onboarding_skipped = 0, onboarding_completed_at = NULL
+       WHERE id = ?`,
+      [id]
+    );
+  },
+
   async findByEmailToken(token) {
     const [rows] = await db.query(
       'SELECT * FROM auditors WHERE email_token = ? AND email_token_expires > NOW() AND is_active = TRUE',

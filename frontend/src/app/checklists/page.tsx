@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   ChevronRight,
   Sparkles,
+  Crown,
 } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { useOnboarding } from "@/context/OnboardingContext";
@@ -118,6 +119,8 @@ export default function ChecklistsPage() {
     }
   };
 
+  const isLimitExceeded = admin?.plan_limits && checklists.length >= admin.plan_limits.checklists;
+
   const handleDelete = async (id: number, name: string) => {
     if (!accessToken) return;
     const ok = await confirm({
@@ -177,9 +180,9 @@ export default function ChecklistsPage() {
               onClick={handleCreateClick}
               className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10"
             >
-              <Plus size={16} />
-              <span className="sm:hidden">Create</span>
-              <span className="hidden sm:block">Create Checklist</span>
+              {isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
+              <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Create"}</span>
+              <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : "Create Checklist"}</span>
             </button>
           </div>
         </div>
@@ -244,8 +247,8 @@ export default function ChecklistsPage() {
               onClick={handleCreateClick}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
             >
-              <Plus size={16} />
-              Create Checklist
+              {isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
+              {isLimitExceeded ? "Upgrade" : "Create Checklist"}
             </button>
           </div>
         ) : filtered.length === 0 ? (
