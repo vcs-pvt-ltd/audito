@@ -14,7 +14,6 @@ import left1 from "@/assets/landing/hero-left1.png";
 import left2 from "@/assets/landing/hero-left2.png";
 import right1 from "@/assets/landing/hero-right1.png";
 import right2 from "@/assets/landing/hero-right2.png";
-import heroBg from "@/assets/landing/background.png";
 
 const TABS = [
   { id: "global", label: "Audito Global", icon: Users },
@@ -28,7 +27,6 @@ export default function HeroSection() {
   return (
     <section
       className="relative flex flex-col justify-center bg-cover bg-center bg-no-repeat overflow-hidden"
-      style={{ backgroundImage: `url(${heroBg.src})` }}
     >
       <style>{`
         @keyframes floatA {

@@ -311,6 +311,14 @@ const updateChecklist = async (req, res) => {
       return errorResponse(res, 'Checklist not found.', 404);
     }
 
+    const [usage] = await db.query(
+      'SELECT id FROM audit_assignments WHERE checklist_id = ? AND is_active = TRUE AND status != "cancelled" LIMIT 1',
+      [id]
+    );
+    if (usage.length > 0) {
+      return errorResponse(res, 'This checklist is currently used in an audit and cannot be edited.', 403);
+    }
+
     const {
       name, description, media_path, checklist_type_id,
       time_period_value, time_period_unit,

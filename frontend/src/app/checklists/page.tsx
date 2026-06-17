@@ -12,6 +12,7 @@ import {
   Search,
   Trash2,
   Pencil,
+  Lock,
   ClipboardCheck,
   ChevronRight,
   Sparkles,
@@ -38,6 +39,7 @@ interface Checklist {
   media_path: string | null;
   is_active: boolean;
   created_at: string;
+  assigned_audit_count?: number | string | null;
 }
 
 export default function ChecklistsPage() {
@@ -120,6 +122,15 @@ export default function ChecklistsPage() {
   };
 
   const isLimitExceeded = admin?.plan_limits && checklists.length >= admin.plan_limits.checklists;
+
+  const detailsPath = (id: number) =>
+    `/checklists/details?id=${id}${isOnboarding ? "&onboarding=1" : ""}`;
+
+  const editPath = (id: number) =>
+    `/checklists/create?id=${id}${isOnboarding ? "&onboarding=1" : ""}`;
+
+  const assignedAuditCount = (checklist: Checklist) =>
+    Number(checklist.assigned_audit_count || 0);
 
   const handleDelete = async (id: number, name: string) => {
     if (!accessToken) return;
@@ -270,6 +281,7 @@ export default function ChecklistsPage() {
                   <th className="px-4 py-3 text-gray-400 font-medium">Repeat</th>
                   <th className="px-4 py-3 text-gray-400 font-medium">Budget</th>
                   <th className="px-4 py-3 text-gray-400 font-medium">Workers</th>
+                  <th className="px-4 py-3 text-gray-400 font-medium">Audits</th>
                   <th className="px-4 py-3 text-gray-400 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -277,16 +289,16 @@ export default function ChecklistsPage() {
                 {paginated.map((cl, index) => {
                   const budget = cl.budget ? parseFloat(String(cl.budget)) : null;
                   const itemIndex = (currentPage - 1) * pageSize + index + 1;
+                  const auditCount = assignedAuditCount(cl);
+                  const isEditDisabled = auditCount > 0;
                   return (
                     <tr key={cl.id} className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-4 py-3 text-gray-400 text-sm">{itemIndex}</td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => {
-                            const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
-                            router.push(`/checklists/details?id=${cl.id}${isOnboarding ? "&onboarding=1" : ""}`);
-                          }}
+                          onClick={() => router.push(detailsPath(cl.id))}
                           className="text-secondary-400 hover:text-secondary-300 font-medium hover:underline underline-offset-2 transition-colors text-left"
+                          title="View checklist details"
                         >
                           {cl.name}
                         </button>
@@ -318,6 +330,15 @@ export default function ChecklistsPage() {
                       <td className="px-4 py-3 text-gray-300">
                         {cl.num_workers ?? <span className="text-gray-600">—</span>}
                       </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                          auditCount > 0
+                            ? "bg-amber-500/15 text-amber-400 border-amber-500/20"
+                            : "bg-white/[0.03] text-gray-500 border-white/10"
+                        }`}>
+                          {auditCount}
+                        </span>
+                      </td>
                   
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 justify-end">
@@ -333,11 +354,14 @@ export default function ChecklistsPage() {
                             Assign Audit
                           </button>
                           <button
-                            onClick={() => router.push(`/checklists/details?id=${cl.id}`)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all"
-                            title="Edit"
+                            onClick={() => {
+                              if (!isEditDisabled) router.push(editPath(cl.id));
+                            }}
+                            disabled={isEditDisabled}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:bg-transparent disabled:hover:border-white/10 disabled:cursor-not-allowed"
+                            title={isEditDisabled ? `Assigned to ${auditCount} audit${auditCount === 1 ? "" : "s"}; editing is disabled` : "Edit"}
                           >
-                            <Pencil size={14} />
+                            {isEditDisabled ? <Lock size={14} /> : <Pencil size={14} />}
                           </button>
                           <button
                             onClick={() => handleDelete(cl.id, cl.name)}
@@ -364,14 +388,17 @@ export default function ChecklistsPage() {
               {paginated.map((cl, index) => {
                 const budget = cl.budget ? parseFloat(String(cl.budget)) : null;
                 const itemIndex = (currentPage - 1) * pageSize + index + 1;
+                const auditCount = assignedAuditCount(cl);
+                const isEditDisabled = auditCount > 0;
                 return (
                   <div key={cl.id} className="glass rounded-xl border border-white/10 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-xs text-gray-500">#{itemIndex}</p>
                         <button
-                          onClick={() => router.push(`/checklists/details?id=${cl.id}`)}
+                          onClick={() => router.push(detailsPath(cl.id))}
                           className="text-sm font-semibold text-secondary-400 hover:text-secondary-300 text-left truncate block"
+                          title="View checklist details"
                         >
                           {cl.name}
                         </button>
@@ -399,6 +426,10 @@ export default function ChecklistsPage() {
                         <p className="text-gray-500">Budget</p>
                         <p className="text-gray-300 mt-0.5 truncate">{budget !== null ? `${cl.currency || "$"}${budget.toLocaleString()}` : "-"}</p>
                       </div>
+                      <div className="col-span-2 rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
+                        <p className="text-gray-500">Assigned Audits</p>
+                        <p className="text-gray-300 mt-0.5 truncate">{auditCount}</p>
+                      </div>
                     </div>
 
                     <div className="mt-3 flex items-center justify-end gap-2">
@@ -410,11 +441,14 @@ export default function ChecklistsPage() {
                         Assign
                       </button>
                       <button
-                        onClick={() => router.push(`/checklists/details?id=${cl.id}`)}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all"
-                        title="Edit"
+                        onClick={() => {
+                          if (!isEditDisabled) router.push(editPath(cl.id));
+                        }}
+                        disabled={isEditDisabled}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:bg-transparent disabled:hover:border-white/10 disabled:cursor-not-allowed"
+                        title={isEditDisabled ? `Assigned to ${auditCount} audit${auditCount === 1 ? "" : "s"}; editing is disabled` : "Edit"}
                       >
-                        <Pencil size={14} />
+                        {isEditDisabled ? <Lock size={14} /> : <Pencil size={14} />}
                       </button>
                       <button
                         onClick={() => handleDelete(cl.id, cl.name)}

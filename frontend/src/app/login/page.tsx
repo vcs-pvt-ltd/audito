@@ -86,7 +86,7 @@ function LoginForm() {
           {/* Logo and Welcome Text */}
           <div className="text-center mb-8">
             <Link href="/" className="inline-block mb-4">
-              <Image src={auditoLogo} alt="Audito" width={120} height={30} className="h-10 mx-auto" />
+              <Image src={auditoLogo} alt="Audito" width={125} height={30} className="h-10 mx-auto" />
             </Link>
             <h1 className="text-2xl font-bold text-white mb-2">
               Welcome Back
