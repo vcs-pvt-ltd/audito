@@ -37,6 +37,14 @@ type AnswerState =
   | { answer_type: "single_option" | "dropdown"; selected_option_id: number | null }
   | { answer_type: "multiple_options"; selected_option_ids: number[] };
 
+// ── Fix: add `percent` to the result type ──
+interface ResultState {
+  score: number;
+  max_score: number;
+  percent: number;
+  passed: boolean | null;
+}
+
 export default function EvaluationPaperAttemptPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const { alert } = useUiFeedback();
@@ -51,7 +59,7 @@ export default function EvaluationPaperAttemptPage() {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ score: number; max_score: number; passed: boolean | null } | null>(null);
+  const [result, setResult] = useState<ResultState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [timeLeftSeconds, setTimeLeftSeconds] = useState<number | null>(null);
@@ -79,15 +87,13 @@ export default function EvaluationPaperAttemptPage() {
     }
 
     const d = res.data as any;
-    
-    // Check closing date
+
     if (d.paper.due_date && new Date() > new Date(d.paper.due_date)) {
       setError("The closing date for this evaluation paper has passed. You can no longer attempt it.");
       setLoading(false);
       return;
     }
 
-    // Check status
     if (d.paper.assignment_status === "submitted") {
       setError("You have already submitted this evaluation paper.");
       setLoading(false);
@@ -97,7 +103,6 @@ export default function EvaluationPaperAttemptPage() {
     setPaper(d.paper);
     setQuestions(d.questions || []);
 
-    // init blank answers
     const initial: Record<number, AnswerState> = {};
     (d.questions || []).forEach((q: any) => {
       const t = q.answer_type as Question["answer_type"];
@@ -107,7 +112,6 @@ export default function EvaluationPaperAttemptPage() {
     });
     setAnswers(initial);
 
-    // Setup timer
     if (d.paper.time_limit_minutes && d.paper.time_limit_minutes > 0) {
       setTimeLeftSeconds(d.paper.time_limit_minutes * 60);
       setTimerActive(true);
@@ -130,25 +134,18 @@ export default function EvaluationPaperAttemptPage() {
 
     try {
       const payloadAnswers = Object.entries(answers).map(([qid, a]) => {
-        if (a.answer_type === "free_text") {
-          return { question_id: Number(qid), answer_text: a.answer_text };
-        }
-        if (a.answer_type === "multiple_options") {
-          return { question_id: Number(qid), selected_option_ids: a.selected_option_ids };
-        }
+        if (a.answer_type === "free_text") return { question_id: Number(qid), answer_text: a.answer_text };
+        if (a.answer_type === "multiple_options") return { question_id: Number(qid), selected_option_ids: a.selected_option_ids };
         return { question_id: Number(qid), selected_option_id: a.selected_option_id };
       });
 
       const res = await myLearningApi.submitEvaluationPaper(accessToken, paperId, payloadAnswers);
       if (res.success && res.data) {
         const d = res.data as any;
-        setResult({ score: d.score, max_score: d.max_score, percent: d.percent ?? (d.max_score ? Math.round((d.score / d.max_score) * 100) : 0), passed: d.passed ?? null });
+        const percent: number = d.percent ?? (d.max_score ? Math.round((d.score / d.max_score) * 100) : 0);
+        setResult({ score: d.score, max_score: d.max_score, percent, passed: d.passed ?? null });
         if (isAutoSubmit) {
-          await alert({
-            title: "Time Limit Reached",
-            message: "Your attempt has been automatically submitted.",
-            variant: "warning",
-          });
+          await alert({ title: "Time Limit Reached", message: "Your attempt has been automatically submitted.", variant: "warning" });
         }
       } else {
         setError(res.message || "Submit failed.");
@@ -160,10 +157,8 @@ export default function EvaluationPaperAttemptPage() {
     }
   };
 
-  // Timer Tick-Down Effect
   useEffect(() => {
     if (!timerActive || timeLeftSeconds === null) return;
-
     const interval = setInterval(() => {
       setTimeLeftSeconds((prev) => {
         if (prev === null) return null;
@@ -176,24 +171,19 @@ export default function EvaluationPaperAttemptPage() {
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(interval);
   }, [timerActive]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
   if (isLoading || !admin) return null;
 
   if (admin.role !== "auditor") {
-    return (
-      <div className="p-6 pt-20 lg:pt-8 text-gray-300">
-        Only auditors can access this page.
-      </div>
-    );
+    return <div className="p-6 pt-20 lg:pt-8 text-gray-300">Only auditors can access this page.</div>;
   }
 
   if (loading) {
@@ -207,15 +197,10 @@ export default function EvaluationPaperAttemptPage() {
   if (error) {
     return (
       <div className="p-6 lg:p-8 pt-20 lg:pt-8 space-y-4">
-        <button
-          onClick={() => router.push("/my-learning/evaluation-papers")}
-          className="text-gray-300 hover:text-white inline-flex items-center gap-2"
-        >
+        <button onClick={() => router.push("/my-learning/evaluation-papers")} className="text-gray-300 hover:text-white inline-flex items-center gap-2">
           <ArrowLeft size={16} /> Back
         </button>
-        <div className="glass border border-red-500/20 bg-red-500/10 rounded-2xl p-5 text-red-300">
-          {error}
-        </div>
+        <div className="glass border border-red-500/20 bg-red-500/10 rounded-2xl p-5 text-red-300">{error}</div>
       </div>
     );
   }
@@ -231,7 +216,7 @@ export default function EvaluationPaperAttemptPage() {
           }`}>
             {result.passed ? <Trophy size={40} /> : <AlertTriangle size={40} />}
           </div>
-          
+
           <div className="space-y-2">
             <h2 className="text-2xl font-bold text-white">Evaluation Completed!</h2>
             <p className="text-gray-400 text-sm">{paper?.title}</p>
@@ -241,17 +226,15 @@ export default function EvaluationPaperAttemptPage() {
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Your Score</p>
               <p className="text-3xl font-extrabold text-white mt-1">
-                  <span className="text-secondary-400">{result.percent ?? (result.max_score ? Math.round((result.score / result.max_score) * 100) : 0)}%</span>
-                </p>
+                <span className="text-secondary-400">{result.percent}%</span>
+              </p>
             </div>
-            
             <div className="h-px bg-white/10" />
-
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-400">Result Status</span>
               <span className={`font-bold px-3 py-1 rounded-full text-xs uppercase ${
-                result.passed 
-                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                result.passed
+                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                   : "bg-red-500/10 text-red-400 border border-red-500/20"
               }`}>
                 {result.passed ? "Passed" : "Failed"}
@@ -274,10 +257,7 @@ export default function EvaluationPaperAttemptPage() {
     <div className="p-6 lg:p-8 pt-20 lg:pt-8 space-y-6 overflow-y-auto">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <button
-            onClick={() => router.push("/my-learning/evaluation-papers")}
-            className="text-gray-300 hover:text-white inline-flex items-center gap-2 text-sm"
-          >
+          <button onClick={() => router.push("/my-learning/evaluation-papers")} className="text-gray-300 hover:text-white inline-flex items-center gap-2 text-sm">
             <ArrowLeft size={16} /> Back
           </button>
           <h1 className="text-xl font-bold text-white mt-2">{paper?.title}</h1>
@@ -300,7 +280,6 @@ export default function EvaluationPaperAttemptPage() {
               <span>{timeLeftSeconds === 0 ? "Time's up!" : formatTime(timeLeftSeconds)}</span>
             </div>
           )}
-
           <button
             onClick={() => handleSubmit(false)}
             disabled={submitting || questions.length === 0}
@@ -324,17 +303,8 @@ export default function EvaluationPaperAttemptPage() {
             {q.answer_type === "free_text" ? (
               <div className="mt-4">
                 <textarea
-                  value={(() => {
-                    const a = answers[q.id];
-                    if (a && a.answer_type === "free_text" && "answer_text" in a) return a.answer_text;
-                    return "";
-                  })()}
-                  onChange={(e) =>
-                    setAnswers((p) => ({
-                      ...p,
-                      [q.id]: { answer_type: "free_text", answer_text: e.target.value },
-                    }))
-                  }
+                  value={(() => { const a = answers[q.id]; if (a && a.answer_type === "free_text" && "answer_text" in a) return a.answer_text; return ""; })()}
+                  onChange={(e) => setAnswers((p) => ({ ...p, [q.id]: { answer_type: "free_text", answer_text: e.target.value } }))}
                   className="w-full min-h-[120px] px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 transition-colors"
                   placeholder="Type your answer..."
                 />
@@ -344,40 +314,22 @@ export default function EvaluationPaperAttemptPage() {
               <div className="mt-4 space-y-2">
                 {q.options.map((o) => {
                   const current = answers[q.id];
-                  const selectedIds = current && current.answer_type === "multiple_options" && "selected_option_ids" in current
-                    ? current.selected_option_ids
-                    : [];
+                  const selectedIds = current && current.answer_type === "multiple_options" && "selected_option_ids" in current ? current.selected_option_ids : [];
                   const checked = selectedIds.includes(o.id);
                   return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      onClick={() =>
-                        setAnswers((p) => {
-                          const cur = p[q.id];
-                          const ids = cur && cur.answer_type === "multiple_options" && "selected_option_ids" in cur
-                            ? [...cur.selected_option_ids]
-                            : [];
-                          const next = checked ? ids.filter((x) => x !== o.id) : [...ids, o.id];
-                          return { ...p, [q.id]: { answer_type: "multiple_options", selected_option_ids: next } };
-                        })
-                      }
-                      className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-2 ${
-                        checked
-                          ? 'border-secondary-500/60 bg-secondary-500/10'
-                          : 'border-white/10 bg-white/5 hover:bg-white/10'
-                      }`}
+                    <button key={o.id} type="button"
+                      onClick={() => setAnswers((p) => {
+                        const cur = p[q.id];
+                        const ids = cur && cur.answer_type === "multiple_options" && "selected_option_ids" in cur ? [...cur.selected_option_ids] : [];
+                        const next = checked ? ids.filter((x) => x !== o.id) : [...ids, o.id];
+                        return { ...p, [q.id]: { answer_type: "multiple_options", selected_option_ids: next } };
+                      })}
+                      className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-2 ${checked ? "border-secondary-500/60 bg-secondary-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
                     >
-                      {checked ? (
-                        <CheckCircle2 size={16} className="text-secondary-400 mt-0.5" />
-                      ) : (
-                        <Circle size={16} className="text-gray-500 mt-0.5" />
-                      )}
+                      {checked ? <CheckCircle2 size={16} className="text-secondary-400 mt-0.5" /> : <Circle size={16} className="text-gray-500 mt-0.5" />}
                       <span className="text-sm text-gray-200">
                         {o.option_text}
-                        {typeof o.marks === 'number' ? (
-                          <span className="text-xs text-gray-500"> {`(+${o.marks})`}</span>
-                        ) : null}
+                        {typeof o.marks === "number" ? <span className="text-xs text-gray-500"> {`(+${o.marks})`}</span> : null}
                       </span>
                     </button>
                   );
@@ -387,36 +339,17 @@ export default function EvaluationPaperAttemptPage() {
               <div className="mt-4 space-y-2">
                 {q.options.map((o) => {
                   const current = answers[q.id];
-                  const selectedId = current && (current.answer_type === "single_option" || current.answer_type === "dropdown")
-                    ? current.selected_option_id
-                    : null;
+                  const selectedId = current && (current.answer_type === "single_option" || current.answer_type === "dropdown") ? current.selected_option_id : null;
                   const checked = selectedId === o.id;
                   return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      onClick={() =>
-                        setAnswers((p) => ({
-                          ...p,
-                          [q.id]: { answer_type: q.answer_type, selected_option_id: o.id } as AnswerState,
-                        }))
-                      }
-                      className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-2 ${
-                        checked
-                          ? 'border-secondary-500/60 bg-secondary-500/10'
-                          : 'border-white/10 bg-white/5 hover:bg-white/10'
-                      }`}
+                    <button key={o.id} type="button"
+                      onClick={() => setAnswers((p) => ({ ...p, [q.id]: { answer_type: q.answer_type, selected_option_id: o.id } as AnswerState }))}
+                      className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-2 ${checked ? "border-secondary-500/60 bg-secondary-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
                     >
-                      {checked ? (
-                        <CheckCircle2 size={16} className="text-secondary-400 mt-0.5" />
-                      ) : (
-                        <Circle size={16} className="text-gray-500 mt-0.5" />
-                      )}
+                      {checked ? <CheckCircle2 size={16} className="text-secondary-400 mt-0.5" /> : <Circle size={16} className="text-gray-500 mt-0.5" />}
                       <span className="text-sm text-gray-200">
                         {o.option_text}
-                        {typeof o.marks === 'number' ? (
-                          <span className="text-xs text-gray-500"> {`(+${o.marks})`}</span>
-                        ) : null}
+                        {typeof o.marks === "number" ? <span className="text-xs text-gray-500"> {`(+${o.marks})`}</span> : null}
                       </span>
                     </button>
                   );

@@ -183,7 +183,7 @@ function UserModal({
   treeSteps,
   accessToken,
   accountType,
-  admin,
+  orgCountry,
 }: {
   open: boolean;
   onClose: () => void;
@@ -193,7 +193,7 @@ function UserModal({
   treeSteps: string[];
   accessToken: string | null;
   accountType: string;
-  admin: any;
+  orgCountry?: string;
 }) {
   const [form, setForm] = useState<UserFormData>({
     first_name: "",
@@ -208,8 +208,6 @@ function UserModal({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [orgCountry, setOrgCountry] = useState<string>("");
-
   // Countries
   const [countries, setCountries] = useState<Country[]>([]);
   const [countrySearch, setCountrySearch] = useState("");
@@ -334,23 +332,6 @@ function UserModal({
     }
   };
 
-  // Fetch organization country on modal open
-  useEffect(() => {
-    if (!open || !accessToken || editData) return;
-    const fetchOrgCountry = async () => {
-      try {
-        const res = await authApi.getMe(accessToken);
-        if (res.success && res.data) {
-          const data = res.data as { organization: { country?: string } | null };
-          setOrgCountry(data.organization?.country || "");
-        }
-      } catch {
-        // no-op
-      }
-    };
-    fetchOrgCountry();
-  }, [open, accessToken, editData]);
-
   useEffect(() => {
     if (editData) {
       setForm({
@@ -371,7 +352,7 @@ function UserModal({
         email: "",
         phone_number: "",
         nic: "",
-        country: orgCountry,
+        country: orgCountry || "",
         assigned_entity_code: "",
         assigned_entity_type: "",
         assigned_org_tree_id: undefined,
@@ -381,7 +362,14 @@ function UserModal({
     setCountrySearch("");
     setShowCountryDropdown(false);
     setError("");
-  }, [editData, open, orgCountry]);
+  }, [editData, open]);
+
+  useEffect(() => {
+    if (!open || editData || !orgCountry) return;
+    setForm((current) =>
+      current.country ? current : { ...current, country: orgCountry }
+    );
+  }, [open, editData, orgCountry]);
 
   if (!open) return null;
 
@@ -867,6 +855,7 @@ export default function UsersClientPage() {
   const [editUser, setEditUser] = useState<User | null>(null);
   const [registerSelfOpen, setRegisterSelfOpen] = useState(false);
   const [registerSelfLoading, setRegisterSelfLoading] = useState(false);
+  const [orgCountry, setOrgCountry] = useState("");
 
   // Pagination and search state
   const [currentPage, setCurrentPage] = useState(1);
@@ -900,6 +889,21 @@ export default function UsersClientPage() {
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
   }, [isLoading, admin, router]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    authApi
+      .getMe(accessToken)
+      .then((res) => {
+        if (res.success && res.data) {
+          const data = res.data as { organization?: { country?: string } | null };
+          setOrgCountry(data.organization?.country || "");
+        }
+      })
+      .catch(() => {
+        setOrgCountry("");
+      });
+  }, [accessToken]);
 
   useEffect(() => {
     if (config) fetchUsers();
@@ -1340,7 +1344,7 @@ export default function UsersClientPage() {
           treeSteps={effectiveTreeSteps}
           accessToken={accessToken}
           accountType={admin.account_type || ""}
-          admin={admin}
+          orgCountry={orgCountry}
         />
 
         {/* Register self confirmation */}

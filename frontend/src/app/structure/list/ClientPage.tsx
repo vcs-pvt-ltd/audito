@@ -126,6 +126,7 @@ export default function SetupStructurePage() {
   const [editEntity, setEditEntity] = useState<EntityRow | null>(null);
   const [orderBlockMessage, setOrderBlockMessage] = useState<string | null>(null);
   const [orgRegistrationNumber, setOrgRegistrationNumber] = useState<string>("");
+  const [orgCountry, setOrgCountry] = useState<string>("");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -143,12 +144,14 @@ export default function SetupStructurePage() {
       .getMe(accessToken)
       .then((res) => {
         if (res.success && res.data) {
-          const data = res.data as { organization?: { registration_number?: string } };
+          const data = res.data as { organization?: { registration_number?: string; country?: string } };
           setOrgRegistrationNumber(data.organization?.registration_number || "");
+          setOrgCountry(data.organization?.country || "");
         }
       })
       .catch(() => {
         setOrgRegistrationNumber("");
+        setOrgCountry("");
       });
   }, [accessToken]);
 
@@ -572,6 +575,7 @@ export default function SetupStructurePage() {
               : null
           }
           orgRegistrationNumber={orgRegistrationNumber}
+          orgCountry={orgCountry}
         />
       </main>
     </div>

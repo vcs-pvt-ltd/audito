@@ -5,6 +5,8 @@ import { Download, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { auditExecutionApi } from "@/lib/api";
+import auditoLogo from "../../assets/logo/audito_logo.png";
+
 
 // ─── Types ────────────────────────────────────────────────────────
 interface EntityProgress {
@@ -248,7 +250,7 @@ export function AuditPdfRenderer({ report, entityTree }: AuditPdfRendererProps) 
 
       let logoDataUrl: string | undefined;
       try {
-        logoDataUrl = await loadImageAsDataUrl("/logo.png");
+        logoDataUrl = await loadImageAsDataUrl(auditoLogo.src);
       } catch (_) {}
 
       // ─── Cover Page ────────────────────────────────────────────

@@ -31,6 +31,7 @@ interface AddEditEntityModalProps {
   parentRequired?: boolean;
   editData?: Partial<EntityFormData> | null;
   orgRegistrationNumber?: string;
+  orgCountry?: string;
 }
 
 export default function AddEditEntityModal({
@@ -43,6 +44,7 @@ export default function AddEditEntityModal({
   parentRequired = false,
   editData,
   orgRegistrationNumber,
+  orgCountry,
 }: AddEditEntityModalProps) {
   const [form, setForm] = useState<EntityFormData>({
     name: "",
@@ -90,12 +92,21 @@ export default function AddEditEntityModal({
         address_line_1: "",
         address_line_2: "",
         address_line_3: "",
-        country: "",
+        country: orgCountry || "",
         parent_code: "",
       });
     }
+    setCountrySearch("");
+    setShowCountryDropdown(false);
     setError("");
   }, [editData, open, orgRegistrationNumber]);
+
+  useEffect(() => {
+    if (!open || editData || !orgCountry) return;
+    setForm((current) =>
+      current.country ? current : { ...current, country: orgCountry }
+    );
+  }, [open, editData, orgCountry]);
 
   // Fetch countries on first open
   useEffect(() => {

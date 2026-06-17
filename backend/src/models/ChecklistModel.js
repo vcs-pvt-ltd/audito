@@ -93,7 +93,14 @@ const ChecklistModel = {
     const codes = Array.isArray(created_by) ? created_by : [created_by];
     const ph = codes.map(() => '?').join(',');
     const [rows] = await db.query(
-      `SELECT c.*, ct.name AS checklist_type_name
+      `SELECT c.*, ct.name AS checklist_type_name,
+              (
+                SELECT COUNT(*)
+                FROM audit_assignments aa
+                WHERE aa.checklist_id = c.id
+                  AND aa.is_active = TRUE
+                  AND aa.status != 'cancelled'
+              ) AS assigned_audit_count
        FROM checklists c
        LEFT JOIN checklist_types ct ON c.checklist_type_id = ct.id
        WHERE c.created_by IN (${ph}) AND c.is_active = TRUE
