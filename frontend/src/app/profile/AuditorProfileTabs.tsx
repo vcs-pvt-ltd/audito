@@ -3,12 +3,20 @@
 import { useState, useEffect } from "react";
 import { auditorProfileApi } from "@/lib/api";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
-import { Plus, Pencil, Trash2, FileText, Check, AlertCircle, Save, X, Paperclip, UploadCloud } from "lucide-react";
+import {
+  Trash2, FileText, Check, AlertCircle, Save, Paperclip, UploadCloud,
+  User, Briefcase, GraduationCap, Award, Plus, MapPin, Phone,
+  Building2, Calendar, ExternalLink,
+} from "lucide-react";
+
+const inputCls =
+  "w-full bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all";
+
+const labelCls = "block text-[11px] font-medium text-gray-400 mb-1.5 uppercase tracking-wide";
 
 export function AuditorProfileTabs({ accessToken }: { accessToken: string }) {
-  const { confirm } = useUiFeedback();
   const [activeTab, setActiveTab] = useState<"personal" | "experiences" | "qualifications" | "trainings">("personal");
-  
+
   const [profile, setProfile] = useState<any>(null);
   const [experiences, setExperiences] = useState<any[]>([]);
   const [qualifications, setQualifications] = useState<any[]>([]);
@@ -34,60 +42,102 @@ export function AuditorProfileTabs({ accessToken }: { accessToken: string }) {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [accessToken]);
+  useEffect(() => { loadData(); }, [accessToken]);
 
   const showMsg = (text: string, type: "success" | "error" = "success") => {
     setMsg({ text, type });
     setTimeout(() => setMsg(null), 3000);
   };
 
-  if (loading) return <div className="text-gray-400 py-10 text-center">Loading auditor data...</div>;
+  const tabs = [
+    { id: "personal" as const, label: "Personal", icon: User, count: null },
+    { id: "experiences" as const, label: "Experience", icon: Briefcase, count: experiences.length },
+    { id: "qualifications" as const, label: "Qualifications", icon: GraduationCap, count: qualifications.length },
+    { id: "trainings" as const, label: "Trainings", icon: Award, count: trainings.length },
+  ];
+
+  if (loading) {
+    return (
+      <div className="glass border border-white/[0.08] rounded-xl p-10 flex items-center justify-center">
+        <div className="w-7 h-7 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-1.5 glass p-1.5 rounded-xl border border-white/10">
-        {(["personal", "experiences", "qualifications", "trainings"] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all text-center ${
-              activeTab === tab
-                ? "bg-secondary-500/15 text-secondary-400 border border-secondary-500/30"
-                : "text-gray-400 hover:text-white hover:bg-white/[0.04]"
-            }`}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
+    <div className="space-y-5">
+      {/* Sub-tabs */}
+      <div className="glass border border-white/[0.08] rounded-xl p-1.5 grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          return (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                active
+                  ? "bg-secondary-500/15 text-secondary-400 border border-secondary-500/30"
+                  : "text-gray-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
+              }`}>
+              <Icon size={15} />
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden text-[11px]">{tab.label.split(" ")[0]}</span>
+              {tab.count !== null && tab.count > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${active ? "bg-secondary-500/20 text-secondary-300" : "bg-white/10 text-gray-500"}`}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {msg && (
-        <div className={`p-4 rounded-xl flex items-center gap-3 text-sm font-medium border ${msg.type === "success" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
+        <div className={`p-3.5 rounded-xl flex items-center gap-3 text-sm font-medium border ${
+          msg.type === "success" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"
+        }`}>
           {msg.type === "success" ? <Check size={16} /> : <AlertCircle size={16} />}
           {msg.text}
         </div>
       )}
 
-      {activeTab === "personal" && (
-        <PersonalTab profile={profile} accessToken={accessToken} onSuccess={() => { showMsg("Profile updated."); loadData(); }} />
-      )}
-      {activeTab === "experiences" && (
-        <ExperiencesTab experiences={experiences} accessToken={accessToken} onSuccess={() => { showMsg("Experiences updated."); loadData(); }} />
-      )}
-      {activeTab === "qualifications" && (
-        <QualificationsTab qualifications={qualifications} accessToken={accessToken} onSuccess={() => { showMsg("Qualifications updated."); loadData(); }} />
-      )}
-      {activeTab === "trainings" && (
-        <TrainingsTab trainings={trainings} accessToken={accessToken} onSuccess={() => { showMsg("Trainings updated."); loadData(); }} />
-      )}
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {activeTab === "personal" && (
+          <PersonalTab profile={profile} accessToken={accessToken} onSuccess={() => { showMsg("Profile updated."); loadData(); }} />
+        )}
+        {activeTab === "experiences" && (
+          <ExperiencesTab experiences={experiences} accessToken={accessToken} onSuccess={() => { showMsg("Experience saved."); loadData(); }} />
+        )}
+        {activeTab === "qualifications" && (
+          <QualificationsTab qualifications={qualifications} accessToken={accessToken} onSuccess={() => { showMsg("Qualification saved."); loadData(); }} />
+        )}
+        {activeTab === "trainings" && (
+          <TrainingsTab trainings={trainings} accessToken={accessToken} onSuccess={() => { showMsg("Training saved."); loadData(); }} />
+        )}
+      </div>
     </div>
   );
 }
 
-const inputCls = "w-full bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all";
+/* ─── Section heading ─── */
+function SectionHeading({ icon: Icon, title, color = "secondary" }: {
+  icon: React.ElementType; title: string; color?: "secondary" | "blue" | "emerald";
+}) {
+  const colorMap = {
+    secondary: "bg-secondary-500/10 border-secondary-500/20 text-secondary-400",
+    blue: "bg-blue-500/10 border-blue-500/20 text-blue-400",
+    emerald: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+  };
+  return (
+    <div className="flex items-center gap-2.5 sm:col-span-2 lg:col-span-3 pb-2 mt-2 border-b border-white/[0.06]">
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center border ${colorMap[color]}`}>
+        <Icon size={14} />
+      </div>
+      <h3 className="text-xs font-semibold text-white uppercase tracking-wide">{title}</h3>
+    </div>
+  );
+}
 
+/* ─── Personal Tab ─── */
 function PersonalTab({ profile, accessToken, onSuccess }: any) {
   const [form, setForm] = useState(profile || {});
   const [saving, setSaving] = useState(false);
@@ -109,303 +159,400 @@ function PersonalTab({ profile, accessToken, onSuccess }: any) {
   };
 
   return (
-    <div className="glass border border-white/10 rounded-xl p-5 sm:p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-white">Auditor Profile Details</h2>
-        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50">
-          <Save size={16} /> {saving ? "Saving..." : "Save Details"}
+    <div className="glass border border-white/[0.08] rounded-xl p-5 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-5 border-b border-white/[0.06]">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center shrink-0">
+            <FileText size={16} className="text-secondary-400" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-white">Auditor Details</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Your professional profile information</p>
+          </div>
+        </div>
+        <button onClick={handleSave} disabled={saving}
+          className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all shrink-0">
+          {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Save size={14} />}
+          {saving ? "Saving..." : "Save Details"}
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+
+        <SectionHeading icon={User} title="Basic Information" color="secondary" />
+        <Field label="Name with Initials" value={form.name_with_initials}
+          onChange={(v) => handleChange("name_with_initials", v)} placeholder="e.g. A.B. Silva" />
+        <Field label="Designation" value={form.designation}
+          onChange={(v) => handleChange("designation", v)} placeholder="e.g. Senior Auditor" />
         <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Name with Initials</label>
-          <input className={inputCls} value={form.name_with_initials || ""} onChange={e => handleChange("name_with_initials", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Designation</label>
-          <input className={inputCls} value={form.designation || ""} onChange={e => handleChange("designation", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Gender</label>
+          <label className={labelCls}>Gender</label>
           <select className={inputCls} value={form.gender || ""} onChange={e => handleChange("gender", e.target.value)}>
-            <option value="">Select...</option>
+            <option value="">Select gender...</option>
             <option value="Male">Male</option>
             <option value="Female">Female</option>
             <option value="Other">Other</option>
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Date of Birth</label>
-          <input type="date" className={inputCls} value={form.date_of_birth ? form.date_of_birth.split("T")[0] : ""} onChange={e => handleChange("date_of_birth", e.target.value)} />
+          <label className={labelCls}>Date of Birth</label>
+          <input type="date" className={inputCls}
+            value={form.date_of_birth ? form.date_of_birth.split("T")[0] : ""}
+            onChange={e => handleChange("date_of_birth", e.target.value)}
+            placeholder="Select date of birth" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Civil Status</label>
-          <input className={inputCls} value={form.civil_status || ""} onChange={e => handleChange("civil_status", e.target.value)} />
-        </div>
-        
-        <div className="md:col-span-2 lg:col-span-3"><h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wide pb-2 border-b border-white/[0.06]">Address & Location</h3></div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Address Line 1</label>
-          <input className={inputCls} value={form.address_line_1 || ""} onChange={e => handleChange("address_line_1", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Address Line 2</label>
-          <input className={inputCls} value={form.address_line_2 || ""} onChange={e => handleChange("address_line_2", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Address Line 3</label>
-          <input className={inputCls} value={form.address_line_3 || ""} onChange={e => handleChange("address_line_3", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">District</label>
-          <input className={inputCls} value={form.district || ""} onChange={e => handleChange("district", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">City</label>
-          <input className={inputCls} value={form.city || ""} onChange={e => handleChange("city", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Latitude</label>
-          <input type="number" step="any" className={inputCls} value={form.latitude || ""} onChange={e => handleChange("latitude", e.target.value)} placeholder="e.g. 6.9271" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Longitude</label>
-          <input type="number" step="any" className={inputCls} value={form.longitude || ""} onChange={e => handleChange("longitude", e.target.value)} placeholder="e.g. 79.8612" />
+          <label className={labelCls}>Civil Status</label>
+          <select className={inputCls} value={form.civil_status || ""} onChange={e => handleChange("civil_status", e.target.value)}>
+            <option value="">Select status...</option>
+            <option value="Single">Single</option>
+            <option value="Married">Married</option>
+            <option value="Divorced">Divorced</option>
+            <option value="Widowed">Widowed</option>
+          </select>
         </div>
 
-        <div className="md:col-span-2 lg:col-span-3"><h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wide pb-2 border-b border-white/[0.06]">Contact Details</h3></div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Mobile Number</label>
-          <input className={inputCls} value={form.mobile_number || ""} onChange={e => handleChange("mobile_number", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">WhatsApp Number</label>
-          <input className={inputCls} value={form.whatsapp_number || ""} onChange={e => handleChange("whatsapp_number", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Home Number</label>
-          <input className={inputCls} value={form.home_number || ""} onChange={e => handleChange("home_number", e.target.value)} />
-        </div>
+        <SectionHeading icon={MapPin} title="Address & Location" color="emerald" />
+        <Field label="Address Line 1" value={form.address_line_1}
+          onChange={(v) => handleChange("address_line_1", v)} placeholder="Street address" />
+        <Field label="Address Line 2" value={form.address_line_2}
+          onChange={(v) => handleChange("address_line_2", v)} placeholder="Apartment, suite, etc." />
+        <Field label="Address Line 3" value={form.address_line_3}
+          onChange={(v) => handleChange("address_line_3", v)} placeholder="Additional address info" />
+        <Field label="District" value={form.district}
+          onChange={(v) => handleChange("district", v)} placeholder="e.g. Colombo" />
+        <Field label="City" value={form.city}
+          onChange={(v) => handleChange("city", v)} placeholder="e.g. Colombo" />
+        <Field label="Latitude" type="number" value={form.latitude}
+          onChange={(v) => handleChange("latitude", v)} placeholder="e.g. 6.9271" />
+        <Field label="Longitude" type="number" value={form.longitude}
+          onChange={(v) => handleChange("longitude", v)} placeholder="e.g. 79.8612" />
 
-        <div className="md:col-span-2 lg:col-span-3"><h3 className="text-xs font-semibold text-secondary-400 uppercase tracking-wide pb-2 border-b border-white/[0.06]">Professional Info</h3></div>
+        <SectionHeading icon={Phone} title="Contact Details" color="blue" />
+        <Field label="Mobile Number" value={form.mobile_number}
+          onChange={(v) => handleChange("mobile_number", v)} placeholder="e.g. +94 77 123 4567" />
+        <Field label="WhatsApp Number" value={form.whatsapp_number}
+          onChange={(v) => handleChange("whatsapp_number", v)} placeholder="e.g. +94 77 123 4567" />
+        <Field label="Home Number" value={form.home_number}
+          onChange={(v) => handleChange("home_number", v)} placeholder="e.g. +94 11 234 5678" />
+
+        <SectionHeading icon={Briefcase} title="Professional Info" color="secondary" />
+        <Field label="Specialized Network" value={form.specialized_network}
+          onChange={(v) => handleChange("specialized_network", v)} placeholder="e.g. ISO, CISA, CISM" />
         <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Specialized Network</label>
-          <input className={inputCls} value={form.specialized_network || ""} onChange={e => handleChange("specialized_network", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Working Status</label>
+          <label className={labelCls}>Working Status</label>
           <select className={inputCls} value={form.working_status || ""} onChange={e => handleChange("working_status", e.target.value)}>
-            <option value="">Select...</option>
+            <option value="">Select status...</option>
             <option value="Employed">Employed</option>
             <option value="Retired">Retired</option>
           </select>
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Current Sector</label>
-          <input className={inputCls} value={form.current_sector || ""} onChange={e => handleChange("current_sector", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Current Organization</label>
-          <input className={inputCls} value={form.current_organization || ""} onChange={e => handleChange("current_organization", e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1.5 uppercase">Join As</label>
-          <input className={inputCls} value={form.join_as || ""} onChange={e => handleChange("join_as", e.target.value)} placeholder="e.g. Lead Auditor, Judge" />
-        </div>
+        <Field label="Current Sector" value={form.current_sector}
+          onChange={(v) => handleChange("current_sector", v)} placeholder="e.g. Financial Services" />
+        <Field label="Current Organization" value={form.current_organization}
+          onChange={(v) => handleChange("current_organization", v)} placeholder="e.g. ABC Corporation Ltd" />
+        <Field label="Join As" value={form.join_as}
+          onChange={(v) => handleChange("join_as", v)} placeholder="e.g. Lead Auditor" />
+      </div>
 
-        <div className="md:col-span-2 lg:col-span-3 items-center flex flex-wrap gap-4 mt-4">
-          <label className="flex-1 min-w-[250px] p-4 rounded-xl border border-dashed border-white/20 bg-white/5 hover:bg-white/10 cursor-pointer transition-colors text-center">
-            <UploadCloud size={24} className="mx-auto mb-2 text-gray-400" />
-            <span className="text-sm font-medium text-white block">Upload Profile Picture</span>
-            <span className="text-xs text-gray-500">{files.profile_picture?.name || (form.profile_picture ? "Current: Saved" : "No file")}</span>
-            <input type="file" className="hidden" accept="image/*" onChange={e => handleFile("profile_picture", e)} />
-          </label>
-          
-          <label className="flex-1 min-w-[250px] p-4 rounded-xl border border-dashed border-white/20 bg-white/5 hover:bg-white/10 cursor-pointer transition-colors text-center">
-            <UploadCloud size={24} className="mx-auto mb-2 text-gray-400" />
-            <span className="text-sm font-medium text-white block">Upload E-Signature</span>
-            <span className="text-xs text-gray-500">{files.signature_path?.name || (form.signature_path ? "Current: Saved" : "No file")}</span>
-            <input type="file" className="hidden" accept="image/*" onChange={e => handleFile("signature_path", e)} />
-          </label>
-
-          <label className="flex-1 min-w-[250px] p-4 rounded-xl border border-dashed border-white/20 bg-white/5 hover:bg-white/10 cursor-pointer transition-colors text-center">
-            <FileText size={24} className="mx-auto mb-2 text-gray-400" />
-            <span className="text-sm font-medium text-white block">Upload Detail CV (PDF)</span>
-            <span className="text-xs text-gray-500">{files.cv_path?.name || (form.cv_path ? "Current: Saved" : "No file")}</span>
-            <input type="file" className="hidden" accept=".pdf" onChange={e => handleFile("cv_path", e)} />
-          </label>
+      {/* Uploads */}
+      <div className="mt-6 pt-5 border-t border-white/[0.06]">
+        <h3 className="text-xs font-semibold text-white uppercase tracking-wide mb-4 flex items-center gap-2">
+          <UploadCloud size={14} className="text-secondary-400" /> Documents
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <UploadBox label="Profile Picture" icon={UploadCloud} accept="image/*"
+            fileName={files.profile_picture?.name} saved={!!form.profile_picture}
+            onChange={(e) => handleFile("profile_picture", e)} />
+          <UploadBox label="E-Signature" icon={UploadCloud} accept="image/*"
+            fileName={files.signature_path?.name} saved={!!form.signature_path}
+            onChange={(e) => handleFile("signature_path", e)} />
+          <UploadBox label="Detailed CV (PDF)" icon={FileText} accept=".pdf"
+            fileName={files.cv_path?.name} saved={!!form.cv_path}
+            onChange={(e) => handleFile("cv_path", e)} />
         </div>
       </div>
     </div>
   );
 }
 
+/* ─── Experiences Tab ─── */
 function ExperiencesTab({ experiences, accessToken, onSuccess }: any) {
   const { confirm } = useUiFeedback();
   const [form, setForm] = useState({ industry_sector: "", experience_type: "", company_name: "", years: "" });
-  
+  const [adding, setAdding] = useState(false);
+
   const handleAdd = async () => {
-    await auditorProfileApi.addExperience(accessToken, form);
-    setForm({ industry_sector: "", experience_type: "", company_name: "", years: "" });
-    onSuccess();
+    if (!form.company_name.trim()) return;
+    setAdding(true);
+    try {
+      await auditorProfileApi.addExperience(accessToken, form);
+      setForm({ industry_sector: "", experience_type: "", company_name: "", years: "" });
+      onSuccess();
+    } finally { setAdding(false); }
   };
+
   const handleDelete = async (id: number) => {
-    const ok = await confirm({
-      title: "Delete Experience",
-      message: "Delete this experience?",
-      confirmText: "Delete",
-      variant: "warning",
-    });
+    const ok = await confirm({ title: "Delete Experience", message: "Are you sure you want to delete this experience?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
     await auditorProfileApi.deleteExperience(accessToken, id);
     onSuccess();
   };
 
   return (
-    <div className="space-y-6">
-      <div className="glass border border-white/10 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Add Experience</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
-          <div><label className="block text-xs text-gray-500 mb-1">Sector</label><input className={inputCls} placeholder="e.g. IT" value={form.industry_sector} onChange={e => setForm(f => ({ ...f, industry_sector: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Type</label><input className={inputCls} placeholder="e.g. Auditing" value={form.experience_type} onChange={e => setForm(f => ({ ...f, experience_type: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Company</label><input className={inputCls} placeholder="Company Name" value={form.company_name} onChange={e => setForm(f => ({ ...f, company_name: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Years</label><input type="number" className={inputCls} placeholder="Years" value={form.years} onChange={e => setForm(f => ({ ...f, years: e.target.value }))} /></div>
+    <div className="space-y-5">
+      <AddCard icon={Briefcase} title="Add Experience" onAdd={handleAdd} adding={adding} addLabel="Add Experience" disabled={!form.company_name.trim()}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Field label="Industry Sector" value={form.industry_sector}
+            onChange={(v) => setForm(f => ({ ...f, industry_sector: v }))} placeholder="e.g. Finance, IT" />
+          <Field label="Experience Type" value={form.experience_type}
+            onChange={(v) => setForm(f => ({ ...f, experience_type: v }))} placeholder="e.g. Internal Audit" />
+          <Field label="Company Name" value={form.company_name}
+            onChange={(v) => setForm(f => ({ ...f, company_name: v }))} placeholder="e.g. ABC Corp Ltd" />
+          <Field label="Years" type="number" value={form.years}
+            onChange={(v) => setForm(f => ({ ...f, years: v }))} placeholder="e.g. 3" />
         </div>
-        <button onClick={handleAdd} className="mt-3 px-4 py-2 bg-secondary-500 text-primary-950 hover:bg-secondary-400 rounded-lg text-sm font-semibold transition-all">Add Experience</button>
-      </div>
+      </AddCard>
 
-      <div className="space-y-3">
+      <ListContainer count={experiences.length} emptyIcon={Briefcase} emptyText="No experiences added yet.">
         {experiences.map((ex: any) => (
-          <div key={ex.id} className="glass p-4 rounded-xl border border-white/[0.08] flex items-center justify-between gap-3">
-            <div>
-              <p className="text-white font-medium">{ex.company_name} <span className="text-gray-400 font-normal text-sm ml-2">({ex.years} years)</span></p>
-              <p className="text-sm text-gray-400 mt-1">{ex.industry_sector} • {ex.experience_type}</p>
-            </div>
-            <button onClick={() => handleDelete(ex.id)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16} /></button>
-          </div>
+          <ItemCard key={ex.id} onDelete={() => handleDelete(ex.id)}
+            icon={Building2}
+            title={ex.company_name}
+            badge={`${ex.years} yr${ex.years === 1 ? "" : "s"}`}
+            subtitle={`${ex.industry_sector || "—"} • ${ex.experience_type || "—"}`}
+          />
         ))}
-        {experiences.length === 0 && <div className="text-gray-500 italic p-4 text-center">No experiences added.</div>}
-      </div>
+      </ListContainer>
     </div>
   );
 }
 
+/* ─── Qualifications Tab ─── */
 function QualificationsTab({ qualifications, accessToken, onSuccess }: any) {
   const { confirm } = useUiFeedback();
   const [form, setForm] = useState({ qualification_name: "", university_name: "", degree: "", year: "" });
   const [file, setFile] = useState<File | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const handleAdd = async () => {
-    await auditorProfileApi.addQualification(accessToken, form, file || undefined);
-    setForm({ qualification_name: "", university_name: "", degree: "", year: "" });
-    setFile(null);
-    onSuccess();
+    if (!form.qualification_name.trim()) return;
+    setAdding(true);
+    try {
+      await auditorProfileApi.addQualification(accessToken, form, file || undefined);
+      setForm({ qualification_name: "", university_name: "", degree: "", year: "" });
+      setFile(null);
+      onSuccess();
+    } finally { setAdding(false); }
   };
+
   const handleDelete = async (id: number) => {
-    const ok = await confirm({
-      title: "Delete Qualification",
-      message: "Delete this qualification?",
-      confirmText: "Delete",
-      variant: "warning",
-    });
+    const ok = await confirm({ title: "Delete Qualification", message: "Are you sure you want to delete this qualification?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
     await auditorProfileApi.deleteQualification(accessToken, id);
     onSuccess();
   };
 
   return (
-    <div className="space-y-6">
-      <div className="glass border border-white/10 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Add Qualification</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end mb-4">
-          <div><label className="block text-xs text-gray-500 mb-1">Qualification</label><input className={inputCls} placeholder="e.g. BSc" value={form.qualification_name} onChange={e => setForm(f => ({ ...f, qualification_name: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">University</label><input className={inputCls} placeholder="University" value={form.university_name} onChange={e => setForm(f => ({ ...f, university_name: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Degree</label><input className={inputCls} placeholder="Degree" value={form.degree} onChange={e => setForm(f => ({ ...f, degree: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Year</label><input className={inputCls} placeholder="YYYY" value={form.year} onChange={e => setForm(f => ({ ...f, year: e.target.value }))} /></div>
+    <div className="space-y-5">
+      <AddCard icon={GraduationCap} title="Add Qualification" onAdd={handleAdd} adding={adding} addLabel="Add Qualification" disabled={!form.qualification_name.trim()}
+        attachment={<AttachFile file={file} onChange={(f) => setFile(f)} />}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Field label="Qualification Name" value={form.qualification_name}
+            onChange={(v) => setForm(f => ({ ...f, qualification_name: v }))} placeholder="e.g. BSc Computer Science" />
+          <Field label="University / Institute" value={form.university_name}
+            onChange={(v) => setForm(f => ({ ...f, university_name: v }))} placeholder="e.g. University of Colombo" />
+          <Field label="Degree / Grade" value={form.degree}
+            onChange={(v) => setForm(f => ({ ...f, degree: v }))} placeholder="e.g. Second Class Upper" />
+          <Field label="Completion Year" value={form.year}
+            onChange={(v) => setForm(f => ({ ...f, year: v }))} placeholder="e.g. 2020" />
         </div>
-        <div className="flex items-center gap-4">
-          <label className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-gray-300 border border-white/10 cursor-pointer inline-flex items-center gap-2">
-            <Paperclip size={16} /> {file ? file.name : "Attach Certificate"}
-            <input type="file" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
-          </label>
-          <button onClick={handleAdd} className="px-4 py-2 bg-secondary-500 text-primary-950 hover:bg-secondary-400 rounded-xl text-sm font-semibold transition-all">Add Qualification</button>
-        </div>
-      </div>
+      </AddCard>
 
-      <div className="space-y-3">
+      <ListContainer count={qualifications.length} emptyIcon={GraduationCap} emptyText="No qualifications added yet.">
         {qualifications.map((q: any) => (
-          <div key={q.id} className="glass p-4 rounded-xl border border-white/[0.08] flex items-center justify-between gap-3">
-            <div>
-              <p className="text-white font-medium">{q.qualification_name} {q.degree && `— ${q.degree}`} <span className="text-gray-400 font-normal text-sm ml-2">({q.year})</span></p>
-              <p className="text-sm text-gray-400 mt-1">{q.university_name}</p>
-              {q.certificate_path && <a href={q.certificate_path} target="_blank" className="text-secondary-400 text-xs mt-2 inline-block hover:underline">View Certificate</a>}
-            </div>
-            <button onClick={() => handleDelete(q.id)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16} /></button>
-          </div>
+          <ItemCard key={q.id} onDelete={() => handleDelete(q.id)}
+            icon={GraduationCap}
+            title={`${q.qualification_name}${q.degree ? ` — ${q.degree}` : ""}`}
+            badge={q.year}
+            subtitle={q.university_name}
+            link={q.certificate_path}
+          />
         ))}
-        {qualifications.length === 0 && <div className="text-gray-500 italic p-4 text-center">No qualifications added.</div>}
-      </div>
+      </ListContainer>
     </div>
   );
 }
 
+/* ─── Trainings Tab ─── */
 function TrainingsTab({ trainings, accessToken, onSuccess }: any) {
   const { confirm } = useUiFeedback();
   const [form, setForm] = useState({ training_type: "", course_name: "", organization: "", duration: "", year: "" });
   const [file, setFile] = useState<File | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const handleAdd = async () => {
-    await auditorProfileApi.addTraining(accessToken, form, file || undefined);
-    setForm({ training_type: "", course_name: "", organization: "", duration: "", year: "" });
-    setFile(null);
-    onSuccess();
+    if (!form.course_name.trim()) return;
+    setAdding(true);
+    try {
+      await auditorProfileApi.addTraining(accessToken, form, file || undefined);
+      setForm({ training_type: "", course_name: "", organization: "", duration: "", year: "" });
+      setFile(null);
+      onSuccess();
+    } finally { setAdding(false); }
   };
+
   const handleDelete = async (id: number) => {
-    const ok = await confirm({
-      title: "Delete Training",
-      message: "Delete this training?",
-      confirmText: "Delete",
-      variant: "warning",
-    });
+    const ok = await confirm({ title: "Delete Training", message: "Are you sure you want to delete this training?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
     await auditorProfileApi.deleteTraining(accessToken, id);
     onSuccess();
   };
 
   return (
-    <div className="space-y-6">
-      <div className="glass border border-white/10 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Add Training</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end mb-4">
-          <div><label className="block text-xs text-gray-500 mb-1">Type</label><input className={inputCls} placeholder="e.g. ISO" value={form.training_type} onChange={e => setForm(f => ({ ...f, training_type: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Course</label><input className={inputCls} placeholder="Course" value={form.course_name} onChange={e => setForm(f => ({ ...f, course_name: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Organization</label><input className={inputCls} placeholder="Org" value={form.organization} onChange={e => setForm(f => ({ ...f, organization: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Duration</label><input className={inputCls} placeholder="e.g. 5 Days" value={form.duration} onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Year</label><input className={inputCls} placeholder="YYYY" value={form.year} onChange={e => setForm(f => ({ ...f, year: e.target.value }))} /></div>
+    <div className="space-y-5">
+      <AddCard icon={Award} title="Add Training" onAdd={handleAdd} adding={adding} addLabel="Add Training" disabled={!form.course_name.trim()}
+        attachment={<AttachFile file={file} onChange={(f) => setFile(f)} />}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <Field label="Training Type" value={form.training_type}
+            onChange={(v) => setForm(f => ({ ...f, training_type: v }))} placeholder="e.g. ISO 9001" />
+          <Field label="Course Name" value={form.course_name}
+            onChange={(v) => setForm(f => ({ ...f, course_name: v }))} placeholder="e.g. Lead Auditor" />
+          <Field label="Organization" value={form.organization}
+            onChange={(v) => setForm(f => ({ ...f, organization: v }))} placeholder="e.g. BSI Group" />
+          <Field label="Duration" value={form.duration}
+            onChange={(v) => setForm(f => ({ ...f, duration: v }))} placeholder="e.g. 5 Days" />
+          <Field label="Year" value={form.year}
+            onChange={(v) => setForm(f => ({ ...f, year: v }))} placeholder="e.g. 2023" />
         </div>
-        <div className="flex items-center gap-4">
-          <label className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-gray-300 border border-white/10 cursor-pointer inline-flex items-center gap-2">
-            <Paperclip size={16} /> {file ? file.name : "Attach Certificate"}
-            <input type="file" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
-          </label>
-          <button onClick={handleAdd} className="px-4 py-2 bg-secondary-500 text-primary-950 hover:bg-secondary-400 rounded-xl text-sm font-semibold transition-all">Add Training</button>
-        </div>
-      </div>
+      </AddCard>
 
-      <div className="space-y-3">
+      <ListContainer count={trainings.length} emptyIcon={Award} emptyText="No trainings added yet.">
         {trainings.map((t: any) => (
-          <div key={t.id} className="glass p-4 rounded-xl border border-white/[0.08] flex items-center justify-between gap-3">
-            <div>
-              <p className="text-white font-medium">{t.course_name} <span className="text-gray-400 font-normal text-sm ml-2">({t.year})</span></p>
-              <p className="text-sm text-gray-400 mt-1">{t.training_type} • {t.organization} ({t.duration})</p>
-              {t.certificate_path && <a href={t.certificate_path} target="_blank" className="text-secondary-400 text-xs mt-2 inline-block hover:underline">View Certificate</a>}
-            </div>
-            <button onClick={() => handleDelete(t.id)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16} /></button>
-          </div>
+          <ItemCard key={t.id} onDelete={() => handleDelete(t.id)}
+            icon={Award}
+            title={t.course_name}
+            badge={t.year}
+            subtitle={`${t.training_type || "—"} • ${t.organization || "—"}${t.duration ? ` (${t.duration})` : ""}`}
+            link={t.certificate_path}
+          />
         ))}
-        {trainings.length === 0 && <div className="text-gray-500 italic p-4 text-center">No trainings added.</div>}
+      </ListContainer>
+    </div>
+  );
+}
+
+/* ─── Shared sub-components ─── */
+
+function Field({ label, value, onChange, type = "text", placeholder }: {
+  label: string; value: any; onChange: (v: string) => void; type?: string; placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className={labelCls}>{label}</label>
+      <input type={type} step={type === "number" ? "any" : undefined} className={inputCls}
+        value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+    </div>
+  );
+}
+
+function UploadBox({ label, icon: Icon, accept, fileName, saved, onChange }: {
+  label: string; icon: React.ElementType; accept: string; fileName?: string; saved?: boolean;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <label className="p-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] hover:bg-white/[0.05] hover:border-secondary-500/30 cursor-pointer transition-all text-center flex flex-col items-center justify-center min-h-[110px] group">
+      <Icon size={22} className="mb-2 text-gray-400 group-hover:text-secondary-400 transition-colors" />
+      <span className="text-sm font-medium text-white block">{label}</span>
+      <span className={`text-xs mt-1 truncate max-w-full ${fileName ? "text-secondary-400" : saved ? "text-emerald-400" : "text-gray-500"}`}>
+        {fileName || (saved ? "✓ Saved" : "No file selected")}
+      </span>
+      <input type="file" className="hidden" accept={accept} onChange={onChange} />
+    </label>
+  );
+}
+
+function AttachFile({ file, onChange }: { file: File | null; onChange: (f: File | null) => void }) {
+  return (
+    <label className="px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-gray-300 border border-white/10 cursor-pointer inline-flex items-center gap-2 transition-colors w-full sm:w-auto justify-center">
+      <Paperclip size={15} />
+      <span className="truncate max-w-[180px]">{file ? file.name : "Attach Certificate"}</span>
+      <input type="file" className="hidden" onChange={(e) => onChange(e.target.files?.[0] || null)} />
+    </label>
+  );
+}
+
+function AddCard({ icon: Icon, title, children, onAdd, adding, addLabel, disabled, attachment }: {
+  icon: React.ElementType; title: string; children: React.ReactNode;
+  onAdd: () => void; adding?: boolean; addLabel: string; disabled?: boolean; attachment?: React.ReactNode;
+}) {
+  return (
+    <div className="glass border border-white/[0.08] rounded-xl p-5 sm:p-6">
+      <div className="flex items-center gap-2.5 mb-5">
+        <div className="w-8 h-8 rounded-lg bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center shrink-0">
+          <Icon size={15} className="text-secondary-400" />
+        </div>
+        <h2 className="text-sm font-semibold text-white">{title}</h2>
       </div>
+      {children}
+      <div className={`mt-4 flex flex-col sm:flex-row sm:items-center gap-3 ${attachment ? "justify-between" : "justify-end"}`}>
+        {attachment}
+        <button onClick={onAdd} disabled={adding || disabled}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-500 text-primary-950 hover:bg-secondary-400 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto">
+          {adding ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Plus size={15} />}
+          {addLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ListContainer({ count, children, emptyIcon: EmptyIcon, emptyText }: {
+  count: number; children: React.ReactNode; emptyIcon: React.ElementType; emptyText: string;
+}) {
+  if (count === 0) {
+    return (
+      <div className="glass border border-white/[0.08] rounded-xl p-10 text-center">
+        <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3">
+          <EmptyIcon size={22} className="text-gray-600" />
+        </div>
+        <p className="text-gray-500 text-sm">{emptyText}</p>
+      </div>
+    );
+  }
+  return <div className="space-y-2.5">{children}</div>;
+}
+
+function ItemCard({ icon: Icon, title, badge, subtitle, link, onDelete }: {
+  icon: React.ElementType; title: string; badge?: string; subtitle?: string; link?: string; onDelete: () => void;
+}) {
+  return (
+    <div className="glass border border-white/[0.08] rounded-xl p-4 flex items-start justify-between gap-3 hover:border-white/[0.14] transition-all">
+      <div className="flex items-start gap-3 min-w-0">
+        <div className="w-9 h-9 rounded-lg bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center shrink-0 mt-0.5">
+          <Icon size={15} className="text-secondary-400" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm text-white font-medium">{title}</p>
+            {badge && (
+              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-gray-400">
+                <Calendar size={9} /> {badge}
+              </span>
+            )}
+          </div>
+          {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
+          {link && (
+            <a href={link} target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1 text-secondary-400 text-xs mt-1.5 hover:underline">
+              <ExternalLink size={11} /> View Certificate
+            </a>
+          )}
+        </div>
+      </div>
+      <button onClick={onDelete}
+        className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors shrink-0 border border-transparent hover:border-red-500/20">
+        <Trash2 size={15} />
+      </button>
     </div>
   );
 }
