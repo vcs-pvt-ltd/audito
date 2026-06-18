@@ -10,54 +10,63 @@ import { useAuth } from "@/context/AuthContext";
 import type { AccountInfo } from "@/context/AuthContext";
 import { noticeApi, linksApi } from "@/lib/api";
 import {
-  LogOut,
-  LayoutDashboard,
-  Building2,
-  Link as LinkIcon,
-  ClipboardList,
-  Menu,
-  X,
-  ChevronDown,
-  FolderTree,
-  Users,
-  Shield,
-  FileCheck,
-  Repeat,
-  Eye,
-  EyeOff,
-  Loader2,
-  Settings,
-  MapPin,
-  Bell,
-  UserCircle2,
-  CreditCard,
+  LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
+  ChevronDown, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard,
 } from "lucide-react";
 
+// ─── Avatar helper (mirrors profile page) ────────────────────────
+const MEDIA_ORIGIN =
+  process.env.NEXT_PUBLIC_MEDIA_URL ||
+  (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/api\/?$/, "");
+
+function getAvatarUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.startsWith("data:")) return path;
+  if (path.startsWith("http")) return path;
+  return `${MEDIA_ORIGIN}${path}`;
+}
+
+// ─── Avatar component — image if available, else initials ────────
+function Avatar({
+  firstName, lastName, profileImage, size = "sm",
+}: {
+  firstName: string; lastName: string;
+  profileImage?: string | null;
+  size?: "sm" | "md";
+}) {
+  const initials = `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase();
+  const url = getAvatarUrl(profileImage);
+  const dim = size === "md" ? "w-10 h-10 text-sm" : "w-9 h-9 text-sm";
+
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt={`${firstName} ${lastName}`}
+        className={`${dim} rounded-full object-cover border border-white/10 shrink-0`}
+      />
+    );
+  }
+  return (
+    <div className={`${dim} rounded-full bg-secondary-500/20 flex items-center justify-center text-secondary-400 font-bold shrink-0`}>
+      {initials}
+    </div>
+  );
+}
+
+// ─── Types ────────────────────────────────────────────────────────
+
 interface NavItem {
-  label: string;
-  path: string;
-  icon: React.ElementType;
-  minOrgLevel?: number;
-  planFeature?: "auditor_eval" | "company_to_company";
+  label: string; path: string; icon: React.ElementType;
+  minOrgLevel?: number; planFeature?: "auditor_eval" | "company_to_company";
 }
-
-interface NavSection {
-  label: string;
-  icon: React.ElementType;
-  items: NavItem[];
-}
-
+interface NavSection { label: string; icon: React.ElementType; items: NavItem[]; }
 interface TopLevelLink {
-  type: "link";
-  label: string;
-  path: string;
-  icon: React.ElementType;
-  matchPrefix?: boolean;
-  planFeature?: "auditor_eval" | "company_to_company";
+  type: "link"; label: string; path: string; icon: React.ElementType;
+  matchPrefix?: boolean; planFeature?: "auditor_eval" | "company_to_company";
 }
-
 type NavEntry = NavSection | TopLevelLink;
-
 const isTopLevel = (e: NavEntry): e is TopLevelLink => (e as TopLevelLink).type === "link";
 
 const COMPANY_STRUCTURE_NAV_ITEMS: NavItem[] = [
@@ -67,7 +76,6 @@ const COMPANY_STRUCTURE_NAV_ITEMS: NavItem[] = [
   { label: "Departments", path: "/structure/list?type=department", icon: Building2, minOrgLevel: 1 },
   { label: "Sections", path: "/structure/list?type=section", icon: Building2, minOrgLevel: 0 },
 ];
-
 const COMPANY_USER_NAV_ITEMS: NavItem[] = [
   { label: "Cluster Heads", path: "/users/list?type=cluster-heads", icon: Users, minOrgLevel: 4 },
   { label: "Factory Heads", path: "/users/list?type=factory-heads", icon: Users, minOrgLevel: 3 },
@@ -84,158 +92,107 @@ function hasAcceptedCompanySupplierLink(
   links: { status: string; requester_type: string; target_type: string }[]
 ): boolean {
   return links.some(
-    (l) =>
-      l.status === "accepted" &&
+    (l) => l.status === "accepted" &&
       ((l.requester_type === "Supplier" && l.target_type === "Company") ||
-        (l.requester_type === "Company" && l.target_type === "Supplier"))
+       (l.requester_type === "Company" && l.target_type === "Supplier"))
   );
 }
 
 const NAV_CONFIG: Record<string, NavEntry[]> = {
   "admin:Customer": [
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-    {
-      label: "Structure", icon: Building2,
-      items: [
-        { label: "Buying Offices", path: "/structure/list?type=buying-office", icon: Building2, minOrgLevel: 7 },
-        { label: "Suppliers", path: "/structure/list?type=supplier", icon: Building2, minOrgLevel: 7 },
-        { label: "Org Tree", path: "/organization", icon: FolderTree },
-        { label: "Links", path: "/links", icon: LinkIcon },
-      ],
-    },
-    {
-      label: "Users", icon: Users,
-      items: [
-        { label: "Auditors", path: "/users/list?type=auditors", icon: Shield },
-        { label: "Buying Office Heads", path: "/users/list?type=buying-office-heads", icon: Users, minOrgLevel: 7 },
-        { label: "Supplier Heads", path: "/users/list?type=supplier-heads", icon: Users, minOrgLevel: 7 },
-      ],
-    },
-    {
-      label: "Checklists", icon: ClipboardList,
-      items: [
-        { label: "Checklist Types", path: "/checklists/types", icon: FileCheck },
-        { label: "Checklists", path: "/checklists", icon: ClipboardList },
-      ],
-    },
+    { label: "Structure", icon: Building2, items: [
+      { label: "Buying Offices", path: "/structure/list?type=buying-office", icon: Building2, minOrgLevel: 7 },
+      { label: "Suppliers", path: "/structure/list?type=supplier", icon: Building2, minOrgLevel: 7 },
+      { label: "Org Tree", path: "/organization", icon: FolderTree },
+      { label: "Links", path: "/links", icon: LinkIcon },
+    ]},
+    { label: "Users", icon: Users, items: [
+      { label: "Auditors", path: "/users/list?type=auditors", icon: Shield },
+      { label: "Buying Office Heads", path: "/users/list?type=buying-office-heads", icon: Users, minOrgLevel: 7 },
+      { label: "Supplier Heads", path: "/users/list?type=supplier-heads", icon: Users, minOrgLevel: 7 },
+    ]},
+    { label: "Checklists", icon: ClipboardList, items: [
+      { label: "Checklist Types", path: "/checklists/types", icon: FileCheck },
+      { label: "Checklists", path: "/checklists", icon: ClipboardList },
+    ]},
     { type: "link", label: "Audits", path: "/audits", icon: FileCheck, matchPrefix: true },
     { type: "link", label: "CAPs", path: "/caps", icon: ClipboardList, matchPrefix: true },
-    {
-      label: "Learning", icon: ClipboardList,
-      items: [
-        { label: "Trainings", path: "/learning/trainings", icon: FileCheck },
-        { label: "Field Visits", path: "/learning/field-visits", icon: MapPin },
-        { label: "Evaluation Papers", path: "/learning/evaluation-papers", icon: ClipboardList },
-      ],
-    },
-    {
-      label: "Settings", icon: Settings,
-      items: [
-        { label: "TimeZone", path: "/settings/timezone", icon: MapPin },
-        { label: "Notices", path: "/settings/notices", icon: Bell },
-        { label: "Organization Info", path: "/settings/organization", icon: Building2 },
-        { label: "Billing", path: "/settings/billing", icon: CreditCard },
-      ],
-    },
-
+    { label: "Learning", icon: ClipboardList, items: [
+      { label: "Trainings", path: "/learning/trainings", icon: FileCheck },
+      { label: "Field Visits", path: "/learning/field-visits", icon: MapPin },
+      { label: "Evaluation Papers", path: "/learning/evaluation-papers", icon: ClipboardList },
+    ]},
+    { label: "Settings", icon: Settings, items: [
+      { label: "TimeZone", path: "/settings/timezone", icon: MapPin },
+      { label: "Notices", path: "/settings/notices", icon: Bell },
+      { label: "Organization Info", path: "/settings/organization", icon: Building2 },
+      { label: "Billing", path: "/settings/billing", icon: CreditCard },
+    ]},
   ],
-
   "admin:Company": [
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-    {
-      label: "Structure", icon: Building2,
-      items: [
-        ...COMPANY_STRUCTURE_NAV_ITEMS,
-        { label: "Org Tree", path: "/organization", icon: FolderTree },
-        { label: "Links", path: "/links", icon: LinkIcon },
-      ],
-    },
-    {
-      label: "Users", icon: Users,
-      items: [
-        { label: "Auditors", path: "/users/list?type=auditors", icon: Shield },
-        ...COMPANY_USER_NAV_ITEMS,
-      ],
-    },
-    {
-      label: "Checklists", icon: ClipboardList,
-      items: [
-        { label: "Checklist Types", path: "/checklists/types", icon: FileCheck },
-        { label: "Checklists", path: "/checklists", icon: ClipboardList },
-      ],
-    },
+    { label: "Structure", icon: Building2, items: [
+      ...COMPANY_STRUCTURE_NAV_ITEMS,
+      { label: "Org Tree", path: "/organization", icon: FolderTree },
+      { label: "Links", path: "/links", icon: LinkIcon },
+    ]},
+    { label: "Users", icon: Users, items: [
+      { label: "Auditors", path: "/users/list?type=auditors", icon: Shield },
+      ...COMPANY_USER_NAV_ITEMS,
+    ]},
+    { label: "Checklists", icon: ClipboardList, items: [
+      { label: "Checklist Types", path: "/checklists/types", icon: FileCheck },
+      { label: "Checklists", path: "/checklists", icon: ClipboardList },
+    ]},
     { type: "link", label: "Audits", path: "/audits", icon: FileCheck, matchPrefix: true },
     { type: "link", label: "CAPs", path: "/caps", icon: ClipboardList, matchPrefix: true },
-    {
-      label: "Learning", icon: ClipboardList,
-      items: [
-        { label: "Trainings", path: "/learning/trainings", icon: FileCheck },
-        { label: "Field Visits", path: "/learning/field-visits", icon: MapPin },
-        { label: "Evaluation Papers", path: "/learning/evaluation-papers", icon: ClipboardList },
-      ],
-    },
-    {
-      label: "Settings", icon: Settings,
-      items: [
-        { label: "TimeZone", path: "/settings/timezone", icon: MapPin, minOrgLevel: 4 },
-        { label: "Notices", path: "/settings/notices", icon: Bell, minOrgLevel: 4 },
-        { label: "Organization Info", path: "/settings/organization", icon: Building2 },
-        { label: "Billing", path: "/settings/billing", icon: CreditCard },
-      ],
-    },
+    { label: "Learning", icon: ClipboardList, items: [
+      { label: "Trainings", path: "/learning/trainings", icon: FileCheck },
+      { label: "Field Visits", path: "/learning/field-visits", icon: MapPin },
+      { label: "Evaluation Papers", path: "/learning/evaluation-papers", icon: ClipboardList },
+    ]},
+    { label: "Settings", icon: Settings, items: [
+      { label: "TimeZone", path: "/settings/timezone", icon: MapPin, minOrgLevel: 4 },
+      { label: "Notices", path: "/settings/notices", icon: Bell, minOrgLevel: 4 },
+      { label: "Organization Info", path: "/settings/organization", icon: Building2 },
+      { label: "Billing", path: "/settings/billing", icon: CreditCard },
+    ]},
   ],
-
   "admin:Audit Firm": [
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-    {
-      label: "Structure", icon: Building2,
-      items: [
-        { label: "Branches", path: "/structure/list?type=branch", icon: Building2 },
-        { label: "Departments", path: "/structure/list?type=audit-firm-department", icon: Building2 },
-        { label: "Org Tree", path: "/organization", icon: FolderTree },
-        { label: "Links", path: "/links", icon: LinkIcon },
-      ],
-    },
-    {
-      label: "Users", icon: Users,
-      items: [
-        { label: "Auditors", path: "/users/list?type=auditors", icon: Shield },
-      ],
-    },
+    { label: "Structure", icon: Building2, items: [
+      { label: "Branches", path: "/structure/list?type=branch", icon: Building2 },
+      { label: "Departments", path: "/structure/list?type=audit-firm-department", icon: Building2 },
+      { label: "Org Tree", path: "/organization", icon: FolderTree },
+      { label: "Links", path: "/links", icon: LinkIcon },
+    ]},
+    { label: "Users", icon: Users, items: [
+      { label: "Auditors", path: "/users/list?type=auditors", icon: Shield },
+    ]},
     { type: "link", label: "Assigned Audits", path: "/audits", icon: FileCheck, matchPrefix: true },
-    {
-      label: "Learning", icon: ClipboardList,
-      items: [
-        { label: "Trainings", path: "/learning/trainings", icon: FileCheck },
-        { label: "Field Visits", path: "/learning/field-visits", icon: MapPin },
-        { label: "Evaluation Papers", path: "/learning/evaluation-papers", icon: ClipboardList },
-      ],
-    },
-    {
-      label: "Settings", icon: Settings,
-      items: [
-        { label: "TimeZone", path: "/settings/timezone", icon: MapPin, minOrgLevel: 5 },
-        { label: "Notices", path: "/settings/notices", icon: Bell, minOrgLevel: 5 },
-        { label: "Organization Info", path: "/settings/organization", icon: Building2 },
-        { label: "Billing", path: "/settings/billing", icon: CreditCard },
-      ],
-    },
+    { label: "Learning", icon: ClipboardList, items: [
+      { label: "Trainings", path: "/learning/trainings", icon: FileCheck },
+      { label: "Field Visits", path: "/learning/field-visits", icon: MapPin },
+      { label: "Evaluation Papers", path: "/learning/evaluation-papers", icon: ClipboardList },
+    ]},
+    { label: "Settings", icon: Settings, items: [
+      { label: "TimeZone", path: "/settings/timezone", icon: MapPin, minOrgLevel: 5 },
+      { label: "Notices", path: "/settings/notices", icon: Bell, minOrgLevel: 5 },
+      { label: "Organization Info", path: "/settings/organization", icon: Building2 },
+      { label: "Billing", path: "/settings/billing", icon: CreditCard },
+    ]},
   ],
-
   auditor: [
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { type: "link", label: "My Audits", path: "/my-audits", icon: FileCheck, matchPrefix: true },
     { type: "link", label: "My CAPs", path: "/my-caps", icon: FileCheck, matchPrefix: true },
-    {
-      label: "My Learning", icon: ClipboardList,
-      items: [
-        { label: "My Trainings", path: "/my-learning/trainings", icon: FileCheck },
-        { label: "My Field Visits", path: "/my-learning/field-visits", icon: MapPin },
-        { label: "My Evaluation Papers", path: "/my-learning/evaluation-papers", icon: ClipboardList },
-      ],
-    },
+    { label: "My Learning", icon: ClipboardList, items: [
+      { label: "My Trainings", path: "/my-learning/trainings", icon: FileCheck },
+      { label: "My Field Visits", path: "/my-learning/field-visits", icon: MapPin },
+      { label: "My Evaluation Papers", path: "/my-learning/evaluation-papers", icon: ClipboardList },
+    ]},
   ],
-
   entity_head: [
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { type: "link", label: "Audits", path: "/entity-head/audits", icon: FileCheck, matchPrefix: true },
@@ -244,15 +201,10 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
 };
 
 const ACCOUNT_LABELS: Record<string, string> = {
-  Customer: "Customer",
-  Company: "Company",
-  "Audit Firm": "Audit Firm",
+  Customer: "Customer", Company: "Company", "Audit Firm": "Audit Firm",
 };
-
 const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
-  auditor: "Auditor",
-  entity_head: "Entity Head",
+  admin: "Admin", auditor: "Auditor", entity_head: "Entity Head",
 };
 
 function resolveNavKey(role: string, accountType?: string | null): string {
@@ -272,10 +224,9 @@ function filterByOrgLevel(items: NavItem[], orgLevel: number, planLimits?: any):
   });
 }
 
-function CollapsedSectionFlyout({
-  section, pathname, orgLevel, planLimits, onNavigate, onClose,
-}: {
-  section: NavSection; pathname: string; orgLevel: number; planLimits?: any; onNavigate: () => void; onClose: () => void;
+function CollapsedSectionFlyout({ section, pathname, orgLevel, planLimits, onNavigate, onClose }: {
+  section: NavSection; pathname: string; orgLevel: number; planLimits?: any;
+  onNavigate: () => void; onClose: () => void;
 }) {
   const visibleItems = filterByOrgLevel(section.items, orgLevel, planLimits);
   if (visibleItems.length === 0) return null;
@@ -302,11 +253,9 @@ function CollapsedSectionFlyout({
   );
 }
 
-function DropdownSection({
-  section, pathname, orgLevel, planLimits, onNavigate, open, onToggle,
-}: {
-  section: NavSection; pathname: string; orgLevel: number; planLimits?: any; onNavigate: () => void;
-  open: boolean; onToggle: () => void;
+function DropdownSection({ section, pathname, orgLevel, planLimits, onNavigate, open, onToggle }: {
+  section: NavSection; pathname: string; orgLevel: number; planLimits?: any;
+  onNavigate: () => void; open: boolean; onToggle: () => void;
 }) {
   const visibleItems = filterByOrgLevel(section.items, orgLevel, planLimits);
   const isChildActive = visibleItems.some((item) => pathname === item.path);
@@ -339,11 +288,8 @@ function DropdownSection({
   );
 }
 
-function AccountSwitcher({
-  accounts, currentRole, onSwitch,
-}: {
-  accounts: AccountInfo[];
-  currentRole: string;
+function AccountSwitcher({ accounts, currentRole, onSwitch }: {
+  accounts: AccountInfo[]; currentRole: string;
   onSwitch: (targetRole: string, password?: string) => Promise<{ success: boolean; message?: string; needsPassword?: boolean }>;
 }) {
   const router = useRouter();
@@ -401,9 +347,12 @@ function AccountSwitcher({
                   const label = acct.role === "admin" ? acct.entity_type || acct.account_type || "Admin" : acct.user_type || ROLE_LABELS[acct.role] || acct.role;
                   return (
                     <div key={acct.role} className="flex items-center gap-3 p-2 rounded-lg bg-white/5">
-                      <div className="w-8 h-8 rounded-full bg-secondary-500/20 flex items-center justify-center text-secondary-400 text-xs font-bold">
-                        {acct.first_name[0]}{acct.last_name[0]}
-                      </div>
+                      <Avatar
+                        firstName={acct.first_name}
+                        lastName={acct.last_name}
+                        profileImage={(acct as any).profile_image}
+                        size="md"
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-white truncate">{acct.first_name} {acct.last_name}</p>
                         <p className="text-xs text-gray-500">{label}</p>
@@ -426,9 +375,12 @@ function AccountSwitcher({
           <div className="relative glass border border-white/10 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
             <button onClick={closeModal} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={18} /></button>
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-full bg-secondary-500/20 flex items-center justify-center text-secondary-400 text-sm font-bold">
-                {modalAccount.first_name[0]}{modalAccount.last_name[0]}
-              </div>
+              <Avatar
+                firstName={modalAccount.first_name}
+                lastName={modalAccount.last_name}
+                profileImage={(modalAccount as any).profile_image}
+                size="md"
+              />
               <div>
                 <p className="text-sm text-white font-medium">{modalAccount.first_name} {modalAccount.last_name}</p>
                 <p className="text-xs text-gray-500">{modalRole === "admin" ? modalAccount.entity_type || modalAccount.account_type || "Admin" : modalAccount.user_type || ROLE_LABELS[modalRole] || modalRole}</p>
@@ -482,22 +434,16 @@ export default function Sidebar() {
   const [hasCompanyLink, setHasCompanyLink] = useState(false);
 
   useEffect(() => {
-    if (!accessToken || admin?.entity_type !== "Supplier") {
-      setHasCompanyLink(false);
-      return;
-    }
+    if (!accessToken || admin?.entity_type !== "Supplier") { setHasCompanyLink(false); return; }
     let cancelled = false;
     void linksApi.getMyLinks(accessToken).then((res) => {
       if (cancelled) return;
-      const links =
-        res.success && res.data
-          ? ((res.data as { links?: { status: string; requester_type: string; target_type: string }[] }).links ?? [])
-          : [];
+      const links = res.success && res.data
+        ? ((res.data as { links?: { status: string; requester_type: string; target_type: string }[] }).links ?? [])
+        : [];
       setHasCompanyLink(hasAcceptedCompanySupplierLink(links));
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [accessToken, admin?.entity_type, pathname]);
 
   useEffect(() => {
@@ -509,14 +455,8 @@ export default function Sidebar() {
       const asideEl = asideRef.current;
       if (!asideEl) return;
       const target = e.target as Node | null;
-      if (target && (
-        notifPopupRef.current?.contains(target) ||
-        desktopNotifButtonRef.current?.contains(target) ||
-        mobileNotifButtonRef.current?.contains(target)
-      )) return;
-      if (target && target instanceof Element) {
-        if (target.closest('[data-sidebar-portal="switch-account"]')) return;
-      }
+      if (target && (notifPopupRef.current?.contains(target) || desktopNotifButtonRef.current?.contains(target) || mobileNotifButtonRef.current?.contains(target))) return;
+      if (target && target instanceof Element && target.closest('[data-sidebar-portal="switch-account"]')) return;
       if (target && asideEl.contains(target)) return;
       window.setTimeout(() => { setCollapsed(true); setFlyoutSectionLabel(null); }, 0);
     };
@@ -540,11 +480,7 @@ export default function Sidebar() {
     if (!notificationsOpen) return;
     const onDocClick = (e: MouseEvent) => {
       const t = e.target as Node | null;
-      if (t && (
-        notifPopupRef.current?.contains(t) ||
-        desktopNotifButtonRef.current?.contains(t) ||
-        mobileNotifButtonRef.current?.contains(t)
-      )) return;
+      if (t && (notifPopupRef.current?.contains(t) || desktopNotifButtonRef.current?.contains(t) || mobileNotifButtonRef.current?.contains(t))) return;
       setNotificationsOpen(false);
     };
     document.addEventListener("click", onDocClick);
@@ -552,22 +488,18 @@ export default function Sidebar() {
   }, [notificationsOpen]);
 
   const loadNotices = async () => {
-    if (!accessToken || admin?.role === "admin") return; // Admins don't receive notices, only create them
+    if (!accessToken || admin?.role === "admin") return;
     setLoadingNotices(true);
     try {
       const res = await noticeApi.getMyNotices(accessToken);
       if (res.success && res.data) setNotices(res.data.notices || []);
       else setNotices([]);
-    } catch {
-      setNotices([]);
-    }
+    } catch { setNotices([]); }
     setLoadingNotices(false);
   };
 
   useEffect(() => {
-    if (accessToken && admin?.role !== "admin") { // Only load notices for non-admin users
-      void loadNotices();
-    }
+    if (accessToken && admin?.role !== "admin") void loadNotices();
   }, [accessToken, admin?.role]);
 
   const updateNoticeState = async (action: "read" | "unread" | "delete", n: any) => {
@@ -583,37 +515,21 @@ export default function Sidebar() {
         await noticeApi.deleteMine(accessToken, Number(n.id));
         setNotices((prev) => prev.filter((x) => x.id !== n.id));
       }
-    } catch {
-      // no-op
-    }
+    } catch { /* no-op */ }
   };
 
   const navKey = resolveNavKey(admin?.role ?? "", admin?.account_type);
   const navEntries = useMemo(() => {
     const base = NAV_CONFIG[navKey] ?? [];
-    if (navKey !== "admin:Customer" || !hasCompanyLink || admin?.entity_type !== "Supplier") {
-      return base;
-    }
-
+    if (navKey !== "admin:Customer" || !hasCompanyLink || admin?.entity_type !== "Supplier") return base;
     return base.map((entry) => {
       if (isTopLevel(entry) || !("items" in entry)) return entry;
-
       if (entry.label === "Structure") {
         const orgItems = entry.items.filter((i) => i.label === "Org Tree" || i.label === "Links");
         const coreItems = entry.items.filter((i) => i.label !== "Org Tree" && i.label !== "Links");
-        return {
-          ...entry,
-          items: [...coreItems, ...stripOrgLevel(COMPANY_STRUCTURE_NAV_ITEMS), ...orgItems],
-        };
+        return { ...entry, items: [...coreItems, ...stripOrgLevel(COMPANY_STRUCTURE_NAV_ITEMS), ...orgItems] };
       }
-
-      if (entry.label === "Users") {
-        return {
-          ...entry,
-          items: [...entry.items, ...stripOrgLevel(COMPANY_USER_NAV_ITEMS)],
-        };
-      }
-
+      if (entry.label === "Users") return { ...entry, items: [...entry.items, ...stripOrgLevel(COMPANY_USER_NAV_ITEMS)] };
       return entry;
     });
   }, [navKey, hasCompanyLink, admin?.entity_type]);
@@ -621,15 +537,12 @@ export default function Sidebar() {
   if (isLoading || !admin) return null;
 
   const orgLevel = admin.org_level ?? Infinity;
-
-  const accountLabel =
-    admin.role === "admin"
-      ? admin.entity_type || admin.account_type || "Admin"
-      : admin.user_type ?? ROLE_LABELS[admin.role] ?? admin.role;
+  const accountLabel = admin.role === "admin"
+    ? admin.entity_type || admin.account_type || "Admin"
+    : admin.user_type ?? ROLE_LABELS[admin.role] ?? admin.role;
 
   const closeMobile = () => setSidebarOpen(false);
   const closeFlyout = () => setFlyoutSectionLabel(null);
-
   const handleLogout = async () => { await logout(); router.push("/login"); };
 
   const navLinkClass = (active: boolean) =>
@@ -640,7 +553,7 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* ── Mobile header ── custom dark gradient ── */}
+      {/* Mobile header */}
       <header
         className="lg:hidden fixed top-0 left-0 right-0 z-40 h-14 backdrop-blur-md border-b border-white/10 flex items-center px-4"
         style={{ background: "linear-gradient(90deg, #003F2D 0%, #003F2D 50%, #003F2D 100%)" }}
@@ -650,8 +563,7 @@ export default function Sidebar() {
         </button>
         <Image src={auditoLogo} alt="Audito" width={90} height={20} className="h-5 ml-3" />
         <div className="ml-auto flex items-center gap-1">
-          <button
-            ref={mobileNotifButtonRef}
+          <button ref={mobileNotifButtonRef}
             onClick={async () => {
               setNotificationsOpen((p) => {
                 const next = !p;
@@ -664,29 +576,29 @@ export default function Sidebar() {
               });
             }}
             className="h-9 w-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-all relative"
-            aria-label="Notifications"
           >
             <Bell size={18} />
             {notices.some((n) => !(n as any).is_read) && (
               <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-primary-950" />
             )}
           </button>
-          <Link href="/profile"
-            className="h-9 w-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-all"
-            aria-label="Profile"><UserCircle2 size={19} /></Link>
+          <Link href="/profile" className="h-9 w-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-all">
+            {/* Show profile image or fallback icon in mobile header */}
+            {(admin as any).profile_image
+              ? <img src={getAvatarUrl((admin as any).profile_image) || ""} alt="" className="w-6 h-6 rounded-full object-cover" />
+              : <UserCircle2 size={19} />
+            }
+          </Link>
         </div>
       </header>
 
-      {/* Mobile overlay */}
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={closeMobile} />}
 
-      
       <aside
         ref={asideRef}
         className={`fixed lg:sticky lg:top-0 lg:h-screen inset-y-0 left-0 z-[80]
           ${collapsed ? "lg:w-[72px]" : "lg:w-64"} w-64
-          glass border-r border-white/10
-          flex flex-col transition-all
+          glass border-r border-white/10 flex flex-col transition-all
           lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         {/* Logo */}
@@ -698,8 +610,7 @@ export default function Sidebar() {
           </div>
           <div className="flex items-center gap-1">
             {!collapsed && (
-              <button
-                ref={desktopNotifButtonRef}
+              <button ref={desktopNotifButtonRef}
                 onClick={async () => {
                   setNotificationsOpen((p) => {
                     const next = !p;
@@ -712,7 +623,6 @@ export default function Sidebar() {
                   });
                 }}
                 className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors relative"
-                aria-label="Notifications"
               >
                 <Bell size={17} />
                 {notices.some((n) => !(n as any).is_read) && (
@@ -720,16 +630,13 @@ export default function Sidebar() {
                 )}
               </button>
             )}
-            <button
-              onClick={() => { setCollapsed((p) => !p); closeFlyout(); }}
+            <button onClick={() => { setCollapsed((p) => !p); closeFlyout(); }}
               className="hidden lg:inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
               title={collapsed ? "Expand" : "Collapse"}>
               <Menu size={18} />
             </button>
           </div>
-          <button onClick={closeMobile} className="lg:hidden text-gray-400 hover:text-white">
-            <X size={20} />
-          </button>
+          <button onClick={closeMobile} className="lg:hidden text-gray-400 hover:text-white"><X size={20} /></button>
         </div>
 
         {/* Navigation */}
@@ -760,10 +667,9 @@ export default function Sidebar() {
               const isChildActive = visibleItems.some((item) => pathname === item.path);
               const isOpen = openSectionLabel === entry.label || (openSectionLabel === null && isChildActive);
               return (
-                <DropdownSection key={entry.label + idx} section={entry} pathname={pathname} orgLevel={orgLevel} planLimits={admin.plan_limits}
-                  onNavigate={() => { closeMobile(); closeFlyout(); }}
-                  open={isOpen}
-                  onToggle={() => setOpenSectionLabel((prev) => prev === entry.label ? null : entry.label)}
+                <DropdownSection key={entry.label + idx} section={entry} pathname={pathname} orgLevel={orgLevel}
+                  planLimits={admin.plan_limits} onNavigate={() => { closeMobile(); closeFlyout(); }}
+                  open={isOpen} onToggle={() => setOpenSectionLabel((prev) => prev === entry.label ? null : entry.label)}
                 />
               );
             }
@@ -793,8 +699,6 @@ export default function Sidebar() {
               </div>
             );
           })}
-
-
         </nav>
 
         {/* User footer */}
@@ -806,9 +710,14 @@ export default function Sidebar() {
               closeMobile(); closeFlyout();
             }}
             title={collapsed ? `${admin.first_name} ${admin.last_name}` : undefined}>
-            <div className="w-9 h-9 rounded-full bg-secondary-500/20 flex items-center justify-center text-secondary-400 text-sm font-bold">
-              {admin.first_name[0]}{admin.last_name[0]}
-            </div>
+
+            {/* ── Profile avatar: image if set, else initials ── */}
+            <Avatar
+              firstName={admin.first_name}
+              lastName={admin.last_name}
+              profileImage={(admin as any).profile_image}
+            />
+
             {!collapsed && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-white font-medium truncate group-hover:text-secondary-400 transition-colors">
@@ -834,8 +743,7 @@ export default function Sidebar() {
             </div>
           )}
 
-          <button
-            type="button"
+          <button type="button"
             onClick={() => {
               if (collapsed) { setCollapsed(false); setFlyoutSectionLabel(null); return; }
               void handleLogout();
@@ -873,16 +781,12 @@ export default function Sidebar() {
                   </p>
                   <p className="text-xs text-gray-500 mt-1">{(n as any).created_at ? new Date((n as any).created_at).toLocaleString() : ""}</p>
                   <div className="mt-2 flex items-center gap-2">
-                    <button
-                      onClick={() => void updateNoticeState((n as any).is_read ? "unread" : "read", n)}
-                      className="text-[11px] px-2 py-1 rounded border border-white/10 text-gray-300 hover:text-white hover:border-white/20"
-                    >
+                    <button onClick={() => void updateNoticeState((n as any).is_read ? "unread" : "read", n)}
+                      className="text-[11px] px-2 py-1 rounded border border-white/10 text-gray-300 hover:text-white hover:border-white/20">
                       {(n as any).is_read ? "Mark as unread" : "Mark as read"}
                     </button>
-                    <button
-                      onClick={() => void updateNoticeState("delete", n)}
-                      className="text-[11px] px-2 py-1 rounded border border-red-500/30 text-red-300 hover:text-red-200 hover:border-red-400/50"
-                    >
+                    <button onClick={() => void updateNoticeState("delete", n)}
+                      className="text-[11px] px-2 py-1 rounded border border-red-500/30 text-red-300 hover:text-red-200 hover:border-red-400/50">
                       Delete
                     </button>
                   </div>

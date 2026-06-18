@@ -853,8 +853,14 @@ export const timezonesApi = {
       offset += limit;
     }
 
+    const seen = new Set<string>();
     return all
-      .filter((tz) => tz?.timezone_value && tz.isActive !== 0)
+      .filter((tz) => {
+        if (!tz?.timezone_value || tz.isActive === 0) return false;
+        if (seen.has(tz.timezone_value)) return false;
+        seen.add(tz.timezone_value);
+        return true;
+      })
       .sort((a, b) => a.timezone_label.localeCompare(b.timezone_label));
   },
 };
