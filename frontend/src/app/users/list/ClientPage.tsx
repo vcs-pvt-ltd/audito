@@ -1008,7 +1008,7 @@ export default function UsersClientPage() {
     if (!ok) return;
 
     setActionLoading(user.user_code);
-    const res = await usersApi.deactivate(accessToken, String(user.user_code));
+    const res = await usersApi.deleteUser(accessToken, String(user.user_code));
     setActionLoading(null);
     if (res.success) {
       toast("User deactivated successfully.", "success");
