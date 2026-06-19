@@ -51,6 +51,7 @@ import {
 interface QuestionCardHandle {
   isDirty: () => boolean;
   save: () => Promise<boolean>;
+  saveOnly: () => Promise<boolean>;
   discard: () => void;
 }
 
@@ -347,6 +348,27 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     return true;
   };
 
+  const handleSaveOnly = async (): Promise<boolean> => {
+    if (!orgTreeId || Number(orgTreeId) <= 0) {
+      setSaveErr('Please select the entity from the organization tree (org_tree_id missing).');
+      return false;
+    }
+    setSaveErr("");
+    setSaving(true);
+    const res = await auditExecutionApi.respond(accessToken, auditId, {
+      org_tree_id: Number(orgTreeId),
+      entity_code: entityCode,
+      question_id: question.id,
+      answer_text: question.answer_type === "free_text" ? answerText : undefined,
+      selected_option_ids: selectedOptions.length > 0 ? selectedOptions : undefined,
+      marks_obtained: marksObtained,
+      remarks: remarks || undefined,
+      cap_required: canToggleCap ? capRequired : false,
+    });
+    setSaving(false);
+    return res.success;
+  };
+
   const discard = () => {
     setAnswerText(baseline.answerText);
     setSelectedOptions(baseline.selectedOptions);
@@ -358,8 +380,9 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
   useImperativeHandle(ref, () => ({
     isDirty: () => dirty,
     save: handleSave,
+    saveOnly: handleSaveOnly,
     discard,
-  }), [dirty, handleSave, discard]);
+  }), [dirty, handleSave, handleSaveOnly, discard]);
 
   const handleFileUpload = async (file: File): Promise<boolean> => {
     if (evidence.length >= 1) {
@@ -466,15 +489,18 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
         onClick={() => onToggle?.(question.id)}
         className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-white/[0.03] transition-colors"
       >
-        <span className="shrink-0 w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-xs text-gray-500 font-mono">
+        <span className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold transition-colors ${
+          isAnswered ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : "bg-white/5 text-gray-500"
+        }`}>
           {question.order_index + 1}
         </span>
         <p className={`text-sm flex-1 ${isOpen ? "text-white font-medium" : "text-gray-300 truncate"}`}>
           {question.question_text}
         </p>
         <div className="flex items-center gap-2 shrink-0">
-          {isAnswered && <CheckCircle2 size={14} className="text-emerald-400" />}
-          <span className="text-[10px] font-medium text-gray-500 bg-white/5 px-2 py-0.5 rounded">
+          <span className={`text-[10px] font-medium px-2 py-0.5 rounded transition-colors ${
+            isAnswered ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20" : "text-gray-500 bg-white/5"
+          }`}>
             {marksObtained}/{maxMarks}
           </span>
           <ChevronDown size={14} className={`text-gray-500 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
@@ -892,7 +918,7 @@ export default function MyAuditExecutePage() {
     for (const [qid, isDirty] of Object.entries(dirtyMapRef.current)) {
       if (!isDirty) continue;
       const n = parseInt(qid, 10);
-      const ok = await (questionCardRefs.current[n]?.save() ?? Promise.resolve(false));
+      const ok = await (questionCardRefs.current[n]?.saveOnly() ?? Promise.resolve(false));
       if (!ok) {
         setIsSaving(false);
         return false;
@@ -1313,7 +1339,7 @@ export default function MyAuditExecutePage() {
                             toast("Failed to save response.", "error");
                             return;
                           }
-                          // Check if entity is now complete
+                          toast("All changes saved.", "success");
                           const isFullyAnswered = questions.every(q => {
                             const r = (responses[currentKey] || []).find(rr => rr.question_id === q.id);
                             const st = String((r as any)?.status || "").toLowerCase();

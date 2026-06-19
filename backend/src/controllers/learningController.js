@@ -2,6 +2,7 @@ const { db } = require('../config/db');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
 const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
+const NotificationModel = require('../models/NotificationModel');
 
 function ensureAdmin(req, res) {
   if (!req.user || req.user.role !== 'admin') {
@@ -127,8 +128,9 @@ const assignTraining = async (req, res) => {
       return errorResponse(res, 'auditor_codes must be a non-empty array.', 400);
     }
 
-    const [tRows] = await db.query('SELECT id FROM trainings WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
+    const [tRows] = await db.query('SELECT id, title FROM trainings WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (tRows.length === 0) return errorResponse(res, 'Training not found.', 404);
+    const trainingTitle = tRows[0].title || 'Training';
 
     const values = auditor_codes.map((c) => [Number(id), String(c), req.user.id]);
     await db.query(
@@ -137,6 +139,17 @@ const assignTraining = async (req, res) => {
        ON DUPLICATE KEY UPDATE assigned_by_admin_id = VALUES(assigned_by_admin_id), assigned_at = CURRENT_TIMESTAMP`,
       [values]
     );
+
+    await Promise.all(auditor_codes.map((code) =>
+      NotificationModel.createIfNotExists({
+        auditor_code: String(code),
+        created_by_entity_code: req.user.entityCode,
+        type: 'training_assigned',
+        title: 'Training Assigned',
+        message: `You have been assigned a training: "${trainingTitle}".`,
+        notification_key: `training_assigned:${id}:${String(code)}`,
+      })
+    ));
 
     return successResponse(res, null, 'Training assigned.');
   } catch (err) {
@@ -298,8 +311,9 @@ const assignFieldVisit = async (req, res) => {
       return errorResponse(res, 'auditor_codes must be a non-empty array.', 400);
     }
 
-    const [vRows] = await db.query('SELECT id FROM field_visits WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
+    const [vRows] = await db.query('SELECT id, title FROM field_visits WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (vRows.length === 0) return errorResponse(res, 'Field visit not found.', 404);
+    const visitTitle = vRows[0].title || 'Field Visit';
 
     const values = auditor_codes.map((c) => [Number(id), String(c), req.user.id]);
     await db.query(
@@ -308,6 +322,17 @@ const assignFieldVisit = async (req, res) => {
        ON DUPLICATE KEY UPDATE assigned_by_admin_id = VALUES(assigned_by_admin_id), assigned_at = CURRENT_TIMESTAMP`,
       [values]
     );
+
+    await Promise.all(auditor_codes.map((code) =>
+      NotificationModel.createIfNotExists({
+        auditor_code: String(code),
+        created_by_entity_code: req.user.entityCode,
+        type: 'field_visit_assigned',
+        title: 'Field Visit Assigned',
+        message: `You have been assigned a field visit: "${visitTitle}".`,
+        notification_key: `field_visit_assigned:${id}:${String(code)}`,
+      })
+    ));
 
     return successResponse(res, null, 'Field visit assigned.');
   } catch (err) {
@@ -856,8 +881,9 @@ const assignEvaluationPaper = async (req, res) => {
       return errorResponse(res, 'auditor_codes must be a non-empty array.', 400);
     }
 
-    const [pRows] = await db.query('SELECT id FROM evaluation_papers WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
+    const [pRows] = await db.query('SELECT id, title FROM evaluation_papers WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (pRows.length === 0) return errorResponse(res, 'Evaluation paper not found.', 404);
+    const paperTitle = pRows[0].title || 'Evaluation Paper';
 
     const values = auditor_codes.map((c) => [Number(id), String(c), req.user.id, due_date || null]);
     await db.query(
@@ -866,6 +892,17 @@ const assignEvaluationPaper = async (req, res) => {
        ON DUPLICATE KEY UPDATE assigned_by_admin_id = VALUES(assigned_by_admin_id), assigned_at = CURRENT_TIMESTAMP, due_date = VALUES(due_date)`,
       [values]
     );
+
+    await Promise.all(auditor_codes.map((code) =>
+      NotificationModel.createIfNotExists({
+        auditor_code: String(code),
+        created_by_entity_code: req.user.entityCode,
+        type: 'evaluation_assigned',
+        title: 'Evaluation Paper Assigned',
+        message: `You have been assigned an evaluation paper: "${paperTitle}".`,
+        notification_key: `evaluation_assigned:${id}:${String(code)}`,
+      })
+    ));
 
     return successResponse(res, null, 'Evaluation paper assigned.');
   } catch (err) {

@@ -644,25 +644,53 @@ export default function AdminDashboard({ overview, admin, orgTree, filters, onFi
   const getEntityCards = () => {
     if (!people) return [];
 
-    const base: { icon: LucideIcon; title: string; value: number; accent: string; href: string }[] = [];
+    // Only show structure cards that sit BELOW the admin's own level — mirrors the
+    // sidebar/onboarding rule: a card shows when orgLevel > level, and the admin
+    // isn't that entity itself (excludeEntityTypes covers shared-level cases like Supplier).
+    const orgLevel = admin.org_level ?? Infinity;
+    const entityType = admin.entity_type || "";
+
+    type StructureCard = {
+      icon: LucideIcon; title: string; value: number; accent: string; href: string;
+      level: number; excludeEntityTypes?: string[];
+    };
+    let structureCards: StructureCard[] = [];
 
     if (accountType === 'Corporate' || accountType === 'Company') {
-      base.push(
-        { icon: Layers, title: "Clusters", value: people.clusters || 0, accent: "bg-cyan-500", href: "/structure" },
-        { icon: Building2, title: "Factories", value: people.factories || 0, accent: "bg-blue-500", href: "/structure" },
-        { icon: MapPin, title: "Units", value: people.units || 0, accent: "bg-amber-500", href: "/structure" },
-        { icon: GitBranch, title: "Departments", value: people.departments || 0, accent: "bg-purple-500", href: "/structure" },
-        { icon: Layers, title: "Sections", value: people.sections || 0, accent: "bg-pink-500", href: "/structure" },
-      );
+      structureCards = [
+        { icon: Layers, title: "Clusters", value: people.clusters || 0, accent: "bg-cyan-500", href: "/structure", level: 4 },
+        { icon: Building2, title: "Factories", value: people.factories || 0, accent: "bg-blue-500", href: "/structure", level: 3 },
+        { icon: MapPin, title: "Units", value: people.units || 0, accent: "bg-amber-500", href: "/structure", level: 2 },
+        { icon: GitBranch, title: "Departments", value: people.departments || 0, accent: "bg-purple-500", href: "/structure", level: 1 },
+        { icon: Layers, title: "Sections", value: people.sections || 0, accent: "bg-pink-500", href: "/structure", level: 0 },
+      ];
     } else if (accountType === 'Audit Firm' || accountType === 'Audit Firm Company') {
-      base.push(
-        { icon: MapPin, title: "Branches", value: people.branches || 0, accent: "bg-blue-500", href: "/structure" },
-        { icon: Building2, title: "Departments", value: people.departments || 0, accent: "bg-amber-500", href: "/structure" },
-      );
+      structureCards = [
+        { icon: MapPin, title: "Branches", value: people.branches || 0, accent: "bg-blue-500", href: "/structure", level: 3 },
+        { icon: Building2, title: "Departments", value: people.departments || 0, accent: "bg-amber-500", href: "/structure", level: 1 },
+      ];
     } else if (accountType === 'Customer') {
+      structureCards = [
+        { icon: Globe, title: "Buying Offices", value: people.buying_offices || 0, accent: "bg-blue-500", href: "/structure", level: 7 },
+        { icon: MapPin, title: "Suppliers", value: people.suppliers || 0, accent: "bg-amber-500", href: "/structure", level: 6, excludeEntityTypes: ["Supplier"] },
+      ];
+    }
+
+    const base: { icon: LucideIcon; title: string; value: number; accent: string; href: string }[] =
+      structureCards
+        .filter((c) => orgLevel > c.level && !c.excludeEntityTypes?.includes(entityType))
+        .map(({ level: _level, excludeEntityTypes: _exclude, ...card }) => card);
+
+    // Supplier ↔ Company link: surface the linked company's structure (view-only).
+    // Backend only includes `people.companies` when a company is actually linked.
+    if (accountType === 'Customer' && people.companies) {
       base.push(
-        { icon: Globe, title: "Buying Offices", value: people.buying_offices || 0, accent: "bg-blue-500", href: "/structure" },
-        { icon: MapPin, title: "Suppliers", value: people.suppliers || 0, accent: "bg-amber-500", href: "/structure" },
+        { icon: Building2, title: "Company", value: people.companies || 0, accent: "bg-cyan-500", href: "/structure/list?type=company" },
+        { icon: Layers, title: "Clusters", value: people.clusters || 0, accent: "bg-blue-500", href: "/structure/list?type=cluster" },
+        { icon: Building2, title: "Factories", value: people.factories || 0, accent: "bg-indigo-500", href: "/structure/list?type=factory" },
+        { icon: MapPin, title: "Units", value: people.units || 0, accent: "bg-amber-500", href: "/structure/list?type=unit" },
+        { icon: GitBranch, title: "Departments", value: people.departments || 0, accent: "bg-purple-500", href: "/structure/list?type=department" },
+        { icon: Layers, title: "Sections", value: people.sections || 0, accent: "bg-pink-500", href: "/structure/list?type=section" },
       );
     }
 

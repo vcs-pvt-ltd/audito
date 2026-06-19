@@ -306,11 +306,31 @@ async function getPeopleSummary(user, accessibleCodes = []) {
     labels.push('root_customers', 'buying_offices', 'suppliers');
   }
 
+  // Supplier ↔ Company link: include the linked company's structure counts so the
+  // Supplier dashboard can show Company / Cluster / Factory / Unit / Department / Section.
+  let linkedCompanies = 0;
+  if (type === 'Customer') {
+    const [[row]] = await db.query(
+      `SELECT COUNT(*) AS total FROM companies WHERE comp_code IN (${ph}) AND is_active = TRUE`, codes
+    );
+    linkedCompanies = Number(row?.total || 0);
+    if (linkedCompanies > 0) {
+      queries.push(db.query(`SELECT COUNT(*) AS total FROM company_clusters WHERE comp_code IN (${ph}) AND is_active = TRUE`, codes));
+      queries.push(db.query(`SELECT COUNT(*) AS total FROM company_factories WHERE comp_code IN (${ph}) AND is_active = TRUE`, codes));
+      queries.push(db.query(`SELECT COUNT(*) AS total FROM company_units WHERE comp_code IN (${ph}) AND is_active = TRUE`, codes));
+      queries.push(db.query(`SELECT COUNT(*) AS total FROM company_departments WHERE comp_code IN (${ph}) AND is_active = TRUE`, codes));
+      queries.push(db.query(`SELECT COUNT(*) AS total FROM company_sections WHERE comp_code IN (${ph}) AND is_active = TRUE`, codes));
+      labels.push('clusters', 'factories', 'units', 'departments', 'sections');
+    }
+  }
+
   const results = await Promise.all(queries);
   const data = {};
   labels.forEach((label, i) => {
     data[label] = Number(results[i][0][0]?.total || 0);
   });
+
+  if (linkedCompanies > 0) data.companies = linkedCompanies;
 
   return data;
 }

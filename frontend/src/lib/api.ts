@@ -87,6 +87,7 @@ export interface RegisterPayload {
   password: string;
   plan_name?: string;
   billing_cycle?: string;
+  timezone?: string;
 }
 
 export interface LoginPayload {
@@ -213,7 +214,7 @@ export const structureApi = {
       token,
     }),
 
-  deactivateSubEntity: (token: string, entityType: string, code: string) =>
+  deleteSubEntity: (token: string, entityType: string, code: string) =>
     apiRequest(`/structure/${entityType}/${code}`, {
       method: "DELETE",
       token,
@@ -331,7 +332,7 @@ export const usersApi = {
   update: (token: string, userCode: string, data: Record<string, unknown>) =>
     apiRequest(`/users/${userCode}`, { method: "PUT", body: data, token }),
 
-  deactivate: (token: string, userCode: string) =>
+  deleteUser: (token: string, userCode: string) =>
     apiRequest(`/users/${userCode}`, { method: "DELETE", token }),
 
   resendVerification: (token: string, userCode: string) =>

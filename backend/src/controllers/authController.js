@@ -282,7 +282,8 @@ const register = async (req, res) => {
       company_type,
       password,
       plan_name,
-      billing_cycle
+      billing_cycle,
+      timezone
     } = req.body;
 
     // Validate required fields
@@ -349,19 +350,19 @@ const register = async (req, res) => {
 
     if (entity_type === 'Company') {
       await connection.query(
-        `INSERT INTO \`${config.table}\` (name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, \`${config.codeField}\`, company_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO \`${config.table}\` (name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, \`${config.codeField}\`, company_type, timezone)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [orgData.name, orgData.registration_number, orgData.email,
         orgData.address_line_1, orgData.address_line_2, orgData.address_line_3,
-        orgData.country, orgData.phone_number, orgCode, orgData.company_type]
+        orgData.country, orgData.phone_number, orgCode, orgData.company_type, timezone || null]
       );
     } else {
       await connection.query(
-        `INSERT INTO \`${config.table}\` (name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, \`${config.codeField}\`)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO \`${config.table}\` (name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, \`${config.codeField}\`, timezone)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [orgData.name, orgData.registration_number, orgData.email,
         orgData.address_line_1, orgData.address_line_2, orgData.address_line_3,
-        orgData.country, orgData.phone_number, orgCode]
+        orgData.country, orgData.phone_number, orgCode, timezone || null]
       );
     }
 
@@ -896,13 +897,21 @@ const resetPassword = async (req, res) => {
     // Mark token as used
     await db.query('UPDATE password_reset_otps SET used = TRUE WHERE id = ?', [rows[0].id]);
 
-    // Find admin and update password
+    // Find admin — required (forgot password is admin-initiated)
     const admin = await AdminModel.findByEmail(email);
     if (!admin) return errorResponse(res, 'Account not found.', 404);
 
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(new_password, salt);
+
+    // Update password for every role that shares this email
     await AdminModel.updatePassword(admin.id, hashedPassword);
+
+    const auditor = await AuditorModel.findByEmail(email);
+    if (auditor) await AuditorModel.setPassword(auditor.id, hashedPassword);
+
+    const head = await EntityHeadModel.findByEmail(email);
+    if (head) await EntityHeadModel.setPassword(head.id, hashedPassword);
 
     return successResponse(res, null, 'Password reset successfully. You can now log in.');
   } catch (error) {

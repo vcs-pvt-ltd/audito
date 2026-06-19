@@ -91,16 +91,6 @@ export default function OnboardingWelcomeModal({
               </div>
               <span className="font-medium">{progressText}</span>
             </div>
-            <div className="flex -space-x-3 overflow-hidden">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="inline-block h-8 w-8 rounded-full ring-2 ring-primary-950 bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-bold text-gray-500 uppercase tracking-tighter">
-                  {String.fromCharCode(64 + i)}
-                </div>
-              ))}
-            </div>
-            <span className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">
-              Trusted by Enterprise Teams
-            </span>
           </div>
         ) : null}
       </div>

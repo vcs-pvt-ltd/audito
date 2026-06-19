@@ -24,9 +24,20 @@ interface UserTypeConfig {
   // When per-account steps are needed, use treeStepsByAccount.
   treeSteps: string[];
   treeStepsByAccount?: Record<string, string[]>;
+  // Read-only view (no add/edit/delete). Used for linked-partner records
+  // like a linked Company's admin shown to a Supplier as "Company Head".
+  viewOnly?: boolean;
 }
 
 const USER_TYPE_CONFIGS: Record<string, UserTypeConfig> = {
+  "company-heads": {
+    label: "Company Head",
+    labelPlural: "Company Heads",
+    backendType: "Company Head",
+    accountTypes: ["Customer"],
+    treeSteps: [],
+    viewOnly: true,
+  },
   auditors: {
     label: "Auditor",
     labelPlural: "Auditors",
@@ -120,6 +131,7 @@ interface User {
   assigned_org_tree_id?: number;
   email_verified: boolean;
   is_active: boolean;
+  is_linked?: boolean;
   created_at: string;
 }
 
@@ -834,7 +846,7 @@ function EmailBadge({ verified, hasPassword }: { verified: boolean; hasPassword:
 
 // ─── Page ────────────────────────────────────────────────────────
 
-const REGISTERED_ME_STORAGE_KEY = (email: string) => `audito_register_me_${email}`;
+const REGISTERED_ME_STORAGE_KEY = (email: string, typeSlug: string) => `audito_register_me_${email}_${typeSlug}`;
 
 export default function UsersClientPage() {
   const { admin, accessToken, isLoading, refreshMe } = useAuth();
@@ -911,12 +923,12 @@ export default function UsersClientPage() {
 
   const markRegisterMeCompleted = () => {
     if (!admin) return;
-    localStorage.setItem(REGISTERED_ME_STORAGE_KEY(admin.email), "true");
+    localStorage.setItem(REGISTERED_ME_STORAGE_KEY(admin.email, typeSlug), "true");
   };
 
   const isRegisterMeCompleted = () => {
     if (!admin) return true;
-    return !!localStorage.getItem(REGISTERED_ME_STORAGE_KEY(admin.email));
+    return !!localStorage.getItem(REGISTERED_ME_STORAGE_KEY(admin.email, typeSlug));
   };
 
   useEffect(() => {
@@ -1133,14 +1145,16 @@ export default function UsersClientPage() {
             >
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             </button>
-            <button
-              onClick={handleAdd}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 shadow-lg shadow-secondary-500/10 transition-all active:scale-95"
-            >
-              {isLimitExceeded ? <Crown size={18} /> : <Plus size={18} />}
-              <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Add"}</span>
-              <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : `Add ${config.label}`}</span>
-            </button>
+            {!config.viewOnly && (
+              <button
+                onClick={handleAdd}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 shadow-lg shadow-secondary-500/10 transition-all active:scale-95"
+              >
+                {isLimitExceeded ? <Crown size={18} /> : <Plus size={18} />}
+                <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Add"}</span>
+                <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : `Add ${config.label}`}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1221,31 +1235,37 @@ export default function UsersClientPage() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {!user.email_verified && (
-                                <button
-                                  onClick={() => handleResend(user)}
-                                  disabled={actionLoading === user.user_code}
-                                  className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all font-medium disabled:opacity-50"
-                                  title="Resend verification email"
-                                >
-                                  <Mail size={15} />
-                                </button>
-                              )}
+                              {user.is_linked ? (
+                                <span className="text-[11px] text-gray-500 italic">Linked</span>
+                              ) : (
+                                <>
+                                  {!user.email_verified && (
+                                    <button
+                                      onClick={() => handleResend(user)}
+                                      disabled={actionLoading === user.user_code}
+                                      className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all font-medium disabled:opacity-50"
+                                      title="Resend verification email"
+                                    >
+                                      <Mail size={15} />
+                                    </button>
+                                  )}
 
-                              <button
-                                onClick={() => handleEdit(user)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all font-medium"
-                                title="Edit"
-                              >
-                                <Pencil size={15} />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(user)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
-                                title="Deactivate"
-                              >
-                                <Trash2 size={15} />
-                              </button>
+                                  <button
+                                    onClick={() => handleEdit(user)}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all font-medium"
+                                    title="Edit"
+                                  >
+                                    <Pencil size={15} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(user)}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
+                                    title="Deactivate"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1292,31 +1312,37 @@ export default function UsersClientPage() {
                     </div>
 
                     <div className="mt-3 flex items-center justify-end gap-1">
-                      {!user.email_verified && (
-                        <button
-                          onClick={() => handleResend(user)}
-                          disabled={actionLoading === user.user_code}
-                          className="p-2 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all font-medium disabled:opacity-50"
-                          title="Resend verification email"
-                        >
-                          <Mail size={15} />
-                        </button>
-                      )}
+                      {user.is_linked ? (
+                        <span className="text-[11px] text-gray-500 italic">Linked (view-only)</span>
+                      ) : (
+                        <>
+                          {!user.email_verified && (
+                            <button
+                              onClick={() => handleResend(user)}
+                              disabled={actionLoading === user.user_code}
+                              className="p-2 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all font-medium disabled:opacity-50"
+                              title="Resend verification email"
+                            >
+                              <Mail size={15} />
+                            </button>
+                          )}
 
-                      <button
-                        onClick={() => handleEdit(user)}
-                        className="p-2 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all font-medium"
-                        title="Edit"
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(user)}
-                        className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
-                        title="Deactivate"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                          <button
+                            onClick={() => handleEdit(user)}
+                            className="p-2 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all font-medium"
+                            title="Edit"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(user)}
+                            className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
+                            title="Deactivate"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );

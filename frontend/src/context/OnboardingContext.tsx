@@ -46,7 +46,10 @@ interface OnboardingContextType {
   totalSteps: number;
 }
 
-const ENTITY_ORDER: Record<string, Array<{ slug: string; label: string; level: number }>> = {
+// level mirrors backend org_level. excludeEntityTypes hides an item for admins
+// registered AS that entity — needed when two entities share an org_level
+// (Buying Office & Supplier are both 7) and level alone can't distinguish them.
+const ENTITY_ORDER: Record<string, Array<{ slug: string; label: string; level: number; excludeEntityTypes?: string[] }>> = {
   Company: [
     { slug: "cluster", label: "Cluster", level: 4 },
     { slug: "factory", label: "Factory", level: 3 },
@@ -56,7 +59,7 @@ const ENTITY_ORDER: Record<string, Array<{ slug: string; label: string; level: n
   ],
   Customer: [
     { slug: "buying-office", label: "Buying Office", level: 7 },
-    { slug: "supplier", label: "Supplier", level: 7 },
+    { slug: "supplier", label: "Supplier", level: 6, excludeEntityTypes: ["Supplier"] },
   ],
   "Audit Firm": [
     { slug: "branch", label: "Branch", level: 3 },
@@ -105,18 +108,24 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   const filteredEntityOrder = useMemo(() => {
     const accountType = admin?.account_type || "";
     const orgLevel = admin?.org_level ?? 0;
-    return (ENTITY_ORDER[accountType] || []).filter(it => orgLevel > it.level);
-  }, [admin?.account_type, admin?.org_level]);
+    const entityType = admin?.entity_type || "";
+    return (ENTITY_ORDER[accountType] || []).filter(it =>
+      orgLevel > it.level && !it.excludeEntityTypes?.includes(entityType)
+    );
+  }, [admin?.account_type, admin?.org_level, admin?.entity_type]);
 
   const filteredHeadOrder = useMemo(() => {
     const accountType = admin?.account_type || "";
     const orgLevel = admin?.org_level ?? 0;
+    const entityType = admin?.entity_type || "";
     const base = HEAD_ORDER[accountType] || [];
     return base.filter(it => {
       const entityConfig = (ENTITY_ORDER[accountType] || []).find(e => e.slug === it.entitySlug);
-      return !entityConfig || orgLevel > entityConfig.level;
+      if (!entityConfig) return true;
+      if (entityConfig.excludeEntityTypes?.includes(entityType)) return false;
+      return orgLevel > entityConfig.level;
     });
-  }, [admin?.account_type, admin?.org_level]);
+  }, [admin?.account_type, admin?.org_level, admin?.entity_type]);
 
   const refreshProgress = useCallback(async () => {
     if (!accessToken || !admin || admin.role !== "admin") return;

@@ -11,7 +11,7 @@ import type { AccountInfo } from "@/context/AuthContext";
 import { noticeApi, linksApi } from "@/lib/api";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
-  ChevronDown, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
+  ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
   Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard,
 } from "lucide-react";
 
@@ -60,6 +60,7 @@ function Avatar({
 interface NavItem {
   label: string; path: string; icon: React.ElementType;
   minOrgLevel?: number; planFeature?: "auditor_eval" | "company_to_company";
+  excludeEntityTypes?: string[];
 }
 interface NavSection { label: string; icon: React.ElementType; items: NavItem[]; }
 interface TopLevelLink {
@@ -68,6 +69,17 @@ interface TopLevelLink {
 }
 type NavEntry = NavSection | TopLevelLink;
 const isTopLevel = (e: NavEntry): e is TopLevelLink => (e as TopLevelLink).type === "link";
+
+// Customer: Customer=8, Buying Office=7, Supplier=7 (Buying Office & Supplier share org_level)
+// Suppliers excluded for Supplier entity_type — they see their own entity, not manage it from here
+const CUSTOMER_STRUCTURE_NAV_ITEMS: NavItem[] = [
+  { label: "Buying Offices", path: "/structure/list?type=buying-office", icon: Building2, minOrgLevel: 7 },
+  { label: "Suppliers", path: "/structure/list?type=supplier", icon: Building2, minOrgLevel: 6, excludeEntityTypes: ["Supplier"] },
+];
+const CUSTOMER_USER_NAV_ITEMS: NavItem[] = [
+  { label: "Buying Office Heads", path: "/users/list?type=buying-office-heads", icon: Users, minOrgLevel: 7 },
+  { label: "Supplier Heads", path: "/users/list?type=supplier-heads", icon: Users, minOrgLevel: 6, excludeEntityTypes: ["Supplier"] },
+];
 
 const COMPANY_STRUCTURE_NAV_ITEMS: NavItem[] = [
   { label: "Clusters", path: "/structure/list?type=cluster", icon: Building2, minOrgLevel: 4 },
@@ -82,6 +94,18 @@ const COMPANY_USER_NAV_ITEMS: NavItem[] = [
   { label: "Unit Heads", path: "/users/list?type=unit-heads", icon: Users, minOrgLevel: 2 },
   { label: "Department Heads", path: "/users/list?type=department-heads", icon: Users, minOrgLevel: 1 },
   { label: "Section Heads", path: "/users/list?type=section-heads", icon: Users, minOrgLevel: 0 },
+];
+
+// Audit Firm: Audit Firm Company=6, Branch=3, Audit Firm Department=1 (distinct levels — no shared-level ambiguity)
+// Branches:    minOrgLevel=3 → only Firm(6) creates Branches; Branch(3) & Dept(1) cannot
+// Departments: minOrgLevel=1 → Firm(6) & Branch(3) create Departments; Dept(1) is the leaf and sees nothing
+const AUDIT_FIRM_STRUCTURE_NAV_ITEMS: NavItem[] = [
+  { label: "Branches", path: "/structure/list?type=branch", icon: Building2, minOrgLevel: 3 },
+  { label: "Departments", path: "/structure/list?type=audit-firm-department", icon: Building2, minOrgLevel: 1 },
+];
+const AUDIT_FIRM_USER_NAV_ITEMS: NavItem[] = [
+  { label: "Branch Heads", path: "/users/list?type=branch-heads", icon: Users, minOrgLevel: 3 },
+  { label: "Department Heads", path: "/users/list?type=audit-firm-department-heads", icon: Users, minOrgLevel: 1 },
 ];
 
 function stripOrgLevel(items: NavItem[]): NavItem[] {
@@ -102,15 +126,13 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
   "admin:Customer": [
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { label: "Structure", icon: Building2, items: [
-      { label: "Buying Offices", path: "/structure/list?type=buying-office", icon: Building2, minOrgLevel: 7 },
-      { label: "Suppliers", path: "/structure/list?type=supplier", icon: Building2, minOrgLevel: 7 },
+      ...CUSTOMER_STRUCTURE_NAV_ITEMS,
       { label: "Org Tree", path: "/organization", icon: FolderTree },
       { label: "Links", path: "/links", icon: LinkIcon },
     ]},
     { label: "Users", icon: Users, items: [
       { label: "Auditors", path: "/users/list?type=auditors", icon: Shield },
-      { label: "Buying Office Heads", path: "/users/list?type=buying-office-heads", icon: Users, minOrgLevel: 7 },
-      { label: "Supplier Heads", path: "/users/list?type=supplier-heads", icon: Users, minOrgLevel: 7 },
+      ...CUSTOMER_USER_NAV_ITEMS,
     ]},
     { label: "Checklists", icon: ClipboardList, items: [
       { label: "Checklist Types", path: "/checklists/types", icon: FileCheck },
@@ -162,13 +184,13 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
   "admin:Audit Firm": [
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { label: "Structure", icon: Building2, items: [
-      { label: "Branches", path: "/structure/list?type=branch", icon: Building2 },
-      { label: "Departments", path: "/structure/list?type=audit-firm-department", icon: Building2 },
+      ...AUDIT_FIRM_STRUCTURE_NAV_ITEMS,
       { label: "Org Tree", path: "/organization", icon: FolderTree },
       { label: "Links", path: "/links", icon: LinkIcon },
     ]},
     { label: "Users", icon: Users, items: [
       { label: "Auditors", path: "/users/list?type=auditors", icon: Shield },
+      ...AUDIT_FIRM_USER_NAV_ITEMS,
     ]},
     { type: "link", label: "Assigned Audits", path: "/audits", icon: FileCheck, matchPrefix: true },
     { label: "Learning", icon: ClipboardList, items: [
@@ -216,19 +238,20 @@ function resolveNavKey(role: string, accountType?: string | null): string {
   return role in NAV_CONFIG ? role : "auditor";
 }
 
-function filterByOrgLevel(items: NavItem[], orgLevel: number, planLimits?: any): NavItem[] {
+function filterByOrgLevel(items: NavItem[], orgLevel: number, planLimits?: any, entityType?: string | null): NavItem[] {
   return items.filter((item) => {
     if (item.minOrgLevel !== undefined && orgLevel <= item.minOrgLevel) return false;
     if (item.planFeature && planLimits && !planLimits[item.planFeature]) return false;
+    if (item.excludeEntityTypes && entityType && item.excludeEntityTypes.includes(entityType)) return false;
     return true;
   });
 }
 
-function CollapsedSectionFlyout({ section, pathname, orgLevel, planLimits, onNavigate, onClose }: {
-  section: NavSection; pathname: string; orgLevel: number; planLimits?: any;
+function CollapsedSectionFlyout({ section, pathname, orgLevel, planLimits, entityType, onNavigate, onClose }: {
+  section: NavSection; pathname: string; orgLevel: number; planLimits?: any; entityType?: string | null;
   onNavigate: () => void; onClose: () => void;
 }) {
-  const visibleItems = filterByOrgLevel(section.items, orgLevel, planLimits);
+  const visibleItems = filterByOrgLevel(section.items, orgLevel, planLimits, entityType);
   if (visibleItems.length === 0) return null;
   return (
     <div className="w-64 rounded-xl border border-white/10 bg-primary-900/90 backdrop-blur-md shadow-2xl p-2">
@@ -253,11 +276,11 @@ function CollapsedSectionFlyout({ section, pathname, orgLevel, planLimits, onNav
   );
 }
 
-function DropdownSection({ section, pathname, orgLevel, planLimits, onNavigate, open, onToggle }: {
-  section: NavSection; pathname: string; orgLevel: number; planLimits?: any;
+function DropdownSection({ section, pathname, orgLevel, planLimits, entityType, onNavigate, open, onToggle }: {
+  section: NavSection; pathname: string; orgLevel: number; planLimits?: any; entityType?: string | null;
   onNavigate: () => void; open: boolean; onToggle: () => void;
 }) {
-  const visibleItems = filterByOrgLevel(section.items, orgLevel, planLimits);
+  const visibleItems = filterByOrgLevel(section.items, orgLevel, planLimits, entityType);
   const isChildActive = visibleItems.some((item) => pathname === item.path);
   if (visibleItems.length === 0) return null;
   const Icon = section.icon;
@@ -527,9 +550,15 @@ export default function Sidebar() {
       if (entry.label === "Structure") {
         const orgItems = entry.items.filter((i) => i.label === "Org Tree" || i.label === "Links");
         const coreItems = entry.items.filter((i) => i.label !== "Org Tree" && i.label !== "Links");
-        return { ...entry, items: [...coreItems, ...stripOrgLevel(COMPANY_STRUCTURE_NAV_ITEMS), ...orgItems] };
+        // Linked Company itself (read-only) + its sub-structure, before Org Tree/Links.
+        const companyItem: NavItem = { label: "Company", path: "/structure/list?type=company", icon: Building2 };
+        return { ...entry, items: [...coreItems, companyItem, ...stripOrgLevel(COMPANY_STRUCTURE_NAV_ITEMS), ...orgItems] };
       }
-      if (entry.label === "Users") return { ...entry, items: [...entry.items, ...stripOrgLevel(COMPANY_USER_NAV_ITEMS)] };
+      if (entry.label === "Users") {
+        // Linked Company's admin shown as a read-only "Company Head" + company sub-heads.
+        const companyHeadItem: NavItem = { label: "Company Heads", path: "/users/list?type=company-heads", icon: Users };
+        return { ...entry, items: [...entry.items, companyHeadItem, ...stripOrgLevel(COMPANY_USER_NAV_ITEMS)] };
+      }
       return entry;
     });
   }, [navKey, hasCompanyLink, admin?.entity_type]);
@@ -632,8 +661,8 @@ export default function Sidebar() {
             )}
             <button onClick={() => { setCollapsed((p) => !p); closeFlyout(); }}
               className="hidden lg:inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-              title={collapsed ? "Expand" : "Collapse"}>
-              <Menu size={18} />
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+              {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
           </div>
           <button onClick={closeMobile} className="lg:hidden text-gray-400 hover:text-white"><X size={20} /></button>
@@ -663,19 +692,19 @@ export default function Sidebar() {
             }
 
             if (!collapsed) {
-              const visibleItems = filterByOrgLevel(entry.items, orgLevel, admin.plan_limits);
+              const visibleItems = filterByOrgLevel(entry.items, orgLevel, admin.plan_limits, admin.entity_type);
               const isChildActive = visibleItems.some((item) => pathname === item.path);
               const isOpen = openSectionLabel === entry.label || (openSectionLabel === null && isChildActive);
               return (
                 <DropdownSection key={entry.label + idx} section={entry} pathname={pathname} orgLevel={orgLevel}
-                  planLimits={admin.plan_limits} onNavigate={() => { closeMobile(); closeFlyout(); }}
+                  planLimits={admin.plan_limits} entityType={admin.entity_type} onNavigate={() => { closeMobile(); closeFlyout(); }}
                   open={isOpen} onToggle={() => setOpenSectionLabel((prev) => prev === entry.label ? null : entry.label)}
                 />
               );
             }
 
             const SectionIcon = entry.icon;
-            const visibleItems = filterByOrgLevel(entry.items, orgLevel, admin.plan_limits);
+            const visibleItems = filterByOrgLevel(entry.items, orgLevel, admin.plan_limits, admin.entity_type);
             const isChildActive = visibleItems.some((item) => pathname === item.path);
             const isOpen = flyoutSectionLabel === entry.label;
             return (
@@ -693,7 +722,7 @@ export default function Sidebar() {
                 {isOpen && (
                   <div className="hidden lg:block absolute left-[72px] top-0 z-[70]">
                     <CollapsedSectionFlyout section={entry} pathname={pathname} orgLevel={orgLevel}
-                      onNavigate={closeMobile} onClose={closeFlyout} />
+                      entityType={admin.entity_type} onNavigate={closeMobile} onClose={closeFlyout} />
                   </div>
                 )}
               </div>

@@ -17,6 +17,7 @@ import {
   PlusCircle,
   Save,
   ExternalLink,
+  Search,
 } from "lucide-react";
 
 interface TreeNode {
@@ -30,13 +31,14 @@ interface TreeNode {
 interface CapDetail {
   id: number;
   cap_plan_code: string;
-  audit_id: number;
   title: string;
+  audit_id: number;
+  audit_title?: string;
   status: string;
-  parent_cap_id?: number | null;
+  entities: Array<{ entity_code: string; entity_type: string; entity_name: string }>;
 }
 
-interface CapRequiredItem {
+interface SubCapRequiredItem {
   response_id: number;
   cap_id: number;
   entity_code: string;
@@ -48,24 +50,20 @@ interface CapRequiredItem {
     email: string;
   } | null;
   question_id: number;
-  answer_text: string | null;
-  selected_option_ids: string | null;
-  marks_obtained: string | number | null;
+  ca_description: string | null;
   remarks: string | null;
   cap_required: number;
   status: string;
-  answered_by: string | null;
-  answered_at: string | null;
   question_text: string;
+  answer_type: string;
   order_index: number;
   entity_type: string;
 }
 
-interface CorrectiveActionRow {
+interface SubCorrectiveActionRow {
   id: number;
-  audit_id: number;
+  cap_id: number;
   response_id: number;
-  cap_response_id: number;
   entity_code: string;
   question_id: number;
   responsible_person_code: string | null;
@@ -78,7 +76,6 @@ interface SubCapSummary {
   cap_plan_code: string;
   title: string;
   status: string;
-  parent_cap_id?: number | null;
   total_questions: number;
   completed_questions: number;
   created_at: string;
@@ -93,18 +90,16 @@ const ENTITY_TYPE_COLORS: Record<string, string> = {
   Factory: "bg-amber-500/20 text-amber-300 border-amber-500/30",
   Unit: "bg-green-500/20 text-green-300 border-green-500/30",
   Department: "bg-pink-500/20 text-pink-300 border-pink-500/30",
-  "Section": "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+  Section: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
   "Audit Firm Company": "bg-rose-500/20 text-rose-300 border-rose-500/30",
   Branch: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
 };
 
-const CAP_STATUS_BADGE: Record<string, string> = {
-  plan: "bg-gray-500/15 text-gray-400 border-gray-500/30",
+const SUB_CAP_STATUS_BADGE: Record<string, string> = {
   draft: "bg-gray-500/15 text-gray-400 border-gray-500/30",
   in_progress: "bg-blue-500/15 text-blue-400 border-blue-500/30",
   submitted: "bg-amber-500/15 text-amber-400 border-amber-500/30",
   verified: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  completed: "bg-green-500/15 text-green-400 border-green-500/30",
   closed: "bg-green-500/15 text-green-400 border-green-500/30",
 };
 
@@ -121,16 +116,13 @@ function pruneTreeByEntitiesWithItems(node: TreeNode, entityKeys: Set<string>): 
   return null;
 }
 
+// ─── Entity Node ──────────────────────────────────────────────────
+
 function EntityNode({
-  node,
-  depth,
-  itemsByEntity,
-  assignments,
-  onChange,
+  node, depth, itemsByEntity, assignments, onChange,
 }: {
-  node: TreeNode;
-  depth: number;
-  itemsByEntity: Record<string, CapRequiredItem[]>;
+  node: TreeNode; depth: number;
+  itemsByEntity: Record<string, SubCapRequiredItem[]>;
   assignments: Record<number, { due_date: string }>;
   onChange: (responseId: number, patch: Partial<{ due_date: string }>) => void;
 }) {
@@ -140,46 +132,46 @@ function EntityNode({
   const typeColor = ENTITY_TYPE_COLORS[node.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
   const hasChildren = (node.children ?? []).length > 0;
   const isLeaf = !hasChildren && entityItems.length === 0;
+  const indent = Math.min(depth, 2) * 24;
+  const questionIndent = indent + 48;
 
   return (
     <div className="relative">
-      <div className="relative" style={{ paddingLeft: depth === 0 ? 0 : 28 }}>
-        {/* Tree connector lines */}
+      <div className="relative" style={{ paddingLeft: indent }}>
         {depth > 0 && (
           <>
-            <div className="absolute left-[13px] top-0 bottom-0 w-px bg-gradient-to-b from-white/[0.12] via-white/[0.06] to-transparent" />
-            <div className="absolute left-[13px] top-[22px] w-[15px] h-px bg-gradient-to-r from-white/[0.12] to-white/[0.04]" />
-            <div className="absolute left-[11px] top-[20px] w-1.5 h-1.5 rounded-full bg-white/[0.15] ring-1 ring-white/[0.06]" />
+            <div className="absolute top-0 bottom-0 w-px bg-white/[0.06]" style={{ left: indent - 11 }} />
+            <div className="absolute top-[22px] h-px w-3 bg-white/[0.06]" style={{ left: indent - 11 }} />
+            <div className="absolute top-[20px] w-1.5 h-1.5 rounded-full bg-white/[0.18]" style={{ left: indent - 13 }} />
           </>
         )}
 
         <button
           type="button"
-          onClick={() => setExpanded((p) => !p)}
-          className={`w-full flex items-center gap-3 py-3 px-4 rounded-xl border transition-all duration-200 text-left group ${
+          onClick={() => setExpanded(p => !p)}
+          className={`w-full flex items-center gap-3 py-3 px-3 sm:px-4 rounded-xl border transition-all text-left group ${
             entityItems.length > 0
-              ? "bg-white/[0.04] border-white/[0.12] hover:bg-white/[0.06] hover:border-white/[0.22] shadow-[0_2px_12px_rgba(0,0,0,0.15)]"
+              ? "bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.06] hover:border-white/[0.18]"
               : "bg-transparent border-transparent hover:bg-white/[0.02]"
           }`}
         >
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            {!isLeaf && (
-              <div className={`shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-all duration-200 ${
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            {!isLeaf ? (
+              <div className={`shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-colors ${
                 expanded ? "bg-white/[0.08] text-gray-300" : "bg-white/[0.04] text-gray-600 group-hover:text-gray-400"
               }`}>
-                {expanded ? <ChevronDown size={12} strokeWidth={2.5} /> : <ChevronRight size={12} strokeWidth={2.5} />}
+                {expanded ? <ChevronDown size={11} strokeWidth={2.5} /> : <ChevronRight size={11} strokeWidth={2.5} />}
               </div>
+            ) : (
+              <div className="w-5 shrink-0" />
             )}
-            {isLeaf && <div className="w-5 shrink-0" />}
-            
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${typeColor} shrink-0 transition-all duration-200 ${
-              entityItems.length > 0 ? "shadow-[0_0_12px_rgba(255,255,255,0.04)]" : ""
-            }`}>
-              <Building2 size={18} />
+
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center border shrink-0 ${typeColor}`}>
+              <Building2 size={15} />
             </div>
 
             <div className="flex-1 min-w-0">
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${typeColor.split(' ')[1]} mb-0.5 block`}>
+              <span className={`text-[9px] font-bold uppercase tracking-wider block mb-0.5 ${typeColor.split(" ")[1]}`}>
                 {node.entity_type}
               </span>
               <span className={`text-sm font-semibold truncate block ${entityItems.length > 0 ? "text-white" : "text-gray-400"}`}>
@@ -188,89 +180,84 @@ function EntityNode({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 ml-5 sm:ml-0">
-            {entityItems.length > 0 && (
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-secondary-400 bg-secondary-500/10 border border-secondary-500/20 px-2.5 py-1 rounded-lg">
-                <HelpCircle size={10} className="shrink-0" />
-                {entityItems.length} CAP Required
-              </span>
-            )}
-          </div>
+          {entityItems.length > 0 && (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-lg shrink-0">
+              <HelpCircle size={10} />
+              {entityItems.length}
+            </span>
+          )}
         </button>
       </div>
 
       {expanded && (
         <div className="mt-1 space-y-1">
           {entityItems.length > 0 && (
-            <div className="space-y-3 py-2" style={{ paddingLeft: depth === 0 ? 56 : 84 }}>
+            <div className="space-y-3 pt-1 pb-2" style={{ paddingLeft: questionIndent, paddingRight: 4 }}>
               {entityItems.map((it, idx) => {
                 const a = assignments[it.response_id] || { due_date: "" };
                 const head = it.responsible_entity_head;
                 return (
-                  <div key={it.response_id} className="relative group/q">
-                    {/* Subtle connector for questions */}
-                    <div className="absolute -left-5 top-0 bottom-0 w-px bg-gradient-to-b from-white/[0.06] to-transparent" />
-                    <div className="absolute -left-5 top-6 w-4 h-px bg-white/[0.06]" />
+                  <div key={it.response_id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-orange-500/[0.04] border-b border-orange-500/[0.08]">
+                      <span className="shrink-0 w-5 h-5 rounded-md bg-orange-500/15 border border-orange-500/20 flex items-center justify-center text-orange-400 text-[10px] font-bold">
+                        {idx + 1}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-orange-500/70 flex items-center gap-1">
+                        <AlertCircle size={10} /> Q{it.order_index}
+                      </span>
+                      <span className="ml-auto text-[9px] font-bold text-orange-500/50 uppercase tracking-widest px-1.5 py-0.5 rounded bg-orange-500/5 border border-orange-500/10">
+                        Sub-CAP Required
+                      </span>
+                    </div>
 
-                    <div className="rounded-2xl border border-white/[0.08] overflow-hidden shadow-lg transition-all duration-200 hover:border-white/[0.18] bg-white/[0.02] backdrop-blur-sm">
-                      {/* Card header */}
-                      <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.02] border-b border-white/[0.06]">
-                        <span className="shrink-0 w-6 h-6 rounded-lg bg-amber-500/15 border border-amber-500/20 flex items-center justify-center text-amber-400 text-[11px] font-bold">
-                          {idx + 1}
-                        </span>
-                        <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-tight text-amber-400">
-                           <AlertCircle size={12} />
-                           Question {it.order_index}
-                        </span>
-                        <div className="ml-auto flex items-center gap-2">
-                           <span className="text-[10px] font-bold text-amber-500/60 uppercase tracking-widest px-2 py-0.5 rounded-md bg-amber-500/5 border border-amber-500/10">CAP REQUIRED</span>
+                    <div className="p-3 sm:p-4 space-y-3">
+                      <p className="text-sm text-gray-200 leading-relaxed">{it.question_text}</p>
+
+                      {it.ca_description && (
+                        <div className="flex gap-2 px-3 py-2.5 rounded-lg bg-orange-500/[0.05] border border-orange-500/[0.12]">
+                          <Search size={13} className="text-orange-400 shrink-0 mt-0.5" />
+                          <p className="text-xs text-orange-200/80">{it.ca_description}</p>
                         </div>
-                      </div>
+                      )}
 
-                      <div className="p-4 space-y-4">
-                        <p className="text-sm text-gray-200 leading-relaxed font-medium">
-                          {it.question_text}
-                        </p>
-                        
-                        {it.remarks && (
-                          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10">
-                            <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Remarks</p>
-                            <p className="text-xs text-gray-400">{it.remarks}</p>
-                          </div>
-                        )}
+                      {it.remarks && (
+                        <div className="px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                          <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1">Remarks</p>
+                          <p className="text-xs text-gray-400">{it.remarks}</p>
+                        </div>
+                      )}
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10">
-                            <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Responsible (Auto)</p>
-                            {head ? (
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-secondary-500/10 flex items-center justify-center text-secondary-400 shrink-0">
-                                  <Building2 size={14} />
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-[13px] font-medium text-white truncate">{head.first_name} {head.last_name}</p>
-                                  <p className="text-[10px] text-gray-500 font-mono truncate">{head.email}</p>
-                                </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div className="px-3 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                          <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-2">Responsible</p>
+                          {head ? (
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center shrink-0">
+                                <Building2 size={12} className="text-secondary-400" />
                               </div>
-                            ) : (
-                              <div className="flex items-center gap-2 text-amber-500/60 p-1">
-                                <AlertCircle size={14} />
-                                <span className="text-xs font-medium">No entity head assigned</span>
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium text-white truncate">{head.first_name} {head.last_name}</p>
+                                <p className="text-[10px] text-gray-500 truncate">{head.email}</p>
                               </div>
-                            )}
-                          </div>
-
-                          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10">
-                            <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Due Date</p>
-                            <div className="relative group/input">
-                              <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within/input:text-secondary-400 transition-colors" />
-                              <input
-                                type="date"
-                                value={a.due_date}
-                                onChange={(e) => onChange(it.response_id, { due_date: e.target.value })}
-                                className="w-full pl-10 bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-secondary-500/40 focus:ring-1 focus:ring-secondary-500/20 transition-all"
-                              />
                             </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-orange-500/60">
+                              <AlertCircle size={12} />
+                              <span className="text-xs">No entity head assigned</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="px-3 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                          <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-2">Due Date</p>
+                          <div className="relative">
+                            <Calendar size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                            <input
+                              type="date"
+                              value={a.due_date}
+                              onChange={e => onChange(it.response_id, { due_date: e.target.value })}
+                              className="w-full pl-8 pr-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-secondary-500/40 focus:ring-1 focus:ring-secondary-500/20 transition-all"
+                            />
                           </div>
                         </div>
                       </div>
@@ -281,14 +268,11 @@ function EntityNode({
             </div>
           )}
 
-          {(node.children ?? []).map((child) => (
+          {(node.children ?? []).map(child => (
             <EntityNode
-              key={child.code}
-              node={child}
-              depth={depth + 1}
-              itemsByEntity={itemsByEntity}
-              assignments={assignments}
-              onChange={onChange}
+              key={`${child.code}__${(child as any).edge_id ?? "null"}`}
+              node={child} depth={depth + 1}
+              itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange}
             />
           ))}
         </div>
@@ -296,6 +280,8 @@ function EntityNode({
     </div>
   );
 }
+
+// ─── Main Page ────────────────────────────────────────────────────
 
 export default function CapCorrectiveActionsPage() {
   const { admin, accessToken, isLoading } = useAuth();
@@ -305,7 +291,7 @@ export default function CapCorrectiveActionsPage() {
 
   const [cap, setCap] = useState<CapDetail | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
-  const [items, setItems] = useState<CapRequiredItem[]>([]);
+  const [items, setItems] = useState<SubCapRequiredItem[]>([]);
   const [assignments, setAssignments] = useState<Record<number, { due_date: string }>>({});
   const [existingSubCap, setExistingSubCap] = useState<SubCapSummary | null>(null);
 
@@ -323,7 +309,7 @@ export default function CapCorrectiveActionsPage() {
   }, [isLoading, admin, router]);
 
   const itemsByEntity = useMemo(() => {
-    const map: Record<string, CapRequiredItem[]> = {};
+    const map: Record<string, SubCapRequiredItem[]> = {};
     for (const it of items) {
       const key = `${it.entity_code}__${it.assigned_org_tree_id ?? "null"}`;
       if (!map[key]) map[key] = [];
@@ -336,23 +322,21 @@ export default function CapCorrectiveActionsPage() {
     if (!accessToken || !capId) return;
     setLoading(true);
     setError("");
-
     try {
-      const [detailRes, caRes, allCapsRes] = await Promise.all([
+      const [capRes, caRes, subCapsRes] = await Promise.all([
         capApi.get(accessToken, capId),
         capApi.getCorrectiveActions(accessToken, capId),
         capApi.list(accessToken, { includeSubCaps: true }),
       ]);
 
-      if (detailRes.success && detailRes.data) {
-        setCap((detailRes.data as { cap: CapDetail }).cap);
+      if (capRes.success && capRes.data) {
+        setCap((capRes.data as { cap: CapDetail }).cap || capRes.data as CapDetail);
       }
 
-      // Find existing sub-CAP for this parent
-      if (allCapsRes.success && allCapsRes.data) {
-        const capsData = allCapsRes.data as { caps: SubCapSummary[] };
-        const sub = (capsData.caps || []).find((c: any) => c.parent_cap_id === parseInt(capId));
-        setExistingSubCap(sub || null);
+      if (subCapsRes.success && subCapsRes.data) {
+        const subCapsData = subCapsRes.data as { caps?: (SubCapSummary & { parent_cap_id?: number | null })[] };
+        const subs = (subCapsData.caps || []).filter(c => c.parent_cap_id === Number(capId));
+        setExistingSubCap(subs[0] || null);
       }
 
       if (!caRes.success || !caRes.data) {
@@ -361,55 +345,36 @@ export default function CapCorrectiveActionsPage() {
         return;
       }
 
-      const data = caRes.data as { items: CapRequiredItem[]; corrective_actions: CorrectiveActionRow[]; tree: TreeNode | null };
+      const data = caRes.data as { items: SubCapRequiredItem[]; corrective_actions: SubCorrectiveActionRow[]; tree: TreeNode | null };
       const its = data.items || [];
       setItems(its);
 
       const byResponse: Record<number, { due_date: string }> = {};
       for (const row of data.corrective_actions || []) {
-        byResponse[row.cap_response_id] = {
-          due_date: row.due_date ? String(row.due_date).slice(0, 10) : "",
-        };
+        byResponse[row.response_id] = { due_date: row.due_date ? String(row.due_date).slice(0, 10) : "" };
       }
       for (const it of its) {
-        if (!byResponse[it.response_id]) {
-          byResponse[it.response_id] = { due_date: "" };
-        }
+        if (!byResponse[it.response_id]) byResponse[it.response_id] = { due_date: "" };
       }
       setAssignments(byResponse);
+      setSaved((data.corrective_actions || []).length > 0);
 
-      const hasSaved = (data.corrective_actions || []).length > 0;
-      setSaved(hasSaved);
-
-      const rawTree = data.tree;
-      if (rawTree) {
-        const entityKeysWithItems = new Set(
-          its.map((i) => `${i.entity_code}__${i.assigned_org_tree_id ?? "null"}`)
-        );
-        const pruned = pruneTreeByEntitiesWithItems(rawTree, entityKeysWithItems);
-        setTree(pruned);
+      if (data.tree) {
+        const entityKeysWithItems = new Set(its.map(i => `${i.entity_code}__${i.assigned_org_tree_id ?? "null"}`));
+        setTree(pruneTreeByEntitiesWithItems(data.tree, entityKeysWithItems));
       } else {
         setTree(null);
       }
     } catch {
       setError("Network error. Please try again.");
     }
-
     setLoading(false);
   }, [accessToken, capId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const onChange = (responseId: number, patch: Partial<{ due_date: string }>) => {
-    setAssignments((prev) => ({
-      ...prev,
-      [responseId]: {
-        due_date: prev[responseId]?.due_date || "",
-        ...patch,
-      },
-    }));
+    setAssignments(prev => ({ ...prev, [responseId]: { due_date: prev[responseId]?.due_date || "", ...patch } }));
   };
 
   const handleSave = async () => {
@@ -417,22 +382,17 @@ export default function CapCorrectiveActionsPage() {
     setSaving(true);
     setError("");
     setToast("");
-
-    const actions = items.map((it) => {
-      const a = assignments[it.response_id] || { due_date: "" };
-      return {
-        response_id: it.response_id,
-        entity_code: it.entity_code,
-        question_id: it.question_id,
-        assigned_org_tree_id: it.assigned_org_tree_id || null,
-        due_date: a.due_date || null,
-      };
-    });
-
+    const actions = items.map(it => ({
+      response_id: it.response_id,
+      entity_code: it.entity_code,
+      question_id: it.question_id,
+      assigned_org_tree_id: it.assigned_org_tree_id || null,
+      due_date: assignments[it.response_id]?.due_date || null,
+    }));
     const res = await capApi.saveCorrectiveActions(accessToken, capId, actions);
     setSaving(false);
     if (res.success) {
-      setToast("Corrective actions saved successfully!");
+      setToast("Corrective actions saved.");
       setSaved(true);
       setTimeout(() => setToast(""), 4000);
       await load();
@@ -443,25 +403,15 @@ export default function CapCorrectiveActionsPage() {
 
   const handleCreateSubCap = async () => {
     if (!accessToken || !cap) return;
-    const manualTitle = subCapTitle.trim();
-    if (!manualTitle) {
-      setError("Please enter a Sub-CAP title.");
-      return;
-    }
+    if (!subCapTitle.trim()) { setError("Please enter a Sub-CAP title."); return; }
     setCreatingSubCap(true);
     setError("");
-
-    const res = await capApi.create(accessToken, {
-      audit_id: cap.audit_id,
-      parent_cap_id: cap.id,
-      title: manualTitle,
-    });
+    const res = await capApi.create(accessToken, { audit_id: cap.audit_id, parent_cap_id: cap.id, title: subCapTitle.trim() });
     setCreatingSubCap(false);
     if (res.success && res.data) {
       setShowCreateSubCapModal(false);
       setSubCapTitle("");
-      const data = res.data as { cap_id: number };
-      router.push(`/my-caps/details?id=${data.cap_id}`);
+      router.push(`/my-caps/details?id=${(res.data as { cap_id: number }).cap_id}`);
     } else {
       setError(res.message || "Failed to create Sub-CAP plan.");
     }
@@ -469,196 +419,196 @@ export default function CapCorrectiveActionsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="relative">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 border-3 border-secondary-400 border-t-transparent rounded-full animate-spin" />
-          <div className="absolute inset-0 flex items-center justify-center">
-          </div>
-        </div>
+      <div className="h-screen bg-transparent flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
   if (!admin) return null;
 
   return (
-    <div className="min-h-screen">
-      <main className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 md:py-8 pt-16 sm:pt-6 md:pt-8">
+    <div className="h-screen bg-transparent flex">
+      <div className="flex-1 flex flex-col overflow-hidden pt-16 lg:pt-0">
 
-        {/* Header - Responsive */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
-          <div className="flex items-center gap-2 sm:gap-3">
+        {/* Top bar */}
+        <div className="shrink-0 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 bg-transparent/80 backdrop-blur-sm border-b border-white/[0.05]">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => router.push(`/my-caps/details?id=${capId}`)}
-              className="p-1.5 sm:p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
+              className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all shrink-0"
             >
-              <ArrowLeft size={14} className="sm:w-4 sm:h-4" />
+              <ArrowLeft size={14} />
             </button>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-                <ClipboardList size={18} className="text-secondary-400 sm:w-5 sm:h-5" />
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-white flex items-center gap-2">
+                <ClipboardList size={15} className="text-orange-400 shrink-0" />
                 Corrective Actions
               </h1>
-              {cap && (
-                <p className="text-[11px] sm:text-sm text-gray-400 mt-0.5 font-mono truncate">
-                  {cap.title}
-                </p>
-              )}
+              {cap && <p className="text-[11px] text-gray-500 truncate mt-0.5">{cap.title}</p>}
             </div>
           </div>
 
-
+          {items.length > 0 && (
+            <div className="hidden sm:flex items-center gap-2 shrink-0">
+              {toast && (
+                <span className="hidden sm:flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
+                  <CheckCircle2 size={12} /> Saved
+                </span>
+              )}
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white/[0.05] border border-white/10 text-gray-200 hover:bg-white/[0.08] hover:border-white/20 transition-all disabled:opacity-50"
+              >
+                {saving
+                  ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  : <Save size={13} />}
+                <span className="hidden sm:inline">Save</span>
+              </button>
+              {saved && !existingSubCap && (
+                <button
+                  onClick={() => { setSubCapTitle(cap?.title ? `Sub-CAP: ${cap.title}` : ""); setShowCreateSubCapModal(true); }}
+                  disabled={creatingSubCap}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-60"
+                >
+                  <PlusCircle size={13} />
+                  <span className="hidden sm:inline">Create Sub-CAP</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
+        {/* Content */}
         {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <div className="relative">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center">
-              </div>
-            </div>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : error ? (
-          <div className="bg-white/5 backdrop-blur-sm rounded-xl p-6 sm:p-8 text-center border border-white/10">
-            <AlertCircle size={28} className="text-red-400 mx-auto mb-3 sm:w-8 sm:h-8" />
-            <p className="text-red-400 text-sm sm:text-base">{error}</p>
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="glass rounded-xl p-8 text-center max-w-sm border border-white/10">
+              <AlertCircle size={28} className="text-red-400 mx-auto mb-3" />
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
           </div>
         ) : (
-          <div className="space-y-4 max-w-5xl mx-auto">
-            {/* Toast */}
-            {toast && (
-              <div className="flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
-                <CheckCircle2 size={14} className="shrink-0 sm:w-4 sm:h-4" />
-                <span className="text-[11px] sm:text-sm">{toast}</span>
-              </div>
-            )}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 lg:pb-6">
+            <div className="max-w-4xl mx-auto space-y-3">
 
-            {/* Existing Sub-CAP summary - Responsive */}
-            {existingSubCap && (
-              <div className="bg-white/5 backdrop-blur-sm rounded-lg sm:rounded-xl p-4 sm:p-5 border border-secondary-500/20">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-secondary-500/15 flex items-center justify-center">
-                      <ClipboardList size={14} className="text-secondary-400 sm:w-4.5 sm:h-4.5" />
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm font-semibold text-white">Sub-CAP Created</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[9px] sm:text-xs px-2 py-0.5 sm:py-1 rounded-full border font-medium capitalize ${CAP_STATUS_BADGE[existingSubCap.status] || "bg-gray-500/15 text-gray-400 border-gray-500/30"}`}>
-                        {existingSubCap.status.replace("_", " ")}
-                      </span>
-                      <span className="text-[9px] sm:text-xs text-gray-500 whitespace-nowrap">
-                        {existingSubCap.completed_questions}/{existingSubCap.total_questions} done
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => router.push(`/my-caps/details?id=${existingSubCap.id}`)}
-                      className="flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all w-full sm:w-auto"
-                    >
-                      <ExternalLink size={11} className="sm:w-3 sm:h-3" />
-                      View Sub-CAP
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* CAP Questions */}
-            <div className="bg-white/5 backdrop-blur-sm rounded-lg sm:rounded-xl p-4 sm:p-5 space-y-3 border border-white/10">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h3 className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-2">
-                  <Building2 size={11} className="text-secondary-400 sm:w-3 sm:h-3" />
-                  CAP Required Questions
-                  <span className="text-gray-600 font-normal normal-case ml-1">({items.length})</span>
-                </h3>
-
-              </div>
-
-              {!saved && items.length > 0 && (
-                <div className="flex items-start sm:items-center gap-2 px-2.5 sm:px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <AlertCircle size={12} className="text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
-                  <p className="text-[10px] sm:text-xs text-amber-300">Fill in due dates, then save to enable Sub-CAP Plan creation.</p>
+              {/* Mobile toast */}
+              {toast && (
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 sm:hidden">
+                  <CheckCircle2 size={13} className="shrink-0" />
+                  <span className="text-xs">{toast}</span>
                 </div>
               )}
 
+              {/* Existing Sub-CAP banner */}
+              {existingSubCap && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-secondary-500/20 bg-secondary-500/[0.05] px-4 py-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <ClipboardList size={14} className="text-secondary-400 shrink-0" />
+                    <span className="text-sm font-semibold text-white">Sub-CAP Plan Created</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium capitalize shrink-0 ${SUB_CAP_STATUS_BADGE[existingSubCap.status] || "bg-gray-500/15 text-gray-400 border-gray-500/30"}`}>
+                      {existingSubCap.status.replace("_", " ")}
+                    </span>
+                    <span className="text-[11px] text-gray-500 shrink-0 hidden sm:inline">
+                      {existingSubCap.completed_questions}/{existingSubCap.total_questions} done
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => router.push(`/my-caps/details?id=${existingSubCap.id}`)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shrink-0"
+                  >
+                    <ExternalLink size={11} /> View Sub-CAP
+                  </button>
+                </div>
+              )}
+
+              {/* Unsaved notice */}
+              {!saved && items.length > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                  <AlertCircle size={13} className="text-orange-400 shrink-0" />
+                  <p className="text-xs text-orange-300">Fill in due dates and save to enable Sub-CAP plan creation.</p>
+                </div>
+              )}
+
+              {/* Tree / empty */}
               {items.length === 0 ? (
-                <p className="text-xs sm:text-sm text-gray-600 italic py-4">No CAP-required questions found.</p>
+                <div className="py-16 text-center">
+                  <ClipboardList size={32} className="text-gray-700 mx-auto mb-3" />
+                  <p className="text-sm text-gray-600 italic">No Sub-CAP-required questions found for this CAP.</p>
+                </div>
               ) : tree ? (
-                <div className="rounded-lg sm:rounded-xl border border-white/[0.08] p-2 sm:p-3 space-y-2">
-                  {(() => {
-                    const root = tree;
-                    return ENTITY_TYPE_COLORS[root.entity_type] ? (
-                      <EntityNode node={root} depth={0} itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange} />
-                    ) : (
-                      (root.children ?? []).map((child) => (
-                        <EntityNode key={child.code} node={child} depth={0} itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange} />
-                      ))
-                    );
-                  })()}
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.01] p-3 sm:p-4 space-y-1">
+                  {ENTITY_TYPE_COLORS[tree.entity_type] ? (
+                    <EntityNode node={tree} depth={0} itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange} />
+                  ) : (
+                    (tree.children ?? []).map((child, idx) => (
+                      <EntityNode key={`${child.code}-${idx}`} node={child} depth={0} itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange} />
+                    ))
+                  )}
                 </div>
               ) : (
-                <p className="text-xs sm:text-sm text-gray-600 italic">Entity tree is not available for this CAP.</p>
+                <div className="py-12 text-center">
+                  <p className="text-sm text-gray-600 italic">Entity tree not available. Please reload.</p>
+                </div>
               )}
-            </div>
 
-            {/* Footer Actions - Responsive */}
-            {items.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 pb-6 sm:pb-8">
-
-                <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto order-1 sm:order-2">
+              {/* Mobile action buttons */}
+              {items.length > 0 && (
+                <div className="flex gap-2 pt-2 sm:hidden pb-4">
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="flex items-center justify-center gap-2 px-4 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium bg-white/[0.05] border border-white/10 text-gray-200 hover:bg-white/[0.08] hover:border-white/20 transition-all disabled:opacity-50 w-full sm:w-auto"
+                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium bg-white/[0.05] border border-white/10 text-gray-200 disabled:opacity-50"
                   >
-                    {saving ? <div className="w-3 h-3 sm:w-4 sm:h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Save size={12} />}
+                    {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Save size={14} />}
                     Save Actions
                   </button>
-                  {saved && !existingSubCap && cap && !cap.parent_cap_id && (
+                  {saved && !existingSubCap && (
                     <button
-                      onClick={() => {
-                        setSubCapTitle(cap?.title ? `Sub-CAP: ${cap.title}` : "");
-                        setShowCreateSubCapModal(true);
-                      }}
+                      onClick={() => { setSubCapTitle(cap?.title ? `Sub-CAP: ${cap.title}` : ""); setShowCreateSubCapModal(true); }}
                       disabled={creatingSubCap}
-                      className="flex items-center justify-center gap-2 px-4 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-60 w-full sm:w-auto"
+                      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-60"
                     >
-                      {creatingSubCap ? <div className="w-3 h-3 sm:w-4 sm:h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <PlusCircle size={12} />}
-                      Create Sub-CAP
+                      <PlusCircle size={14} /> Create Sub-CAP
                     </button>
                   )}
                 </div>
-              </div>
-            )}
+              )}
+
+            </div>
           </div>
         )}
-      </main>
+
+      </div>
+
+      {/* Create Sub-CAP Modal — bottom sheet on mobile */}
       {showCreateSubCapModal && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-white/15 glass shadow-2xl">
-            <div className="px-5 py-4 border-b border-white/10">
-              <h3 className="text-base font-semibold text-white">Create Sub-CAP</h3>
-              <p className="text-xs text-gray-400 mt-1">Add a title before creating the Sub-CAP.</p>
+        <div className="fixed inset-0 z-[80] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-white/[0.12] glass shadow-2xl flex flex-col">
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="w-8 h-1 rounded-full bg-white/20" />
+            </div>
+            <div className="px-5 py-4 border-b border-white/[0.08]">
+              <h3 className="text-base font-semibold text-white">Create Sub-CAP Plan</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Give the Sub-CAP plan a title before creating.</p>
             </div>
             <div className="px-5 py-4 space-y-2">
-              <label className="text-xs text-gray-400">Sub-CAP Title</label>
+              <label className="text-xs text-gray-400 font-medium">Sub-CAP Title</label>
               <input
                 value={subCapTitle}
-                onChange={(e) => setSubCapTitle(e.target.value)}
+                onChange={e => setSubCapTitle(e.target.value)}
                 placeholder="Enter Sub-CAP title"
-                className="w-full px-3 py-2 rounded-lg bg-white/[0.05] border border-white/10 text-sm text-white focus:outline-none focus:border-secondary-500/50"
+                className="w-full px-3 py-2.5 rounded-lg bg-white/[0.05] border border-white/10 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all"
               />
             </div>
-            <div className="px-5 py-4 border-t border-white/10 flex items-center justify-end gap-2">
+            <div className="px-5 py-4 border-t border-white/[0.08] flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  if (creatingSubCap) return;
-                  setShowCreateSubCapModal(false);
-                }}
-                className="px-3 py-2 rounded-lg text-xs font-medium text-gray-300 border border-white/10 hover:border-white/20"
+                onClick={() => { if (!creatingSubCap) setShowCreateSubCapModal(false); }}
+                className="px-4 py-2 rounded-lg text-xs font-medium text-gray-300 border border-white/10 hover:border-white/20 transition-all"
               >
                 Cancel
               </button>
@@ -666,14 +616,15 @@ export default function CapCorrectiveActionsPage() {
                 type="button"
                 onClick={handleCreateSubCap}
                 disabled={creatingSubCap}
-                className="px-4 py-2 rounded-lg text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-60"
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-60 transition-all"
               >
-                {creatingSubCap ? "Creating..." : "Create Sub-CAP"}
+                {creatingSubCap ? "Creating…" : "Create Sub-CAP"}
               </button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

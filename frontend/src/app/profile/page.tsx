@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { authApi, countriesApi, type Country } from "@/lib/api";
@@ -115,6 +115,24 @@ export default function ProfilePage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
+
+  const passwordRequirements = useMemo(() => [
+    { label: "At least 8 characters",    met: newPassword.length >= 8 },
+    { label: "One uppercase letter",      met: /[A-Z]/.test(newPassword) },
+    { label: "One lowercase letter",      met: /[a-z]/.test(newPassword) },
+    { label: "One number",                met: /[0-9]/.test(newPassword) },
+    { label: "One special character",     met: /[^A-Za-z0-9]/.test(newPassword) },
+  ], [newPassword]);
+
+  const passwordStrength = useMemo(() => {
+    const met = passwordRequirements.filter(r => r.met).length;
+    if (met === 0) return { score: 0, label: "",            color: "" };
+    if (met === 1) return { score: 1, label: "Very Weak",   color: "bg-red-500" };
+    if (met === 2) return { score: 2, label: "Weak",        color: "bg-orange-500" };
+    if (met === 3) return { score: 3, label: "Fair",        color: "bg-yellow-500" };
+    if (met === 4) return { score: 4, label: "Good",        color: "bg-blue-400" };
+    return             { score: 5, label: "Strong",         color: "bg-emerald-500" };
+  }, [passwordRequirements]);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -251,8 +269,8 @@ export default function ProfilePage() {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordMsg(null);
-    if (newPassword.length < 8) {
-      setPasswordMsg({ type: "error", text: "New password must be at least 8 characters." });
+    if (!passwordRequirements.every(r => r.met)) {
+      setPasswordMsg({ type: "error", text: "Password does not meet all requirements." });
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -591,64 +609,92 @@ export default function ProfilePage() {
 
             {/* SECURITY */}
             {activeTab === "security" && (
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
-                <div className="xl:col-span-2 glass border border-white/[0.08] rounded-xl p-5 sm:p-6">
-                  <div className="flex items-center gap-3 mb-6 pb-5 border-b border-white/[0.06]">
-                    <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shrink-0">
-                      <Lock size={16} className="text-emerald-400" />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-semibold text-white">Change Password</h2>
-                      <p className="text-xs text-gray-500 mt-0.5">Keep your account secure with a strong password</p>
-                    </div>
+              <div className="glass border border-white/[0.08] rounded-xl p-5 sm:p-6">
+                <div className="flex items-center gap-3 mb-6 pb-5 border-b border-white/[0.06]">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shrink-0">
+                    <Lock size={16} className="text-emerald-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-white">Change Password</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">Keep your account secure with a strong password</p>
+                  </div>
+                </div>
+
+                {passwordMsg && (
+                  <div className={`flex items-center gap-3 p-3.5 rounded-xl mb-5 text-sm border ${
+                    passwordMsg.type === "success" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"
+                  }`}>
+                    {passwordMsg.type === "success" ? <Check size={18} /> : <AlertCircle size={18} />}
+                    <span className="font-medium">{passwordMsg.text}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleChangePassword} className="space-y-5">
+                  {/* Three password fields in one row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <PasswordInput
+                      label="Current Password"
+                      value={currentPassword}
+                      onChange={e => setCurrentPassword(e.target.value)}
+                      show={showCurrent}
+                      toggleShow={() => setShowCurrent(!showCurrent)}
+                      placeholder="Current password"
+                    />
+                    <PasswordInput
+                      label="New Password"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      show={showNew}
+                      toggleShow={() => setShowNew(!showNew)}
+                      placeholder="New password"
+                    />
+                    <PasswordInput
+                      label="Confirm New Password"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      show={showConfirm}
+                      toggleShow={() => setShowConfirm(!showConfirm)}
+                      placeholder="Confirm password"
+                      hasError={!!confirmPassword && confirmPassword !== newPassword}
+                    />
                   </div>
 
-                  {passwordMsg && (
-                    <div className={`flex items-center gap-3 p-3.5 rounded-xl mb-6 text-sm border ${
-                      passwordMsg.type === "success" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"
-                    }`}>
-                      {passwordMsg.type === "success" ? <Check size={18} /> : <AlertCircle size={18} />}
-                      <span className="font-medium">{passwordMsg.text}</span>
+                  {/* Strength + requirements (shown when typing new password) */}
+                  {newPassword && (
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-1 gap-1">
+                          {[1, 2, 3, 4, 5].map((i) => (
+                            <div key={i} className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${i <= passwordStrength.score ? passwordStrength.color : "bg-white/10"}`} />
+                          ))}
+                        </div>
+                        {passwordStrength.label && (
+                          <span className={`text-[11px] font-semibold shrink-0 ${
+                            passwordStrength.score <= 2 ? "text-red-400" :
+                            passwordStrength.score === 3 ? "text-yellow-400" :
+                            passwordStrength.score === 4 ? "text-blue-400" : "text-emerald-400"
+                          }`}>{passwordStrength.label}</span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-1">
+                        {passwordRequirements.map((req) => (
+                          <div key={req.label} className={`flex items-center gap-1.5 text-xs transition-colors ${req.met ? "text-emerald-400" : "text-gray-500"}`}>
+                            <Check size={11} className={req.met ? "text-emerald-400" : "text-gray-600"} />
+                            {req.label}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
-                  <form onSubmit={handleChangePassword} className="space-y-5">
-                    <div className="p-4 bg-white/[0.02] border border-white/10 rounded-xl space-y-4">
-                      <div className="pb-4 border-b border-white/[0.06]">
-                        <PasswordInput label="Current Password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} show={showCurrent} toggleShow={() => setShowCurrent(!showCurrent)} placeholder="Enter your current password" />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <PasswordInput label="New Password" value={newPassword} onChange={e => setNewPassword(e.target.value)} show={showNew} toggleShow={() => setShowNew(!showNew)} placeholder="Min. 8 characters" />
-                        <PasswordInput label="Confirm New Password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} show={showConfirm} toggleShow={() => setShowConfirm(!showConfirm)} placeholder="Repeat new password" />
-                      </div>
-                    </div>
+                  <div className="flex justify-end">
                     <button type="submit" disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
-                      className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                       {changingPassword ? "Updating..." : "Save New Password"}
                       {!changingPassword && <ChevronRight size={16} />}
                     </button>
-                  </form>
-                </div>
-
-                <div className="xl:col-span-1 glass border border-white/[0.08] rounded-xl p-5">
-                  <div className="w-10 h-10 rounded-lg bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center mb-4">
-                    <ShieldCheck className="w-5 h-5 text-secondary-400" />
                   </div>
-                  <h3 className="text-base font-bold text-white mb-1.5">Password Standards</h3>
-                  <p className="text-xs text-gray-500 mb-4">Follow these guidelines for a secure account:</p>
-                  <ul className="space-y-3 text-xs text-gray-400 font-medium">
-                    {[
-                      "Minimum 8 characters long",
-                      "Mix letters, numbers and symbols",
-                      "Avoid common or sequential terms",
-                    ].map((tip) => (
-                      <li key={tip} className="flex items-start gap-2">
-                        <Check size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" />
-                        <span>{tip}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                </form>
               </div>
             )}
           </div>
@@ -689,9 +735,9 @@ function DetailItem({ icon: Icon, label, value, copyable, className = "" }: {
   );
 }
 
-function PasswordInput({ label, value, onChange, show, toggleShow, placeholder }: {
+function PasswordInput({ label, value, onChange, show, toggleShow, placeholder, hasError }: {
   label: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  show: boolean; toggleShow: () => void; placeholder?: string;
+  show: boolean; toggleShow: () => void; placeholder?: string; hasError?: boolean;
 }) {
   return (
     <div>
@@ -699,7 +745,11 @@ function PasswordInput({ label, value, onChange, show, toggleShow, placeholder }
       <div className="relative">
         <input type={show ? "text" : "password"} value={value} onChange={onChange} required
           placeholder={placeholder || "••••••••"}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all pr-12" />
+          className={`w-full bg-white/5 border rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 transition-all pr-12 ${
+            hasError
+              ? "border-red-500/50 focus:border-red-500/60 focus:ring-red-500/20"
+              : "border-white/10 focus:border-secondary-500/50 focus:ring-secondary-500/20"
+          }`} />
         <button type="button" onClick={toggleShow} tabIndex={-1}
           className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-white/10 hover:text-white transition-colors">
           {show ? <EyeOff size={16} /> : <Eye size={16} />}
