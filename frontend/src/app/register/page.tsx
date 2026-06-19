@@ -28,6 +28,55 @@ import {
   type AllEntityType,
 } from "@/lib/api";
 
+/* ─── Country Code → IANA Timezone Map ──────────────────────────── */
+
+const COUNTRY_TIMEZONE_MAP: Record<string, string> = {
+  AF: "Asia/Kabul", AL: "Europe/Tirane", DZ: "Africa/Algiers", AO: "Africa/Luanda",
+  AR: "America/Argentina/Buenos_Aires", AM: "Asia/Yerevan", AU: "Australia/Sydney",
+  AT: "Europe/Vienna", AZ: "Asia/Baku", BH: "Asia/Bahrain", BD: "Asia/Dhaka",
+  BY: "Europe/Minsk", BE: "Europe/Brussels", BZ: "America/Belize", BJ: "Africa/Porto-Novo",
+  BT: "Asia/Thimphu", BO: "America/La_Paz", BA: "Europe/Sarajevo", BW: "Africa/Gaborone",
+  BR: "America/Sao_Paulo", BN: "Asia/Brunei", BG: "Europe/Sofia", BF: "Africa/Ouagadougou",
+  BI: "Africa/Bujumbura", KH: "Asia/Phnom_Penh", CM: "Africa/Douala", CA: "America/Toronto",
+  CV: "Atlantic/Cape_Verde", CF: "Africa/Bangui", TD: "Africa/Ndjamena", CL: "America/Santiago",
+  CN: "Asia/Shanghai", CO: "America/Bogota", KM: "Indian/Comoro", CG: "Africa/Brazzaville",
+  CD: "Africa/Kinshasa", CR: "America/Costa_Rica", HR: "Europe/Zagreb", CU: "America/Havana",
+  CY: "Asia/Nicosia", CZ: "Europe/Prague", DK: "Europe/Copenhagen", DJ: "Africa/Djibouti",
+  DO: "America/Santo_Domingo", EC: "America/Guayaquil", EG: "Africa/Cairo",
+  SV: "America/El_Salvador", GQ: "Africa/Malabo", ER: "Africa/Asmara", EE: "Europe/Tallinn",
+  ET: "Africa/Addis_Ababa", FI: "Europe/Helsinki", FR: "Europe/Paris", GA: "Africa/Libreville",
+  GM: "Africa/Banjul", GE: "Asia/Tbilisi", DE: "Europe/Berlin", GH: "Africa/Accra",
+  GR: "Europe/Athens", GT: "America/Guatemala", GN: "Africa/Conakry", GW: "Africa/Bissau",
+  GY: "America/Guyana", HT: "America/Port-au-Prince", HN: "America/Tegucigalpa",
+  HK: "Asia/Hong_Kong", HU: "Europe/Budapest", IS: "Atlantic/Reykjavik", IN: "Asia/Kolkata",
+  ID: "Asia/Jakarta", IR: "Asia/Tehran", IQ: "Asia/Baghdad", IE: "Europe/Dublin",
+  IL: "Asia/Jerusalem", IT: "Europe/Rome", CI: "Africa/Abidjan", JM: "America/Jamaica",
+  JP: "Asia/Tokyo", JO: "Asia/Amman", KZ: "Asia/Almaty", KE: "Africa/Nairobi",
+  KP: "Asia/Pyongyang", KR: "Asia/Seoul", KW: "Asia/Kuwait", KG: "Asia/Bishkek",
+  LA: "Asia/Vientiane", LV: "Europe/Riga", LB: "Asia/Beirut", LS: "Africa/Maseru",
+  LR: "Africa/Monrovia", LY: "Africa/Tripoli", LI: "Europe/Vaduz", LT: "Europe/Vilnius",
+  LU: "Europe/Luxembourg", MK: "Europe/Skopje", MG: "Indian/Antananarivo", MW: "Africa/Blantyre",
+  MY: "Asia/Kuala_Lumpur", MV: "Indian/Maldives", ML: "Africa/Bamako", MT: "Europe/Malta",
+  MR: "Africa/Nouakchott", MU: "Indian/Mauritius", MX: "America/Mexico_City", MD: "Europe/Chisinau",
+  MC: "Europe/Monaco", MN: "Asia/Ulaanbaatar", ME: "Europe/Podgorica", MA: "Africa/Casablanca",
+  MZ: "Africa/Maputo", MM: "Asia/Rangoon", NA: "Africa/Windhoek", NP: "Asia/Kathmandu",
+  NL: "Europe/Amsterdam", NZ: "Pacific/Auckland", NI: "America/Managua", NE: "Africa/Niamey",
+  NG: "Africa/Lagos", NO: "Europe/Oslo", OM: "Asia/Muscat", PK: "Asia/Karachi",
+  PA: "America/Panama", PG: "Pacific/Port_Moresby", PY: "America/Asuncion", PE: "America/Lima",
+  PH: "Asia/Manila", PL: "Europe/Warsaw", PT: "Europe/Lisbon", QA: "Asia/Qatar",
+  RO: "Europe/Bucharest", RU: "Europe/Moscow", RW: "Africa/Kigali", SA: "Asia/Riyadh",
+  SN: "Africa/Dakar", RS: "Europe/Belgrade", SL: "Africa/Freetown", SG: "Asia/Singapore",
+  SK: "Europe/Bratislava", SI: "Europe/Ljubljana", SO: "Africa/Mogadishu", ZA: "Africa/Johannesburg",
+  SS: "Africa/Juba", ES: "Europe/Madrid", LK: "Asia/Colombo", SD: "Africa/Khartoum",
+  SR: "America/Paramaribo", SZ: "Africa/Mbabane", SE: "Europe/Stockholm", CH: "Europe/Zurich",
+  SY: "Asia/Damascus", TW: "Asia/Taipei", TJ: "Asia/Dushanbe", TZ: "Africa/Dar_es_Salaam",
+  TH: "Asia/Bangkok", TL: "Asia/Dili", TG: "Africa/Lome", TT: "America/Port_of_Spain",
+  TN: "Africa/Tunis", TR: "Europe/Istanbul", TM: "Asia/Ashgabat", UG: "Africa/Kampala",
+  UA: "Europe/Kiev", AE: "Asia/Dubai", GB: "Europe/London", US: "America/New_York",
+  UY: "America/Montevideo", UZ: "Asia/Tashkent", VE: "America/Caracas", VN: "Asia/Ho_Chi_Minh",
+  YE: "Asia/Aden", ZM: "Africa/Lusaka", ZW: "Africa/Harare",
+};
+
 /* ─── Account Type Config ─────────────────────────────────────────── */
 
 type AccountGroup = "Customer" | "Company" | "Audit Firm";
@@ -433,6 +482,7 @@ function RegisterForm() {
     password: "",
     plan_name: "Free",
     billing_cycle: "Monthly",
+    timezone: "",
   });
 
   const [countries, setCountries] = useState<Country[]>([]);
@@ -807,7 +857,9 @@ function RegisterForm() {
                                 : "text-white"
                                 }`}
                               onClick={() => {
-                                updateField("country", c.country);
+                                const tz = COUNTRY_TIMEZONE_MAP[c.country_code] ?? "";
+                                setFormData(prev => ({ ...prev, country: c.country, timezone: tz }));
+                                setError("");
                                 setShowCountryDropdown(false);
                                 setCountrySearch("");
                               }}
@@ -846,6 +898,14 @@ function RegisterForm() {
                   </div>
                 </div>
               </div>
+
+              {/* Timezone hint — outside the grid so it never disrupts Country/Phone layout */}
+              {formData.timezone && (
+                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 -mt-2">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-secondary-600"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  Timezone auto-detected: <span className="text-secondary-500 font-medium">{formData.timezone}</span>
+                </div>
+              )}
 
               <div className="space-y-4">
                 <Input

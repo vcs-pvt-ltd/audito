@@ -16,60 +16,36 @@ type Plan = {
 };
 
 const plans: Plan[] = [
-  {
-    name: "Basic",
-    price: "$0",
-    period: "/1 months",
-    description: "Perfect for trying out Audito",
-    cta: "Get Started",
-    href: "/register",
-  },
-  {
-    name: "Pro",
-    price: "$99",
-    period: "/month",
-    description: "For growing teams",
-    cta: "Get Started",
-    href: "/register",
-  },
-  {
-    name: "Elite",
-    price: "$299",
-    period: "/month",
-    description: "For large organizations",
-    cta: "Get Started",
-    href: "/register",
-  },
+  { name: "Basic", price: "$0", period: "/1 month", description: "Perfect for trying out Audito", cta: "Get Started", href: "/register" },
+  { name: "Pro", price: "$99", period: "/month", description: "For growing teams", cta: "Get Started", href: "/register" },
+  { name: "Elite", price: "$299", period: "/month", description: "For large organizations", cta: "Get Started", href: "/register" },
 ];
 
 const comparisonRows = [
-  { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15"] },
-  { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true] },
-  { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company",     values: ["1", "2", "6"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Departments",           values: ["4", "8", "16"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits",      values: ["2", "6", "14"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists",      values: ["3", "6", "25"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors",    values: ["1", "3", "15"] },
+  { group: "CORE FEATURES",        feature: "Auditor Evaluation System", values: [false, false, true] },
+  { group: "CORE FEATURES",        feature: "Link Company to Company",   values: [false, false, true] },
 ];
 
 type CardProps = { plan: Plan };
 
 const BasicCard = ({ plan }: CardProps) => (
-  <div className="rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#378745]/40 to-[#1D4226]/40 h-full flex flex-col">
+  <div className="pricing-card rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#378745]/40 to-[#1D4226]/40 h-full flex flex-col">
     <div className="flex justify-start mb-4">
       <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
-      <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">
-        {plan.name}
-      </h3>
+      <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">{plan.name}</h3>
     </div>
     <div className="text-start mb-2">
       <span className="text-4xl sm:text-5xl font-bold text-white">{plan.price}</span>
       <span className="ml-1 text-sm text-gray-400">{plan.period}</span>
     </div>
     <p className="text-sm mb-5 text-start text-gray-400">{plan.description}</p>
-    <Link
-      href={plan.href}
-      className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-white bg-[#27645E] hover:bg-[#1d4f4a]"
+    <Link href={plan.href}
+      className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-white bg-[#27645E] hover:bg-[#1d4f4a] hover:shadow-lg hover:shadow-black/30 active:scale-[0.98]"
     >
       {plan.cta}
     </Link>
@@ -77,24 +53,21 @@ const BasicCard = ({ plan }: CardProps) => (
 );
 
 const ProCard = ({ plan }: CardProps) => (
-  <div className="relative rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#F1FDF9]/40 to-[#B7DAD0]/60 h-full flex flex-col">
-    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[10px] font-bold rounded-full uppercase tracking-wide shadow-lg whitespace-nowrap">
+  <div className="pricing-card pricing-card-pro relative rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#F1FDF9]/40 to-[#B7DAD0]/60 h-full flex flex-col">
+    <div className="badge-shimmer absolute -top-2.5 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[10px] font-bold rounded-full uppercase tracking-wide shadow-lg whitespace-nowrap">
       Most Popular
     </div>
     <div className="flex justify-start mb-4">
       <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
-      <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-[#062D27]">
-        {plan.name}
-      </h3>
+      <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-[#062D27]">{plan.name}</h3>
     </div>
     <div className="text-start mb-2">
       <span className="text-4xl sm:text-5xl font-bold text-[#062D27]">{plan.price}</span>
       <span className="ml-1 text-sm text-[#062D27]">{plan.period}</span>
     </div>
     <p className="text-sm mb-5 text-start text-[#062D27]">{plan.description}</p>
-    <Link
-      href={plan.href}
-      className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-primary-950 bg-gradient-to-r from-[#EECA53] to-[#E1A300] hover:brightness-95"
+    <Link href={plan.href}
+      className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-primary-950 bg-gradient-to-r from-[#EECA53] to-[#E1A300] hover:brightness-105 hover:shadow-lg hover:shadow-[#D9A346]/30 active:scale-[0.98]"
     >
       {plan.cta}
     </Link>
@@ -102,21 +75,18 @@ const ProCard = ({ plan }: CardProps) => (
 );
 
 const EliteCard = ({ plan }: CardProps) => (
-  <div className="rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#0F766E] to-[#062D27] h-full flex flex-col">
+  <div className="pricing-card rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#0F766E] to-[#062D27] h-full flex flex-col">
     <div className="flex justify-start mb-4">
       <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
-      <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">
-        {plan.name}
-      </h3>
+      <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">{plan.name}</h3>
     </div>
     <div className="text-start mb-2">
       <span className="text-4xl sm:text-5xl font-bold text-white">{plan.price}</span>
       <span className="ml-1 text-sm text-gray-300">{plan.period}</span>
     </div>
     <p className="text-sm mb-5 text-start text-gray-300">{plan.description}</p>
-    <Link
-      href={plan.href}
-      className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-white bg-[#053B36] hover:bg-[#042c28]"
+    <Link href={plan.href}
+      className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-white bg-[#053B36] hover:bg-[#042c28] hover:shadow-lg hover:shadow-black/30 active:scale-[0.98]"
     >
       {plan.cta}
     </Link>
@@ -125,93 +95,131 @@ const EliteCard = ({ plan }: CardProps) => (
 
 export default function PricingSection() {
   const { setActiveSection } = useLanding();
-  const workspaceRows = comparisonRows.filter((row) => row.group === "WORKSPACE MANAGEMENT");
-  const coreRows = comparisonRows.filter((row) => row.group === "CORE FEATURES");
+  const workspaceRows = comparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
+  const coreRows      = comparisonRows.filter((r) => r.group === "CORE FEATURES");
 
   return (
     <section className="relative pt-20 pb-14 sm:py-18 lg:py-24 overflow-y-auto">
+      <style>{`
+        @keyframes shimmerText {
+          0%   { background-position: -200% center; }
+          100% { background-position: 200% center; }
+        }
+        @keyframes badgeShimmer {
+          0%, 100% { filter: brightness(1); }
+          50%       { filter: brightness(1.15); }
+        }
+        @keyframes pricingFadeIn {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)   scale(1); }
+        }
+
+        .pricing-gradient-text {
+          background: linear-gradient(90deg, #A8D0AF, #8BB9AC, #D4AF37, #A8D0AF);
+          background-size: 200% auto;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          animation: shimmerText 5s linear infinite;
+        }
+
+        .pricing-card {
+          transition: transform 0.3s cubic-bezier(0.34,1.4,0.64,1), box-shadow 0.3s ease;
+        }
+        .pricing-card:hover {
+          transform: translateY(-6px);
+          box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+        }
+        .pricing-card-pro:hover {
+          box-shadow: 0 24px 64px rgba(0,0,0,0.4), 0 0 32px rgba(212,163,70,0.2);
+        }
+
+        .badge-shimmer { animation: badgeShimmer 2.5s ease-in-out infinite; }
+
+        .table-row {
+          transition: background 0.18s ease;
+        }
+        .table-row:hover { background: rgba(255,255,255,0.04); }
+
+        .billing-pill {
+          transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .billing-pill:hover { filter: brightness(1.08); }
+
+        .contact-link {
+          transition: color 0.2s ease, text-decoration-color 0.2s ease;
+          text-underline-offset: 3px;
+        }
+        .contact-link:hover { color: #a3e4d7; }
+
+        .mobile-compare-card {
+          transition: transform 0.25s ease, border-color 0.25s ease;
+        }
+        .mobile-compare-card:hover {
+          transform: translateY(-2px);
+          border-color: rgba(255,255,255,0.18) !important;
+        }
+      `}</style>
+
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+
         {/* Header */}
         <div className="text-center mb-8 sm:mb-10">
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-3">
             Simple, Transparent
             <br />
-            <span
-              className="inline-block bg-clip-text text-transparent"
-              style={{
-                backgroundImage:
-                  "linear-gradient(180deg, #A8D0AF 0%, #8BB9AC 50%, #D4AF37 100%)",
-              }}
-            >
-              Pricing
-            </span>
+            <span className="pricing-gradient-text">Pricing</span>
           </h1>
           <p className="text-gray-400 text-sm sm:text-base max-w-2xl mx-auto">
             Choose the perfect plan for your organization. All plans include our core features.
           </p>
         </div>
 
-        {/* Billing Switch */}
+        {/* Billing switch */}
         <div className="flex justify-center mb-8 sm:mb-10">
-          <div className="glass rounded-full p-1 inline-flex items-center gap-1">
-            <button className="px-4 sm:px-5 py-2 rounded-full text-xs sm:text-sm text-gray-200 font-medium">
+          <div className="glass rounded-full p-1 inline-flex items-center gap-1 border border-white/[0.08]">
+            <button className="billing-pill px-4 sm:px-5 py-2 rounded-full text-xs sm:text-sm text-gray-200 font-medium hover:bg-white/[0.06]">
               Year Billing
             </button>
-            <button className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">
+            <button className="billing-pill px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">
               Save 20%
             </button>
-            <button className="px-4 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-semibold bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] shadow-[0_0_20px_rgba(251,191,36,0.35)]">
+            <button className="billing-pill px-4 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-semibold bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] shadow-[0_0_20px_rgba(251,191,36,0.35)]">
               Monthly Billing
             </button>
           </div>
         </div>
 
-        {/* Plan Cards
-            Mobile:  1-column stack
-            Tablet:  Pro featured on top (full-width), Basic + Elite side by side below
-            Desktop: 3-column (unchanged)
-        */}
-        {/* Desktop */}
+        {/* Desktop cards */}
         <div className="hidden lg:grid grid-cols-3 gap-6 max-w-6xl mx-auto mb-8">
           <BasicCard plan={plans[0]} />
-          <ProCard plan={plans[1]} />
+          <ProCard   plan={plans[1]} />
           <EliteCard plan={plans[2]} />
         </div>
 
-        {/* Tablet */}
+        {/* Tablet cards */}
         <div className="hidden md:flex lg:hidden flex-col gap-5 max-w-3xl mx-auto mb-8">
-          {/* Pro featured full-width on top */}
-          <div className="w-full">
-            <ProCard plan={plans[1]} />
-          </div>
-          {/* Basic + Elite side by side */}
+          <div className="w-full"><ProCard plan={plans[1]} /></div>
           <div className="grid grid-cols-2 gap-5">
             <BasicCard plan={plans[0]} />
             <EliteCard plan={plans[2]} />
           </div>
         </div>
 
-        {/* Mobile */}
+        {/* Mobile cards */}
         <div className="flex flex-col md:hidden gap-5 max-w-sm mx-auto mb-8">
-          <ProCard plan={plans[1]} />
+          <ProCard   plan={plans[1]} />
           <BasicCard plan={plans[0]} />
           <EliteCard plan={plans[2]} />
         </div>
 
-        {/* Comparison Table
-            Desktop: full table (unchanged, min-width guard)
-            Mobile/Tablet: card-based stacked layout
-        */}
-
-        {/* Desktop table */}
+        {/* Desktop comparison table */}
         <div className="hidden lg:block max-w-6xl mx-auto overflow-x-auto">
           <div className="min-w-[820px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-white/5 text-secondary-400">
-                  <th className="text-left px-5 py-4 text-xs tracking-wide font-semibold uppercase">
-                    Workspace Management
-                  </th>
+                  <th className="text-left px-5 py-4 text-xs tracking-wide font-semibold uppercase">Workspace Management</th>
                   <th className="px-5 py-4 text-xs font-semibold">Audito Basic</th>
                   <th className="px-5 py-4 text-xs font-semibold">Audito Pro</th>
                   <th className="px-5 py-4 text-xs font-semibold">Audito Elite</th>
@@ -219,35 +227,25 @@ export default function PricingSection() {
               </thead>
               <tbody>
                 {workspaceRows.map((row) => (
-                  <tr key={row.feature} className="border-t border-white/5">
+                  <tr key={row.feature} className="table-row border-t border-white/5">
                     <td className="px-5 py-4 text-gray-200">{row.feature}</td>
-                    {row.values.map((value, idx) => (
-                      <td key={`${row.feature}-${idx}`} className="px-5 py-4 text-center text-white">
-                        {value}
-                      </td>
+                    {row.values.map((v, i) => (
+                      <td key={i} className="px-5 py-4 text-center text-white font-medium">{v}</td>
                     ))}
                   </tr>
                 ))}
                 <tr className="border-t border-white/10 bg-white/5">
-                  <td className="px-5 py-3 text-xs tracking-wide font-semibold uppercase text-secondary-400">
-                    Core Features
-                  </td>
+                  <td className="px-5 py-3 text-xs tracking-wide font-semibold uppercase text-secondary-400">Core Features</td>
                   <td /><td /><td />
                 </tr>
                 {coreRows.map((row) => (
-                  <tr key={row.feature} className="border-t border-white/5">
+                  <tr key={row.feature} className="table-row border-t border-white/5">
                     <td className="px-5 py-4 text-gray-200">{row.feature}</td>
-                    {row.values.map((value, idx) => (
-                      <td key={`${row.feature}-${idx}`} className="px-5 py-4 text-center">
-                        {value ? (
-                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950">
-                            <Check size={12} />
-                          </span>
-                        ) : (
-                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400">
-                            <X size={12} />
-                          </span>
-                        )}
+                    {row.values.map((v, i) => (
+                      <td key={i} className="px-5 py-4 text-center">
+                        {v
+                          ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950 shadow-sm shadow-secondary-500/40"><Check size={12} /></span>
+                          : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400"><X size={12} /></span>}
                       </td>
                     ))}
                   </tr>
@@ -257,55 +255,33 @@ export default function PricingSection() {
           </div>
         </div>
 
-        {/* Mobile + Tablet: card-based comparison */}
+        {/* Mobile/tablet comparison */}
         <div className="lg:hidden max-w-3xl mx-auto space-y-4">
-          {/* Section label */}
-          <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1">
-            Workspace Management
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1">Workspace Management</p>
           {workspaceRows.map((row) => (
-            <div
-              key={row.feature}
-              className="glass rounded-xl border border-white/10 overflow-hidden"
-            >
-              <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">
-                {row.feature}
-              </p>
+            <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
+              <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
               <div className="grid grid-cols-3 divide-x divide-white/10">
-                {["Basic", "Pro", "Elite"].map((planName, idx) => (
-                  <div key={planName} className="flex flex-col items-center py-3 gap-1">
-                    <span className="text-[10px] text-gray-400">{planName}</span>
-                    <span className="text-sm font-semibold text-white">{row.values[idx]}</span>
+                {["Basic", "Pro", "Elite"].map((name, i) => (
+                  <div key={name} className="flex flex-col items-center py-3 gap-1">
+                    <span className="text-[10px] text-gray-400">{name}</span>
+                    <span className="text-sm font-semibold text-white">{row.values[i]}</span>
                   </div>
                 ))}
               </div>
             </div>
           ))}
-
-          <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1 pt-2">
-            Core Features
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1 pt-2">Core Features</p>
           {coreRows.map((row) => (
-            <div
-              key={row.feature}
-              className="glass rounded-xl border border-white/10 overflow-hidden"
-            >
-              <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">
-                {row.feature}
-              </p>
+            <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
+              <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
               <div className="grid grid-cols-3 divide-x divide-white/10">
-                {["Basic", "Pro", "Elite"].map((planName, idx) => (
-                  <div key={planName} className="flex flex-col items-center py-3 gap-1">
-                    <span className="text-[10px] text-gray-400">{planName}</span>
-                    {row.values[idx] ? (
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950">
-                        <Check size={12} />
-                      </span>
-                    ) : (
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400">
-                        <X size={12} />
-                      </span>
-                    )}
+                {["Basic", "Pro", "Elite"].map((name, i) => (
+                  <div key={name} className="flex flex-col items-center py-3 gap-1">
+                    <span className="text-[10px] text-gray-400">{name}</span>
+                    {row.values[i]
+                      ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950"><Check size={12} /></span>
+                      : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400"><X size={12} /></span>}
                   </div>
                 ))}
               </div>
@@ -315,9 +291,8 @@ export default function PricingSection() {
 
         <p className="text-center text-sm text-gray-400 mt-8">
           Need a custom solution?{" "}
-          <button 
-            onClick={() => setActiveSection(3)}
-            className="text-secondary-400 hover:text-secondary-300 underline"
+          <button onClick={() => setActiveSection(3)}
+            className="contact-link text-secondary-400 underline font-medium"
           >
             Contact our sales team here
           </button>

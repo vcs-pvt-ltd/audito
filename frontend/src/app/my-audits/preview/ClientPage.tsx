@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi, orgTreeApi } from "@/lib/api";
@@ -12,11 +12,9 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
-  HelpCircle,
   CheckSquare,
   List,
   AlignLeft,
-  Building,
   ClipboardList,
   Info,
 } from "lucide-react";
@@ -101,15 +99,12 @@ const ANSWER_TYPE_CONFIG: Record<string, { label: string; color: string; icon: R
 
 function pruneTree(node: TreeNode, auditEntityCodes: Set<string>): TreeNode | null {
   const nodeKey = `${node.code}__${node.edge_id ?? "null"}`;
-  // Also check by just code for root nodes that might not have edge_id
   const isAuditEntity = auditEntityCodes.has(nodeKey) || auditEntityCodes.has(`${node.code}__null`);
-
   const prunedChildren: TreeNode[] = [];
   for (const child of node.children || []) {
     const pruned = pruneTree(child, auditEntityCodes);
     if (pruned) prunedChildren.push(pruned);
   }
-
   if (isAuditEntity || prunedChildren.length > 0) {
     return { ...node, children: prunedChildren };
   }
@@ -122,234 +117,104 @@ function countDescendantQuestions(node: TreeNode, map: Record<string, ChecklistQ
   return own + (node.children ?? []).reduce((s, c) => s + countDescendantQuestions(c, map), 0);
 }
 
-function EntityTreeNode({
-  node,
-  questionsMap,
-  auditEntityCodes,
-  depth,
+function findInTree(node: TreeNode, code: string): TreeNode | null {
+  if (node.code === code) return node;
+  for (const child of node.children || []) {
+    const r = findInTree(child, code);
+    if (r) return r;
+  }
+  return null;
+}
+
+// ─── Entity Preview Card ─────────────────────────────────────────
+
+function EntityPreviewCard({
+  node, index, questionsMap, onClick,
 }: {
-  node: TreeNode;
+  node: TreeNode; index: number;
   questionsMap: Record<string, ChecklistQuestion[]>;
-  auditEntityCodes: Set<string>;
-  depth: number;
+  onClick: () => void;
 }) {
-  const k = `${node.code}__${node.edge_id ?? 'null'}`;
-  const isAuditEntity = auditEntityCodes.has(k) || auditEntityCodes.has(`${node.code}__null`);
-  const questions = (questionsMap[k] || questionsMap[`${node.code}__null`] || []);
   const totalQs = countDescendantQuestions(node, questionsMap);
-  const [expanded, setExpanded] = useState(totalQs > 0 || isAuditEntity);
-  const typeColor = ENTITY_TYPE_COLORS[node.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
-  const hasChildren = (node.children ?? []).length > 0;
-  const isLeaf = !hasChildren && questions.length === 0;
+  const subsections = (node.children ?? []).length;
+  const typeCls = ENTITY_TYPE_COLORS[node.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
 
   return (
-    <div className="relative">
-      <div
-        className="relative"
-        style={{ paddingLeft: depth === 0 ? 0 : 28 }}
-      >
-        {/* Tree connector lines */}
-        {depth > 0 && (
-          <>
-            <div className="absolute left-[13px] top-0 bottom-0 w-px bg-gradient-to-b from-white/[0.12] via-white/[0.06] to-transparent" />
-            <div className="absolute left-[13px] top-[22px] w-[15px] h-px bg-gradient-to-r from-white/[0.12] to-white/[0.04]" />
-            <div className="absolute left-[11px] top-[20px] w-1.5 h-1.5 rounded-full bg-white/[0.15] ring-1 ring-white/[0.06]" />
-          </>
-        )}
-
-        <button
-          onClick={() => setExpanded((p) => !p)}
-          className={`w-full flex items-center gap-3 py-3 px-4 rounded-xl border transition-all duration-200 text-left group ${
-            isAuditEntity
-              ? "bg-white/[0.04] border-white/[0.12] hover:bg-white/[0.07] hover:border-white/[0.22] shadow-[0_2px_12px_rgba(0,0,0,0.15)]"
-              : "bg-transparent border-transparent hover:bg-white/[0.02]"
-          }`}
-        >
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            {!isLeaf && (
-              <div className={`shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-all duration-200 ${
-                expanded ? "bg-white/[0.08] text-gray-300" : "bg-white/[0.04] text-gray-600 group-hover:text-gray-400"
-              }`}>
-                {expanded ? <ChevronDown size={12} strokeWidth={2.5} /> : <ChevronRight size={12} strokeWidth={2.5} />}
-              </div>
-            )}
-            {isLeaf && <div className="w-5 shrink-0" />}
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${typeColor} shrink-0 transition-all duration-200 ${
-              isAuditEntity ? "shadow-[0_0_12px_rgba(255,255,255,0.04)]" : ""
-            }`}>
-              <Building2 size={18} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${typeColor.split(' ')[1]} mb-0.5 block`}>
-                {node.entity_type}
-              </span>
-              <span className={`text-sm font-semibold truncate block ${isAuditEntity ? "text-white" : "text-gray-400"}`}>
-                {node.name}
-              </span>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2 shrink-0">
-            {totalQs > 0 && (
-              <span className="text-[10px] font-bold text-secondary-400 bg-secondary-500/10 border border-secondary-500/20 px-2.5 py-1 rounded-lg">
-                {totalQs} Questions
-              </span>
-            )}
-          </div>
-        </button>
-      </div>
-
-      {expanded && (
-        <div className="mt-1 space-y-1">
-          {questions.length > 0 && (
-            <div
-              className="space-y-3 py-2"
-              style={{ paddingLeft: depth === 0 ? 56 : 84 }}
-            >
-              {questions.map((q, qi) => {
-                const atConf = ANSWER_TYPE_CONFIG[q.answer_type] || ANSWER_TYPE_CONFIG.free_text;
-                return (
-                  <div key={q.id} className="relative group/q">
-                    {/* Subtle connector for questions */}
-                    <div className="absolute -left-5 top-0 bottom-0 w-px bg-gradient-to-b from-white/[0.06] to-transparent" />
-                    <div className="absolute -left-5 top-6 w-4 h-px bg-white/[0.06]" />
-                    
-                    <div className="rounded-2xl border border-white/[0.08] overflow-hidden shadow-lg transition-all duration-200 hover:border-white/[0.18] bg-white/[0.02] backdrop-blur-sm">
-                      {/* Card header */}
-                      <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.02] border-b border-white/[0.06]">
-                        <span className="w-6 h-6 rounded-lg bg-secondary-500/15 border border-secondary-500/20 flex items-center justify-center text-secondary-400 text-[11px] font-bold shrink-0">
-                          {qi + 1}
-                        </span>
-                        <span className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-tight ${atConf.color.split(' ')[1]}`}>
-                          {atConf.icon}
-                          {atConf.label}
-                        </span>
-                        <div className="ml-auto flex items-center gap-2">
-                           <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{q.total_marks} Marks</span>
-                        </div>
-                      </div>
-
-                      <div className="p-4 space-y-4">
-                        <p className="text-sm text-gray-200 leading-relaxed font-medium">
-                          {q.question_text}
-                        </p>
-                        
-                        {q.options && q.options.length > 0 && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                            {q.options.map((opt) => (
-                              <div key={opt.id} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-white/[0.03] border border-white/10 transition-all hover:bg-white/[0.05]">
-                                <div className="w-4 h-4 rounded-full border-2 border-gray-600 shrink-0" />
-                                <span className="text-xs text-gray-400 flex-1">{opt.option_text}</span>
-                                {opt.marks > 0 && (
-                                  <span className="text-[9px] font-bold text-secondary-400 px-1.5 py-0.5 rounded-md bg-secondary-500/10 border border-secondary-500/20">
-                                    {opt.marks} pts
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {(node.children ?? []).map((child) => (
-            <EntityTreeNode
-              key={child.edge_id ?? child.code}
-              node={child}
-              questionsMap={questionsMap}
-              auditEntityCodes={auditEntityCodes}
-              depth={depth + 1}
-            />
-          ))}
+    <div onClick={onClick}
+      className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group">
+      <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
+        <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-secondary-500/30 shrink-0">
+          {index}
+        </span>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-semibold text-white truncate block">{node.name || node.code}</span>
+          <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border inline-block mt-0.5 ${typeCls}`}>{node.entity_type}</span>
         </div>
-      )}
+        <ChevronRight size={18} className="text-white/60 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
+      </div>
+      <div className="p-4 flex items-center gap-4 flex-wrap">
+        {subsections > 0 && (
+          <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <Building2 size={13} className="text-gray-500" />
+            <span>{subsections} Subsection{subsections !== 1 ? "s" : ""}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <ClipboardList size={13} className="text-secondary-400" />
+          <span>{totalQs} Question{totalQs !== 1 ? "s" : ""}</span>
+        </div>
+      </div>
     </div>
   );
 }
 
-function EntityListItem({
-  entity,
-  questions,
+// ─── Question Preview Item ────────────────────────────────────────
+
+function QuestionPreviewItem({
+  question, index, isOpen, onToggle,
 }: {
-  entity: AuditEntity;
-  questions: ChecklistQuestion[];
+  question: ChecklistQuestion; index: number; isOpen: boolean; onToggle: () => void;
 }) {
-  const [expanded, setExpanded] = useState(questions.length > 0);
-  const colorClass = ENTITY_TYPE_COLORS[entity.entity_type] || "bg-gray-500/20 text-gray-300 border-gray-500/30";
+  const atConf = ANSWER_TYPE_CONFIG[question.answer_type] || ANSWER_TYPE_CONFIG.free_text;
 
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden transition-all hover:border-white/20">
+    <div className={`rounded-xl border overflow-hidden transition-all ${
+      isOpen ? "border-white/[0.12] bg-white/[0.04]" : "border-white/[0.08] bg-white/[0.02]"
+    }`}>
       <button
         type="button"
-        onClick={() => setExpanded((p) => !p)}
-        className="w-full flex items-center gap-4 py-3 px-4 hover:bg-white/[0.03] transition-colors text-left"
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.03] transition-colors text-left"
       >
-         <div className="shrink-0 text-gray-500">
-          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </div>
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${colorClass} shrink-0`}>
-          <Building2 size={18} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <span className={`text-[10px] font-bold uppercase tracking-wider ${colorClass.split(' ')[1]} mb-0.5 block`}>
-            {entity.entity_type}
-          </span>
-          <span className="text-sm font-semibold text-white truncate block">{entity.entity_name || entity.entity_code}</span>
-        </div>
-        
-        <div className="flex items-center gap-3 shrink-0">
-          {questions.length > 0 && (
-            <span className="text-[10px] font-bold text-secondary-400 bg-secondary-500/10 border border-secondary-500/20 px-2.5 py-1 rounded-lg">
-              {questions.length} Questions
-            </span>
-          )}
+        <span className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold bg-white/5 text-gray-500">
+          {index}
+        </span>
+        <p className={`text-sm flex-1 ${isOpen ? "text-white font-medium" : "text-gray-300 truncate"}`}>
+          {question.question_text}
+        </p>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] font-bold text-gray-500">{question.total_marks}pts</span>
+          <ChevronDown size={14} className={`text-gray-500 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
         </div>
       </button>
-
-      {expanded && (
-        <div className="p-4 pt-0 space-y-4">
-          {questions.length === 0 ? (
-            <div className="flex items-center gap-2 text-xs text-gray-600 bg-white/5 p-3 rounded-xl border border-dashed border-white/10">
-               <Info size={14} /> No questions mapped for this entity.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {questions.map((q, qi) => {
-                const atConf = ANSWER_TYPE_CONFIG[q.answer_type] || ANSWER_TYPE_CONFIG.free_text;
-                return (
-                  <div key={q.id} className="glass rounded-2xl border border-white/10 overflow-hidden shadow-sm">
-                    <div className="flex items-center gap-3 px-3.5 py-2.5 bg-white/[0.02] border-b border-white/[0.06]">
-                      <span className="w-5 h-5 rounded-lg bg-secondary-500/15 border border-secondary-500/20 flex items-center justify-center text-secondary-400 text-[10px] font-bold">
-                        {qi + 1}
-                      </span>
-                      <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight ${atConf.color.split(' ')[1]}`}>
-                        {atConf.icon}
-                        {atConf.label}
-                      </span>
-                      <span className="ml-auto text-[10px] font-bold text-gray-500 uppercase tracking-widest">{q.total_marks} Marks</span>
-                    </div>
-                    <div className="p-4 space-y-3">
-                       <p className="text-sm text-gray-200 font-medium">{q.question_text}</p>
-                       {q.options && q.options.length > 0 && (
-                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                            {q.options.map((opt) => (
-                              <div key={opt.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/10">
-                                <div className="w-3.5 h-3.5 rounded-full border border-gray-600" />
-                                <span className="text-xs text-gray-400 flex-1">{opt.option_text}</span>
-                                {opt.marks > 0 && <span className="text-[9px] font-bold text-secondary-400">{opt.marks}pts</span>}
-                              </div>
-                            ))}
-                         </div>
-                       )}
-                    </div>
-                  </div>
-                );
-              })}
+      {isOpen && (
+        <div className="border-t border-white/[0.06] px-4 pb-4 pt-3 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-0.5 rounded border ${atConf.color}`}>
+              {atConf.icon}
+              {atConf.label}
+            </span>
+            <span className="text-[10px] text-gray-500 ml-auto">{question.total_marks} marks</span>
+          </div>
+          {question.options && question.options.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {question.options.map(opt => (
+                <div key={opt.id} className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-white/[0.02] border border-white/10">
+                  <div className="w-3.5 h-3.5 rounded-full border border-gray-600 shrink-0" />
+                  <span className="text-[11px] text-gray-400 flex-1">{opt.option_text}</span>
+                  {opt.marks > 0 && <span className="text-[9px] font-bold text-secondary-400">{opt.marks} pts</span>}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -357,18 +222,29 @@ function EntityListItem({
     </div>
   );
 }
+
+// ─── Step History Type ────────────────────────────────────────────
+
+type Step =
+  | { mode: "cards"; parentCode: string | null }
+  | { mode: "questions"; entityCode: string; entityEdgeId: string | number | null; entityName: string };
+
+// ─── Main Page ────────────────────────────────────────────────────
 
 export default function MyAuditPreviewPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const auditId = searchParams.get("id") as string;
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const [audit, setAudit] = useState<AuditDetail | null>(null);
   const [entityQuestionsMap, setEntityQuestionsMap] = useState<Record<string, ChecklistQuestion[]>>({});
   const [prunedTree, setPrunedTree] = useState<TreeNode | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [stepHistory, setStepHistory] = useState<Step[]>([{ mode: "cards", parentCode: null }]);
+  const [openQuestionId, setOpenQuestionId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -396,7 +272,6 @@ export default function MyAuditPreviewPage() {
 
         if (auditData.entities && auditData.entities.length > 0) {
           const auditCodes = new Set(auditData.entities.map((e) => `${e.entity_code}__${(e as any).org_tree_id ?? (e as any).assigned_org_tree_id ?? "null"}`));
-          
           const entityTreeRes = await auditExecutionApi.getEntityTree(accessToken, auditId);
           if (entityTreeRes.success && entityTreeRes.data) {
             const td = entityTreeRes.data as { tree: TreeNode };
@@ -422,140 +297,272 @@ export default function MyAuditPreviewPage() {
     setLoading(false);
   }, [accessToken, auditId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => { contentRef.current?.scrollTo(0, 0); setOpenQuestionId(null); }, [stepHistory]);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="relative">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 border-3 border-secondary-400 border-t-transparent rounded-full animate-spin" />
-          <div className="absolute inset-0 flex items-center justify-center">
-          </div>
-        </div>
+      <div className="h-screen bg-transparent flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
   if (!admin || admin.role !== "auditor") return null;
 
+  // Navigation helpers
+  const activeStep = stepHistory[stepHistory.length - 1];
+  const isRoot = activeStep.mode === "cards" && activeStep.parentCode === null;
+  const goBack = () => setStepHistory(h => h.length > 1 ? h.slice(0, -1) : h);
+
+  function getCards(): TreeNode[] {
+    if (!prunedTree || activeStep.mode !== "cards") return [];
+    const { parentCode } = activeStep;
+    if (parentCode === null) {
+      return ENTITY_TYPE_COLORS[prunedTree.entity_type] ? [prunedTree] : (prunedTree.children ?? []);
+    }
+    const parent = findInTree(prunedTree, parentCode);
+    return parent ? (parent.children ?? []) : [];
+  }
+
+  const navigateCard = (node: TreeNode) => {
+    const k = `${node.code}__${node.edge_id ?? 'null'}`;
+    const hasQ = (entityQuestionsMap[k] || entityQuestionsMap[`${node.code}__null`] || []).length > 0;
+    const hasKids = (node.children ?? []).length > 0;
+    if (!hasQ && hasKids) {
+      setStepHistory(h => [...h, { mode: "cards", parentCode: node.code }]);
+    } else {
+      setStepHistory(h => [...h, {
+        mode: "questions",
+        entityCode: node.code,
+        entityEdgeId: node.edge_id ?? null,
+        entityName: node.name || node.code,
+      }]);
+    }
+  };
+
+  // Breadcrumb trail
+  const breadcrumbs: string[] = [];
+  for (let i = 1; i < stepHistory.length; i++) {
+    const s = stepHistory[i];
+    if (s.mode === "cards" && s.parentCode) {
+      const found = prunedTree ? findInTree(prunedTree, s.parentCode) : null;
+      breadcrumbs.push(found?.name || s.parentCode);
+    } else if (s.mode === "questions") {
+      breadcrumbs.push(s.entityName);
+    }
+  }
+
   return (
-    <div className="min-h-screen ">
-      <main className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 md:py-8 pt-16 sm:pt-6 md:pt-8">
-        
-        {/* Header - Responsive */}
-        <div className="flex items-center gap-2 sm:gap-3 mb-6">
-          <button
-            onClick={() => router.push(`/my-audits/details?id=${auditId}`)}
-            className="p-1.5 sm:p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-          >
-            <ArrowLeft size={14} className="sm:w-4 sm:h-4" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-              <ClipboardCheck size={18} className="text-secondary-400 sm:w-5 sm:h-5" />
-              Preview Audit
-            </h1>
-            {audit && (
-              <p className="text-[11px] sm:text-sm text-gray-400 mt-0.5 font-mono truncate">
-                {audit.title}
-              </p>
-            )}
-          </div>
-        </div>
+    <div className="h-screen bg-transparent flex">
+      <div className="flex-1 flex flex-col overflow-hidden pt-16 lg:pt-0">
 
-        {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <div className="relative">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center">
-              </div>
-            </div>
-          </div>
-        ) : error ? (
-          <div className="bg-white/5 backdrop-blur-sm rounded-xl p-6 sm:p-8 text-center border border-white/10">
-            <AlertCircle size={28} className="text-red-400 mx-auto mb-3 sm:w-8 sm:h-8" />
-            <p className="text-red-400 text-sm sm:text-base">{error}</p>
-          </div>
-        ) : audit ? (
-          <div className="space-y-4 max-w-5xl mx-auto">
-            {/* Audit Scope Card */}
-            <div className="bg-white/5 backdrop-blur-sm rounded-lg sm:rounded-xl p-4 sm:p-6 space-y-4 border border-white/10 shadow-2xl">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[11px] sm:text-xs font-bold uppercase tracking-widest text-gray-500 flex items-center gap-2.5">
-                  <ClipboardList size={14} className="text-secondary-400" />
-                  Audit Scope & Questions
-                  <span className="text-gray-700 font-medium normal-case ml-1">({audit.entities.length} assigned entities)</span>
-                </h3>
-              </div>
-
-              {audit.entities.length === 0 ? (
-                <div className="py-12 text-center bg-white/[0.02] rounded-2xl border border-dashed border-white/10">
-                  <p className="text-sm text-gray-600 italic">No entities assigned to this audit.</p>
-                </div>
-              ) : prunedTree ? (
-                <div className="bg-white/[0.02] rounded-2xl border border-white/[0.08] p-3 sm:p-5 space-y-1 shadow-inner">
-                  {(() => {
-                    const auditCodes = new Set(audit.entities.map((e) => `${e.entity_code}__${(e as any).org_tree_id ?? (e as any).assigned_org_tree_id ?? 'null'}`));
-                    const root = prunedTree;
-                    return ENTITY_TYPE_COLORS[root.entity_type] ? (
-                      <EntityTreeNode node={root} questionsMap={entityQuestionsMap} auditEntityCodes={auditCodes} depth={0} />
-                    ) : (
-                      (root.children ?? []).map((child) => (
-                        <EntityTreeNode key={`${child.code}__${child.edge_id ?? 'null'}`} node={child} questionsMap={entityQuestionsMap} auditEntityCodes={auditCodes} depth={0} />
-                      ))
-                    );
-                  })()}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {audit.entities.map((e) => (
-                    <EntityListItem
-                      key={`${e.entity_code}__${(e as any).org_tree_id ?? (e as any).assigned_org_tree_id ?? 'null'}`}
-                      entity={e}
-                      questions={entityQuestionsMap[`${e.entity_code}__${(e as any).org_tree_id ?? 'null'}`] || []}
-                    />
+        {/* Top bar */}
+        <div className="shrink-0 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 bg-transparent/80 backdrop-blur-sm border-b border-white/[0.05]">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={isRoot ? () => router.push(`/my-audits/details?id=${auditId}`) : goBack}
+              className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all shrink-0"
+            >
+              <ArrowLeft size={14} />
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-white truncate flex items-center gap-2">
+                <ClipboardCheck size={16} className="text-secondary-400 shrink-0" />
+                {audit?.title || "Preview Audit"}
+              </h1>
+              {breadcrumbs.length > 0 && (
+                <div className="flex items-center gap-1 mt-0.5 min-w-0 overflow-hidden">
+                  <span className="text-[11px] text-gray-600 shrink-0">Scope</span>
+                  {breadcrumbs.map((crumb, i) => (
+                    <span key={i} className="flex items-center gap-1 min-w-0">
+                      <ChevronRight size={10} className="text-gray-600 shrink-0" />
+                      <span className={`text-[11px] truncate ${i === breadcrumbs.length - 1 ? "text-gray-300" : "text-gray-600"}`}>
+                        {crumb}
+                      </span>
+                    </span>
                   ))}
                 </div>
               )}
-
-              {/* Show assigned entities that might be missing from the tree */}
-              {prunedTree && audit.entities.some(e => {
-                const k = `${e.entity_code}__${(e as any).org_tree_id ?? 'null'}`;
-                const findInTree = (node: TreeNode): boolean => {
-                  if (`${node.code}__${node.edge_id ?? 'null'}` === k) return true;
-                  return (node.children || []).some(findInTree);
-                };
-                return !findInTree(prunedTree);
-              }) && (
-                <div className="mt-8 space-y-4">
-                   <h4 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest pl-2">Other Assigned Entities</h4>
-                   <div className="space-y-3">
-                     {audit.entities.filter(e => {
-                       const k = `${e.entity_code}__${(e as any).org_tree_id ?? 'null'}`;
-                       const findInTree = (node: TreeNode): boolean => {
-                         if (`${node.code}__${node.edge_id ?? 'null'}` === k) return true;
-                         return (node.children || []).some(findInTree);
-                       };
-                       return !findInTree(prunedTree);
-                     }).map(e => (
-                       <EntityListItem
-                        key={`${e.entity_code}__${(e as any).org_tree_id ?? 'null'}`}
-                        entity={e}
-                        questions={entityQuestionsMap[`${e.entity_code}__${(e as any).org_tree_id ?? 'null'}`] || []}
-                      />
-                     ))}
-                   </div>
-                </div>
-              )}
             </div>
+          </div>
+          {audit && isRoot && (
+            <span className="text-[11px] text-gray-500 shrink-0 hidden sm:block font-mono">
+              {audit.entities.length} {audit.entities.length === 1 ? "entity" : "entities"}
+            </span>
+          )}
+        </div>
 
-           
+        {/* Content */}
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="glass rounded-xl p-8 text-center max-w-sm border border-white/10">
+              <AlertCircle size={28} className="text-red-400 mx-auto mb-3" />
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          </div>
+        ) : audit ? (
+          <div ref={contentRef} className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 lg:pb-6">
+            <div className="max-w-4xl mx-auto">
+
+              {activeStep.mode === "cards" ? (
+                // ── Cards view ──────────────────────────────────
+                (() => {
+                  // If no tree, fall back to flat entity list
+                  if (!prunedTree) {
+                    if (audit.entities.length === 0) {
+                      return (
+                        <div className="py-16 text-center">
+                          <ClipboardList size={32} className="text-gray-700 mx-auto mb-3" />
+                          <p className="text-sm text-gray-600 italic">No entities assigned to this audit.</p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {audit.entities.map((e, i) => {
+                          const k = `${e.entity_code}__${(e as any).org_tree_id ?? (e as any).assigned_org_tree_id ?? 'null'}`;
+                          const qs = entityQuestionsMap[k] || [];
+                          const typeCls = ENTITY_TYPE_COLORS[e.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
+                          return (
+                            <div key={k}
+                              onClick={() => setStepHistory(h => [...h, {
+                                mode: "questions",
+                                entityCode: e.entity_code,
+                                entityEdgeId: (e as any).org_tree_id ?? null,
+                                entityName: e.entity_name || e.entity_code,
+                              }])}
+                              className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group">
+                              <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
+                                <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white shrink-0">
+                                  {i + 1}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-sm font-semibold text-white truncate block">{e.entity_name || e.entity_code}</span>
+                                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border inline-block mt-0.5 ${typeCls}`}>{e.entity_type}</span>
+                                </div>
+                                <ChevronRight size={18} className="text-white/60 group-hover:text-white transition-all shrink-0" />
+                              </div>
+                              <div className="p-4 flex items-center gap-1.5 text-xs text-gray-400">
+                                <ClipboardList size={13} className="text-secondary-400" />
+                                <span>{qs.length} Question{qs.length !== 1 ? "s" : ""}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+
+                  const cards = getCards();
+                  if (cards.length === 0) {
+                    return (
+                      <div className="py-16 text-center">
+                        <Info size={28} className="text-gray-700 mx-auto mb-3" />
+                        <p className="text-sm text-gray-600 italic">No sub-entities in this section.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {cards.map((node, i) => (
+                        <EntityPreviewCard
+                          key={`${node.code}__${node.edge_id ?? "null"}`}
+                          node={node}
+                          index={i + 1}
+                          questionsMap={entityQuestionsMap}
+                          onClick={() => navigateCard(node)}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()
+              ) : (
+                // ── Questions view ──────────────────────────────
+                (() => {
+                  const step = activeStep as {
+                    mode: "questions";
+                    entityCode: string;
+                    entityEdgeId: string | number | null;
+                    entityName: string;
+                  };
+                  const k = `${step.entityCode}__${step.entityEdgeId ?? 'null'}`;
+                  const qs = entityQuestionsMap[k] || entityQuestionsMap[`${step.entityCode}__null`] || [];
+                  const entityNode = prunedTree ? findInTree(prunedTree, step.entityCode) : null;
+                  const typeCls = entityNode
+                    ? (ENTITY_TYPE_COLORS[entityNode.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30")
+                    : "bg-gray-500/20 text-gray-300 border-gray-500/30";
+                  const subEntities = entityNode ? (entityNode.children ?? []) : [];
+
+                  return (
+                    <div className="space-y-4">
+                      {/* Entity header */}
+                      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center shrink-0">
+                          <Building2 size={15} className="text-secondary-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{step.entityName}</p>
+                          {entityNode && (
+                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border inline-block mt-0.5 ${typeCls}`}>
+                              {entityNode.entity_type}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-gray-500 font-mono shrink-0">{qs.length} Questions</span>
+                      </div>
+
+                      {/* Questions */}
+                      {qs.length === 0 ? (
+                        <div className="py-12 text-center rounded-xl border border-dashed border-white/[0.08]">
+                          <Info size={24} className="text-gray-700 mx-auto mb-2" />
+                          <p className="text-sm text-gray-600 italic">No questions mapped for this entity.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {qs.map((q, qi) => (
+                            <QuestionPreviewItem
+                              key={q.id}
+                              question={q}
+                              index={qi + 1}
+                              isOpen={openQuestionId === q.id}
+                              onToggle={() => setOpenQuestionId(prev => prev === q.id ? null : q.id)}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Sub-entity cards (if this entity has children) */}
+                      {subEntities.length > 0 && (
+                        <div className="space-y-3 pt-2">
+                          <h4 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Sub-entities</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {subEntities.map((child, i) => (
+                              <EntityPreviewCard
+                                key={`${child.code}__${child.edge_id ?? "null"}`}
+                                node={child}
+                                index={i + 1}
+                                questionsMap={entityQuestionsMap}
+                                onClick={() => navigateCard(child)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+
+            </div>
           </div>
         ) : null}
-      </main>
+
+      </div>
     </div>
   );
 }
-
-

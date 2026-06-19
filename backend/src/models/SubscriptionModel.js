@@ -93,30 +93,41 @@ const SubscriptionModel = {
     return 'Basic'; // Default fallback if no active row
   },
 
-  async getLimits(rootEntityCode) {
+  /**
+   * Strict limits lookup — reads ONLY the live subscriptions row.
+   * Returns null when the organization has no active subscription
+   * (no hardcoded fallback). Use this for enforcement.
+   */
+  async getActiveLimits(rootEntityCode) {
     const [rows] = await db.query(
-      `SELECT max_company_levels, max_departments, max_audits, max_checklists, max_auditors, allow_auditor_eval, allow_company_to_company 
-       FROM subscriptions 
+      `SELECT max_company_levels, max_departments, max_audits, max_checklists, max_auditors, allow_auditor_eval, allow_company_to_company
+       FROM subscriptions
        WHERE root_entity_code = ? AND is_active = 1
        ORDER BY id DESC LIMIT 1`,
       [rootEntityCode]
     );
 
-    if (rows.length > 0) {
-      const dbLimits = rows[0];
-      return {
-        company_level: dbLimits.max_company_levels,
-        department: dbLimits.max_departments,
-        audits: dbLimits.max_audits,
-        checklists: dbLimits.max_checklists,
-        auditors: dbLimits.max_auditors,
-        auditor_eval: dbLimits.allow_auditor_eval ? true : false,
-        company_to_company: dbLimits.allow_company_to_company ? true : false
-      };
-    }
+    if (rows.length === 0) return null;
 
-    // Fallback if no specific limit was found
-    return PLAN_LIMITS['Basic'];
+    const dbLimits = rows[0];
+    return {
+      company_level: dbLimits.max_company_levels,
+      department: dbLimits.max_departments,
+      audits: dbLimits.max_audits,
+      checklists: dbLimits.max_checklists,
+      auditors: dbLimits.max_auditors,
+      auditor_eval: dbLimits.allow_auditor_eval ? true : false,
+      company_to_company: dbLimits.allow_company_to_company ? true : false
+    };
+  },
+
+  /**
+   * Lenient limits lookup — used only to feed UI feature flags for display.
+   * Falls back to Basic so the UI still renders; NOT for enforcement.
+   */
+  async getLimits(rootEntityCode) {
+    const limits = await this.getActiveLimits(rootEntityCode);
+    return limits ?? PLAN_LIMITS['Basic'];
   }
 };
 

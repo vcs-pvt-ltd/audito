@@ -2,10 +2,12 @@
 import { useState, useEffect, useRef } from "react";
 import { Loader2, Save, Clock, Search, Check, ChevronDown, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { settingsApi, timezonesApi, type TimezoneOption } from "@/lib/api";
 
 export default function TimeZoneSettingsPage() {
   const { admin, accessToken } = useAuth();
+  const { confirm } = useUiFeedback();
   const [timezones, setTimezones] = useState<TimezoneOption[]>([]);
   const [selectedTz, setSelectedTz] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -51,6 +53,16 @@ export default function TimeZoneSettingsPage() {
 
   const handleSave = async () => {
     if (!accessToken || !selectedTz) return;
+
+    const ok = await confirm({
+      title: "Update Organization Timezone",
+      message: `From this point on, all new records will be saved using ${selected?.timezone_label ?? selectedTz} (${selected?.timezone_offset ?? ""}). Existing timestamps will not be changed.`,
+      confirmText: "Confirm Change",
+      cancelText: "Cancel",
+      variant: "warning",
+    });
+    if (!ok) return;
+
     setSaving(true);
     setMessage(null);
     try {

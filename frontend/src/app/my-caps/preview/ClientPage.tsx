@@ -1,25 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, useRef, type ReactNode } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { capApi } from "@/lib/api";
-import { 
-  AlertCircle, 
-  ArrowLeft, 
-  Building2, 
-  ChevronDown, 
-  ChevronRight, 
-  ClipboardCheck, 
-  HelpCircle,
-  FileText,
+import {
+  AlertCircle,
+  ArrowLeft,
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
   Search,
   CheckCircle2,
   List,
   AlignLeft,
-  Building,
   ClipboardList,
-  Info
+  Info,
 } from "lucide-react";
 
 interface TreeNode {
@@ -82,147 +79,124 @@ function countDescendantQuestions(node: TreeNode, map: Record<string, CapQuestio
   return own + (node.children ?? []).reduce((s, c) => s + countDescendantQuestions(c, map), 0);
 }
 
-function EntityTreeNode({
-  node,
-  questionsMap,
-  depth,
+function findInTree(node: TreeNode, code: string): TreeNode | null {
+  if (node.code === code) return node;
+  for (const child of node.children || []) {
+    const r = findInTree(child, code);
+    if (r) return r;
+  }
+  return null;
+}
+
+// ─── Entity Preview Card (CAP – orange accent) ────────────────────
+
+function EntityPreviewCard({
+  node, index, questionsMap, onClick,
 }: {
-  node: TreeNode;
+  node: TreeNode; index: number;
   questionsMap: Record<string, CapQuestion[]>;
-  depth: number;
+  onClick: () => void;
 }) {
-  const k = `${node.code}__${node.edge_id ?? 'null'}`;
-  const questions = (questionsMap[k] || questionsMap[`${node.code}__null`] || []);
   const totalQs = countDescendantQuestions(node, questionsMap);
-  const [expanded, setExpanded] = useState(totalQs > 0);
-  const typeColor = ENTITY_TYPE_COLORS[node.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
-  const hasChildren = (node.children ?? []).length > 0;
-  const isLeaf = !hasChildren && questions.length === 0;
+  const subsections = (node.children ?? []).length;
+  const typeCls = ENTITY_TYPE_COLORS[node.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
 
   return (
-    <div className="relative">
-      <div
-        className="relative"
-        style={{ paddingLeft: depth === 0 ? 0 : 28 }}
-      >
-        {depth > 0 && (
-          <>
-            <div className="absolute left-[13px] top-0 bottom-0 w-px bg-gradient-to-b from-white/[0.12] via-white/[0.06] to-transparent" />
-            <div className="absolute left-[13px] top-[22px] w-[15px] h-px bg-gradient-to-r from-white/[0.12] to-white/[0.04]" />
-            <div className="absolute left-[11px] top-[20px] w-1.5 h-1.5 rounded-full bg-white/[0.15] ring-1 ring-white/[0.06]" />
-          </>
-        )}
-
-        <button
-          onClick={() => setExpanded((p) => !p)}
-          className={`w-full flex items-center gap-3 py-3 px-4 rounded-xl border transition-all duration-200 text-left group ${
-            totalQs > 0 
-              ? "bg-white/[0.04] border-white/[0.12] hover:bg-white/[0.07] hover:border-white/[0.22] shadow-[0_2px_12px_rgba(0,0,0,0.15)]"
-              : "bg-transparent border-transparent hover:bg-white/[0.02]"
-          }`}
-        >
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            {!isLeaf && (
-              <div className={`shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-all duration-200 ${
-                expanded ? "bg-white/[0.08] text-gray-300" : "bg-white/[0.04] text-gray-600 group-hover:text-gray-400"
-              }`}>
-                {expanded ? <ChevronDown size={12} strokeWidth={2.5} /> : <ChevronRight size={12} strokeWidth={2.5} />}
-              </div>
-            )}
-            {isLeaf && <div className="w-5 shrink-0" />}
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center border transition-all duration-200 bg-white/[0.02] border-white/10 group-hover:border-white/20">
-               <div className={`w-full h-full rounded-lg flex items-center justify-center border ${typeColor}`}>
-                  <Building2 size={18} />
-               </div>
-            </div>
-            <div className="flex-1 min-w-0">
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${typeColor.split(' ')[1]} mb-0.5 block`}>
-                {node.entity_type}
-              </span>
-              <span className="text-sm font-semibold truncate block text-white">
-                {node.name}
-              </span>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2 shrink-0">
-            {totalQs > 0 && (
-              <span className="text-[10px] font-bold text-secondary-400 bg-secondary-500/10 border border-secondary-500/20 px-2.5 py-1 rounded-lg">
-                {totalQs} Actions
-              </span>
-            )}
-          </div>
-        </button>
+    <div onClick={onClick}
+      className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group">
+      <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
+        <span className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-orange-500/30 shrink-0">
+          {index}
+        </span>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-semibold text-white truncate block">{node.name || node.code}</span>
+          <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border inline-block mt-0.5 ${typeCls}`}>{node.entity_type}</span>
+        </div>
+        <ChevronRight size={18} className="text-white/60 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
       </div>
+      <div className="p-4 flex items-center gap-4 flex-wrap">
+        {subsections > 0 && (
+          <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <Building2 size={13} className="text-gray-500" />
+            <span>{subsections} Subsection{subsections !== 1 ? "s" : ""}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <ClipboardList size={13} className="text-orange-400" />
+          <span>{totalQs} Action{totalQs !== 1 ? "s" : ""}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-      {expanded && (
-        <div className="mt-1 space-y-1">
-          {questions.length > 0 && (
-            <div
-              className="space-y-3 py-2"
-              style={{ paddingLeft: depth === 0 ? 56 : 84 }}
-            >
-              {questions.map((q, qi) => {
-                const atConf = ANSWER_TYPE_CONFIG[q.answer_type] || ANSWER_TYPE_CONFIG.free_text;
-                return (
-                  <div key={q.id} className="relative group/q">
-                    <div className="absolute -left-5 top-0 bottom-0 w-px bg-gradient-to-b from-white/[0.06] to-transparent" />
-                    <div className="absolute -left-5 top-6 w-4 h-px bg-white/[0.06]" />
-                    
-                    <div className="rounded-2xl border border-white/[0.08] overflow-hidden shadow-lg transition-all duration-200 hover:border-white/[0.18] bg-white/[0.02] backdrop-blur-sm">
-                      <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.02] border-b border-white/[0.06]">
-                        <span className="w-6 h-6 rounded-lg bg-orange-500/15 border border-orange-500/20 flex items-center justify-center text-orange-400 text-[11px] font-bold shrink-0">
-                          {qi + 1}
-                        </span>
-                        <span className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-tight ${atConf.color.split(' ')[1]}`}>
-                          {atConf.icon}
-                          {atConf.label}
-                        </span>
-                         <div className="ml-auto">
-                            <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">{q.total_marks} Marks</span>
-                         </div>
-                      </div>
+// ─── CAP Action Preview Item ──────────────────────────────────────
 
-                      <div className="p-4 space-y-3">
-                        <p className="text-sm text-gray-200 leading-relaxed font-medium">
-                          {q.question_text}
-                        </p>
-                        {q.ca_description && (
-                          <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 flex gap-3">
-                             <Search size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                             <div className="min-w-0">
-                                <p className="text-[10px] text-amber-500/60 font-bold uppercase tracking-widest mb-1">Identified Finding</p>
-                                <p className="text-xs text-amber-200/80 italic leading-relaxed">{q.ca_description}</p>
-                             </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+function ActionPreviewItem({
+  question, index, isOpen, onToggle,
+}: {
+  question: CapQuestion; index: number; isOpen: boolean; onToggle: () => void;
+}) {
+  const atConf = ANSWER_TYPE_CONFIG[question.answer_type] || ANSWER_TYPE_CONFIG.free_text;
+
+  return (
+    <div className={`rounded-xl border overflow-hidden transition-all ${
+      isOpen ? "border-white/[0.12] bg-white/[0.04]" : "border-white/[0.08] bg-white/[0.02]"
+    }`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.03] transition-colors text-left"
+      >
+        <span className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold bg-orange-500/10 border border-orange-500/20 text-orange-400">
+          {index}
+        </span>
+        <p className={`text-sm flex-1 ${isOpen ? "text-white font-medium" : "text-gray-300 truncate"}`}>
+          {question.question_text}
+        </p>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] font-bold text-gray-500">{question.total_marks}pts</span>
+          <ChevronDown size={14} className={`text-gray-500 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+        </div>
+      </button>
+      {isOpen && (
+        <div className="border-t border-white/[0.06] px-4 pb-4 pt-3 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-0.5 rounded border ${atConf.color}`}>
+              {atConf.icon}
+              {atConf.label}
+            </span>
+            <span className="text-[10px] text-gray-500 ml-auto">{question.total_marks} marks</span>
+          </div>
+          {question.ca_description && (
+            <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-3 flex gap-2.5">
+              <Search size={13} className="text-amber-500 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-[9px] text-amber-500/60 font-bold uppercase tracking-widest mb-1">Identified Finding</p>
+                <p className="text-[11px] text-amber-200/80 italic leading-relaxed">{question.ca_description}</p>
+              </div>
             </div>
           )}
-
-          {(node.children ?? []).map((child) => (
-            <EntityTreeNode
-              key={child.edge_id ?? child.code}
-              node={child}
-              questionsMap={questionsMap}
-              depth={depth + 1}
-            />
-          ))}
         </div>
       )}
     </div>
   );
 }
 
+// ─── Step History Type ────────────────────────────────────────────
+
+type Step =
+  | { mode: "cards"; parentCode: string | null }
+  | { mode: "questions"; entityCode: string; entityEdgeId: string | number | null; entityName: string };
+
+// ─── Main Page ────────────────────────────────────────────────────
+
 export default function MyCapPreviewPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const capId = searchParams.get("id") as string;
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const [cap, setCap] = useState<CapDetail | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
@@ -230,6 +204,8 @@ export default function MyCapPreviewPage() {
   const [entities, setEntities] = useState<CapEntity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [stepHistory, setStepHistory] = useState<Step[]>([{ mode: "cards", parentCode: null }]);
+  const [openQuestionId, setOpenQuestionId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -258,9 +234,18 @@ export default function MyCapPreviewPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (isLoading || loading) return <Loading />;
+  useEffect(() => { contentRef.current?.scrollTo(0, 0); setOpenQuestionId(null); }, [stepHistory]);
+
+  if (isLoading) {
+    return (
+      <div className="h-screen bg-transparent flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
   if (!admin) return null;
 
+  // Build question map
   const qMap: Record<string, CapQuestion[]> = {};
   for (const q of questions) {
     const k = `${q.entity_code}__${(q as any).org_tree_id ?? 'null'}`;
@@ -268,84 +253,259 @@ export default function MyCapPreviewPage() {
     qMap[k].push(q);
   }
 
+  // Navigation helpers
+  const activeStep = stepHistory[stepHistory.length - 1];
+  const isRoot = activeStep.mode === "cards" && activeStep.parentCode === null;
+  const goBack = () => setStepHistory(h => h.length > 1 ? h.slice(0, -1) : h);
+
+  function getCards(): TreeNode[] {
+    if (!tree || activeStep.mode !== "cards") return [];
+    const { parentCode } = activeStep;
+    if (parentCode === null) {
+      return ENTITY_TYPE_COLORS[tree.entity_type] ? [tree] : (tree.children ?? []);
+    }
+    const parent = findInTree(tree, parentCode);
+    return parent ? (parent.children ?? []) : [];
+  }
+
+  const navigateCard = (node: TreeNode) => {
+    const k = `${node.code}__${node.edge_id ?? 'null'}`;
+    const hasQ = (qMap[k] || qMap[`${node.code}__null`] || []).length > 0;
+    const hasKids = (node.children ?? []).length > 0;
+    if (!hasQ && hasKids) {
+      setStepHistory(h => [...h, { mode: "cards", parentCode: node.code }]);
+    } else {
+      setStepHistory(h => [...h, {
+        mode: "questions",
+        entityCode: node.code,
+        entityEdgeId: node.edge_id ?? null,
+        entityName: node.name || node.code,
+      }]);
+    }
+  };
+
+  // Breadcrumb trail
+  const breadcrumbs: string[] = [];
+  for (let i = 1; i < stepHistory.length; i++) {
+    const s = stepHistory[i];
+    if (s.mode === "cards" && s.parentCode) {
+      const found = tree ? findInTree(tree, s.parentCode) : null;
+      breadcrumbs.push(found?.name || s.parentCode);
+    } else if (s.mode === "questions") {
+      breadcrumbs.push(s.entityName);
+    }
+  }
+
   return (
-    <div className="min-h-screen text-white pt-24 pb-12 px-4 sm:px-6">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex items-center gap-4">
-          <button onClick={() => router.push(`/my-caps/details?id=${capId}`)} className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
-            <ArrowLeft size={18} />
-          </button>
-          <div className="flex-1 min-w-0">
-             <h1 className="text-2xl sm:text-3xl font-black font-semibold flex items-center gap-3">
-               <ClipboardCheck size={28} className="text-secondary-400 shrink-0" />
-               Preview CAP
-             </h1>
-             {cap && <p className="text-sm text-gray-500 font-mono mt-1 pl-10 truncate">{cap.title}</p>}
-          </div>
-        </div>
-        
-        {loading ? (
-          <div className="flex justify-center py-24">
-             <div className="w-10 h-10 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : error ? (
-          <div className="glass rounded-3xl p-8 text-center border border-white/10 max-w-md mx-auto">
-             <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
-             <h2 className="text-xl font-bold text-white mb-2">Error</h2>
-             <p className="text-gray-400">{error}</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="glass rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-[11px] sm:text-xs font-bold uppercase tracking-widest text-gray-500 flex items-center gap-2.5">
-                  <ClipboardList size={14} className="text-secondary-400" />
-                  CAP Scope & Actions
-                  <span className="text-gray-700 font-medium normal-case ml-1">({entities.length} assigned entities)</span>
-                </h3>
-              </div>
-              
-              {entities.length === 0 ? (
-                <div className="py-16 text-center bg-white/[0.02] rounded-3xl border border-dashed border-white/10">
-                   <Info size={32} className="text-gray-700 mx-auto mb-3" />
-                   <p className="text-sm text-gray-600 italic">No entities assigned to this CAP plan.</p>
-                </div>
-              ) : tree ? (
-                <div className="bg-white/[0.02] rounded-3xl border border-white/[0.08] p-4 sm:p-6 space-y-1">
-                   {ENTITY_TYPE_COLORS[tree.entity_type] ? (
-                     <EntityTreeNode node={tree} questionsMap={qMap} depth={0} />
-                   ) : (
-                     (tree.children || []).map((child) => (
-                       <EntityTreeNode key={`${child.code}__${(child as any).edge_id ?? 'null'}`} node={child} questionsMap={qMap} depth={0} />
-                     ))
-                   )}
-                </div>
-              ) : (
-                <div className="py-16 text-center bg-white/[0.02] rounded-3xl border border-dashed border-white/10">
-                   <AlertCircle size={32} className="text-gray-700 mx-auto mb-3" />
-                   <p className="text-sm text-gray-600">Entity structure is not available for preview.</p>
+    <div className="h-screen bg-transparent flex">
+      <div className="flex-1 flex flex-col overflow-hidden pt-16 lg:pt-0">
+
+        {/* Top bar */}
+        <div className="shrink-0 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 bg-transparent/80 backdrop-blur-sm border-b border-white/[0.05]">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={isRoot ? () => router.push(`/my-caps/details?id=${capId}`) : goBack}
+              className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all shrink-0"
+            >
+              <ArrowLeft size={14} />
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-white truncate flex items-center gap-2">
+                <ClipboardCheck size={16} className="text-orange-400 shrink-0" />
+                {cap?.title || "Preview CAP"}
+              </h1>
+              {breadcrumbs.length > 0 && (
+                <div className="flex items-center gap-1 mt-0.5 min-w-0 overflow-hidden">
+                  <span className="text-[11px] text-gray-600 shrink-0">Scope</span>
+                  {breadcrumbs.map((crumb, i) => (
+                    <span key={i} className="flex items-center gap-1 min-w-0">
+                      <ChevronRight size={10} className="text-gray-600 shrink-0" />
+                      <span className={`text-[11px] truncate ${i === breadcrumbs.length - 1 ? "text-gray-300" : "text-gray-600"}`}>
+                        {crumb}
+                      </span>
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
           </div>
+          {cap && isRoot && (
+            <span className="text-[11px] text-gray-500 shrink-0 hidden sm:block font-mono">
+              {entities.length} {entities.length === 1 ? "entity" : "entities"}
+            </span>
+          )}
+        </div>
+
+        {/* Content */}
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="glass rounded-xl p-8 text-center max-w-sm border border-white/10">
+              <AlertCircle size={28} className="text-red-400 mx-auto mb-3" />
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          </div>
+        ) : (
+          <div ref={contentRef} className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 lg:pb-6">
+            <div className="max-w-4xl mx-auto">
+
+              {activeStep.mode === "cards" ? (
+                // ── Cards view ──────────────────────────────────
+                (() => {
+                  // If no tree, fall back to flat entity list
+                  if (!tree) {
+                    if (entities.length === 0) {
+                      return (
+                        <div className="py-16 text-center">
+                          <ClipboardList size={32} className="text-gray-700 mx-auto mb-3" />
+                          <p className="text-sm text-gray-600 italic">No entities assigned to this CAP plan.</p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {entities.map((e, i) => {
+                          const k = `${e.entity_code}__${(e as any).org_tree_id ?? 'null'}`;
+                          const qs = qMap[k] || [];
+                          const typeCls = ENTITY_TYPE_COLORS[e.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
+                          return (
+                            <div key={k}
+                              onClick={() => setStepHistory(h => [...h, {
+                                mode: "questions",
+                                entityCode: e.entity_code,
+                                entityEdgeId: (e as any).org_tree_id ?? null,
+                                entityName: e.entity_name || e.entity_code,
+                              }])}
+                              className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group">
+                              <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
+                                <span className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-sm font-bold text-white shrink-0">
+                                  {i + 1}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-sm font-semibold text-white truncate block">{e.entity_name || e.entity_code}</span>
+                                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border inline-block mt-0.5 ${typeCls}`}>{e.entity_type}</span>
+                                </div>
+                                <ChevronRight size={18} className="text-white/60 group-hover:text-white transition-all shrink-0" />
+                              </div>
+                              <div className="p-4 flex items-center gap-1.5 text-xs text-gray-400">
+                                <ClipboardList size={13} className="text-orange-400" />
+                                <span>{qs.length} Action{qs.length !== 1 ? "s" : ""}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+
+                  const cards = getCards();
+                  if (cards.length === 0) {
+                    return (
+                      <div className="py-16 text-center">
+                        <Info size={28} className="text-gray-700 mx-auto mb-3" />
+                        <p className="text-sm text-gray-600 italic">No sub-entities in this section.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {cards.map((node, i) => (
+                        <EntityPreviewCard
+                          key={`${node.code}__${node.edge_id ?? "null"}`}
+                          node={node}
+                          index={i + 1}
+                          questionsMap={qMap}
+                          onClick={() => navigateCard(node)}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()
+              ) : (
+                // ── Questions / Actions view ────────────────────
+                (() => {
+                  const step = activeStep as {
+                    mode: "questions";
+                    entityCode: string;
+                    entityEdgeId: string | number | null;
+                    entityName: string;
+                  };
+                  const k = `${step.entityCode}__${step.entityEdgeId ?? 'null'}`;
+                  const qs = qMap[k] || qMap[`${step.entityCode}__null`] || [];
+                  const entityNode = tree ? findInTree(tree, step.entityCode) : null;
+                  const typeCls = entityNode
+                    ? (ENTITY_TYPE_COLORS[entityNode.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30")
+                    : "bg-gray-500/20 text-gray-300 border-gray-500/30";
+                  const subEntities = entityNode ? (entityNode.children ?? []) : [];
+
+                  return (
+                    <div className="space-y-4">
+                      {/* Entity header */}
+                      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shrink-0">
+                          <Building2 size={15} className="text-orange-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{step.entityName}</p>
+                          {entityNode && (
+                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border inline-block mt-0.5 ${typeCls}`}>
+                              {entityNode.entity_type}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-gray-500 font-mono shrink-0">{qs.length} Action{qs.length !== 1 ? "s" : ""}</span>
+                      </div>
+
+                      {/* Actions */}
+                      {qs.length === 0 ? (
+                        <div className="py-12 text-center rounded-xl border border-dashed border-white/[0.08]">
+                          <Info size={24} className="text-gray-700 mx-auto mb-2" />
+                          <p className="text-sm text-gray-600 italic">No actions mapped for this entity.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {qs.map((q, qi) => (
+                            <ActionPreviewItem
+                              key={q.id}
+                              question={q}
+                              index={qi + 1}
+                              isOpen={openQuestionId === q.id}
+                              onToggle={() => setOpenQuestionId(prev => prev === q.id ? null : q.id)}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Sub-entity cards */}
+                      {subEntities.length > 0 && (
+                        <div className="space-y-3 pt-2">
+                          <h4 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Sub-entities</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {subEntities.map((child, i) => (
+                              <EntityPreviewCard
+                                key={`${child.code}__${child.edge_id ?? "null"}`}
+                                node={child}
+                                index={i + 1}
+                                questionsMap={qMap}
+                                onClick={() => navigateCard(child)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+
+            </div>
+          </div>
         )}
+
       </div>
-
-      <style jsx>{`
-        .glass {
-          background: rgba(255, 255, 255, 0.02);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-        }
-      `}</style>
-    </div>
-  );
-}
-
-function Loading() {
-  return (
-    <div className="h-screen bg-transparent flex items-center justify-center">
-      <div className="w-10 h-10 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
     </div>
   );
 }

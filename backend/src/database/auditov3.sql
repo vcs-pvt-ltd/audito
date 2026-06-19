@@ -1096,7 +1096,7 @@ CREATE TABLE `organization_tree` (
 CREATE TABLE `password_reset_otps` (
   `id` int NOT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
-  `otp` varchar(6) COLLATE utf8mb4_general_ci NOT NULL,
+  `otp` varchar(100) COLLATE utf8mb4_general_ci NOT NULL,
   `expires_at` timestamp NOT NULL,
   `used` tinyint(1) DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP

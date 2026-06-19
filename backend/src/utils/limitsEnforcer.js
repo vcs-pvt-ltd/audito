@@ -1,6 +1,9 @@
 const { db } = require('../config/db');
 const SubscriptionModel = require('../models/SubscriptionModel');
 
+const NO_SUBSCRIPTION_MSG =
+  'No active subscription found for your organization. Please activate a plan to continue.';
+
 const LimitsEnforcer = {
   /**
    * Check structure limits (Companies and Departments).
@@ -9,8 +12,9 @@ const LimitsEnforcer = {
    * @returns {string|null} Error message if limit exceeded, else null.
    */
   async checkStructureLimits(rootEntityCode, entityType) {
-    const limits = await SubscriptionModel.getLimits(rootEntityCode);
-    
+    const limits = await SubscriptionModel.getActiveLimits(rootEntityCode);
+    if (!limits) return NO_SUBSCRIPTION_MSG;
+
     if (entityType === 'Company') {
       const [[{ count }]] = await db.query(
         'SELECT COUNT(*) as count FROM companies WHERE cust_code = ? AND is_active = TRUE', [rootEntityCode]
@@ -35,7 +39,8 @@ const LimitsEnforcer = {
    * Check auditor limit.
    */
   async checkAuditorLimit(rootEntityCode) {
-    const limits = await SubscriptionModel.getLimits(rootEntityCode);
+    const limits = await SubscriptionModel.getActiveLimits(rootEntityCode);
+    if (!limits) return NO_SUBSCRIPTION_MSG;
     const [[{ count }]] = await db.query(
       'SELECT COUNT(*) as count FROM auditors WHERE created_by_entity_code = ? AND is_active = TRUE', [rootEntityCode]
     );
@@ -49,7 +54,8 @@ const LimitsEnforcer = {
    * Check checklist limit.
    */
   async checkChecklistLimit(rootEntityCode) {
-    const limits = await SubscriptionModel.getLimits(rootEntityCode);
+    const limits = await SubscriptionModel.getActiveLimits(rootEntityCode);
+    if (!limits) return NO_SUBSCRIPTION_MSG;
     const [[{ count }]] = await db.query(
       'SELECT COUNT(*) as count FROM checklists WHERE created_by = ? AND is_active = TRUE', [rootEntityCode]
     );
@@ -63,7 +69,8 @@ const LimitsEnforcer = {
    * Check audit limit.
    */
   async checkAuditLimit(rootEntityCode) {
-    const limits = await SubscriptionModel.getLimits(rootEntityCode);
+    const limits = await SubscriptionModel.getActiveLimits(rootEntityCode);
+    if (!limits) return NO_SUBSCRIPTION_MSG;
     const [[{ count }]] = await db.query(
       'SELECT COUNT(*) as count FROM audit_assignments WHERE created_by = ? AND is_active = TRUE',
       [rootEntityCode]

@@ -14,11 +14,11 @@ export function LandingProvider({ children }: { children: ReactNode }) {
   const [activeSection, setActiveSection] = useState(2); // Initial: Home (index 2)
 
   const navigate = (direction: "left" | "right") => {
-    const totalSections = 4; // Home, Features, Pricing, Contact
+    const totalSections = 4;
     if (direction === "left") {
-      setActiveSection((prev) => (prev - 1 + totalSections) % totalSections);
+      setActiveSection((prev) => Math.max(0, prev - 1));
     } else {
-      setActiveSection((prev) => (prev + 1) % totalSections);
+      setActiveSection((prev) => Math.min(totalSections - 1, prev + 1));
     }
   };
 

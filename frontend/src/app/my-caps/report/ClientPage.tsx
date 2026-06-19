@@ -8,7 +8,7 @@ import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
 import {
   AlertCircle, ArrowLeft, BarChart3, Building2, CheckCircle2,
   ChevronDown, ChevronRight, TrendingUp, AlertTriangle, FileText,
-  Camera, Video, Music, Paperclip, HelpCircle,
+  Video, Music, Paperclip, HelpCircle,
 } from "lucide-react";
 import { CapPdfRenderer } from "@/components/cap/CapPdfRenderer";
 
@@ -176,11 +176,6 @@ function EntityTreeSection({
                               <FileText size={9} /> {resp.remarks}
                             </span>
                           )}
-                          {(resp?.evidence || []).length > 0 && (
-                            <span className="inline-flex items-center gap-1 text-purple-400">
-                              <Camera size={9} /> {(resp?.evidence || []).length} evidence
-                            </span>
-                          )}
                         </div>
                         {hasResp && (
                           <p className="text-[10px] text-secondary-400/70 break-words">
@@ -188,21 +183,22 @@ function EntityTreeSection({
                           </p>
                         )}
                         {(resp?.evidence || []).length > 0 && (
-                          <div className="mt-1.5 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
                             {(resp?.evidence || []).map((ev) => {
                               const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
                               const url = getEvidenceUrl(ev.file_path);
                               return (
                                 <a key={ev.id} href={url} target="_blank" rel="noreferrer"
-                                  className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20 transition-colors">
+                                  className="relative flex items-center justify-center overflow-hidden rounded-md bg-white/[0.03] border border-white/10 hover:border-white/20 transition-colors shrink-0"
+                                  style={{ width: 80, height: 60 }}>
                                   {kind === "image" ? (
-                                    <img src={url} alt={ev.file_name || "evidence"} className="w-full h-16 object-cover rounded-md" />
+                                    <img src={url} alt={ev.file_name || "evidence"} className="w-full h-full object-cover" />
                                   ) : (
-                                    <div className="w-full h-16 rounded-md bg-white/[0.04] flex items-center justify-center text-gray-400">
+                                    <div className="flex flex-col items-center justify-center p-1.5 text-gray-400">
                                       {kind === "video" ? <Video size={16} /> : kind === "audio" ? <Music size={16} /> : <Paperclip size={16} />}
+                                      <span className="text-[8px] truncate w-full text-center mt-1">{ev.file_name || "File"}</span>
                                     </div>
                                   )}
-                                  <p className="mt-1 text-[9px] text-gray-500 truncate">{ev.file_name || "Evidence"}</p>
                                 </a>
                               );
                             })}
@@ -519,7 +515,7 @@ export default function MyCapReportPage() {
                       progMap={progMap}
                     />
                   ) : (
-                    Object.entries(byEntity).map(([entityKey, qs]) => (
+                    Object.entries(byEntity).map(([entityKey]) => (
                       <EntityTreeSection
                         key={entityKey}
                         node={{ code: entityKey.split("__")[0], name: entityKey.split("__")[0], entity_type: "", edge_id: entityKey.split("__")[1] === "null" ? null : Number(entityKey.split("__")[1]), children: [] }}

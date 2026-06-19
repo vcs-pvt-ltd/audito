@@ -310,10 +310,55 @@ const createUser = async (req, res) => {
 
 // ─── LIST USERS ───────────────────────────────────────────────────
 
+/**
+ * Linked company admins surfaced as read-only "Company Head" rows.
+ * A Supplier linked to a Company sees that company's admin here; the company
+ * itself is in `admins` (not entity_heads), so we map it into the user shape.
+ */
+async function getLinkedCompanyHeads(accessibleCodes) {
+  if (!accessibleCodes || accessibleCodes.length === 0) return [];
+  const ph = accessibleCodes.map(() => '?').join(',');
+  const [rows] = await db.query(
+    `SELECT id, user_id, first_name, last_name, email, phone_number, nic, country, entity_code, created_at
+       FROM admins
+      WHERE entity_type = 'Company' AND entity_code IN (${ph}) AND is_active = TRUE`,
+    accessibleCodes
+  );
+  return rows.map((a) => ({
+    id: a.id,
+    user_code: a.user_id,
+    first_name: a.first_name,
+    last_name: a.last_name,
+    email: a.email,
+    phone_number: a.phone_number || null,
+    nic: a.nic || null,
+    country: a.country || null,
+    role: 'admin',
+    user_type: 'Company Head',
+    assigned_entity_type: 'Company',
+    assigned_entity_code: a.entity_code,
+    assigned_org_tree_id: null,
+    email_verified: true,
+    is_active: true,
+    is_linked: true,
+    created_at: a.created_at,
+  }));
+}
+
 const listUsers = async (req, res) => {
   try {
     const userType = req.query.user_type || null;
     const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+
+    // A Supplier (Customer account) linked to a Company sees that company's
+    // admin as a read-only "Company Head".
+    const includeCompanyHeads =
+      req.user.accountType === 'Customer' && (!userType || userType === 'Company Head');
+    const companyHeads = includeCompanyHeads ? await getLinkedCompanyHeads(accessibleCodes) : [];
+
+    if (userType === 'Company Head') {
+      return successResponse(res, { users: companyHeads });
+    }
 
     if (userType && isAuditor(userType)) {
       const users = await AuditorModel.listByCreators(accessibleCodes);
@@ -322,10 +367,10 @@ const listUsers = async (req, res) => {
       const users = await EntityHeadModel.listByCreators(accessibleCodes, userType);
       return successResponse(res, { users });
     } else {
-      // No filter – list from both tables
+      // No filter – list from both tables (plus any linked company heads)
       const auditors = await AuditorModel.listByCreators(accessibleCodes);
       const heads = await EntityHeadModel.listByCreators(accessibleCodes);
-      return successResponse(res, { users: [...auditors, ...heads] });
+      return successResponse(res, { users: [...auditors, ...heads, ...companyHeads] });
     }
   } catch (error) {
     console.error('List users error:', error);

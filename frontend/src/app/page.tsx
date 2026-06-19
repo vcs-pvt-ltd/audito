@@ -15,30 +15,39 @@ const SECTIONS = [
   { id: "contact", label: "Contact us", component: ContactSection },
 ];
 
+const TOTAL_SECTIONS = 4;
+
 function HomePageContent() {
   const { activeSection, navigate } = useLanding();
+
+  const atLeftEdge = activeSection === 0;
+  const atRightEdge = activeSection === TOTAL_SECTIONS - 1;
 
   return (
     <div className="flex flex-col h-[100dvh] overflow-hidden">
       <Navbar />
       <main className="relative flex-1 overflow-hidden w-screen max-w-[100vw]">
-        {/* Left Arrow */}
-        <button
-          onClick={() => navigate("left")}
-          className="fixed left-4 top-1/2 -translate-y-1/2 z-40 w-10 h-10 rounded-full glass flex items-center justify-center text-gray-300 hover:text-white transition-colors"
-          aria-label="Previous section"
-        >
-          <ChevronLeft size={20} />
-        </button>
+        {/* Left Arrow — hidden at Pricing (leftmost) */}
+        {!atLeftEdge && (
+          <button
+            onClick={() => navigate("left")}
+            className="fixed left-4 top-1/2 -translate-y-1/2 z-40 w-10 h-10 rounded-full glass flex items-center justify-center text-gray-300 hover:text-white transition-colors"
+            aria-label="Previous section"
+          >
+            <ChevronLeft size={20} />
+          </button>
+        )}
 
-        {/* Right Arrow */}
-        <button
-          onClick={() => navigate("right")}
-          className="fixed right-4 top-1/2 -translate-y-1/2 z-40 w-10 h-10 rounded-full glass flex items-center justify-center text-gray-300 hover:text-white transition-colors"
-          aria-label="Next section"
-        >
-          <ChevronRight size={20} />
-        </button>
+        {/* Right Arrow — hidden at Contact (rightmost) */}
+        {!atRightEdge && (
+          <button
+            onClick={() => navigate("right")}
+            className="fixed right-4 top-1/2 -translate-y-1/2 z-40 w-10 h-10 rounded-full glass flex items-center justify-center text-gray-300 hover:text-white transition-colors"
+            aria-label="Next section"
+          >
+            <ChevronRight size={20} />
+          </button>
+        )}
 
         {/* Sliding track */}
         <div

@@ -341,7 +341,7 @@ const updateSubEntity = async (req, res) => {
 /**
  * DELETE /api/hierarchy/:entityType/:code
  */
-const deactivateSubEntity = async (req, res) => {
+const deleteSubEntity = async (req, res) => {
   try {
     const { entityType, code } = req.params;
     const accountType = req.user.accountType === 'Audit Firm Company' ? 'Audit Firm' : req.user.accountType;
@@ -354,19 +354,19 @@ const deactivateSubEntity = async (req, res) => {
       [code, code]
     );
     if (treeUsage.length > 0) {
-      return errorResponse(res, 'This entity is currently mapped in the organization tree and cannot be deactivated.', 403);
+      return errorResponse(res, 'This entity is currently mapped in the organization tree and cannot be deleted.', 403);
     }
  
     if (accountType === 'Customer') {
       if (entityType === 'buying-office') {
         const bo = await CustomerModel.findBuyingOfficeByCode(code);
         if (!bo) return errorResponse(res, 'Buying Office not found.', 404);
-        if (bo.cust_code !== adminCode) return errorResponse(res, 'Cannot deactivate a linked entity.', 403);
+        if (bo.cust_code !== adminCode) return errorResponse(res, 'Cannot delete a linked entity.', 403);
         await CustomerModel.deactivateBuyingOffice(code);
       } else if (entityType === 'supplier') {
         const s = await CustomerModel.findSupplierByCode(code);
         if (!s) return errorResponse(res, 'Supplier not found.', 404);
-        if (s.cust_code !== adminCode) return errorResponse(res, 'Cannot deactivate a linked entity.', 403);
+        if (s.cust_code !== adminCode) return errorResponse(res, 'Cannot delete a linked entity.', 403);
         await CustomerModel.deactivateSupplier(code);
       } else {
         return errorResponse(res, 'Invalid entityType for Customer.', 400);
@@ -376,27 +376,27 @@ const deactivateSubEntity = async (req, res) => {
       if (entityType === 'cluster') {
         const c = await CompanyModel.findClusterByCode(code);
         if (!c) return errorResponse(res, 'Cluster not found.', 404);
-        if (c.comp_code !== adminCode) return errorResponse(res, 'Cannot deactivate a linked entity.', 403);
+        if (c.comp_code !== adminCode) return errorResponse(res, 'Cannot delete a linked entity.', 403);
         await CompanyModel.deactivateCluster(code);
       } else if (entityType === 'factory') {
         const f = await CompanyModel.findFactoryByCode(code);
         if (!f) return errorResponse(res, 'Factory not found.', 404);
-        if (f.comp_code !== adminCode) return errorResponse(res, 'Cannot deactivate a linked entity.', 403);
+        if (f.comp_code !== adminCode) return errorResponse(res, 'Cannot delete a linked entity.', 403);
         await CompanyModel.deactivateFactory(code);
       } else if (entityType === 'unit') {
         const u = await CompanyModel.findUnitByCode(code);
         if (!u) return errorResponse(res, 'Unit not found.', 404);
-        if (u.comp_code !== adminCode) return errorResponse(res, 'Cannot deactivate a linked entity.', 403);
+        if (u.comp_code !== adminCode) return errorResponse(res, 'Cannot delete a linked entity.', 403);
         await CompanyModel.deactivateUnit(code);
       } else if (entityType === 'department') {
         const d = await CompanyModel.findDepartmentByCode(code);
         if (!d) return errorResponse(res, 'Department not found.', 404);
-        if (d.comp_code !== adminCode) return errorResponse(res, 'Cannot deactivate a linked entity.', 403);
+        if (d.comp_code !== adminCode) return errorResponse(res, 'Cannot delete a linked entity.', 403);
         await CompanyModel.deactivateDepartment(code);
       } else if (entityType === 'section') {
         const s = await CompanyModel.findSectionByCode(code);
         if (!s) return errorResponse(res, 'Section not found.', 404);
-        if (s.comp_code !== adminCode) return errorResponse(res, 'Cannot deactivate a linked entity.', 403);
+        if (s.comp_code !== adminCode) return errorResponse(res, 'Cannot delete a linked entity.', 403);
         await CompanyModel.deactivateSection(code);
       } else {
         return errorResponse(res, 'Invalid entityType for Company.', 400);
@@ -406,23 +406,23 @@ const deactivateSubEntity = async (req, res) => {
       if (entityType === 'branch') {
         const b = await AuditFirmModel.findBranchByCode(code);
         if (!b) return errorResponse(res, 'Branch not found.', 404);
-        if (b.afc_code !== adminCode) return errorResponse(res, 'Cannot deactivate a linked entity.', 403);
+        if (b.afc_code !== adminCode) return errorResponse(res, 'Cannot delete a linked entity.', 403);
         await AuditFirmModel.deactivateBranch(code);
       } else if (entityType === 'audit-firm-department') {
         const d = await AuditFirmModel.findDepartmentByCode(code);
         if (!d) return errorResponse(res, 'Department not found.', 404);
-        if (d.afc_code !== adminCode) return errorResponse(res, 'Cannot deactivate a linked entity.', 403);
+        if (d.afc_code !== adminCode) return errorResponse(res, 'Cannot delete a linked entity.', 403);
         await AuditFirmModel.deactivateDepartment(code);
       } else {
         return errorResponse(res, 'Invalid entityType for Audit Firm.', 400);
       }
     }
 
-    return successResponse(res, null, 'Deactivated successfully.');
+    return successResponse(res, null, 'Deleted successfully.');
 
   } catch (error) {
-    console.error('Deactivate sub-entity error:', error);
-    return errorResponse(res, 'Failed to deactivate.', 500);
+    console.error('Delete sub-entity error:', error);
+    return errorResponse(res, 'Failed to delete.', 500);
   }
 };
 
@@ -445,7 +445,9 @@ const listByType = async (req, res) => {
         items = await CustomerModel.findBuyingOfficesByCustomer(adminCode);
       } else if (entityType === 'supplier') {
         items = await CustomerModel.findSuppliersByCustomer(adminCode);
-      } else if (COMPANY_STRUCTURE_ENTITY_TYPES.includes(entityType)) {
+      } else if (entityType === 'company' || COMPANY_STRUCTURE_ENTITY_TYPES.includes(entityType)) {
+        // Customer accounts never own companies/clusters/etc. directly, but a
+        // Supplier linked to a Company sees them (read-only) via the merge below.
         items = [];
       } else {
         return errorResponse(res, 'Invalid entityType for Customer.', 400);
@@ -536,6 +538,6 @@ const listByType = async (req, res) => {
 module.exports = {
   createSubEntity,
   updateSubEntity,
-  deactivateSubEntity,
+  deleteSubEntity,
   listByType
 };

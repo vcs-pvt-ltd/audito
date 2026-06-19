@@ -21,7 +21,7 @@ interface EntityTableProps {
   codeField: string;
   parentLabel?: string;
   onEdit: (entity: EntityRow) => void;
-  onDeactivate: (entity: EntityRow) => void;
+  onDelete: (entity: EntityRow) => void;
   startIndex?: number;
 }
 
@@ -31,7 +31,7 @@ export default function EntityTable({
   codeField,
   parentLabel,
   onEdit,
-  onDeactivate,
+  onDelete,
   startIndex = 0,
 }: EntityTableProps) {
   if (entities.length === 0) {
@@ -113,21 +113,26 @@ export default function EntityTable({
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-1">
-                    <button
-                      onClick={() => onEdit(entity)}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all"
-                      title="Edit"
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    {!entity.is_linked && (
-                      <button
-                        onClick={() => onDeactivate(entity)}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                        title="Deactivate"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                    {entity.is_linked ? (
+                      // Linked (partner-owned) entities are view-only — no edit/delete.
+                      <span className="text-[11px] text-gray-500 italic">Linked</span>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => onEdit(entity)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all"
+                          title="Edit"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => onDelete(entity)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                          title="Delete"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </>
                     )}
                   </div>
                 </td>

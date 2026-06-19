@@ -32,7 +32,7 @@ const { authenticate } = require('../middleware/auth');
 const {
   createSubEntity,
   updateSubEntity,
-  deactivateSubEntity,
+  deleteSubEntity,
   listByType
 } = require('../controllers/structureController');
 
@@ -41,6 +41,6 @@ router.use(authenticate);
 router.post('/', createSubEntity);
 router.get('/list/:entityType', listByType);
 router.put('/:entityType/:code', updateSubEntity);
-router.delete('/:entityType/:code', deactivateSubEntity);
+router.delete('/:entityType/:code', deleteSubEntity);
 
 module.exports = router;

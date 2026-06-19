@@ -28,6 +28,16 @@ interface EntityConfig {
 }
 
 const ENTITY_CONFIGS: Record<string, EntityConfig> = {
+  // Company itself — only ever shown read-only to a linked Supplier (Customer account).
+  // accountTypes[0] is "Company" so canCreateEntities is false for a Customer/Supplier.
+  company: {
+    label: "Company",
+    labelPlural: "Companies",
+    codeField: "comp_code",
+    accountTypes: ["Company", "Customer"],
+    apiSlug: "company",
+    entityTypeBody: "Company",
+  },
   "buying-office": {
     label: "Buying Office",
     labelPlural: "Buying Offices",
@@ -320,25 +330,25 @@ export default function SetupStructurePage() {
     setModalOpen(true);
   };
 
-  const handleDeactivate = async (entity: EntityRow) => {
+  const handleDelete = async (entity: EntityRow) => {
     if (!accessToken) return;
     const confirmed = await confirm({
-      title: "Deactivate Entity",
-      message: `Are you sure you want to deactivate "${entity.name}"?`,
-      confirmText: "Deactivate",
+      title: "Delete Entity",
+      message: `Are you sure you want to delete "${entity.name}"?`,
+      confirmText: "Delete",
       variant: "warning",
     });
     if (!confirmed) return;
-    const res = await structureApi.deactivateSubEntity(
+    const res = await structureApi.deleteSubEntity(
       accessToken,
       config.apiSlug,
       entity.code
     );
     if (res.success) {
-      toast("Entity deactivated successfully.", "success");
+      toast("Entity deleted successfully.", "success");
       fetchEntities();
     } else {
-      toast(res.message || "Failed to deactivate entity.", "error");
+      toast(res.message || "Failed to delete entity.", "error");
     }
   };
 
@@ -488,7 +498,7 @@ export default function SetupStructurePage() {
                 entityLabel={config.label}
                 codeField={config.codeField}
                 onEdit={handleEdit}
-                onDeactivate={handleDeactivate}
+                onDelete={handleDelete}
                 startIndex={(currentPage - 1) * pageSize}
               />
             </div>
@@ -529,9 +539,9 @@ export default function SetupStructurePage() {
                         <Pencil size={15} />
                       </button>
                       <button
-                        onClick={() => handleDeactivate(entity)}
+                        onClick={() => handleDelete(entity)}
                         className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
-                        title="Deactivate"
+                        title="Delete"
                       >
                         <Trash2 size={15} />
                       </button>

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi } from "@/lib/api";
 import { AuditPdfRenderer } from "@/components/audit/AuditPdfRenderer";
+import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
 
 import {
   ArrowLeft,
@@ -19,8 +20,10 @@ import {
   Calendar,
   ChevronDown,
   ChevronRight,
-  Camera,
   Loader2,
+  Paperclip,
+  Video,
+  Music,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -290,12 +293,29 @@ function EntityTreeSection({
                               <AlertTriangle size={9} /> CAP Required
                             </span>
                           )}
-                          {resp?.evidence && resp.evidence.length > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-purple-400">
-                              <Camera size={9} /> {resp.evidence.length} evidence
-                            </span>
-                          )}
                         </div>
+                        {resp?.evidence && resp.evidence.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {resp.evidence.map((ev) => {
+                              const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
+                              const url = getEvidenceUrl(ev.file_path);
+                              return (
+                                <a key={ev.id} href={url} target="_blank" rel="noreferrer"
+                                  className="relative flex items-center justify-center overflow-hidden rounded-md bg-white/[0.03] border border-white/10 hover:border-white/20 transition-colors shrink-0"
+                                  style={{ width: 80, height: 60 }}>
+                                  {kind === "image" ? (
+                                    <img src={url} alt={ev.file_name || "evidence"} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="flex flex-col items-center justify-center p-1.5 text-gray-400">
+                                      {kind === "video" ? <Video size={16} /> : kind === "audio" ? <Music size={16} /> : <Paperclip size={16} />}
+                                      <span className="text-[8px] truncate w-full text-center mt-1">{ev.file_name || "File"}</span>
+                                    </div>
+                                  )}
+                                </a>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -529,12 +549,7 @@ export default function MyAuditReportPage() {
                     <span className="text-gray-500">End:</span>
                     <span className="text-white">{fmtDate(report.audit.end_date)}</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-gray-500">Status:</span>
-                    <span className="text-emerald-400 capitalize font-medium">
-                      {report.audit.status.replace("_", " ")}
-                    </span>
-                  </div>
+                  
                 </div>
               </div>
 
