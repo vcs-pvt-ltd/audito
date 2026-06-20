@@ -33,7 +33,6 @@ const PLANS = [
   {
     name: "Basic",
     priceMonthly: 0,
-    priceYearly: 0,
     description: "Perfect for trying out Audito",
     color: "from-[#378745]/40 to-[#1D4226]/40",
     badge: null,
@@ -42,7 +41,6 @@ const PLANS = [
   {
     name: "Pro",
     priceMonthly: 99,
-    priceYearly: 79,
     description: "For growing teams",
     popular: true,
     color: "from-[#F1FDF9]/40 to-[#B7DAD0]/60",
@@ -53,7 +51,6 @@ const PLANS = [
   {
     name: "Elite",
     priceMonthly: 299,
-    priceYearly: 239,
     description: "For large organizations",
     color: "from-[#0F766E] to-[#062D27]",
     badge: null,
@@ -100,8 +97,16 @@ export default function BillingPage() {
     return PLANS[0];
   }, [admin]);
 
-  const workspaceRows = COMPARISON_ROWS.filter((r) => r.group === "WORKSPACE MANAGEMENT");
-  const coreRows = COMPARISON_ROWS.filter((r) => r.group === "CORE FEATURES");
+  const currentPlanIndex = useMemo(() => PLANS.findIndex((p) => p.name === currentPlan.name), [currentPlan]);
+  const visiblePlans = useMemo(() => PLANS.slice(currentPlanIndex), [currentPlanIndex]);
+
+  const visibleRows = useMemo(
+    () => COMPARISON_ROWS.map((r) => ({ ...r, values: r.values.slice(currentPlanIndex) })),
+    [currentPlanIndex]
+  );
+  const workspaceRows = visibleRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
+  const coreRows = visibleRows.filter((r) => r.group === "CORE FEATURES");
+  const planCols = visiblePlans.length;
 
   if (isLoading) {
     return (
@@ -230,12 +235,22 @@ export default function BillingPage() {
 
         {/* ── Plan Cards ── */}
         <div>
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Available Plans</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {PLANS.map((plan) => {
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+            {visiblePlans.length === 1 ? "Current Plan" : "Current & Upgrade Plans"}
+          </h2>
+          <div
+            className={`grid gap-4 sm:gap-6 ${
+              planCols === 1
+                ? "grid-cols-1 max-w-sm"
+                : planCols === 2
+                ? "grid-cols-1 sm:grid-cols-2"
+                : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+            }`}
+          >
+            {visiblePlans.map((plan) => {
               const isCurrent = currentPlan.name === plan.name;
-              const price = billingCycle === "monthly" ? plan.priceMonthly : plan.priceYearly;
-              const period = billingCycle === "monthly" ? "/mo" : "/mo, billed yearly";
+              const price = billingCycle === "monthly" ? plan.priceMonthly : Math.round(plan.priceMonthly * 12 * 0.8);
+              const period = billingCycle === "monthly" ? "/mo" : "/year";
 
               return (
                 <div
@@ -291,9 +306,14 @@ export default function BillingPage() {
               <thead>
                 <tr className="bg-white/[0.03] border-b border-white/[0.06]">
                   <th className="text-left px-6 py-4 text-xs font-semibold uppercase tracking-wide text-secondary-400 w-2/5">Feature</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-white text-center">Basic</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-white text-center">Pro</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-white text-center">Elite</th>
+                  {visiblePlans.map((p) => (
+                    <th key={p.name} className="px-6 py-4 text-xs font-semibold text-white text-center">
+                      {p.name}
+                      {currentPlan.name === p.name && (
+                        <span className="ml-1.5 text-[9px] text-secondary-400 font-normal">(current)</span>
+                      )}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.04]">
@@ -306,7 +326,7 @@ export default function BillingPage() {
                   </tr>
                 ))}
                 <tr className="bg-white/[0.02] border-y border-white/[0.04]">
-                  <td className="px-6 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-gray-500" colSpan={4}>Core Features</td>
+                  <td className="px-6 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-gray-500" colSpan={planCols + 1}>Core Features</td>
                 </tr>
                 {coreRows.map((row) => (
                   <tr key={row.feature} className="hover:bg-white/[0.02] transition-colors">
@@ -340,10 +360,13 @@ export default function BillingPage() {
             {workspaceRows.map((row) => (
               <div key={row.feature} className="glass rounded-xl border border-white/10 overflow-hidden">
                 <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/[0.06]">{row.feature}</p>
-                <div className="grid grid-cols-3 divide-x divide-white/[0.06]">
-                  {["Basic", "Pro", "Elite"].map((plan, i) => (
-                    <div key={plan} className="flex flex-col items-center py-3 gap-1">
-                      <span className="text-[10px] text-gray-500">{plan}</span>
+                <div
+                  className={`grid divide-x divide-white/[0.06]`}
+                  style={{ gridTemplateColumns: `repeat(${planCols}, minmax(0, 1fr))` }}
+                >
+                  {visiblePlans.map((plan, i) => (
+                    <div key={plan.name} className="flex flex-col items-center py-3 gap-1">
+                      <span className="text-[10px] text-gray-500">{plan.name}</span>
                       <span className="text-sm font-semibold text-white">{row.values[i]}</span>
                     </div>
                   ))}
@@ -355,10 +378,13 @@ export default function BillingPage() {
             {coreRows.map((row) => (
               <div key={row.feature} className="glass rounded-xl border border-white/10 overflow-hidden">
                 <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/[0.06]">{row.feature}</p>
-                <div className="grid grid-cols-3 divide-x divide-white/[0.06]">
-                  {["Basic", "Pro", "Elite"].map((plan, i) => (
-                    <div key={plan} className="flex flex-col items-center py-3 gap-1">
-                      <span className="text-[10px] text-gray-500">{plan}</span>
+                <div
+                  className="grid divide-x divide-white/[0.06]"
+                  style={{ gridTemplateColumns: `repeat(${planCols}, minmax(0, 1fr))` }}
+                >
+                  {visiblePlans.map((plan, i) => (
+                    <div key={plan.name} className="flex flex-col items-center py-3 gap-1">
+                      <span className="text-[10px] text-gray-500">{plan.name}</span>
                       {typeof row.values[i] === "boolean" ? (
                         row.values[i] ? (
                           <span className="inline-flex w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/20 items-center justify-center">

@@ -12,7 +12,7 @@ import EntityTable, {
 import AddEditEntityModal, {
   type EntityFormData,
 } from "@/components/structure/AddEditEntityModal";
-import { Plus, RefreshCw, Pencil, Trash2, Search, Crown } from "lucide-react";
+import { Plus, RefreshCw, Pencil, Trash2, Search, Crown, Lock } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
 
@@ -332,6 +332,16 @@ export default function SetupStructurePage() {
 
   const handleDelete = async (entity: EntityRow) => {
     if (!accessToken) return;
+    // Safety net (in case the entity got mapped after the list loaded):
+    // explain why it can't be deleted instead of firing a request that 403s.
+    if (entity.in_tree) {
+      await alert({
+        title: "Cannot Delete",
+        message: `"${entity.name}" is currently mapped in your organization tree. Remove it from the Organization page first, then delete it here.`,
+        variant: "warning",
+      });
+      return;
+    }
     const confirmed = await confirm({
       title: "Delete Entity",
       message: `Are you sure you want to delete "${entity.name}"?`,
@@ -538,13 +548,23 @@ export default function SetupStructurePage() {
                       >
                         <Pencil size={15} />
                       </button>
-                      <button
-                        onClick={() => handleDelete(entity)}
-                        className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
-                        title="Delete"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      {entity.in_tree ? (
+                        <button
+                          onClick={() => handleDelete(entity)}
+                          className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all font-medium"
+                          title="Mapped in the organization tree. Tap for details."
+                        >
+                          <Lock size={15} />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleDelete(entity)}
+                          className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
+                          title="Delete"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

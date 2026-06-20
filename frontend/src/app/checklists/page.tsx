@@ -44,7 +44,7 @@ interface Checklist {
 
 export default function ChecklistsPage() {
   const { admin, accessToken, isLoading } = useAuth();
-  const { confirm } = useUiFeedback();
+  const { confirm, toast } = useUiFeedback();
   const router = useRouter();
   const { goNext } = useOnboarding();
   const isOnboarding = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("onboarding") === "1";
@@ -132,8 +132,17 @@ export default function ChecklistsPage() {
   const assignedAuditCount = (checklist: Checklist) =>
     Number(checklist.assigned_audit_count || 0);
 
-  const handleDelete = async (id: number, name: string) => {
+  const handleDelete = async (id: number, name: string, auditCount = 0) => {
     if (!accessToken) return;
+    // Safety net for race conditions: a checklist in use by an audit can't be
+    // deleted (backend 403). Explain why instead of firing a doomed request.
+    if (auditCount > 0) {
+      toast(
+        `"${name}" is used in ${auditCount} audit${auditCount === 1 ? "" : "s"} and cannot be deleted. Cancel or remove those audits first.`,
+        "warning"
+      );
+      return;
+    }
     const ok = await confirm({
       title: "Delete Checklist",
       message: `Delete checklist "${name}"?`,
@@ -142,8 +151,13 @@ export default function ChecklistsPage() {
     });
     if (!ok) return;
     setDeleting(id);
-    await checklistApi.deactivate(accessToken, id);
+    const res = await checklistApi.deactivate(accessToken, id);
     setDeleting(null);
+    if (res.success) {
+      toast("Checklist deleted successfully.", "success");
+    } else {
+      toast(res.message || "Failed to delete checklist.", "error");
+    }
     fetchChecklists();
   };
 
@@ -355,26 +369,39 @@ export default function ChecklistsPage() {
                           </button>
                           <button
                             onClick={() => {
-                              if (!isEditDisabled) router.push(editPath(cl.id));
+                              if (isEditDisabled) {
+                                toast(`This checklist is used in ${auditCount} audit${auditCount === 1 ? "" : "s"}; editing is disabled. Cancel or remove those audits first.`, "warning");
+                              } else {
+                                router.push(editPath(cl.id));
+                              }
                             }}
-                            disabled={isEditDisabled}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:bg-transparent disabled:hover:border-white/10 disabled:cursor-not-allowed"
-                            title={isEditDisabled ? `Assigned to ${auditCount} audit${auditCount === 1 ? "" : "s"}; editing is disabled` : "Edit"}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all"
+                            title={isEditDisabled ? `Used in ${auditCount} audit${auditCount === 1 ? "" : "s"}. Click for details.` : "Edit"}
                           >
                             {isEditDisabled ? <Lock size={14} /> : <Pencil size={14} />}
                           </button>
-                          <button
-                            onClick={() => handleDelete(cl.id, cl.name)}
-                            disabled={deleting === cl.id}
-                            className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 transition-all disabled:opacity-50"
-                            title="Delete"
-                          >
-                            {deleting === cl.id ? (
-                              <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
-                            ) : (
-                              <Trash2 size={14} />
-                            )}
-                          </button>
+                          {isEditDisabled ? (
+                            <button
+                              onClick={() => handleDelete(cl.id, cl.name, auditCount)}
+                              className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 border border-white/10 transition-all"
+                              title={`Used in ${auditCount} audit${auditCount === 1 ? "" : "s"}. Click for details.`}
+                            >
+                              <Lock size={14} />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDelete(cl.id, cl.name, auditCount)}
+                              disabled={deleting === cl.id}
+                              className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 transition-all disabled:opacity-50"
+                              title="Delete"
+                            >
+                              {deleting === cl.id ? (
+                                <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <Trash2 size={14} />
+                              )}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -442,26 +469,39 @@ export default function ChecklistsPage() {
                       </button>
                       <button
                         onClick={() => {
-                          if (!isEditDisabled) router.push(editPath(cl.id));
+                          if (isEditDisabled) {
+                            toast(`This checklist is used in ${auditCount} audit${auditCount === 1 ? "" : "s"}; editing is disabled. Cancel or remove those audits first.`, "warning");
+                          } else {
+                            router.push(editPath(cl.id));
+                          }
                         }}
-                        disabled={isEditDisabled}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:bg-transparent disabled:hover:border-white/10 disabled:cursor-not-allowed"
-                        title={isEditDisabled ? `Assigned to ${auditCount} audit${auditCount === 1 ? "" : "s"}; editing is disabled` : "Edit"}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all"
+                        title={isEditDisabled ? `Used in ${auditCount} audit${auditCount === 1 ? "" : "s"}. Tap for details.` : "Edit"}
                       >
                         {isEditDisabled ? <Lock size={14} /> : <Pencil size={14} />}
                       </button>
-                      <button
-                        onClick={() => handleDelete(cl.id, cl.name)}
-                        disabled={deleting === cl.id}
-                        className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 transition-all disabled:opacity-50"
-                        title="Delete"
-                      >
-                        {deleting === cl.id ? (
-                          <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <Trash2 size={14} />
-                        )}
-                      </button>
+                      {isEditDisabled ? (
+                        <button
+                          onClick={() => handleDelete(cl.id, cl.name, auditCount)}
+                          className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 border border-white/10 transition-all"
+                          title={`Used in ${auditCount} audit${auditCount === 1 ? "" : "s"}. Tap for details.`}
+                        >
+                          <Lock size={14} />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleDelete(cl.id, cl.name, auditCount)}
+                          disabled={deleting === cl.id}
+                          className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 transition-all disabled:opacity-50"
+                          title="Delete"
+                        >
+                          {deleting === cl.id ? (
+                            <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

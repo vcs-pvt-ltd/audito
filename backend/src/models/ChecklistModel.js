@@ -35,7 +35,12 @@ const ChecklistModel = {
     const codes = Array.isArray(created_by) ? created_by : [created_by];
     const ph = codes.map(() => '?').join(',');
     const [rows] = await db.query(
-      `SELECT * FROM checklist_types WHERE created_by IN (${ph}) AND is_active = TRUE ORDER BY created_at DESC`,
+      `SELECT ct.*,
+              (SELECT COUNT(*) FROM checklists c
+                WHERE c.checklist_type_id = ct.id AND c.is_active = TRUE) AS checklist_count
+       FROM checklist_types ct
+       WHERE ct.created_by IN (${ph}) AND ct.is_active = TRUE
+       ORDER BY ct.created_at DESC`,
       codes
     );
     return rows;

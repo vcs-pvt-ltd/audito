@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, Trash2, Users, X, BookOpen, Clock, CheckCircle2, RefreshCw, MapPin, Calendar, Search } from "lucide-react";
+import { Plus, Trash2, Users, X, BookOpen, Clock, CheckCircle2, RefreshCw, MapPin, Calendar, Search, Lock as LockIcon } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 
 interface FieldVisit {
@@ -347,10 +347,19 @@ export default function AuditFirmFieldVisitsPage() {
                               className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all" title="Assign">
                               <Plus size={15} />
                             </button>
-                            <button onClick={() => handleDelete(v.id)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
-                              <Trash2 size={15} />
-                            </button>
+                            {(v.assigned_count ?? 0) > 0 ? (
+                              <button
+                                onClick={() => toast(`This field visit is assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")}
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
+                                title={`Assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"}. Click for details.`}>
+                                <LockIcon size={15} />
+                              </button>
+                            ) : (
+                              <button onClick={() => handleDelete(v.id)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
+                                <Trash2 size={15} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -397,7 +406,11 @@ export default function AuditFirmFieldVisitsPage() {
                   <div className="mt-3 flex items-center justify-end gap-1 pt-3 border-t border-white/5">
                     <button onClick={() => { setViewAssignmentsId(v.id); setViewAssignmentsOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-blue-400"><Users size={15} /></button>
                     <button onClick={() => { setAssignVisitId(v.id); setAssignOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-green-400"><Plus size={15} /></button>
-                    <button onClick={() => handleDelete(v.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                    {(v.assigned_count ?? 0) > 0 ? (
+                      <button onClick={() => toast(`This field visit is assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")} className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title={`Assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"}. Tap for details.`}><LockIcon size={15} /></button>
+                    ) : (
+                      <button onClick={() => handleDelete(v.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                    )}
                   </div>
                 </div>
               );

@@ -189,8 +189,6 @@ const createUser = async (req, res) => {
         if (aRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
         const [hRows] = await db.query('SELECT id FROM entity_heads WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
         if (hRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
-        const [uRows] = await db.query('SELECT id FROM users WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
-        if (uRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
         const [admRows] = await db.query('SELECT id FROM admins WHERE nic = ? LIMIT 1', [nic]);
         if (admRows.length > 0) return errorResponse(res, 'NIC is already in use by another account.', 409);
       } catch (nicErr) {
@@ -201,21 +199,6 @@ const createUser = async (req, res) => {
     if (isAuditor(user_type)) {
       const limitError = await LimitsEnforcer.checkAuditorLimit(req.user.entityCode);
       if (limitError) return errorResponse(res, limitError, 403);
-    }
-
-    // If admin account has NIC, enforce uniqueness across users
-    if (admin && admin.nic) {
-      try {
-        const nic = admin.nic;
-        const [aRows] = await db.query('SELECT id FROM auditors WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
-        if (aRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
-        const [hRows] = await db.query('SELECT id FROM entity_heads WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
-        if (hRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
-        const [uRows] = await db.query('SELECT id FROM users WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
-        if (uRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
-      } catch (nicErr) {
-        console.error('NIC uniqueness check failed (createFromAdmin):', nicErr);
-      }
     }
 
     // Check email not already used in the same table
@@ -345,6 +328,40 @@ async function getLinkedCompanyHeads(accessibleCodes) {
   }));
 }
 
+/**
+ * Annotate each user with `in_use: true|false` indicating whether they're still
+ * referenced by another function (so the UI can lock the delete button). Uses
+ * batched IN queries — 8 queries total regardless of list size.
+ */
+async function annotateInUse(users) {
+  const codes = users.map((u) => u.user_code).filter(Boolean);
+  if (codes.length === 0) return users;
+  const ph = codes.map(() => '?').join(',');
+
+  const queries = [
+    `SELECT assigned_auditor_code AS c FROM audit_assignments WHERE assigned_auditor_code IN (${ph})`,
+    `SELECT auditor_user_code AS c FROM evaluation_assignments WHERE auditor_user_code IN (${ph})`,
+    `SELECT auditor_user_code AS c FROM field_visit_assignments WHERE auditor_user_code IN (${ph})`,
+    `SELECT auditor_user_code AS c FROM training_assignments WHERE auditor_user_code IN (${ph})`,
+    `SELECT responsible_person_code AS c FROM corrective_actions WHERE responsible_person_code IN (${ph})`,
+    `SELECT verified_by AS c FROM corrective_actions WHERE verified_by IN (${ph})`,
+    `SELECT answered_by AS c FROM audit_responses WHERE answered_by IN (${ph})`,
+    `SELECT responded_by AS c FROM cap_responses WHERE responded_by IN (${ph})`,
+  ];
+
+  const inUse = new Set();
+  for (const sql of queries) {
+    try {
+      const [rows] = await db.query(sql, codes);
+      for (const r of rows) if (r.c) inUse.add(r.c);
+    } catch (err) {
+      console.error('annotateInUse query failed:', err.message);
+    }
+  }
+
+  return users.map((u) => ({ ...u, in_use: inUse.has(u.user_code) }));
+}
+
 const listUsers = async (req, res) => {
   try {
     const userType = req.query.user_type || null;
@@ -362,15 +379,16 @@ const listUsers = async (req, res) => {
 
     if (userType && isAuditor(userType)) {
       const users = await AuditorModel.listByCreators(accessibleCodes);
-      return successResponse(res, { users });
+      return successResponse(res, { users: await annotateInUse(users) });
     } else if (userType) {
       const users = await EntityHeadModel.listByCreators(accessibleCodes, userType);
-      return successResponse(res, { users });
+      return successResponse(res, { users: await annotateInUse(users) });
     } else {
       // No filter – list from both tables (plus any linked company heads)
       const auditors = await AuditorModel.listByCreators(accessibleCodes);
       const heads = await EntityHeadModel.listByCreators(accessibleCodes);
-      return successResponse(res, { users: [...auditors, ...heads, ...companyHeads] });
+      const annotated = await annotateInUse([...auditors, ...heads]);
+      return successResponse(res, { users: [...annotated, ...companyHeads] });
     }
   } catch (error) {
     console.error('List users error:', error);
@@ -423,8 +441,6 @@ const updateUser = async (req, res) => {
         const [hRows] = await db.query('SELECT id FROM entity_heads WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
         if (hRows.length > 0 && user._table !== 'entity_head') return errorResponse(res, 'NIC is already in use by another user.', 409);
         if (hRows.length > 0 && user._table === 'entity_head' && hRows[0].id !== user.id) return errorResponse(res, 'NIC is already in use by another user.', 409);
-        const [uRows] = await db.query('SELECT id FROM users WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
-        if (uRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
         const [admRows] = await db.query('SELECT id FROM admins WHERE nic = ? LIMIT 1', [nic]);
         if (admRows.length > 0) return errorResponse(res, 'NIC is already in use by another account.', 409);
       } catch (nicErr) {
@@ -457,6 +473,51 @@ const updateUser = async (req, res) => {
 
 // ─── DELETE USER ──────────────────────────────────────────────────
 
+/**
+ * Returns a human-readable reason if the user is still referenced by other
+ * functions (assignments / submitted work), otherwise null. Used to block
+ * deletion so we don't orphan rows that point at this user's code.
+ */
+async function getUserInUseReason(user) {
+  const code = user.user_code;
+  if (!code) return null;
+
+  // Run every check for every user (an auditor will never appear in entity-head
+  // columns and vice-versa, so this is safe and avoids depending on _table
+  // detection). The auditor↔audit link is the first/primary check.
+  const checks = [
+    ['SELECT 1 FROM audit_assignments WHERE assigned_auditor_code = ? LIMIT 1',
+      'assigned to one or more audits'],
+    ['SELECT 1 FROM evaluation_assignments WHERE auditor_user_code = ? LIMIT 1',
+      'assigned to one or more evaluation papers'],
+    ['SELECT 1 FROM field_visit_assignments WHERE auditor_user_code = ? LIMIT 1',
+      'assigned to one or more field visits'],
+    ['SELECT 1 FROM training_assignments WHERE auditor_user_code = ? LIMIT 1',
+      'assigned to one or more trainings'],
+    ['SELECT 1 FROM corrective_actions WHERE responsible_person_code = ? LIMIT 1',
+      'assigned as the responsible person on one or more corrective actions'],
+    ['SELECT 1 FROM corrective_actions WHERE verified_by = ? LIMIT 1',
+      'the verifier on one or more corrective actions'],
+    ['SELECT 1 FROM audit_responses WHERE answered_by = ? LIMIT 1',
+      'has submitted audit responses'],
+    ['SELECT 1 FROM cap_responses WHERE responded_by = ? LIMIT 1',
+      'has submitted corrective-action responses'],
+  ];
+
+  for (const [sql, reason] of checks) {
+    try {
+      const [rows] = await db.query(sql, [code]);
+      if (rows.length > 0) return reason;
+    } catch (err) {
+      // A missing column/table in a given deployment shouldn't silently skip the
+      // remaining (more important) checks — log and continue.
+      console.error('getUserInUseReason check failed:', sql, err.message);
+    }
+  }
+
+  return null;
+}
+
 const deleteUser = async (req, res) => {
   try {
     const user = await findByCodeAny(req.params.userCode);
@@ -464,6 +525,17 @@ const deleteUser = async (req, res) => {
     const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
     if (!accessibleCodes.includes(user.created_by_entity_code)) {
       return errorResponse(res, 'Not authorized.', 403);
+    }
+
+    // Block deletion while the user is still referenced by other functions,
+    // otherwise those rows would point at a deleted user.
+    const inUseReason = await getUserInUseReason(user);
+    if (inUseReason) {
+      return errorResponse(
+        res,
+        `This user is ${inUseReason} and cannot be removed. Reassign or remove those first.`,
+        409
+      );
     }
 
     const Model = user._table === 'auditor' ? AuditorModel : EntityHeadModel;

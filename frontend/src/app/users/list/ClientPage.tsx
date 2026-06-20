@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { usersApi, orgTreeApi, countriesApi, authApi, type Country } from "@/lib/api";
 
-import { Plus, RefreshCw, Pencil, Trash2, Mail, CheckCircle, Clock, X, UserCheck, Users, Search, Crown } from "lucide-react";
+import { Plus, RefreshCw, Pencil, Trash2, Mail, CheckCircle, Clock, X, UserCheck, Users, Search, Crown, Lock } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
 
@@ -132,6 +132,7 @@ interface User {
   email_verified: boolean;
   is_active: boolean;
   is_linked?: boolean;
+  in_use?: boolean;
   created_at: string;
 }
 
@@ -999,22 +1000,30 @@ export default function UsersClientPage() {
 
   const handleDelete = async (user: User) => {
     if (!accessToken) return;
+    // Safety net: a user still referenced by another function can't be deleted.
+    if (user.in_use) {
+      toast(
+        `${user.first_name} ${user.last_name} is assigned to other functions (audits, corrective actions, etc.) and cannot be deleted. Reassign or remove those first.`,
+        "warning"
+      );
+      return;
+    }
     const ok = await confirm({
-      title: "Deactivate User",
-      message: `Are you sure you want to deactivate ${user.first_name} ${user.last_name}?`,
-      confirmText: "Deactivate",
+      title: "Delete User",
+      message: `Are you sure you want to delete ${user.first_name} ${user.last_name}?`,
+      confirmText: "Delete",
       variant: "warning",
     });
     if (!ok) return;
 
     setActionLoading(user.user_code);
-    const res = await usersApi.deactivate(accessToken, String(user.user_code));
+    const res = await usersApi.deleteUser(accessToken, String(user.user_code));
     setActionLoading(null);
     if (res.success) {
-      toast("User deactivated successfully.", "success");
+      toast("User deleted successfully.", "success");
       fetchUsers();
     } else {
-      toast(res.message || "Failed to deactivate user.", "error");
+      toast(res.message || "Failed to delete user.", "error");
     }
   };
 
@@ -1257,13 +1266,23 @@ export default function UsersClientPage() {
                                   >
                                     <Pencil size={15} />
                                   </button>
-                                  <button
-                                    onClick={() => handleDelete(user)}
-                                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
-                                    title="Deactivate"
-                                  >
-                                    <Trash2 size={15} />
-                                  </button>
+                                  {user.in_use ? (
+                                    <button
+                                      onClick={() => handleDelete(user)}
+                                      className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all font-medium"
+                                      title="Assigned to other functions. Click for details."
+                                    >
+                                      <Lock size={15} />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleDelete(user)}
+                                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
+                                      title="Delete"
+                                    >
+                                      <Trash2 size={15} />
+                                    </button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -1334,13 +1353,23 @@ export default function UsersClientPage() {
                           >
                             <Pencil size={15} />
                           </button>
-                          <button
-                            onClick={() => handleDelete(user)}
-                            className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
-                            title="Deactivate"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                          {user.in_use ? (
+                            <button
+                              onClick={() => handleDelete(user)}
+                              className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all font-medium"
+                              title="Assigned to other functions. Tap for details."
+                            >
+                              <Lock size={15} />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDelete(user)}
+                              className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium"
+                              title="Delete"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
