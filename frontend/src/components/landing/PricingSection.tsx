@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Check, X } from "lucide-react";
+import { useState } from "react";
 import logo from "@/assets/logo/audito_logo.png";
 import { useLanding } from "@/context/LandingContext";
 
@@ -15,10 +16,10 @@ type Plan = {
   href: string;
 };
 
-const plans: Plan[] = [
-  { name: "Basic", price: "$0", period: "/1 month", description: "Perfect for trying out Audito", cta: "Get Started", href: "/register" },
-  { name: "Pro", price: "$99", period: "/month", description: "For growing teams", cta: "Get Started", href: "/register" },
-  { name: "Elite", price: "$299", period: "/month", description: "For large organizations", cta: "Get Started", href: "/register" },
+const PLAN_DEFS = [
+  { name: "Basic",  priceMonthly: 0,   description: "Perfect for trying out Audito", cta: "Get Started", href: "/register" },
+  { name: "Pro",    priceMonthly: 99,  description: "For growing teams",             cta: "Get Started", href: "/register" },
+  { name: "Elite",  priceMonthly: 299, description: "For large organizations",       cta: "Get Started", href: "/register" },
 ];
 
 const comparisonRows = [
@@ -95,6 +96,17 @@ const EliteCard = ({ plan }: CardProps) => (
 
 export default function PricingSection() {
   const { setActiveSection } = useLanding();
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
+
+  const plans: Plan[] = PLAN_DEFS.map((p) => ({
+    name: p.name,
+    price: `$${billingCycle === "monthly" ? p.priceMonthly : Math.round(p.priceMonthly * 12 * 0.8)}`,
+    period: billingCycle === "monthly" ? "/month" : "/year",
+    description: p.description,
+    cta: p.cta,
+    href: p.href,
+  }));
+
   const workspaceRows = comparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
   const coreRows      = comparisonRows.filter((r) => r.group === "CORE FEATURES");
 
@@ -177,15 +189,31 @@ export default function PricingSection() {
 
         {/* Billing switch */}
         <div className="flex justify-center mb-8 sm:mb-10">
-          <div className="glass rounded-full p-1 inline-flex items-center gap-1 border border-white/[0.08]">
-            <button className="billing-pill px-4 sm:px-5 py-2 rounded-full text-xs sm:text-sm text-gray-200 font-medium hover:bg-white/[0.06]">
-              Year Billing
+          <div className="glass rounded-lg p-1 flex items-center gap-1 border border-white/5">
+            <button
+              onClick={() => setBillingCycle("monthly")}
+              className={`px-4 sm:px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
+                billingCycle === "monthly"
+                  ? "bg-secondary-500 text-primary-950 shadow"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Monthly
             </button>
-            <button className="billing-pill px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">
-              Save 20%
-            </button>
-            <button className="billing-pill px-4 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-semibold bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] shadow-[0_0_20px_rgba(251,191,36,0.35)]">
-              Monthly Billing
+            <button
+              onClick={() => setBillingCycle("yearly")}
+              className={`relative px-4 sm:px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
+                billingCycle === "yearly"
+                  ? "bg-secondary-500 text-primary-950 shadow"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Yearly
+              {billingCycle !== "yearly" && (
+                <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-emerald-500 text-primary-950 text-[8px] font-bold rounded-full">
+                  -20%
+                </span>
+              )}
             </button>
           </div>
         </div>

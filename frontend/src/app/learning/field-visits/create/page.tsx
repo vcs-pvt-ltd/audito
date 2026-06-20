@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditFirmLearningApi } from "@/lib/api";
-import { Plus, ArrowLeft, ChevronLeft } from "lucide-react";
+import { Plus, ArrowLeft } from "lucide-react";
 
 const inputCls =
-  "w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/30 transition-all";
+  "w-full bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all";
 
 export default function CreateFieldVisitPage() {
   const { admin, accessToken, isLoading } = useAuth();
@@ -36,7 +36,7 @@ export default function CreateFieldVisitPage() {
   if (admin.role !== "admin") {
     return (
       <div className="p-6 pt-20 lg:pt-8 text-gray-300">
-        You don’t have permission to access this page.
+        You don't have permission to access this page.
       </div>
     );
   }
@@ -45,10 +45,11 @@ export default function CreateFieldVisitPage() {
     if (!accessToken) return;
 
     setError(null);
-    if (!form.title.trim()) {
-      setError("Title is required.");
-      return;
-    }
+    if (!form.title.trim()) { setError("Title is required."); return; }
+    if (!form.location_name.trim()) { setError("Location name is required."); return; }
+    if (!form.start_date) { setError("Start date & time is required."); return; }
+    if (!form.end_date) { setError("End date & time is required."); return; }
+    if (form.end_date <= form.start_date) { setError("End date must be after start date."); return; }
 
     setSaving(true);
     const res = await auditFirmLearningApi.createFieldVisit(accessToken, {
@@ -73,77 +74,79 @@ export default function CreateFieldVisitPage() {
 
   return (
     <div className="p-6 lg:p-8 pt-20 lg:pt-8 space-y-6 overflow-y-auto">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-  <button
-    onClick={() => router.back()}
-    className="p-2 rounded-xl text-gray-400 hover:text-white border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all shrink-0"
-  >
-    <ArrowLeft size={18} />
-  </button>
-  <div>
-    <h1 className="text-xl font-bold text-white">Create Field Visit</h1>
-    <p className="hidden sm:block text-sm text-gray-400 mt-1">
-      Create a field visit and assign it to auditors later.
-    </p>
-  </div>
-</div>
-       
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => router.back()}
+          className="p-2 rounded-xl text-gray-400 hover:text-white border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all shrink-0"
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <div>
+          <h1 className="text-xl font-bold text-white">Create Field Visit</h1>
+          <p className="hidden sm:block text-sm text-gray-400 mt-0.5">
+            Create a field visit and assign it to auditors later.
+          </p>
+        </div>
       </div>
 
-      <div className="glass border border-white/10 rounded-3xl p-6 space-y-4">
+      <div className="glass border border-white/10 rounded-2xl p-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <label className="block text-xs text-gray-500 mb-1">Title</label>
+            <label className="block text-sm text-gray-400 mb-1.5">Title <span className="text-red-400">*</span></label>
             <input
               className={inputCls}
+              placeholder="e.g. Factory Floor Safety Inspection"
               value={form.title}
               onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Location Name</label>
+            <label className="block text-sm text-gray-400 mb-1.5">Location Name <span className="text-red-400">*</span></label>
             <input
               className={inputCls}
+              placeholder="e.g. Main Warehouse, Block A"
               value={form.location_name}
               onChange={(e) => setForm((p) => ({ ...p, location_name: e.target.value }))}
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Address</label>
+            <label className="block text-sm text-gray-400 mb-1.5">Address</label>
             <input
               className={inputCls}
+              placeholder="Full street address"
               value={form.address}
               onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Latitude</label>
+            <label className="block text-sm text-gray-400 mb-1.5">Latitude</label>
             <input
               className={inputCls}
               type="number"
               step="any"
+              placeholder="e.g. 37.7749"
               value={form.latitude}
               onChange={(e) => setForm((p) => ({ ...p, latitude: e.target.value }))}
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Longitude</label>
+            <label className="block text-sm text-gray-400 mb-1.5">Longitude</label>
             <input
               className={inputCls}
               type="number"
               step="any"
+              placeholder="e.g. -122.4194"
               value={form.longitude}
               onChange={(e) => setForm((p) => ({ ...p, longitude: e.target.value }))}
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Start Date/Time</label>
+            <label className="block text-sm text-gray-400 mb-1.5">Start Date / Time <span className="text-red-400">*</span></label>
             <input
               className={inputCls}
               type="datetime-local"
@@ -153,7 +156,7 @@ export default function CreateFieldVisitPage() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">End Date/Time</label>
+            <label className="block text-sm text-gray-400 mb-1.5">End Date / Time <span className="text-red-400">*</span></label>
             <input
               className={inputCls}
               type="datetime-local"
@@ -163,26 +166,28 @@ export default function CreateFieldVisitPage() {
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-xs text-gray-500 mb-1">Notes</label>
+            <label className="block text-sm text-gray-400 mb-1.5">Notes</label>
             <textarea
               className={inputCls}
+              rows={3}
+              placeholder="Additional notes or instructions for auditors..."
               value={form.notes}
               onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
             />
           </div>
         </div>
 
-        {error ? (
+        {error && (
           <div className="border border-red-500/20 bg-red-500/10 rounded-xl p-3 text-sm text-red-200">
             {error}
           </div>
-        ) : null}
+        )}
 
         <div className="flex items-center justify-end gap-3">
           <button
             disabled={saving}
             onClick={handleCreate}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all"
           >
             <Plus size={16} />
             {saving ? "Creating..." : "Create"}
@@ -192,4 +197,3 @@ export default function CreateFieldVisitPage() {
     </div>
   );
 }
-

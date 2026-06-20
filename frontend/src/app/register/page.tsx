@@ -556,16 +556,27 @@ function RegisterForm() {
       (!formData.company_type || !formData.company_type.trim())
     )
       return "Company type is required.";
+    if (!formData.registration_number?.trim()) return "Registration number is required.";
+    if (!formData.org_email?.trim()) return "Organization email is required.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.org_email || ""))
+      return "Invalid organization email address.";
+    if (!formData.country?.trim()) return "Country is required.";
+    if (!formData.org_phone_number?.trim()) return "Organization phone number is required.";
+    if (!formData.address_line_1?.trim()) return "Address line 1 is required.";
+    if (!formData.address_line_2?.trim()) return "Address line 2 is required.";
+    if (!formData.address_line_3?.trim()) return "Address line 3 is required.";
     return null;
   };
 
   const validateStep4 = () => {
     if (!formData.first_name.trim()) return "First name is required.";
     if (!formData.last_name.trim()) return "Last name is required.";
+    if (!formData.nic?.trim()) return "NIC is required.";
     if (!formData.email.trim()) return "Email is required.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
       return "Invalid email address.";
-    
+    if (!formData.phone_number?.trim()) return "Phone number is required.";
+
     // Password Strength Check
     const { length, upper, lower, number, special } = passwordRequirements;
     if (!length || !upper || !lower || !number || !special) {
@@ -799,6 +810,7 @@ function RegisterForm() {
 
               <Input
                 label="Registration Number"
+                required
                 value={formData.registration_number || ""}
                 onChange={(v) => updateField("registration_number", v)}
                 placeholder="Business registration number"
@@ -806,6 +818,7 @@ function RegisterForm() {
 
               <Input
                 label="Organization Email"
+                required
                 type="email"
                 value={formData.org_email || ""}
                 onChange={(v) => updateField("org_email", v)}
@@ -815,7 +828,7 @@ function RegisterForm() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Country Dropdown */}
                 <div className="relative">
-                  <label className="block text-sm text-gray-400 mb-1">Country</label>
+                  <label className="block text-sm text-gray-400 mb-1">Country <span className="text-red-400">*</span></label>
                   <div
                     className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white cursor-pointer flex items-center gap-2"
                     onClick={() => setShowCountryDropdown(!showCountryDropdown)}
@@ -880,7 +893,7 @@ function RegisterForm() {
 
                 {/* Org Phone */}
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Phone Number</label>
+                  <label className="block text-sm text-gray-400 mb-1">Phone Number <span className="text-red-400">*</span></label>
                   <div className="flex">
                     {dialCode && (
                       <span className="inline-flex items-center px-2.5 rounded-l-lg bg-white/5 border border-white/10 border-r-0 text-gray-400 text-sm">
@@ -910,18 +923,21 @@ function RegisterForm() {
               <div className="space-y-4">
                 <Input
                   label="Address Line 1"
+                  required
                   value={formData.address_line_1 || ""}
                   onChange={(v) => updateField("address_line_1", v)}
                   placeholder="Street address, P.O. box"
                 />
                 <Input
                   label="Address Line 2"
+                  required
                   value={formData.address_line_2 || ""}
                   onChange={(v) => updateField("address_line_2", v)}
                   placeholder="Apartment, suite, unit, building, floor, etc."
                 />
                 <Input
                   label="Address Line 3"
+                  required
                   value={formData.address_line_3 || ""}
                   onChange={(v) => updateField("address_line_3", v)}
                   placeholder="City, State/Province, Region"
@@ -954,7 +970,7 @@ function RegisterForm() {
 
         {/* ─── Step 4: Admin Account ─────────────────────────────────── */}
         {step === 4 && (
-          <form onSubmit={handleSubmit} className="glass-dark rounded-2xl p-6 sm:p-8">
+          <form onSubmit={handleSubmit} className="glass rounded-2xl p-6 sm:p-8">
             <div className="flex items-center gap-2 mb-6">
               <button
                 type="button"
@@ -994,6 +1010,7 @@ function RegisterForm() {
               </div>
               <Input
                 label="NIC"
+                required
                 value={formData.nic || ""}
                 onChange={(v) => updateField("nic", v)}
                 placeholder="National ID number"
@@ -1009,7 +1026,7 @@ function RegisterForm() {
                   placeholder="admin@email.com"
                 />
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Phone Number</label>
+                  <label className="block text-sm text-gray-400 mb-1">Phone Number <span className="text-red-400">*</span></label>
                   <div className="flex">
                     {dialCode && (
                       <span className="inline-flex items-center px-2.5 rounded-l-lg bg-white/5 border border-white/10 border-r-0 text-gray-400 text-sm h-[46px]">

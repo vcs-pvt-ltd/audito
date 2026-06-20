@@ -102,10 +102,15 @@ const deleteTraining = async (req, res) => {
 
     const { id } = req.params;
 
-    await db.query(
-      'DELETE FROM training_assignments WHERE training_id = ?',
+    // Block deletion while the training is still assigned to auditors.
+    const [assigned] = await db.query(
+      'SELECT 1 FROM training_assignments WHERE training_id = ? LIMIT 1',
       [id]
     );
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This training is assigned to one or more auditors and cannot be deleted. Remove those assignments first.', 409);
+    }
+
     await db.query(
       'DELETE FROM trainings WHERE id = ? AND afc_code = ?',
       [id, req.user.entityCode]
@@ -291,7 +296,15 @@ const deleteFieldVisit = async (req, res) => {
 
     const { id } = req.params;
 
-    await db.query('DELETE FROM field_visit_assignments WHERE field_visit_id = ?', [id]);
+    // Block deletion while the field visit is still assigned to auditors.
+    const [assigned] = await db.query(
+      'SELECT 1 FROM field_visit_assignments WHERE field_visit_id = ? LIMIT 1',
+      [id]
+    );
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This field visit is assigned to one or more auditors and cannot be deleted. Remove those assignments first.', 409);
+    }
+
     await db.query('DELETE FROM field_visits WHERE id = ? AND afc_code = ?', [id, req.user.entityCode]);
 
     return successResponse(res, null, 'Field visit deleted.');
@@ -480,7 +493,17 @@ const deleteEvaluationPaper = async (req, res) => {
 
     const { id } = req.params;
 
-    // Delete in dependency order
+    // Block deletion while the paper is still assigned to auditors (which would
+    // also orphan their attempts/answers).
+    const [assigned] = await db.query(
+      'SELECT 1 FROM evaluation_assignments WHERE paper_id = ? LIMIT 1',
+      [id]
+    );
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This evaluation paper is assigned to one or more auditors and cannot be deleted. Remove those assignments first.', 409);
+    }
+
+    // No assignments → safe to cascade-delete the paper's own questions/options.
     const [qRows] = await db.query('SELECT id FROM evaluation_questions WHERE paper_id = ?', [id]);
     const qIds = qRows.map((r) => r.id);
     if (qIds.length > 0) {
@@ -489,9 +512,6 @@ const deleteEvaluationPaper = async (req, res) => {
     }
 
     await db.query('DELETE FROM evaluation_questions WHERE paper_id = ?', [id]);
-    await db.query('DELETE FROM evaluation_answers WHERE attempt_id IN (SELECT id FROM evaluation_attempts WHERE paper_id = ?)', [id]);
-    await db.query('DELETE FROM evaluation_attempts WHERE paper_id = ?', [id]);
-    await db.query('DELETE FROM evaluation_assignments WHERE paper_id = ?', [id]);
     await db.query('DELETE FROM evaluation_papers WHERE id = ? AND afc_code = ?', [id, req.user.entityCode]);
 
     return successResponse(res, null, 'Evaluation paper deleted.');

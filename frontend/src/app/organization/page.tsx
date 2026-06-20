@@ -873,7 +873,13 @@ export default function OrganizationPage() {
       if (res.success) {
         setPendingAdds([]);
         setPendingRemoves([]);
-        toast("Organization structure saved successfully.", "success");
+        const blocked = (res.data as { blockedRemovals?: string[] } | null)?.blockedRemovals;
+        if (blocked && blocked.length > 0) {
+          // Some removals were kept because the entities are still in use.
+          toast(res.message || "Some entities could not be removed because they are in use.", "warning");
+        } else {
+          toast("Organization structure saved successfully.", "success");
+        }
         await fetchTree(true);
       } else {
         toast(res.message || "Failed to save tree modifications.", "error");

@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Pencil, Trash2, Lock, ChevronDown, ChevronUp } from "lucide-react";
 
 export interface EntityRow {
   [key: string]: unknown;
@@ -11,6 +11,8 @@ export interface EntityRow {
   country?: string | null;
   phone_number?: string | null;
   is_active?: boolean;
+  is_linked?: boolean;
+  in_tree?: boolean;
   parent_code?: string | null;
   parent_name?: string | null;
 }
@@ -125,13 +127,23 @@ export default function EntityTable({
                         >
                           <Pencil size={15} />
                         </button>
-                        <button
-                          onClick={() => onDelete(entity)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                          title="Delete"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        {entity.in_tree ? (
+                          <button
+                            onClick={() => onDelete(entity)}
+                            className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
+                            title="Mapped in the organization tree. Click for details."
+                          >
+                            <Lock size={15} />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => onDelete(entity)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                            title="Delete"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </>
                     )}
                   </div>

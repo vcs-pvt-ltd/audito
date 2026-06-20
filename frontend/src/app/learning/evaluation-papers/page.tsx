@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, RefreshCw, Trash2, Users, X, Trophy, AlertTriangle, CheckCircle2, Clock, Calendar, BookOpen, ClipboardList, Search, Crown } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Users, X, Trophy, AlertTriangle, CheckCircle2, Clock, Calendar, BookOpen, ClipboardList, Search, Crown, Lock as LockIcon } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 
 interface Paper {
@@ -369,10 +369,19 @@ export default function AuditFirmEvaluationPapersPage() {
                               className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all" title="Assign">
                               <Plus size={15} />
                             </button>
-                            <button onClick={() => handleDelete(p.id)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
-                              <Trash2 size={15} />
-                            </button>
+                            {(p.assigned_count ?? 0) > 0 ? (
+                              <button
+                                onClick={() => toast(`This evaluation paper is assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")}
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
+                                title={`Assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"}. Click for details.`}>
+                                <LockIcon size={15} />
+                              </button>
+                            ) : (
+                              <button onClick={() => handleDelete(p.id)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
+                                <Trash2 size={15} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -413,7 +422,11 @@ export default function AuditFirmEvaluationPapersPage() {
                   <div className="mt-3 flex items-center justify-end gap-1 pt-3 border-t border-white/5">
                     <button onClick={() => { setViewAssignmentsId(p.id); setViewAssignmentsOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-blue-400"><Trophy size={15} /></button>
                     <button onClick={() => { setAssignPaperId(p.id); setAssignOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-green-400"><Plus size={15} /></button>
-                    <button onClick={() => handleDelete(p.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                    {(p.assigned_count ?? 0) > 0 ? (
+                      <button onClick={() => toast(`This evaluation paper is assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")} className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title={`Assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"}. Tap for details.`}><LockIcon size={15} /></button>
+                    ) : (
+                      <button onClick={() => handleDelete(p.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                    )}
                   </div>
                 </div>
               );

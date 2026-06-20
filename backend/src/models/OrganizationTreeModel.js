@@ -241,8 +241,9 @@ async getTreeDescendants(rootCode, allowedRootCodes = null) {
 
   /**
    * Check if an edge or any of its descendants are "in use" by:
-   * 1. Users assigned to that specific org_tree_id (especially Entity Heads)
+   * 1. Users (Entity Heads / Auditors) assigned to that specific org_tree_id
    * 2. Checklist questions specifically linked to that org_tree_id
+   * 3. Audits targeting that org_tree_id (directly or via assignment entities)
    */
   async hasDependencies(edgeId) {
     const ids = await this.getDescendantEdgeIds(edgeId);
@@ -250,23 +251,51 @@ async getTreeDescendants(rootCode, allowedRootCodes = null) {
 
     const placeholders = ids.map(() => '?').join(',');
 
-    // Check Users
-    const [userRows] = await db.query(
-      `SELECT COUNT(*) as count FROM entity_heads 
-       WHERE assigned_org_tree_id IN (${placeholders}) 
+    // Check Entity Heads
+    const [headRows] = await db.query(
+      `SELECT COUNT(*) as count FROM entity_heads
+       WHERE assigned_org_tree_id IN (${placeholders})
        AND is_active = TRUE`,
       ids
     );
-    if (userRows[0].count > 0) return true;
+    if (headRows[0].count > 0) return true;
+
+    // Check Auditors
+    const [auditorRows] = await db.query(
+      `SELECT COUNT(*) as count FROM auditors
+       WHERE assigned_org_tree_id IN (${placeholders})
+       AND is_active = TRUE`,
+      ids
+    );
+    if (auditorRows[0].count > 0) return true;
 
     // Check Checklist Questions
     const [checklistRows] = await db.query(
-      `SELECT COUNT(*) as count FROM checklist_questions 
-       WHERE org_tree_id IN (${placeholders}) 
+      `SELECT COUNT(*) as count FROM checklist_questions
+       WHERE org_tree_id IN (${placeholders})
        AND is_active = TRUE`,
       ids
     );
     if (checklistRows[0].count > 0) return true;
+
+    // Check Audits targeting this node directly
+    const [auditRows] = await db.query(
+      `SELECT COUNT(*) as count FROM audit_assignments
+       WHERE assigned_org_tree_id IN (${placeholders})
+       AND is_active = TRUE AND status != 'cancelled'`,
+      ids
+    );
+    if (auditRows[0].count > 0) return true;
+
+    // Check Audits targeting this node via assignment entities
+    const [auditEntityRows] = await db.query(
+      `SELECT COUNT(*) as count FROM audit_assignment_entities aae
+       INNER JOIN audit_assignments aa ON aae.assignment_id = aa.id
+       WHERE aae.org_tree_id IN (${placeholders})
+       AND aa.is_active = TRUE AND aa.status != 'cancelled'`,
+      ids
+    );
+    if (auditEntityRows[0].count > 0) return true;
 
     return false;
   }

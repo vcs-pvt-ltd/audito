@@ -55,6 +55,8 @@ async function syncLinkTreeEdges(link, createdBy, action) {
     const companyCode = link.requester_type === 'Company' ? link.requester_code : link.target_code;
 
     if (action === 'accept') {
+      // Only the target's (Supplier) tree shows the requester (Company).
+      // The requester's tree must NOT show the target back.
       const supplierTreeEdge = await OrganizationTreeModel.findEdgeForRoot(
         supplierCode, companyCode, supplierCode
       );
@@ -69,19 +71,11 @@ async function syncLinkTreeEdges(link, createdBy, action) {
         });
       }
 
+      // Remove any legacy reverse edge so the Company tree no longer shows the Supplier.
       const companyTreeEdge = await OrganizationTreeModel.findEdgeForRoot(
         companyCode, supplierCode, companyCode
       );
-      if (!companyTreeEdge) {
-        await OrganizationTreeModel.addNode({
-          parent_type: 'Company',
-          parent_code: companyCode,
-          child_type: 'Supplier',
-          child_code: supplierCode,
-          created_by: createdBy,
-          root_entity_code: companyCode,
-        });
-      }
+      if (companyTreeEdge) await OrganizationTreeModel.removeNode(companyTreeEdge.id);
     } else if (action === 'remove') {
       const supplierTreeEdge = await OrganizationTreeModel.findEdgeForRoot(supplierCode, companyCode, supplierCode);
       if (supplierTreeEdge) await OrganizationTreeModel.removeNode(supplierTreeEdge.id);

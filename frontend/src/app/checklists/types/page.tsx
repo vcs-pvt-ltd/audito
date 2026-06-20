@@ -12,6 +12,7 @@ import {
   FileCheck,
   Pencil,
   Trash2,
+  Lock,
   X,
   Check,
   Tag,
@@ -24,6 +25,7 @@ interface ChecklistType {
   description: string | null;
   is_active: boolean;
   created_at: string;
+  checklist_count?: number;
 }
 
 // ─── Modal ────────────────────────────────────────────────────────
@@ -190,8 +192,16 @@ export default function ChecklistTypesPage() {
     fetchTypes();
   };
 
-  const handleDelete = async (id: number, name: string) => {
+  const handleDelete = async (id: number, name: string, usageCount = 0) => {
     if (!accessToken) return;
+    // Safety net: a type in use by checklists can't be deleted (backend 403).
+    if (usageCount > 0) {
+      toast(
+        `"${name}" is used by ${usageCount} checklist${usageCount === 1 ? "" : "s"} and cannot be deleted. Remove or reassign those checklists first.`,
+        "warning"
+      );
+      return;
+    }
     const ok = await confirm({
       title: "Deactivate Checklist Type",
       message: `Deactivate checklist type "${name}"?`,
@@ -322,18 +332,28 @@ export default function ChecklistTypesPage() {
                             >
                               <Pencil size={15} />
                             </button>
-                            <button
-                              onClick={() => handleDelete(t.id, t.name)}
-                              disabled={deleting === t.id}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
-                              title="Deactivate"
-                            >
-                              {deleting === t.id ? (
-                                <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <Trash2 size={15} />
-                              )}
-                            </button>
+                            {(t.checklist_count ?? 0) > 0 ? (
+                              <button
+                                onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)}
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
+                                title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Click for details.`}
+                              >
+                                <Lock size={15} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)}
+                                disabled={deleting === t.id}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
+                                title="Deactivate"
+                              >
+                                {deleting === t.id ? (
+                                  <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <Trash2 size={15} />
+                                )}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -373,18 +393,28 @@ export default function ChecklistTypesPage() {
                       >
                         <Pencil size={15} />
                       </button>
-                      <button
-                        onClick={() => handleDelete(t.id, t.name)}
-                        disabled={deleting === t.id}
-                        className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
-                        title="Deactivate"
-                      >
-                        {deleting === t.id ? (
-                          <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <Trash2 size={15} />
-                        )}
-                      </button>
+                      {(t.checklist_count ?? 0) > 0 ? (
+                        <button
+                          onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)}
+                          className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
+                          title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Tap for details.`}
+                        >
+                          <Lock size={15} />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)}
+                          disabled={deleting === t.id}
+                          className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
+                          title="Deactivate"
+                        >
+                          {deleting === t.id ? (
+                            <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Trash2 size={15} />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

@@ -115,6 +115,7 @@ async function ensureCompanySupplierLinkEdges(entityType, entityCode, createdBy)
     const supplierCode = link.requester_type === 'Supplier' ? link.requester_code : link.target_code;
     const companyCode = link.requester_type === 'Company' ? link.requester_code : link.target_code;
 
+    // Only the Supplier (target) tree shows the linked Company (requester).
     const supplierTreeEdge = await OrganizationTreeModel.findEdgeForRoot(
       supplierCode, companyCode, supplierCode
     );
@@ -129,18 +130,13 @@ async function ensureCompanySupplierLinkEdges(entityType, entityCode, createdBy)
       });
     }
 
+    // The Company (requester) tree must NOT show the Supplier (target).
+    // Drop any legacy reverse edge that was previously created.
     const companyTreeEdge = await OrganizationTreeModel.findEdgeForRoot(
       companyCode, supplierCode, companyCode
     );
-    if (!companyTreeEdge) {
-      await OrganizationTreeModel.addNode({
-        parent_type: 'Company',
-        parent_code: companyCode,
-        child_type: 'Supplier',
-        child_code: supplierCode,
-        created_by: createdBy,
-        root_entity_code: companyCode,
-      });
+    if (companyTreeEdge) {
+      await OrganizationTreeModel.removeNode(companyTreeEdge.id);
     }
   }
 }
@@ -523,7 +519,9 @@ const syncTree = async (req, res) => {
     const allowedRootCodes = [adminCode, ...partnerCodes];
     const allowedChildrenMap = getAllowedChildrenMap(accType);
 
-    // Process Removes first
+    // Process Removes first. Track any that are blocked by dependencies so the
+    // client can be told instead of silently leaving the node in place.
+    const blockedRemovals = [];
     for (const edgeId of removes) {
       const edge = await OrganizationTreeModel.findById(edgeId);
       if (!edge) continue;
@@ -533,6 +531,8 @@ const syncTree = async (req, res) => {
         const hasDeps = await OrganizationTreeModel.hasDependencies(edgeId);
         if (!hasDeps) {
           await OrganizationTreeModel.removeSubtree(edgeId, edge.child_code, edge.root_entity_code);
+        } else {
+          blockedRemovals.push(edge.child_code);
         }
       }
     }
@@ -598,6 +598,14 @@ const syncTree = async (req, res) => {
 
       // ← Re-fetch after each insert so the next chained add can find this one
       descendants = await OrganizationTreeModel.getTreeDescendants(adminCode, allowedRootCodes);
+    }
+
+    if (blockedRemovals.length > 0) {
+      return successResponse(
+        res,
+        { blockedRemovals },
+        `Saved, but ${blockedRemovals.length} entit${blockedRemovals.length === 1 ? 'y was' : 'ies were'} kept because they are in use by users, checklists or audits. Remove those dependencies first.`
+      );
     }
 
     return successResponse(res, null, 'Organization tree synchronized successfully.');

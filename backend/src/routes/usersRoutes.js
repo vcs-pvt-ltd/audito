@@ -10,7 +10,7 @@
  *   GET    /api/users                List users
  *   GET    /api/users/:userCode      Get user
  *   PUT    /api/users/:userCode      Update user
- *   DELETE /api/users/:userCode      Deactivate user
+ *   DELETE /api/users/:userCode      Delete user
  *   POST   /api/users/:userCode/resend  Resend verification
  */
 

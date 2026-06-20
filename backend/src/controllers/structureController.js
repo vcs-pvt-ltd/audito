@@ -527,6 +527,27 @@ const listByType = async (req, res) => {
       }
     }
 
+    // Annotate which entities are currently mapped in the organization tree.
+    // Tree-mapped entities cannot be deleted here (they must be detached from the
+    // tree first), so the UI can disable the delete action up-front instead of
+    // firing a request that returns 403.
+    if (typeConfig && items.length > 0) {
+      const codes = items.map(i => i[typeConfig.codeField]).filter(Boolean);
+      if (codes.length > 0) {
+        const placeholders = codes.map(() => '?').join(',');
+        const [treeRows] = await db.query(
+          `SELECT parent_code AS code FROM organization_tree
+             WHERE parent_code IN (${placeholders}) AND is_active = TRUE
+           UNION
+           SELECT child_code AS code FROM organization_tree
+             WHERE child_code IN (${placeholders}) AND is_active = TRUE`,
+          [...codes, ...codes]
+        );
+        const inTree = new Set(treeRows.map(r => r.code));
+        items = items.map(i => ({ ...i, in_tree: inTree.has(i[typeConfig.codeField]) }));
+      }
+    }
+
     return successResponse(res, { items, total: items.length });
 
   } catch (error) {
