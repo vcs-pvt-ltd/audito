@@ -9,6 +9,7 @@ const {
   updateAudit,
   deleteAudit,
   cancelAudit,
+  getAuditCount,
 } = require('../controllers/auditController');
 
 // All routes require auth
@@ -16,6 +17,9 @@ router.use(authenticate);
 
 // Helper route: entities that have questions in a checklist
 router.get('/checklist/:id/entities', getChecklistEntities);
+
+// Count route — must be before /:id to avoid being swallowed by the param route
+router.get('/count', getAuditCount);
 
 router.post('/',     createAudit);
 router.get('/',      listAudits);

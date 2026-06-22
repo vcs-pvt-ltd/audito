@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { checklistApi, orgTreeApi, type QuestionPayload, type QuestionOption } from "@/lib/api";
 
 import {
@@ -677,6 +678,7 @@ function ExcelTreeEntityNode({ node, questions }: { node: TreeNode; questions: Q
 
 export default function CreateChecklistPage() {
   const { admin, accessToken, isLoading } = useAuth();
+  const { toast } = useUiFeedback();
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("id") as string | undefined;
@@ -903,9 +905,12 @@ export default function CreateChecklistPage() {
         }
       }
       const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
+      toast(isEdit ? "Checklist updated successfully." : "Checklist created successfully.", "success");
       router.push(isOnboarding ? "/audits?onboarding=1" : "/checklists");
     } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save checklist.");
+      const errMsg = err instanceof Error ? err.message : "Failed to save checklist.";
+      setSaveError(errMsg);
+      toast(errMsg, "error");
     } finally {
       setSaving(false);
     }

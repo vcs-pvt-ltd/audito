@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { checklistApi } from "@/lib/api";
+import { checklistApi, auditApi } from "@/lib/api";
 
 import {
   Plus,
@@ -53,6 +53,8 @@ export default function ChecklistsPage() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
+  const [auditLimitModalOpen, setAuditLimitModalOpen] = useState(false);
+  const [auditCount, setAuditCount] = useState(0);
 
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -80,6 +82,15 @@ export default function ChecklistsPage() {
   useEffect(() => {
     fetchChecklists();
   }, [fetchChecklists]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    auditApi.count(accessToken).then(res => {
+      if (res.success && res.data) {
+        setAuditCount(res.data.count);
+      }
+    });
+  }, [accessToken]);
 
   const typeOptions = useMemo(() => {
     const set = new Set<string>();
@@ -122,6 +133,16 @@ export default function ChecklistsPage() {
   };
 
   const isLimitExceeded = admin?.plan_limits && checklists.length >= admin.plan_limits.checklists;
+  const isAuditLimitExceeded = admin?.plan_limits && auditCount >= admin.plan_limits.audits;
+
+  const handleAssignAuditClick = (id: number) => {
+    if (isAuditLimitExceeded) {
+      setAuditLimitModalOpen(true);
+    } else {
+      const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
+      router.push(`/audits/assign/create?checklistId=${id}${isOnboarding ? "&onboarding=1" : ""}`);
+    }
+  };
 
   const detailsPath = (id: number) =>
     `/checklists/details?id=${id}${isOnboarding ? "&onboarding=1" : ""}`;
@@ -180,6 +201,13 @@ export default function ChecklistsPage() {
           title="Checklist Limit Reached"
           message="Your current plan has reached the maximum number of checklists allowed."
           limit={admin?.plan_limits?.checklists || 0}
+        />
+        <LimitReachedModal
+          isOpen={auditLimitModalOpen}
+          onClose={() => setAuditLimitModalOpen(false)}
+          title="Audit Limit Reached"
+          message="Your current plan has reached the maximum number of audits allowed."
+          limit={admin?.plan_limits?.audits || 0}
         />
 
         {/* Header */}
@@ -357,15 +385,12 @@ export default function ChecklistsPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 justify-end">
                           <button
-                            onClick={() => {
-                               const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
-                               router.push(`/audits/assign/create?checklistId=${cl.id}${isOnboarding ? "&onboarding=1" : ""}`);
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-amber-400 hover:bg-amber-500/10 border border-amber-500/20 hover:border-amber-500/40 transition-all whitespace-nowrap"
-                            title="Assign Audit"
+                            onClick={() => handleAssignAuditClick(cl.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all whitespace-nowrap text-amber-400 hover:bg-amber-500/10 border-amber-500/20 hover:border-amber-500/40"
+                            title={isAuditLimitExceeded ? "Audit limit reached — upgrade your plan" : "Assign Audit"}
                           >
-                            <ClipboardCheck size={12} />
-                            Assign Audit
+                            {isAuditLimitExceeded ? <Crown size={12} /> : <ClipboardCheck size={12} />}
+                            {isAuditLimitExceeded ? "Upgrade" : "Assign Audit"}
                           </button>
                           <button
                             onClick={() => {
@@ -461,11 +486,12 @@ export default function ChecklistsPage() {
 
                     <div className="mt-3 flex items-center justify-end gap-2">
                       <button
-                        onClick={() => router.push(`/audits/assign/create?checklistId=${cl.id}`)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-amber-400 hover:bg-amber-500/10 border border-amber-500/20 hover:border-amber-500/40 transition-all"
+                        onClick={() => handleAssignAuditClick(cl.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all text-amber-400 hover:bg-amber-500/10 border-amber-500/20 hover:border-amber-500/40"
+                        title={isAuditLimitExceeded ? "Audit limit reached — upgrade your plan" : "Assign Audit"}
                       >
-                        <ClipboardCheck size={12} />
-                        Assign
+                        {isAuditLimitExceeded ? <Crown size={12} /> : <ClipboardCheck size={12} />}
+                        {isAuditLimitExceeded ? "Upgrade" : "Assign"}
                       </button>
                       <button
                         onClick={() => {

@@ -249,6 +249,7 @@ export default function BillingPage() {
           >
             {visiblePlans.map((plan) => {
               const isCurrent = currentPlan.name === plan.name;
+              const isBasicYearly = plan.name === "Basic" && billingCycle === "yearly";
               const price = billingCycle === "monthly" ? plan.priceMonthly : Math.round(plan.priceMonthly * 12 * 0.8);
               const period = billingCycle === "monthly" ? "/mo" : "/year";
 
@@ -256,9 +257,19 @@ export default function BillingPage() {
                 <div
                   key={plan.name}
                   className={`relative rounded-2xl border border-white/10 bg-gradient-to-br ${plan.color} p-5 sm:p-6 flex flex-col transition-all duration-300 ${
-                    isCurrent ? "ring-2 ring-secondary-500 ring-offset-2 ring-offset-primary-950" : "hover:border-white/20"
+                    isBasicYearly
+                      ? "opacity-40 select-none"
+                      : isCurrent
+                      ? "ring-2 ring-secondary-500 ring-offset-2 ring-offset-primary-950"
+                      : "hover:border-white/20"
                   }`}
                 >
+                  {isBasicYearly && (
+                    <div className="absolute inset-0 rounded-2xl flex items-center justify-center z-10">
+                      <span className="px-3 py-1 bg-black/40 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
+                    </div>
+                  )}
+
                   {plan.badge && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[10px] font-bold rounded-full uppercase tracking-wide shadow-lg whitespace-nowrap z-10">
                       {plan.badge}
@@ -272,15 +283,15 @@ export default function BillingPage() {
 
                   <div className={`mb-5 ${plan.textColor || "text-white"}`}>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-3xl font-bold">${price}</span>
-                      <span className="text-xs opacity-60">{period}</span>
+                      <span className="text-3xl font-bold">${plan.name === "Basic" ? 0 : price}</span>
+                      <span className="text-xs opacity-60">{plan.name === "Basic" ? "/month" : period}</span>
                     </div>
                   </div>
 
                   <button
-                    disabled={isCurrent}
+                    disabled={isCurrent || isBasicYearly}
                     className={`mt-auto w-full py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
-                      isCurrent
+                      isCurrent || isBasicYearly
                         ? "bg-white/10 text-white/40 cursor-default border border-white/10"
                         : plan.name === "Elite"
                         ? "bg-secondary-500 text-primary-950 hover:bg-secondary-400"
@@ -288,7 +299,7 @@ export default function BillingPage() {
                     }`}
                   >
                     {isCurrent ? "Current Plan" : "Upgrade"}
-                    {!isCurrent && <ArrowRight size={14} />}
+                    {!isCurrent && !isBasicYearly && <ArrowRight size={14} />}
                   </button>
                 </div>
               );

@@ -539,6 +539,9 @@ export const auditApi = {
 
   cancel: (token: string, id: number | string) =>
     apiRequest(`/audits/${id}/cancel`, { method: "POST", token }),
+
+  count: (token: string) =>
+    apiRequest<{ count: number }>("/audits/count", { token }),
 };
 
 export interface DashboardFilters {

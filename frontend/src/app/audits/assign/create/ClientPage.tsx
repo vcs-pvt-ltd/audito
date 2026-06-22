@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditApi, checklistApi, orgTreeApi, usersApi } from "@/lib/api";
 import { ArrowLeft, ClipboardCheck, Building2, Users, DollarSign, Calendar, ChevronDown, ChevronRight, CheckSquare, Square, AlertCircle, Loader2, FileText } from "lucide-react";
 
@@ -46,6 +47,7 @@ function calcEndDate(startDate: string, value: number | null, unit: string | nul
 
 export default function AssignAuditPage() {
   const { admin, accessToken, isLoading } = useAuth();
+  const { toast } = useUiFeedback();
   const router = useRouter();
   const searchParams = useSearchParams();
   const checklistId = searchParams.get("checklistId") as string;
@@ -154,8 +156,8 @@ export default function AssignAuditPage() {
         entity_code: e.entity_code, entity_type: e.entity_type, entity_name: e.entity_name, org_tree_id: e.org_tree_id,
       })),
     });
-    if (res.success) { router.push("/audits"); }
-    else { setSubmitError(res.message || "Failed to create audit assignment."); setSubmitting(false); }
+    if (res.success) { toast("Audit assignment created successfully.", "success"); router.push("/audits"); }
+    else { const msg = res.message || "Failed to create audit assignment."; setSubmitError(msg); toast(msg, "error"); setSubmitting(false); }
   };
 
   if (!mounted || isLoading) return (

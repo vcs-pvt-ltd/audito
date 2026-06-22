@@ -669,96 +669,143 @@ function RegisterForm() {
         )}
 
         {/* ─── Step 2: Pricing Plans ─────────────────────────────────── */}
-        {step === 2 && (
-          <div className="glass rounded-2xl p-6 sm:p-8">
-            <div className="flex items-center gap-2 mb-6">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                <ArrowLeft size={18} />
-              </button>
-              <h3 className="text-lg font-semibold text-white">Choose Your Plan</h3>
-            </div>
+        {step === 2 && (() => {
+          const isYearly = formData.billing_cycle === "Yearly";
+          const price = (monthly: number) =>
+            isYearly ? Math.round(monthly * 12 * 0.8) : monthly;
+          const period = isYearly ? "/year" : "/month";
 
-            <div className="mb-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          return (
+            <div className="glass rounded-2xl p-6 sm:p-8">
+              <div className="flex items-center gap-2 mb-5">
+                <button type="button" onClick={() => setStep(1)} className="text-gray-400 hover:text-white transition-colors">
+                  <ArrowLeft size={18} />
+                </button>
+                <h3 className="text-lg font-semibold text-white">Choose Your Plan</h3>
+              </div>
+
+              {/* Billing toggle */}
+              <div className="flex justify-center mb-6">
+                <div className="glass rounded-lg p-1 flex items-center gap-1 border border-white/5">
+                  {(["Monthly", "Yearly"] as const).map((cycle) => (
+                    <button
+                      key={cycle}
+                      type="button"
+                      onClick={() => {
+                        updateField("billing_cycle", cycle);
+                        if (cycle === "Yearly" && formData.plan_name === "Basic") {
+                          updateField("plan_name", "Pro");
+                        }
+                      }}
+                      className={`relative px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
+                        formData.billing_cycle === cycle
+                          ? "bg-secondary-500 text-primary-950 shadow"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      {cycle}
+                      {cycle === "Yearly" && formData.billing_cycle !== "Yearly" && (
+                        <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-emerald-500 text-primary-950 text-[8px] font-bold rounded-full">
+                          -20%
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 {/* Basic */}
                 <div
-                  onClick={() => updateField("plan_name", "Basic")}
-                  className={`rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#378745]/40 to-[#1D4226]/40 h-full flex flex-col cursor-pointer ${formData.plan_name === "Basic" ? "ring-2 ring-secondary-500" : ""
-                    }`}
+                  onClick={() => !isYearly && updateField("plan_name", "Basic")}
+                  className={`relative rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#378745]/40 to-[#1D4226]/40 flex flex-col transition-all ${
+                    isYearly
+                      ? "opacity-40 cursor-not-allowed select-none"
+                      : `cursor-pointer hover:-translate-y-1 ${formData.plan_name === "Basic" ? "ring-2 ring-secondary-500" : ""}`
+                  }`}
                 >
-                  <div className="flex justify-start mb-4">
-                    <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
-                    <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">
-                      Basic
-                    </h3>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Image src={logo} alt="Audito" className="h-auto w-20 object-contain" />
+                    <h3 className="text-2xl font-bold text-white">Basic</h3>
                   </div>
-                  <div className="text-start mb-2">
-                    <span className="text-4xl sm:text-5xl font-bold text-white">$0</span>
-                    <span className="ml-1 text-sm text-gray-400">/1 months</span>
+                  <div className="mb-1">
+                    <span className="text-4xl font-bold text-white">$0</span>
+                    <span className="ml-1 text-sm text-gray-400">/month</span>
                   </div>
-                  <p className="text-sm mb-5 text-start text-gray-400">Perfect for trying out Audito</p>
-
+                  <p className="text-sm text-gray-400 mb-4">Perfect for trying out Audito</p>
+                  <div className={`mt-auto w-5 h-5 rounded-full border-2 flex items-center justify-center self-end ${!isYearly && formData.plan_name === "Basic" ? "border-secondary-400 bg-secondary-400" : "border-white/20"}`}>
+                    {!isYearly && formData.plan_name === "Basic" && <Check size={11} className="text-primary-950" />}
+                  </div>
+                  {isYearly && (
+                    <div className="absolute inset-0 rounded-3xl flex items-center justify-center">
+                      <span className="px-3 py-1 bg-black/30 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Pro */}
                 <div
                   onClick={() => updateField("plan_name", "Pro")}
-                  className={`relative rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#F1FDF9]/40 to-[#B7DAD0]/60 h-full flex flex-col cursor-pointer ${formData.plan_name === "Pro" ? "ring-2 ring-secondary-500" : ""
-                    }`}
+                  className={`relative rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#F1FDF9]/40 to-[#B7DAD0]/60 flex flex-col cursor-pointer transition-all hover:-translate-y-1 ${
+                    formData.plan_name === "Pro" ? "ring-2 ring-secondary-500" : ""
+                  }`}
                 >
                   <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[10px] font-bold rounded-full uppercase tracking-wide shadow-lg whitespace-nowrap">
                     Most Popular
                   </div>
-                  <div className="flex justify-start mb-4">
-                    <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
-                    <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-[#062D27]">
-                      Pro
-                    </h3>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Image src={logo} alt="Audito" className="h-auto w-20 object-contain" />
+                    <h3 className="text-2xl font-bold text-[#062D27]">Pro</h3>
                   </div>
-                  <div className="text-start mb-2">
-                    <span className="text-4xl sm:text-5xl font-bold text-[#062D27]">$99</span>
-                    <span className="ml-1 text-sm text-[#062D27]">/month</span>
+                  <div className="mb-1">
+                    <span className="text-4xl font-bold text-[#062D27]">${price(99)}</span>
+                    <span className="ml-1 text-sm text-[#062D27]">{period}</span>
                   </div>
-                  <p className="text-sm mb-5 text-start text-[#062D27]">For growing teams</p>
-
+                  {isYearly && (
+                    <p className="text-[11px] text-emerald-700 mb-1">Save ${Math.round(99 * 12 * 0.2)}/year</p>
+                  )}
+                  <p className="text-sm text-[#062D27] mb-4">For growing teams</p>
+                  <div className={`mt-auto w-5 h-5 rounded-full border-2 flex items-center justify-center self-end ${formData.plan_name === "Pro" ? "border-secondary-400 bg-secondary-400" : "border-[#062D27]/30"}`}>
+                    {formData.plan_name === "Pro" && <Check size={11} className="text-primary-950" />}
+                  </div>
                 </div>
 
                 {/* Elite */}
                 <div
                   onClick={() => updateField("plan_name", "Elite")}
-                  className={`rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#0F766E] to-[#062D27] h-full flex flex-col cursor-pointer ${formData.plan_name === "Elite" ? "ring-2 ring-secondary-500" : ""
-                    }`}
+                  className={`rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#0F766E] to-[#062D27] flex flex-col cursor-pointer transition-all hover:-translate-y-1 ${
+                    formData.plan_name === "Elite" ? "ring-2 ring-secondary-500" : ""
+                  }`}
                 >
-                  <div className="flex justify-start mb-4">
-                    <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
-                    <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">
-                      Elite
-                    </h3>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Image src={logo} alt="Audito" className="h-auto w-20 object-contain" />
+                    <h3 className="text-2xl font-bold text-white">Elite</h3>
                   </div>
-                  <div className="text-start mb-2">
-                    <span className="text-4xl sm:text-5xl font-bold text-white">$299</span>
-                    <span className="ml-1 text-sm text-gray-300">/month</span>
+                  <div className="mb-1">
+                    <span className="text-4xl font-bold text-white">${price(299)}</span>
+                    <span className="ml-1 text-sm text-gray-300">{period}</span>
                   </div>
-                  <p className="text-sm mb-5 text-start text-gray-300">For large organizations</p>
-
+                  {isYearly && (
+                    <p className="text-[11px] text-emerald-400 mb-1">Save ${Math.round(299 * 12 * 0.2)}/year</p>
+                  )}
+                  <p className="text-sm text-gray-300 mb-4">For large organizations</p>
+                  <div className={`mt-auto w-5 h-5 rounded-full border-2 flex items-center justify-center self-end ${formData.plan_name === "Elite" ? "border-secondary-400 bg-secondary-400" : "border-white/30"}`}>
+                    {formData.plan_name === "Elite" && <Check size={11} className="text-primary-950" />}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <button
-              type="button"
-              onClick={() => setStep(3)}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-lg transition-all"
-            >
-              Next: Organization Details
-              <ArrowRight size={16} />
-            </button>
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-lg transition-all"
+              >
+                Next: Organization Details
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          );
+        })()}
 
         {/* ─── Step 3: Organization Details ──────────────────────────── */}
         {step === 3 && (

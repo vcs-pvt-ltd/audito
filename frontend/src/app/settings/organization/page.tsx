@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Loader2, Save, Building2, MapPin, Mail, Shield, Phone, Globe, Fingerprint,ArrowLeft } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { authApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
@@ -20,6 +21,7 @@ interface Organization {
 
 export default function OrganizationSettingsPage() {
   const { admin, accessToken, refreshMe } = useAuth();
+  const { toast } = useUiFeedback();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -33,7 +35,6 @@ export default function OrganizationSettingsPage() {
     country: "",
     phone_number: "",
   });
-  const [message, setMessage] = useState({ text: "", type: "" });
 
   useEffect(() => {
     if (accessToken) {
@@ -56,7 +57,7 @@ export default function OrganizationSettingsPage() {
           }
         })
         .catch(() => {
-          setMessage({ text: "Failed to fetch organization details.", type: "error" });
+          toast("Failed to fetch organization details.", "error");
         })
         .finally(() => setLoading(false));
     }
@@ -66,13 +67,11 @@ export default function OrganizationSettingsPage() {
     e.preventDefault();
     if (!accessToken) return;
     if (!org.name.trim()) {
-      setMessage({ text: "Organization name is required.", type: "error" });
+      toast("Organization name is required.", "error");
       return;
     }
 
     setSaving(true);
-    setMessage({ text: "", type: "" });
-
     try {
       const res = await authApi.updateOrganization(accessToken, {
         name: org.name.trim(),
@@ -86,14 +85,13 @@ export default function OrganizationSettingsPage() {
       });
 
       if (res.success) {
-        setMessage({ text: "Organization profile updated successfully.", type: "success" });
+        toast("Organization profile updated successfully.", "success");
         await refreshMe();
-        setTimeout(() => setMessage({ text: "", type: "" }), 3000);
       } else {
-        setMessage({ text: res.message || "Failed to save changes.", type: "error" });
+        toast(res.message || "Failed to save changes.", "error");
       }
     } catch {
-      setMessage({ text: "Network error. Please try again.", type: "error" });
+      toast("Network error. Please try again.", "error");
     } finally {
       setSaving(false);
     }
@@ -150,17 +148,6 @@ export default function OrganizationSettingsPage() {
           </div>
         ) : (
           <form onSubmit={handleSave} className="space-y-6">
-
-            {/* Message */}
-            {message.text && (
-              <div className={`p-3.5 rounded-xl text-sm font-medium border ${
-                message.type === "success"
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                  : "bg-red-500/10 text-red-400 border-red-500/20"
-              }`}>
-                {message.text}
-              </div>
-            )}
 
             {/* Identity */}
             <div className="glass border border-white/[0.08] rounded-xl p-5 sm:p-6 space-y-5">

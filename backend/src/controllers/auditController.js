@@ -627,6 +627,25 @@ const deleteAudit = async (req, res) => {
   }
 };
 
+// GET /api/audits/count
+// Returns the active audit count for the current admin — uses the same
+// query as LimitsEnforcer.checkAuditLimit so the frontend and enforcer agree.
+const getAuditCount = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return successResponse(res, { count: 0 });
+    }
+    const [[{ count }]] = await db.query(
+      'SELECT COUNT(*) as count FROM audit_assignments WHERE created_by = ? AND is_active = TRUE',
+      [req.user.entityCode]
+    );
+    return successResponse(res, { count: Number(count) });
+  } catch (err) {
+    console.error('getAuditCount error:', err);
+    return errorResponse(res, 'Failed to fetch audit count.', 500);
+  }
+};
+
 module.exports = {
   getChecklistEntities,
   createAudit,
@@ -635,4 +654,5 @@ module.exports = {
   updateAudit,
   deleteAudit,
   cancelAudit,
+  getAuditCount,
 };

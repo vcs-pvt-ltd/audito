@@ -12,7 +12,7 @@ import { noticeApi, linksApi } from "@/lib/api";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
   ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
-  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle,
 } from "lucide-react";
 
 // ─── Avatar helper (mirrors profile page) ────────────────────────
@@ -150,6 +150,7 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
       { label: "Notices", path: "/settings/notices", icon: Bell },
       { label: "Organization Info", path: "/settings/organization", icon: Building2 },
       { label: "Billing", path: "/settings/billing", icon: CreditCard },
+      { label: "Help", path: "/settings/help", icon: HelpCircle },
     ]},
   ],
   "admin:Company": [
@@ -179,6 +180,7 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
       { label: "Notices", path: "/settings/notices", icon: Bell, minOrgLevel: 4 },
       { label: "Organization Info", path: "/settings/organization", icon: Building2 },
       { label: "Billing", path: "/settings/billing", icon: CreditCard },
+      { label: "Help", path: "/settings/help", icon: HelpCircle },
     ]},
   ],
   "admin:Audit Firm": [
@@ -203,6 +205,7 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
       { label: "Notices", path: "/settings/notices", icon: Bell, minOrgLevel: 5 },
       { label: "Organization Info", path: "/settings/organization", icon: Building2 },
       { label: "Billing", path: "/settings/billing", icon: CreditCard },
+      { label: "Help", path: "/settings/help", icon: HelpCircle },
     ]},
   ],
   auditor: [
@@ -210,15 +213,17 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
     { type: "link", label: "My Audits", path: "/my-audits", icon: FileCheck, matchPrefix: true },
     { type: "link", label: "My CAPs", path: "/my-caps", icon: FileCheck, matchPrefix: true },
     { label: "My Learning", icon: ClipboardList, items: [
-      { label: "My Trainings", path: "/my-learning/trainings", icon: FileCheck },
-      { label: "My Field Visits", path: "/my-learning/field-visits", icon: MapPin },
-      { label: "My Evaluation Papers", path: "/my-learning/evaluation-papers", icon: ClipboardList },
+      { label: "Trainings", path: "/my-learning/trainings", icon: FileCheck },
+      { label: "Field Visits", path: "/my-learning/field-visits", icon: MapPin },
+      { label: "Evaluation Papers", path: "/my-learning/evaluation-papers", icon: ClipboardList },
     ]},
+    { type: "link", label: "Help", path: "/settings/help", icon: HelpCircle },
   ],
   entity_head: [
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { type: "link", label: "Audits", path: "/entity-head/audits", icon: FileCheck, matchPrefix: true },
     { type: "link", label: "CAPs", path: "/entity-head/caps", icon: ClipboardList, matchPrefix: true },
+    { type: "link", label: "Help", path: "/settings/help", icon: HelpCircle },
   ],
 };
 

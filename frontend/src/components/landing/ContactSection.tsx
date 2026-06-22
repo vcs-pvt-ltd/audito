@@ -15,6 +15,7 @@ import mailIcon from "@/assets/landing/icons/mail.png";
 import whatsappIcon from "@/assets/landing/icons/whatsapp.png";
 import xIcon from "@/assets/landing/icons/x.png";
 import Footer from "@/components/layout/Footer";
+import Reveal from "./Reveal";
 import { landingApi } from "@/lib/api";
 
 export default function ContactSection() {
@@ -310,9 +311,9 @@ export default function ContactSection() {
           className="absolute inset-0 object-cover pointer-events-none opacity-5"
         />
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl xl:max-w-7xl mx-auto">
             {/* Header */}
-            <div className="text-center mb-8 sm:mb-10 lg:mb-12">
+            <Reveal variant="up" className="text-center mb-8 sm:mb-10 lg:mb-12">
               <div className="star-badge inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary-500/20 text-secondary-300 text-xs font-semibold mb-4">
                 <Star size={12} className="fill-secondary-400 text-secondary-400" />
                 Trusted by Leaders
@@ -327,26 +328,30 @@ export default function ContactSection() {
               <p className="text-gray-400 max-w-2xl mx-auto text-sm">
                 Join hundreds of enterprises who have transformed their audit operations with Audito.
               </p>
-            </div>
+            </Reveal>
 
             {/* Testimonials Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-              <TestimonialCard
-                rating={5}
-                quote="Audito transformed our compliance workflow. We've reduced audit time by 70% and caught potential issues before they became problems."
-                name="Sarah Chen"
-                role="Chief Compliance Officer"
-                company="TechCorp Global"
-              />
-              <TestimonialCard
-                rating={5}
-                quote="The AI-powered insights are game-changing. Audito doesn't just track compliance—it predicts and prevents risks. An essential tool for any enterprise."
-                name="Michael Rodriguez"
-                role="VP of Risk Management"
-                company="Financial Solutions Inc"
-                featured={true}
-              />
-              <div className="sm:col-span-2 lg:col-span-1">
+              <Reveal variant="up" delay={0} className="h-full">
+                <TestimonialCard
+                  rating={5}
+                  quote="Audito transformed our compliance workflow. We've reduced audit time by 70% and caught potential issues before they became problems."
+                  name="Sarah Chen"
+                  role="Chief Compliance Officer"
+                  company="TechCorp Global"
+                />
+              </Reveal>
+              <Reveal variant="up" delay={120} className="h-full">
+                <TestimonialCard
+                  rating={5}
+                  quote="The AI-powered insights are game-changing. Audito doesn't just track compliance—it predicts and prevents risks. An essential tool for any enterprise."
+                  name="Michael Rodriguez"
+                  role="VP of Risk Management"
+                  company="Financial Solutions Inc"
+                  featured={true}
+                />
+              </Reveal>
+              <Reveal variant="up" delay={240} className="sm:col-span-2 lg:col-span-1 h-full">
                 <TestimonialCard
                   rating={5}
                   quote="Best audit management platform we've used. The interface is beautiful, the features are powerful, and the support team is exceptional."
@@ -354,7 +359,7 @@ export default function ContactSection() {
                   role="Director of Operations"
                   company="Global Enterprises"
                 />
-              </div>
+              </Reveal>
             </div>
           </div>
         </div>
