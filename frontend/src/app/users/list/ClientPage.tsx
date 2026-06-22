@@ -461,15 +461,17 @@ function UserModal({
 
           <div>
             <label className="block text-sm text-gray-400 mb-1.5">
-              Email <span className="text-red-400">*</span>
+              Email {!editData && <span className="text-red-400">*</span>}
             </label>
             <input
               type="email"
               value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onChange={(e) => !editData && setForm({ ...form, email: e.target.value })}
               placeholder="user@example.com"
-              className={inputClass}
+              readOnly={!!editData}
+              className={editData ? `${inputClass} opacity-50 cursor-not-allowed` : inputClass}
             />
+            {editData && <p className="text-xs text-gray-500 mt-1">Email address cannot be changed.</p>}
           </div>
 
           {/* Country */}

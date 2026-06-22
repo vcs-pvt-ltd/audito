@@ -98,6 +98,7 @@ export default function AuditsPage() {
   const isFirmAdmin = admin?.role === "admin" && admin?.account_type === "Audit Firm";
 
   const [audits, setAudits] = useState<AuditAssignment[]>([]);
+  const [auditCount, setAuditCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [toggling, setToggling] = useState<number | null>(null);
@@ -124,6 +125,13 @@ export default function AuditsPage() {
     if (res.success && res.data) {
       const data = res.data as { audits: AuditAssignment[] };
       setAudits(data.audits || []);
+    }
+    // Authoritative count from the backend — matches the plan-limit enforcer
+    // exactly (created_by = me AND is_active), unlike audits.length which may
+    // include partner/firm-assigned audits.
+    const countRes = await auditApi.count(accessToken);
+    if (countRes.success && countRes.data) {
+      setAuditCount(countRes.data.count);
     }
     setLoading(false);
   }, [accessToken]);
@@ -170,14 +178,14 @@ export default function AuditsPage() {
 
   const handleNewAuditClick = () => {
     const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
-    if (admin?.plan_limits && audits.length >= admin.plan_limits.audits) {
+    if (admin?.plan_limits && auditCount >= admin.plan_limits.audits) {
       setLimitModalOpen(true);
     } else {
       router.push(`/checklists${isOnboarding ? "?onboarding=1" : ""}`);
     }
   };
 
-  const isLimitExceeded = admin?.plan_limits && audits.length >= admin.plan_limits.audits;
+  const isLimitExceeded = admin?.plan_limits && auditCount >= admin.plan_limits.audits;
 
   const handleCancel = async (id: number, title: string) => {
     if (!accessToken) return;

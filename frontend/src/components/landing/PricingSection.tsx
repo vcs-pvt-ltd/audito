@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Check, X } from "lucide-react";
 import { useState } from "react";
 import logo from "@/assets/logo/audito_logo.png";
+import Reveal from "./Reveal";
 import { useLanding } from "@/context/LandingContext";
 
 type Plan = {
@@ -176,8 +177,8 @@ export default function PricingSection() {
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
 
         {/* Header */}
-        <div className="text-center mb-8 sm:mb-10">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-3">
+        <Reveal variant="up" className="text-center mb-8 sm:mb-10">
+          <h1 className="text-2xl sm:text-3xl xl:text-4xl font-bold text-white mb-3">
             Simple, Transparent
             <br />
             <span className="pricing-gradient-text">Pricing</span>
@@ -185,7 +186,7 @@ export default function PricingSection() {
           <p className="text-gray-400 text-sm sm:text-base max-w-2xl mx-auto">
             Choose the perfect plan for your organization. All plans include our core features.
           </p>
-        </div>
+        </Reveal>
 
         {/* Billing switch */}
         <div className="flex justify-center mb-8 sm:mb-10">
@@ -219,17 +220,36 @@ export default function PricingSection() {
         </div>
 
         {/* Desktop cards */}
-        <div className="hidden lg:grid grid-cols-3 gap-6 max-w-6xl mx-auto mb-8">
-          <BasicCard plan={plans[0]} />
-          <ProCard   plan={plans[1]} />
-          <EliteCard plan={plans[2]} />
+        <div className="hidden lg:grid grid-cols-3 gap-6 xl:gap-8 max-w-6xl xl:max-w-7xl mx-auto mb-8 items-stretch">
+          <Reveal variant="up" delay={0} className="h-full">
+            <div className={`h-full transition-opacity duration-300 ${billingCycle === "yearly" ? "opacity-40 pointer-events-none select-none" : ""}`}>
+              {billingCycle === "yearly" && (
+                <div className="relative h-full">
+                  <BasicCard plan={plans[0]} />
+                  <div className="absolute inset-0 rounded-3xl flex items-center justify-center">
+                    <span className="px-3 py-1 bg-white/10 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
+                  </div>
+                </div>
+              )}
+              {billingCycle !== "yearly" && <BasicCard plan={plans[0]} />}
+            </div>
+          </Reveal>
+          <Reveal variant="up" delay={120} className="h-full"><ProCard plan={plans[1]} /></Reveal>
+          <Reveal variant="up" delay={240} className="h-full"><EliteCard plan={plans[2]} /></Reveal>
         </div>
 
         {/* Tablet cards */}
         <div className="hidden md:flex lg:hidden flex-col gap-5 max-w-3xl mx-auto mb-8">
           <div className="w-full"><ProCard plan={plans[1]} /></div>
           <div className="grid grid-cols-2 gap-5">
-            <BasicCard plan={plans[0]} />
+            <div className={`transition-opacity duration-300 ${billingCycle === "yearly" ? "opacity-40 pointer-events-none select-none relative" : ""}`}>
+              <BasicCard plan={plans[0]} />
+              {billingCycle === "yearly" && (
+                <div className="absolute inset-0 rounded-3xl flex items-center justify-center">
+                  <span className="px-3 py-1 bg-white/10 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
+                </div>
+              )}
+            </div>
             <EliteCard plan={plans[2]} />
           </div>
         </div>
@@ -237,12 +257,19 @@ export default function PricingSection() {
         {/* Mobile cards */}
         <div className="flex flex-col md:hidden gap-5 max-w-sm mx-auto mb-8">
           <ProCard   plan={plans[1]} />
-          <BasicCard plan={plans[0]} />
+          <div className={`transition-opacity duration-300 ${billingCycle === "yearly" ? "opacity-40 pointer-events-none select-none relative" : ""}`}>
+            <BasicCard plan={plans[0]} />
+            {billingCycle === "yearly" && (
+              <div className="absolute inset-0 rounded-3xl flex items-center justify-center">
+                <span className="px-3 py-1 bg-white/10 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
+              </div>
+            )}
+          </div>
           <EliteCard plan={plans[2]} />
         </div>
 
         {/* Desktop comparison table */}
-        <div className="hidden lg:block max-w-6xl mx-auto overflow-x-auto">
+        <Reveal variant="up" className="hidden lg:block max-w-6xl xl:max-w-7xl mx-auto overflow-x-auto">
           <div className="min-w-[820px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
             <table className="w-full text-sm">
               <thead>
@@ -281,7 +308,7 @@ export default function PricingSection() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Reveal>
 
         {/* Mobile/tablet comparison */}
         <div className="lg:hidden max-w-3xl mx-auto space-y-4">

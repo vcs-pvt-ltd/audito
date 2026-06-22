@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import Reveal from "./Reveal";
 import {
   Building2,
   PieChart,
@@ -60,7 +61,7 @@ const overviewHighlights = [
 
 export default function FeaturesSection() {
   return (
-    <section className="relative pt-20 pb-14 sm:py-18 lg:py-24 overflow-y-auto">
+    <section className="relative pt-20 pb-14 sm:py-18 lg:py-24 xl:py-28 overflow-y-auto">
       <style>{`
         @keyframes shimmerText {
           0%   { background-position: -200% center; }
@@ -140,26 +141,26 @@ export default function FeaturesSection() {
         }
       `}</style>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+      <div className="relative z-10 max-w-7xl 2xl:max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8 w-full">
 
         {/* Header */}
-        <div className="text-center mb-5">
+        <Reveal variant="up" className="text-center mb-5">
           <div className="features-badge inline-flex items-center gap-2 px-4 py-2 rounded-full glass mb-4 border border-secondary-500/20">
             <Zap size={14} className="text-[#00D492]" />
             <span className="text-sm text-[#00D492] font-medium">Powerful Features</span>
           </div>
-          <h3 className="text-2xl sm:text-3xl font-semibold text-white mb-4">
+          <h3 className="text-2xl sm:text-3xl xl:text-4xl font-semibold text-white mb-4">
             Everything you need for
             <br />
             <span className="features-gradient-text">Modern Audit Management</span>
           </h3>
-        </div>
+        </Reveal>
 
         {/* Overview image + floating cards */}
-        <div className="mb-14 sm:mb-20 relative">
+        <Reveal variant="zoom" delay={80} className="mb-14 sm:mb-20 relative">
           <div className="relative flex justify-center overflow-visible py-15">
             <Image src={overviewImg} alt="Features Overview"
-              className="w-full max-w-2xl h-auto translate-y-10 object-contain rounded-2xl drop-shadow-2xl transition-transform duration-500 hover:scale-[1.01]"
+              className="w-full max-w-2xl xl:max-w-3xl h-auto translate-y-10 object-contain rounded-2xl drop-shadow-2xl transition-transform duration-500 hover:scale-[1.01]"
             />
             <div className="hidden lg:flex absolute left-1/2 top-[1%] -translate-x-1/2 z-20 items-center gap-6">
               <OverviewCard {...overviewHighlights[0]} />
@@ -183,7 +184,7 @@ export default function FeaturesSection() {
               <OverviewCard key={item.id} {...item} compact />
             ))}
           </div>
-        </div>
+        </Reveal>
 
         {/* Divider */}
         <div className="flex items-center justify-center mb-16 sm:mb-24 lg:mb-32">
@@ -199,22 +200,23 @@ export default function FeaturesSection() {
             const isImageLeft = feature.layout === "left";
 
             return (
-              <div key={feature.id}>
+              <Reveal key={feature.id} variant={isImageLeft ? "left" : "right"}>
                 {/* Desktop */}
-                <div className={`hidden lg:flex items-center gap-12 ${isImageLeft ? "flex-row" : "flex-row-reverse"}`}>
+                <div className={`hidden lg:flex items-center gap-12 xl:gap-16 2xl:gap-20 ${isImageLeft ? "flex-row" : "flex-row-reverse"}`}>
                   <div className="flex-1">
-                    <div className="feature-img-wrap">
-                      <Image src={feature.image} alt={feature.title}
-                        className="w-full h-auto object-contain" />
+                    <div className="feature-img-wrap relative w-full aspect-[16/10] mx-auto max-w-xl">
+                      <Image src={feature.image} alt={feature.title} fill
+                        sizes="(max-width: 1280px) 50vw, 40vw"
+                        className="object-contain" />
                     </div>
                   </div>
                   <div className="flex-1">
-                    <div className="feature-card glass rounded-2xl p-8 sm:p-10 w-full max-w-md mx-auto border border-white/10">
+                    <div className="feature-card glass rounded-2xl p-8 sm:p-10 w-full max-w-md xl:max-w-lg mx-auto border border-white/10">
                       <div className="feature-icon-wrap w-14 h-14 rounded-lg bg-secondary-500/10 flex items-center justify-center mb-6">
                         <Icon size={28} className="text-secondary-400" />
                       </div>
-                      <h3 className="text-2xl font-bold text-white mb-4">{feature.title}</h3>
-                      <p className="text-gray-400 text-base leading-relaxed mb-6">{feature.description}</p>
+                      <h3 className="text-2xl xl:text-3xl font-bold text-white mb-4">{feature.title}</h3>
+                      <p className="text-gray-400 text-base xl:text-lg leading-relaxed mb-6">{feature.description}</p>
                       <Link href="#" className="learn-more-link inline-flex items-center gap-2 text-secondary-400 hover:text-secondary-300 transition-colors font-semibold">
                         Learn more
                         <ArrowRight size={16} className="arrow" />
@@ -224,11 +226,12 @@ export default function FeaturesSection() {
                 </div>
 
                 {/* Tablet */}
-                <div className="hidden md:flex lg:hidden items-start gap-6">
+                <div className="hidden md:flex lg:hidden items-center gap-6">
                   <div className="w-[55%] flex-shrink-0">
-                    <div className="feature-img-wrap">
-                      <Image src={feature.image} alt={feature.title}
-                        className="w-full h-auto object-contain" />
+                    <div className="feature-img-wrap relative w-full aspect-[16/10]">
+                      <Image src={feature.image} alt={feature.title} fill
+                        sizes="55vw"
+                        className="object-contain" />
                     </div>
                   </div>
                   <div className="flex-1 self-center">
@@ -247,9 +250,10 @@ export default function FeaturesSection() {
 
                 {/* Mobile */}
                 <div className="flex flex-col md:hidden gap-4">
-                  <div className="feature-img-wrap">
-                    <Image src={feature.image} alt={feature.title}
-                      className="w-full max-w-sm mx-auto h-auto object-contain" />
+                  <div className="feature-img-wrap relative w-full max-w-sm mx-auto aspect-[16/10]">
+                    <Image src={feature.image} alt={feature.title} fill
+                      sizes="(max-width: 640px) 100vw, 24rem"
+                      className="object-contain" />
                   </div>
                   <div className="feature-card glass rounded-2xl p-5 border border-white/10">
                     <div className="feature-icon-wrap w-10 h-10 rounded-lg bg-secondary-500/10 flex items-center justify-center mb-4">
@@ -262,7 +266,7 @@ export default function FeaturesSection() {
                     </Link>
                   </div>
                 </div>
-              </div>
+              </Reveal>
             );
           })}
         </div>

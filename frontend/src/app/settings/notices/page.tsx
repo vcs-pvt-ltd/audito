@@ -329,7 +329,10 @@ export default function SettingsNoticesPage() {
     if (!accessToken) return;
     const res = await settingsApi.createNotice(accessToken, data);
     if (res.success) {
+      toast("Notice published successfully.", "success");
       await fetchData();
+    } else {
+      toast(res.message || "Failed to publish notice.", "error");
     }
   };
 

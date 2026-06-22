@@ -7,12 +7,11 @@ import { settingsApi, timezonesApi, type TimezoneOption } from "@/lib/api";
 
 export default function TimeZoneSettingsPage() {
   const { admin, accessToken } = useAuth();
-  const { confirm } = useUiFeedback();
+  const { confirm, toast } = useUiFeedback();
   const [timezones, setTimezones] = useState<TimezoneOption[]>([]);
   const [selectedTz, setSelectedTz] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -64,16 +63,15 @@ export default function TimeZoneSettingsPage() {
     if (!ok) return;
 
     setSaving(true);
-    setMessage(null);
     try {
       const res = await settingsApi.setTimezone(accessToken, selectedTz);
       if (res.success) {
-        setMessage({ text: "Timezone updated successfully for your organization.", type: "success" });
+        toast("Timezone updated successfully for your organization.", "success");
       } else {
-        setMessage({ text: res.message || "Failed to update timezone.", type: "error" });
+        toast(res.message || "Failed to update timezone.", "error");
       }
     } catch {
-      setMessage({ text: "An error occurred.", type: "error" });
+      toast("An error occurred.", "error");
     } finally {
       setSaving(false);
     }
@@ -180,7 +178,7 @@ export default function TimeZoneSettingsPage() {
                         return (
                           <div
                             key={tz.timezone_value}
-                            onClick={() => { setSelectedTz(tz.timezone_value); setOpen(false); setSearch(""); setMessage(null); }}
+                            onClick={() => { setSelectedTz(tz.timezone_value); setOpen(false); setSearch(""); }}
                             className={`flex items-center gap-3 px-3.5 py-2.5 cursor-pointer transition-colors ${
                               active ? "bg-secondary-500/15 text-secondary-400" : "text-white hover:bg-white/[0.05]"
                             }`}
@@ -219,17 +217,6 @@ export default function TimeZoneSettingsPage() {
           </div>
         )}
 
-        {/* Message */}
-        {message && (
-          <div className={`flex items-center gap-3 p-3.5 rounded-xl text-sm border ${
-            message.type === "success"
-              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-              : "bg-red-500/10 text-red-400 border-red-500/20"
-          }`}>
-            {message.type === "success" ? <Check size={16} /> : <Loader2 size={16} />}
-            {message.text}
-          </div>
-        )}
       </div>
     </div>
   );
