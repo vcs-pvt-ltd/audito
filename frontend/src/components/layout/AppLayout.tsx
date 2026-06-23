@@ -4,6 +4,7 @@ import { useEffect, Suspense } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
+import SubscriptionBanner from "@/components/layout/SubscriptionBanner";
 import { useAuth } from "@/context/AuthContext";
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
 import OnboardingCompletedModal from "@/components/onboarding/OnboardingCompletedModal";
@@ -46,6 +47,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex-1 flex flex-col min-h-0 bg-transparent overflow-hidden">
         {showAdminOnboardingGuide && <OnboardingTopProgress />}
         <main className={`flex-1 overflow-y-auto scroll-smooth ${showAdminOnboardingGuide ? "pb-[280px] lg:pb-0" : "pb-[88px] lg:pb-0"}`}>
+          {!isOnboardingFlow && <SubscriptionBanner />}
           {children}
         </main>
       </div>

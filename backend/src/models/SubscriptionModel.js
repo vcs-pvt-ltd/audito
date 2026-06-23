@@ -103,6 +103,7 @@ const SubscriptionModel = {
       `SELECT max_company_levels, max_departments, max_audits, max_checklists, max_auditors, allow_auditor_eval, allow_company_to_company
        FROM subscriptions
        WHERE root_entity_code = ? AND is_active = 1
+         AND end_date > NOW()
        ORDER BY id DESC LIMIT 1`,
       [rootEntityCode]
     );
@@ -128,6 +129,58 @@ const SubscriptionModel = {
   async getLimits(rootEntityCode) {
     const limits = await this.getActiveLimits(rootEntityCode);
     return limits ?? PLAN_LIMITS['Basic'];
+  },
+
+  /**
+   * Returns the latest subscription row's status for an organization,
+   * with an `is_expired` flag derived from end_date. Used at login / getMe
+   * to identify expired plans. Free/None plans have a far-future end_date,
+   * so they never report as expired.
+   */
+  async getStatus(rootEntityCode) {
+    if (!rootEntityCode) {
+      return { has_subscription: false, plan_name: 'Basic', billing_cycle: null, start_date: null, end_date: null, is_active: false, is_expired: false };
+    }
+
+    const [rows] = await db.query(
+      `SELECT plan_name, billing_cycle, start_date, end_date, is_active,
+              (end_date <= NOW()) AS is_expired
+       FROM subscriptions
+       WHERE root_entity_code = ?
+       ORDER BY id DESC LIMIT 1`,
+      [rootEntityCode]
+    );
+
+    if (rows.length === 0) {
+      return { has_subscription: false, plan_name: 'Basic', billing_cycle: null, start_date: null, end_date: null, is_active: false, is_expired: false };
+    }
+
+    const r = rows[0];
+    return {
+      has_subscription: true,
+      plan_name: r.plan_name,
+      billing_cycle: r.billing_cycle,
+      start_date: r.start_date,
+      end_date: r.end_date,
+      is_active: !!r.is_active,
+      is_expired: !!r.is_expired,
+    };
+  },
+
+  /**
+   * Deactivates any still-active subscription rows whose end_date has passed.
+   * Once deactivated, limit lookups fall back to Basic, downgrading an expired
+   * organization until it renews. Returns true if a row was deactivated.
+   */
+  async deactivateExpired(rootEntityCode) {
+    if (!rootEntityCode) return false;
+    const [result] = await db.query(
+      `UPDATE subscriptions
+       SET is_active = 0
+       WHERE root_entity_code = ? AND is_active = 1 AND end_date <= NOW()`,
+      [rootEntityCode]
+    );
+    return result.affectedRows > 0;
   }
 };
 
