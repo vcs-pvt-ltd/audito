@@ -31,15 +31,19 @@ async function apiRequest<T = unknown>(
       json = null;
     }
 
-    if (json && typeof json.success === 'boolean') {
-      return json;
-    }
-
-    if (res.status === 401) {
-      // Token expired — broadcast so AuthContext can auto-logout
+    // Expired/invalid session on an authenticated request: broadcast so
+    // AuthContext can auto-logout, and swallow the backend message so the
+    // UI never surfaces "Token expired". Gated on `token` so login/public
+    // 401s (e.g. wrong credentials) still return their message normally.
+    if (res.status === 401 && token) {
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("auth:expired"));
       }
+      return { success: false };
+    }
+
+    if (json && typeof json.success === 'boolean') {
+      return json;
     }
 
     if (!res.ok) {

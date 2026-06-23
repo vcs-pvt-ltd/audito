@@ -50,16 +50,27 @@ export interface AccountInfo {
   profile_image?: string | null;
 }
 
+export interface SubscriptionStatus {
+  has_subscription: boolean;
+  plan_name: string;
+  billing_cycle: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  is_active: boolean;
+  is_expired: boolean;
+}
+
 interface AuthState {
   admin: Admin | null;
   accounts: AccountInfo[];
+  subscription: SubscriptionStatus | null;
   accessToken: string | null;
   refreshToken: string | null;
   isLoading: boolean;
 }
 
 interface AuthContextType extends AuthState {
-  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string }>;
+  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string; subscriptionExpired?: boolean; subscription?: SubscriptionStatus }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
   switchAccount: (targetRole: string, password?: string) => Promise<{ success: boolean; message?: string; needsPassword?: boolean }>;
@@ -112,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     admin: null,
     accounts: [],
+    subscription: null,
     accessToken: null,
     refreshToken: null,
     isLoading: true,
@@ -134,10 +146,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const persist = useCallback((admin: Admin, accounts: AccountInfo[], accessToken: string, refreshToken: string) => {
+  const persist = useCallback((admin: Admin, accounts: AccountInfo[], accessToken: string, refreshToken: string, subscription: SubscriptionStatus | null = null) => {
     const data: AuthState = normalizeAuthState({
       admin,
       accounts,
+      subscription,
       accessToken,
       refreshToken,
       isLoading: false,
@@ -150,12 +163,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (payload: LoginPayload) => {
       const res = await authApi.login(payload) as {
         success: boolean;
-        data?: { admin: Admin; accounts: AccountInfo[]; tokens: { accessToken: string; refreshToken: string } };
+        data?: { admin?: Admin; accounts?: AccountInfo[]; subscription?: SubscriptionStatus; subscription_expired?: boolean; tokens?: { accessToken: string; refreshToken: string } };
         message?: string;
       };
-      if (res.success && res.data) {
+      // Expired plan: backend returns success with a flag (no tokens). Block the
+      // sign-in so the login page shows the renew modal instead of navigating.
+      if (res.success && res.data?.subscription_expired) {
+        return { success: false, message: res.message, subscriptionExpired: true, subscription: res.data.subscription };
+      }
+      if (res.success && res.data?.admin && res.data?.tokens) {
         loginPasswordRef.current = payload.password;
-        persist(res.data.admin, res.data.accounts || [], res.data.tokens.accessToken, res.data.tokens.refreshToken);
+        persist(res.data.admin, res.data.accounts || [], res.data.tokens.accessToken, res.data.tokens.refreshToken, res.data.subscription ?? null);
       }
       return { success: res.success, message: res.message };
     },
@@ -186,12 +204,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const res = await authApi.switchAccount(state.accessToken, targetRole, pw) as {
         success: boolean;
-        data?: { admin: Admin; tokens: { accessToken: string; refreshToken: string } };
+        data?: { admin: Admin; subscription?: SubscriptionStatus; tokens: { accessToken: string; refreshToken: string } };
         message?: string;
       };
       if (res.success && res.data) {
         loginPasswordRef.current = pw;
-        persist(res.data.admin, state.accounts, res.data.tokens.accessToken, res.data.tokens.refreshToken);
+        persist(res.data.admin, state.accounts, res.data.tokens.accessToken, res.data.tokens.refreshToken, res.data.subscription ?? null);
         return { success: true };
       }
 
@@ -210,7 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     loginPasswordRef.current = null;
     localStorage.removeItem("audito_auth");
-    setState({ admin: null, accounts: [], accessToken: null, refreshToken: null, isLoading: false });
+    setState({ admin: null, accounts: [], subscription: null, accessToken: null, refreshToken: null, isLoading: false });
   }, [state.refreshToken]);
 
   // ── Auto-logout when API returns 401 (token expired) ───────────
@@ -220,7 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!localStorage.getItem("audito_auth")) return;
       loginPasswordRef.current = null;
       localStorage.removeItem("audito_auth");
-      setState({ admin: null, accounts: [], accessToken: null, refreshToken: null, isLoading: false });
+      setState({ admin: null, accounts: [], subscription: null, accessToken: null, refreshToken: null, isLoading: false });
     };
     window.addEventListener("auth:expired", handleExpired);
     return () => window.removeEventListener("auth:expired", handleExpired);
@@ -239,7 +257,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         } else {
           // Logged out in another tab
-          setState({ admin: null, accounts: [], accessToken: null, refreshToken: null, isLoading: false });
+          setState({ admin: null, accounts: [], subscription: null, accessToken: null, refreshToken: null, isLoading: false });
         }
       }
     };
@@ -281,10 +299,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!state.accessToken) return;
     const res = await authApi.getMe(state.accessToken) as {
       success: boolean;
-      data?: { admin: Admin; accounts: AccountInfo[] };
+      data?: { admin: Admin; accounts: AccountInfo[]; subscription?: SubscriptionStatus };
     };
     if (res.success && res.data && state.refreshToken) {
-      persist(res.data.admin, res.data.accounts || state.accounts, state.accessToken, state.refreshToken);
+      persist(res.data.admin, res.data.accounts || state.accounts, state.accessToken, state.refreshToken, res.data.subscription ?? null);
     }
   }, [state.accessToken, state.refreshToken, state.accounts, persist]);
 

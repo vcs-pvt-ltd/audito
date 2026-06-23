@@ -189,12 +189,28 @@ function buildUserResponse(role, record) {
   };
 }
 
+function getRootEntityCode(role, record) {
+  return role === 'admin' ? record.entity_code : record.created_by_entity_code;
+}
+
 async function getPlanLimitsForUser(role, record) {
-  const rootCode = role === 'admin'
-    ? record.entity_code
-    : record.created_by_entity_code;
+  const rootCode = getRootEntityCode(role, record);
   if (!rootCode) return SubscriptionModel.PLAN_LIMITS['Basic'];
   return await SubscriptionModel.getLimits(rootCode);
+}
+
+/**
+ * Identifies whether the user's organization plan has expired and updates the
+ * subscription accordingly. Deactivates any expired row (so limits fall back to
+ * Basic), then returns the latest status for the client to surface a renewal prompt.
+ */
+async function resolveSubscriptionStatus(role, record) {
+  const rootCode = getRootEntityCode(role, record);
+  if (!rootCode) {
+    return { has_subscription: false, plan_name: 'Basic', billing_cycle: null, start_date: null, end_date: null, is_active: false, is_expired: false };
+  }
+  await SubscriptionModel.deactivateExpired(rootCode);
+  return await SubscriptionModel.getStatus(rootCode);
 }
 
 async function collectAccounts(email) {
@@ -463,6 +479,20 @@ const login = async (req, res) => {
       return errorResponse(res, 'Invalid email or password.', 401);
     }
 
+    // Block login when the organization's plan has expired. Credentials are
+    // already verified above, so this only reveals expiry to the real account
+    // owner. Returned as a 200 with a `subscription_expired` flag (no tokens) so
+    // the browser doesn't log a network error for this expected, handled case;
+    // the client uses the flag to show a renew modal instead of signing in.
+    const subscription = await resolveSubscriptionStatus(activeRole, activeRecord);
+    if (subscription.is_expired) {
+      return successResponse(
+        res,
+        { subscription_expired: true, subscription },
+        'Your subscription has expired. Please renew to continue.'
+      );
+    }
+
     // Generate tokens for the matched account
     const tokens = generateTokensForRole(activeRole, activeRecord);
 
@@ -480,12 +510,13 @@ const login = async (req, res) => {
     // Collect ALL available accounts for this email (regardless of password match)
     const accounts = await collectAccounts(email);
 
-    // Fetch plan limits
+    // Fetch plan limits (subscription already resolved & verified non-expired above)
     const plan_limits = await getPlanLimitsForUser(activeRole, activeRecord);
 
     return successResponse(res, {
       admin: { ...buildUserResponse(activeRole, activeRecord), plan_limits },
       accounts,
+      subscription,
       tokens,
     }, 'Login successful.');
 
@@ -618,12 +649,16 @@ const getMe = async (req, res) => {
     const record = role === 'admin' ? await AdminModel.findById(req.user.id) :
       role === 'auditor' ? await AuditorModel.findById(req.user.id) :
         await EntityHeadModel.findById(req.user.id);
+
+    // Identify & handle plan expiry first so plan limits reflect any downgrade.
+    const subscription = await resolveSubscriptionStatus(role, record);
     const plan_limits = await getPlanLimitsForUser(role, record);
 
     return successResponse(res, {
       admin: { ...userResponse, plan_limits },
       organization,
-      accounts
+      accounts,
+      subscription
     });
   } catch (error) {
     console.error('Get me error:', error);
@@ -766,11 +801,15 @@ const switchAccount = async (req, res) => {
       await AdminModel.updateLastLogin(record.id);
     }
 
+    // Identify & handle plan expiry first so plan limits reflect any downgrade.
+    const subscription = await resolveSubscriptionStatus(target_role, record);
+
     // Fetch plan limits
     const plan_limits = await getPlanLimitsForUser(target_role, record);
 
     return successResponse(res, {
       admin: { ...buildUserResponse(target_role, record), plan_limits },
+      subscription,
       tokens,
     }, 'Account switched successfully.');
   } catch (error) {

@@ -6,8 +6,9 @@ import auditoLogo from "../../assets/logo/audito_logo.png";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2, CheckCircle, ArrowLeft } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, type SubscriptionStatus } from "@/context/AuthContext";
 import { authApi } from "@/lib/api";
+import SubscriptionExpiredModal from "@/components/auth/SubscriptionExpiredModal";
 
 function LoginForm() {
   const searchParams = useSearchParams();
@@ -20,7 +21,8 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
- 
+  const [expiredModal, setExpiredModal] = useState<{ open: boolean; subscription?: SubscriptionStatus | null }>({ open: false });
+
   useEffect(() => {
     if (searchParams.get("registered") === "true") {
       setShowSuccess(true);
@@ -43,6 +45,8 @@ function LoginForm() {
 
       if (res.success) {
         router.push("/dashboard");
+      } else if (res.subscriptionExpired) {
+        setExpiredModal({ open: true, subscription: res.subscription });
       } else {
         setError(res.message || "Login failed.");
       }
@@ -55,6 +59,13 @@ function LoginForm() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12">
+      {expiredModal.open && (
+        <SubscriptionExpiredModal
+          subscription={expiredModal.subscription}
+          onClose={() => setExpiredModal({ open: false })}
+        />
+      )}
+
       {/* Background decorative elements */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/3 right-1/3 w-80 h-80 bg-secondary-500/10 rounded-full blur-3xl" />
