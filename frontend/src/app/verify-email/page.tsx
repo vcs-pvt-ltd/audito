@@ -13,6 +13,7 @@ function VerifyEmailContent() {
   const [status, setStatus] = useState<"loading" | "success" | "error" | "set-password">("loading");
   const [message, setMessage] = useState("");
   const [userData, setUserData] = useState<{ email: string; first_name: string } | null>(null);
+  const [paymentCode, setPaymentCode] = useState<string | null>(null);
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -52,7 +53,12 @@ function VerifyEmailContent() {
             setStatus("set-password");
           } else {
             setStatus("success");
-            setMessage("Your email has been successfully verified! You can now log in to your account.");
+            if (data?.payment?.payment_code) {
+              setPaymentCode(data.payment.payment_code);
+              setMessage("Your email is verified. Continue to complete your subscription payment.");
+            } else {
+              setMessage("Your email has been successfully verified! You can now log in to your account.");
+            }
           }
         } else {
           setStatus("error");
@@ -104,12 +110,21 @@ function VerifyEmailContent() {
             <CheckCircle2 className="text-green-500 mb-4" size={48} />
             <h1 className="text-xl font-bold text-white mb-2">Email Verified</h1>
             <p className="text-gray-400 mb-8">{message}</p>
-            <Link
-              href="/login"
-              className="w-full flex items-center justify-center gap-2 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold px-6 py-3 rounded-xl transition-colors"
-            >
-              Proceed to Login <ArrowRight size={18} />
-            </Link>
+            {paymentCode ? (
+              <Link
+                href={`/payment?code=${paymentCode}`}
+                className="w-full flex items-center justify-center gap-2 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold px-6 py-3 rounded-xl transition-colors"
+              >
+                Continue to Payment <ArrowRight size={18} />
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                className="w-full flex items-center justify-center gap-2 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold px-6 py-3 rounded-xl transition-colors"
+              >
+                Proceed to Login <ArrowRight size={18} />
+              </Link>
+            )}
           </div>
         )}
 

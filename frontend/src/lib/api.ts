@@ -1108,3 +1108,39 @@ export const landingApi = {
   submitContact: (data: { name: string; email: string; company?: string; phone?: string; message: string }) =>
     apiRequest("/landing/contact", { method: "POST", body: data as unknown as Record<string, unknown> }),
 };
+
+// ─── Payments API ──────────────────────────────────────────────────
+
+export interface PaymentDetails {
+  payment_code: string;
+  purpose?: "registration" | "upgrade" | "renewal";
+  plan_name: string;
+  billing_cycle: string;
+  amount: number;
+  currency: string;
+  status?: "pending" | "paid" | "failed" | "cancelled";
+  payer_name?: string | null;
+  payer_email?: string | null;
+  org_name?: string | null;
+  invoice_number?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  paid_at?: string | null;
+  created_at?: string | null;
+}
+
+export const paymentApi = {
+  // Public — payment page lookup & confirmation (temporary; gateway webhook later)
+  get: (code: string) => apiRequest<{ payment: PaymentDetails }>(`/payments/${code}`),
+  confirm: (code: string) =>
+    apiRequest<{ payment: PaymentDetails }>(`/payments/${code}/confirm`, { method: "POST" }),
+
+  // Authenticated (admin)
+  checkout: (token: string, body: { plan_name: string; billing_cycle: string; purpose: "upgrade" | "renewal" }) =>
+    apiRequest<{ payment: PaymentDetails }>("/payments/checkout", {
+      method: "POST",
+      body: body as unknown as Record<string, unknown>,
+      token,
+    }),
+  list: (token: string) => apiRequest<{ payments: PaymentDetails[] }>("/payments", { token }),
+};

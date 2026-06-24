@@ -849,10 +849,8 @@ function EmailBadge({ verified, hasPassword }: { verified: boolean; hasPassword:
 
 // ─── Page ────────────────────────────────────────────────────────
 
-const REGISTERED_ME_STORAGE_KEY = (email: string, typeSlug: string) => `audito_register_me_${email}_${typeSlug}`;
-
 export default function UsersClientPage() {
-  const { admin, accessToken, isLoading, refreshMe } = useAuth();
+  const { admin, accounts, accessToken, isLoading, refreshMe } = useAuth();
   const { confirm, toast } = useUiFeedback();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -871,6 +869,20 @@ export default function UsersClientPage() {
   const [registerSelfOpen, setRegisterSelfOpen] = useState(false);
   const [registerSelfLoading, setRegisterSelfLoading] = useState(false);
   const [orgCountry, setOrgCountry] = useState("");
+  // Session-scoped: once the admin declines (or self-registers) we stop
+  // re-prompting for the rest of this session. Resets on reload/navigation so
+  // the prompt reliably reappears (it never persisted correctly before).
+  const [registerMeDismissed, setRegisterMeDismissed] = useState(false);
+
+  // The admin may self-register at most one auditor AND one entity head from
+  // their email. Suppress Register Me only for the role of the current page —
+  // an existing auditor account must not block registering as an entity head
+  // (and vice versa).
+  const selfRegisterRole = config?.backendType === "Auditor" ? "auditor" : "entity_head";
+  const hasSelfAccountForRole = useMemo(
+    () => accounts.some((a) => a.role === selfRegisterRole),
+    [accounts, selfRegisterRole]
+  );
 
   // Pagination and search state
   const [currentPage, setCurrentPage] = useState(1);
@@ -925,18 +937,18 @@ export default function UsersClientPage() {
   }, [fetchUsers, config]);
 
   const markRegisterMeCompleted = () => {
-    if (!admin) return;
-    localStorage.setItem(REGISTERED_ME_STORAGE_KEY(admin.email, typeSlug), "true");
+    setRegisterMeDismissed(true);
   };
 
   const isRegisterMeCompleted = () => {
     if (!admin) return true;
-    return !!localStorage.getItem(REGISTERED_ME_STORAGE_KEY(admin.email, typeSlug));
+    return registerMeDismissed;
   };
 
   useEffect(() => {
     if (loading) return;
     if (isRegisterMeCompleted()) return;
+    if (hasSelfAccountForRole) return;
     const alreadyInList = admin?.email
       ? users.some((u) => u.email.toLowerCase() === admin.email.toLowerCase())
       : true;
@@ -945,7 +957,7 @@ export default function UsersClientPage() {
     if (isRegistering) {
       setRegisterSelfOpen(true);
     }
-  }, [loading, users, searchParams, admin?.email]);
+  }, [loading, users, searchParams, admin?.email, hasSelfAccountForRole]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -974,7 +986,7 @@ export default function UsersClientPage() {
     const alreadyInList = admin?.email
       ? users.some((u) => u.email.toLowerCase() === admin.email.toLowerCase())
       : true;
-    if (!alreadyInList && !isRegisterMeCompleted()) {
+    if (!alreadyInList && !isRegisterMeCompleted() && !hasSelfAccountForRole) {
       setRegisterSelfOpen(true);
       return;
     }

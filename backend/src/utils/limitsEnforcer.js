@@ -1,19 +1,21 @@
 const { db } = require('../config/db');
 const SubscriptionModel = require('../models/SubscriptionModel');
 
-const NO_SUBSCRIPTION_MSG =
-  'No active subscription found for your organization. Please activate a plan to continue.';
+// Enforcement uses the lenient limits lookup (getLimits), which falls back to
+// Basic when the organization has no currently-live subscription. This matches
+// the "downgraded to Basic limits" behaviour shown in the UI and the plan_limits
+// the frontend already enforces against. Access for expired/unpaid orgs is
+// blocked at login, so there is no need to hard-block creation here.
 
 const LimitsEnforcer = {
   /**
    * Check structure limits (Companies and Departments).
-   * @param {string} rootEntityCode 
-   * @param {string} entityType 
+   * @param {string} rootEntityCode
+   * @param {string} entityType
    * @returns {string|null} Error message if limit exceeded, else null.
    */
   async checkStructureLimits(rootEntityCode, entityType) {
-    const limits = await SubscriptionModel.getActiveLimits(rootEntityCode);
-    if (!limits) return NO_SUBSCRIPTION_MSG;
+    const limits = await SubscriptionModel.getLimits(rootEntityCode);
 
     if (entityType === 'Company') {
       const [[{ count }]] = await db.query(
@@ -22,7 +24,7 @@ const LimitsEnforcer = {
       if (count >= limits.company_level) {
         return `Plan Limit Reached: Your current plan allows a maximum of ${limits.company_level} Company entity(s).`;
       }
-    } 
+    }
     else if (entityType === 'Department') {
       const [[{ count: compDeptCount }]] = await db.query(
         'SELECT COUNT(*) as count FROM company_departments WHERE (cust_code = ? OR comp_code = ?) AND is_active = TRUE', [rootEntityCode, rootEntityCode]
@@ -39,8 +41,7 @@ const LimitsEnforcer = {
    * Check auditor limit.
    */
   async checkAuditorLimit(rootEntityCode) {
-    const limits = await SubscriptionModel.getActiveLimits(rootEntityCode);
-    if (!limits) return NO_SUBSCRIPTION_MSG;
+    const limits = await SubscriptionModel.getLimits(rootEntityCode);
     const [[{ count }]] = await db.query(
       'SELECT COUNT(*) as count FROM auditors WHERE created_by_entity_code = ? AND is_active = TRUE', [rootEntityCode]
     );
@@ -54,8 +55,7 @@ const LimitsEnforcer = {
    * Check checklist limit.
    */
   async checkChecklistLimit(rootEntityCode) {
-    const limits = await SubscriptionModel.getActiveLimits(rootEntityCode);
-    if (!limits) return NO_SUBSCRIPTION_MSG;
+    const limits = await SubscriptionModel.getLimits(rootEntityCode);
     const [[{ count }]] = await db.query(
       'SELECT COUNT(*) as count FROM checklists WHERE created_by = ? AND is_active = TRUE', [rootEntityCode]
     );
@@ -69,8 +69,7 @@ const LimitsEnforcer = {
    * Check audit limit.
    */
   async checkAuditLimit(rootEntityCode) {
-    const limits = await SubscriptionModel.getActiveLimits(rootEntityCode);
-    if (!limits) return NO_SUBSCRIPTION_MSG;
+    const limits = await SubscriptionModel.getLimits(rootEntityCode);
     const [[{ count }]] = await db.query(
       'SELECT COUNT(*) as count FROM audit_assignments WHERE created_by = ? AND is_active = TRUE',
       [rootEntityCode]

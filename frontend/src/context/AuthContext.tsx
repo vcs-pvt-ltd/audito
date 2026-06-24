@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
-import { authApi, type LoginPayload, type RegisterPayload } from "@/lib/api";
+import { authApi, type LoginPayload, type RegisterPayload, type PaymentDetails } from "@/lib/api";
 
 interface Admin {
   id: string;
@@ -70,7 +70,7 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string; subscriptionExpired?: boolean; subscription?: SubscriptionStatus }>;
+  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string; subscriptionExpired?: boolean; subscription?: SubscriptionStatus; paymentRequired?: boolean; payment?: PaymentDetails | null }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
   switchAccount: (targetRole: string, password?: string) => Promise<{ success: boolean; message?: string; needsPassword?: boolean }>;
@@ -163,13 +163,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (payload: LoginPayload) => {
       const res = await authApi.login(payload) as {
         success: boolean;
-        data?: { admin?: Admin; accounts?: AccountInfo[]; subscription?: SubscriptionStatus; subscription_expired?: boolean; tokens?: { accessToken: string; refreshToken: string } };
+        data?: { admin?: Admin; accounts?: AccountInfo[]; subscription?: SubscriptionStatus; subscription_expired?: boolean; payment_required?: boolean; payment?: PaymentDetails | null; tokens?: { accessToken: string; refreshToken: string } };
         message?: string;
       };
       // Expired plan: backend returns success with a flag (no tokens). Block the
       // sign-in so the login page shows the renew modal instead of navigating.
       if (res.success && res.data?.subscription_expired) {
-        return { success: false, message: res.message, subscriptionExpired: true, subscription: res.data.subscription };
+        return { success: false, message: res.message, subscriptionExpired: true, subscription: res.data.subscription, payment: res.data.payment ?? null };
+      }
+      // Registration payment never completed: block sign-in and send to payment.
+      if (res.success && res.data?.payment_required) {
+        return { success: false, message: res.message, paymentRequired: true, payment: res.data.payment ?? null };
       }
       if (res.success && res.data?.admin && res.data?.tokens) {
         loginPasswordRef.current = payload.password;

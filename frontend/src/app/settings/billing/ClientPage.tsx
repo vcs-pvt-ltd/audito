@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   BarChart3,
   Loader2,
@@ -14,9 +15,10 @@ import {
   ArrowRight,
   Zap,
   ShieldCheck,
+  Receipt,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { auditApi, checklistApi, usersApi, structureApi, orgTreeApi } from "@/lib/api";
+import { auditApi, checklistApi, usersApi, structureApi, orgTreeApi, paymentApi, type PaymentDetails } from "@/lib/api";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 
 const COMPARISON_ROWS = [
@@ -59,11 +61,35 @@ const PLANS = [
 ];
 
 export default function BillingPage() {
-  const { admin, accessToken, isLoading } = useAuth();
+  const { admin, accessToken, isLoading, subscription } = useAuth();
   const { toast } = useUiFeedback();
+  const router = useRouter();
   const [loadingUsage, setLoadingUsage] = useState(true);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const [stats, setStats] = useState({ audits: 0, checklists: 0, auditors: 0, departments: 0, levels: 0 });
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  const [payments, setPayments] = useState<PaymentDetails[]>([]);
+
+  const handleUpgrade = async (planName: string) => {
+    if (!accessToken) return;
+    setCheckingOut(planName);
+    try {
+      const res = await paymentApi.checkout(accessToken, {
+        plan_name: planName,
+        billing_cycle: billingCycle === "yearly" ? "Yearly" : "Monthly",
+        purpose: subscription?.is_expired ? "renewal" : "upgrade",
+      });
+      if (res.success && res.data?.payment?.payment_code) {
+        router.push(`/payment?code=${res.data.payment.payment_code}`);
+      } else {
+        toast(res.message || "Could not start checkout.", "error");
+        setCheckingOut(null);
+      }
+    } catch {
+      toast("Something went wrong starting checkout.", "error");
+      setCheckingOut(null);
+    }
+  };
 
   useEffect(() => {
     if (accessToken && admin?.role === "admin") {
@@ -86,6 +112,14 @@ export default function BillingPage() {
         .finally(() => setLoadingUsage(false));
     } else {
       setLoadingUsage(false);
+    }
+  }, [accessToken, admin]);
+
+  useEffect(() => {
+    if (accessToken && admin?.role === "admin") {
+      paymentApi.list(accessToken).then((res) => {
+        if (res.success && res.data?.payments) setPayments(res.data.payments);
+      });
     }
   }, [accessToken, admin]);
 
@@ -289,17 +323,24 @@ export default function BillingPage() {
                   </div>
 
                   <button
-                    disabled={isCurrent || isBasicYearly}
+                    disabled={isCurrent || isBasicYearly || checkingOut !== null}
+                    onClick={() => handleUpgrade(plan.name)}
                     className={`mt-auto w-full py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
                       isCurrent || isBasicYearly
                         ? "bg-white/10 text-white/40 cursor-default border border-white/10"
                         : plan.name === "Elite"
                         ? "bg-secondary-500 text-primary-950 hover:bg-secondary-400"
                         : "bg-white/10 hover:bg-white/20 text-white border border-white/10"
-                    }`}
+                    } ${checkingOut !== null && !isCurrent && !isBasicYearly ? "opacity-60 cursor-wait" : ""}`}
                   >
-                    {isCurrent ? "Current Plan" : "Upgrade"}
-                    {!isCurrent && !isBasicYearly && <ArrowRight size={14} />}
+                    {checkingOut === plan.name ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <>
+                        {isCurrent ? "Current Plan" : subscription?.is_expired ? "Renew" : "Upgrade"}
+                        {!isCurrent && !isBasicYearly && <ArrowRight size={14} />}
+                      </>
+                    )}
                   </button>
                 </div>
               );
@@ -416,6 +457,50 @@ export default function BillingPage() {
             ))}
           </div>
         </div>
+
+        {/* ── Billing History ── */}
+        {payments.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Receipt size={15} className="text-secondary-400" />
+              Billing History
+            </h2>
+            <div className="glass rounded-xl border border-white/10 overflow-hidden">
+              <div className="divide-y divide-white/[0.05]">
+                {payments.map((p) => {
+                  const dateStr = (p.paid_at || p.created_at)
+                    ? new Date((p.paid_at || p.created_at) as string).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+                    : "";
+                  const statusStyle =
+                    p.status === "paid"
+                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/20"
+                      : p.status === "pending"
+                      ? "bg-amber-500/15 text-amber-400 border-amber-500/20"
+                      : "bg-white/5 text-gray-400 border-white/10";
+                  return (
+                    <div key={p.payment_code} className="flex items-center gap-4 px-4 sm:px-5 py-3.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-white truncate">
+                          {p.invoice_number || "Pending invoice"}
+                          <span className="ml-2 text-xs text-gray-500 capitalize">{p.purpose}</span>
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {p.plan_name} · {p.billing_cycle}{dateStr ? ` · ${dateStr}` : ""}
+                        </p>
+                      </div>
+                      <span className="text-sm font-semibold text-white tabular-nums shrink-0">
+                        {(() => { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: p.currency || "USD" }).format(p.amount); } catch { return `${p.currency} ${p.amount}`; } })()}
+                      </span>
+                      <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold border capitalize ${statusStyle}`}>
+                        {p.status}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
       </main>
     </div>
