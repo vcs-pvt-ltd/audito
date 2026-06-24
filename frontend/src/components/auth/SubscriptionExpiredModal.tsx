@@ -3,20 +3,28 @@
 import { useRouter } from "next/navigation";
 import { AlertTriangle, X, ArrowRight } from "lucide-react";
 import type { SubscriptionStatus } from "@/context/AuthContext";
+import type { PaymentDetails } from "@/lib/api";
 
 /**
  * Shown on the login page when the backend blocks sign-in because the
- * organization's plan has expired. The renew CTA routes to the public
- * contact/sales section so renewal can be arranged off-platform.
+ * organization's plan has expired. When a renewal payment is available the CTA
+ * routes into the payment flow; otherwise it falls back to contact/sales.
  */
 export default function SubscriptionExpiredModal({
   subscription,
+  payment,
   onClose,
 }: {
   subscription?: SubscriptionStatus | null;
+  payment?: PaymentDetails | null;
   onClose: () => void;
 }) {
   const router = useRouter();
+
+  const renew = () => {
+    if (payment?.payment_code) router.push(`/payment?code=${payment.payment_code}`);
+    else router.push("/?section=contact");
+  };
 
   const expiredOn = subscription?.end_date
     ? new Date(subscription.end_date).toLocaleDateString(undefined, {
@@ -52,10 +60,10 @@ export default function SubscriptionExpiredModal({
         </p>
 
         <button
-          onClick={() => router.push("/?section=contact")}
+          onClick={renew}
           className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-[#059669] py-3 font-semibold text-white shadow-lg shadow-[#059669]/25 transition-all hover:bg-[#047A55]"
         >
-          Renew / Contact Sales
+          {payment?.payment_code ? "Renew Subscription" : "Renew / Contact Sales"}
           <ArrowRight size={16} />
         </button>
 

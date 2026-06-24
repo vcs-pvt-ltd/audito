@@ -39,6 +39,8 @@ const { successResponse, errorResponse, validateRequiredFields, isValidEmail } =
 const { db } = require('../config/db');
 const crypto = require('crypto');
 const { sendVerificationEmail } = require('../services/emailService');
+const PaymentModel = require('../models/PaymentModel');
+const { getOrgName } = require('../utils/orgLookup');
 const SubscriptionModel = require('../models/SubscriptionModel');
 const fs = require('fs');
 const path = require('path');
@@ -398,8 +400,12 @@ const register = async (req, res) => {
       org_level: config.org_level
     });
 
-    // Create Subscription
-    await SubscriptionModel.createSubscription(connection, orgCode, plan_name, billing_cycle || 'None');
+    // Free plans are activated immediately. Paid plans defer the subscription
+    // until payment is confirmed — until then limits fall back to Basic.
+    const planAmount = SubscriptionModel.computeAmount(plan_name, billing_cycle);
+    if (planAmount <= 0) {
+      await SubscriptionModel.createSubscription(connection, orgCode, plan_name, 'None');
+    }
 
     await connection.commit();
 
@@ -412,7 +418,30 @@ const register = async (req, res) => {
       console.error('Failed to send verification email:', err);
     });
 
-    return successResponse(res, null, 'Registration successful. Please check your email to verify your account.', 201);
+    // For a paid plan, create the pending registration payment so the client
+    // can redirect into the payment flow.
+    let payment = null;
+    if (planAmount > 0) {
+      const created = await PaymentModel.create({
+        rootEntityCode: orgCode,
+        purpose: 'registration',
+        planName: SubscriptionModel.normalizePlanName(plan_name),
+        billingCycle: billing_cycle === 'Yearly' ? 'Yearly' : 'Monthly',
+        amount: planAmount,
+        payerName: `${first_name} ${last_name}`,
+        payerEmail: email,
+        orgName: org_name,
+      });
+      payment = {
+        payment_code: created.payment_code,
+        plan_name: created.plan_name,
+        billing_cycle: created.billing_cycle,
+        amount: Number(created.amount),
+        currency: created.currency,
+      };
+    }
+
+    return successResponse(res, { payment }, 'Registration successful. Please check your email to verify your account.', 201);
 
   } catch (error) {
     await connection.rollback();
@@ -486,11 +515,64 @@ const login = async (req, res) => {
     // the client uses the flag to show a renew modal instead of signing in.
     const subscription = await resolveSubscriptionStatus(activeRole, activeRecord);
     if (subscription.is_expired) {
+      // Prepare a renewal payment so the client can route into the payment flow.
+      // Reuse an existing pending renewal to avoid spawning duplicates per attempt.
+      let payment = null;
+      const renewalAmount = SubscriptionModel.computeAmount(subscription.plan_name, subscription.billing_cycle);
+      if (renewalAmount > 0) {
+        const rootCode = getRootEntityCode(activeRole, activeRecord);
+        let pending = await PaymentModel.findPendingByOrgPurpose(rootCode, 'renewal');
+        if (!pending) {
+          const orgName = activeRole === 'admin'
+            ? await getOrgName(activeRecord.entity_type, activeRecord.entity_code)
+            : null;
+          pending = await PaymentModel.create({
+            rootEntityCode: rootCode,
+            purpose: 'renewal',
+            planName: SubscriptionModel.normalizePlanName(subscription.plan_name),
+            billingCycle: subscription.billing_cycle === 'Yearly' ? 'Yearly' : 'Monthly',
+            amount: renewalAmount,
+            payerName: `${activeRecord.first_name} ${activeRecord.last_name}`,
+            payerEmail: activeRecord.email,
+            orgName,
+          });
+        }
+        payment = {
+          payment_code: pending.payment_code,
+          plan_name: pending.plan_name,
+          billing_cycle: pending.billing_cycle,
+          amount: Number(pending.amount),
+          currency: pending.currency,
+        };
+      }
+
       return successResponse(
         res,
-        { subscription_expired: true, subscription },
+        { subscription_expired: true, subscription, payment },
         'Your subscription has expired. Please renew to continue.'
       );
+    }
+
+    // Block login if the registration payment was never completed (paid plan
+    // registered but not yet paid). Route the admin into the payment flow.
+    if (activeRole === 'admin') {
+      const pendingReg = await PaymentModel.findPendingByOrgPurpose(activeRecord.entity_code, 'registration');
+      if (pendingReg) {
+        return successResponse(
+          res,
+          {
+            payment_required: true,
+            payment: {
+              payment_code: pendingReg.payment_code,
+              plan_name: pendingReg.plan_name,
+              billing_cycle: pendingReg.billing_cycle,
+              amount: Number(pendingReg.amount),
+              currency: pendingReg.currency,
+            },
+          },
+          'Please complete your subscription payment to continue.'
+        );
+      }
     }
 
     // Generate tokens for the matched account
@@ -974,10 +1056,22 @@ const verifyEmail = async (req, res) => {
     const admin = await AdminModel.findByVerificationToken(token);
     if (admin) {
       await AdminModel.markAsVerified(admin.id);
+      // If the admin registered on a paid plan, surface the pending payment so
+      // the client can continue into the payment flow after verifying.
+      const pendingPayment = await PaymentModel.findPendingByOrgPurpose(admin.entity_code, 'registration');
       return successResponse(res, {
         email: admin.email,
         first_name: admin.first_name,
-        needs_password: false
+        needs_password: false,
+        payment: pendingPayment
+          ? {
+              payment_code: pendingPayment.payment_code,
+              plan_name: pendingPayment.plan_name,
+              billing_cycle: pendingPayment.billing_cycle,
+              amount: Number(pendingPayment.amount),
+              currency: pendingPayment.currency,
+            }
+          : null,
       }, 'Email verified successfully. You may now log in.', 200);
     }
 

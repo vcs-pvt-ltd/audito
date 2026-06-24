@@ -38,19 +38,36 @@ const PLAN_NAME_ALIASES = {
   Elite: 'Elite'
 };
 
+// Monthly list price (USD). Yearly applies a 20% discount on 12 months.
+const PLAN_PRICING = {
+  Basic: 0,
+  Pro: 99,
+  Elite: 299
+};
+
 function normalizePlanName(planName) {
   if (!planName) return 'Basic';
   const key = String(planName).trim();
   return PLAN_NAME_ALIASES[key] || 'Basic';
 }
 
+// Authoritative server-side price for a plan + billing cycle.
+function computeAmount(planName, billingCycle) {
+  const monthly = PLAN_PRICING[normalizePlanName(planName)] ?? 0;
+  if (!monthly) return 0;
+  return billingCycle === 'Yearly' ? Math.round(monthly * 12 * 0.8) : monthly;
+}
+
 const SubscriptionModel = {
   PLAN_LIMITS,
+  PLAN_PRICING,
+  normalizePlanName,
+  computeAmount,
 
-  async createSubscription(connection, rootEntityCode, planName, billingCycle) {
+  async createSubscription(connection, rootEntityCode, planName, billingCycle, isActive = true) {
     const start = new Date();
     const end = new Date();
-    
+
     if (billingCycle === 'Yearly') {
       end.setFullYear(end.getFullYear() + 1);
     } else if (billingCycle === 'Monthly') {
@@ -70,11 +87,61 @@ const SubscriptionModel = {
         allow_auditor_eval, allow_company_to_company
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        rootEntityCode, effectivePlanName, billingCycle, start, end, true,
+        rootEntityCode, effectivePlanName, billingCycle, start, end, isActive,
         limits.company_level, limits.department, limits.audits, limits.checklists, limits.auditors,
         limits.auditor_eval, limits.company_to_company
       ]
     );
+
+    return { start, end };
+  },
+
+  // Called after a successful payment. The subscriptions table has a UNIQUE key
+  // on root_entity_code (one row per org), so this upserts that row: updates the
+  // plan / billing period / limits in place if it exists, or inserts it for a
+  // paid registration where the row was deferred. Returns { start, end }.
+  async activatePaidSubscription(rootEntityCode, planName, billingCycle) {
+    const start = new Date();
+    const end = new Date();
+
+    if (billingCycle === 'Yearly') {
+      end.setFullYear(end.getFullYear() + 1);
+    } else if (billingCycle === 'Monthly') {
+      end.setMonth(end.getMonth() + 1);
+    } else {
+      end.setFullYear(end.getFullYear() + 100);
+    }
+
+    const effectivePlanName = normalizePlanName(planName);
+    const limits = PLAN_LIMITS[effectivePlanName] || PLAN_LIMITS['Basic'];
+
+    await db.query(
+      `INSERT INTO subscriptions (
+        root_entity_code, plan_name, billing_cycle, start_date, end_date, is_active,
+        max_company_levels, max_departments, max_audits, max_checklists, max_auditors,
+        allow_auditor_eval, allow_company_to_company
+      ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        plan_name = VALUES(plan_name),
+        billing_cycle = VALUES(billing_cycle),
+        start_date = VALUES(start_date),
+        end_date = VALUES(end_date),
+        is_active = 1,
+        max_company_levels = VALUES(max_company_levels),
+        max_departments = VALUES(max_departments),
+        max_audits = VALUES(max_audits),
+        max_checklists = VALUES(max_checklists),
+        max_auditors = VALUES(max_auditors),
+        allow_auditor_eval = VALUES(allow_auditor_eval),
+        allow_company_to_company = VALUES(allow_company_to_company)`,
+      [
+        rootEntityCode, effectivePlanName, billingCycle, start, end,
+        limits.company_level, limits.department, limits.audits, limits.checklists, limits.auditors,
+        limits.auditor_eval, limits.company_to_company
+      ]
+    );
+
+    return { start, end };
   },
 
   async getActivePlan(rootEntityCode) {

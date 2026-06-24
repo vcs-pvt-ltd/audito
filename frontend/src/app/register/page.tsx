@@ -450,7 +450,6 @@ function AccountTypeStep({
 
 function RegisterForm() {
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   // Steps: 1=account type+hierarchy (merged), 2=pricing, 3=org details, 4=admin
   const [step, setStep] = useState(1);
@@ -596,6 +595,8 @@ function RegisterForm() {
     setError("");
     try {
       const res = (await authApi.register(formData)) as { success: boolean; message?: string };
+      // Email verification comes first; paid plans continue to payment after
+      // the email is verified (see the verify-email page).
       if (res.success) setIsRegistered(true);
       else setError(res.message || "Registration failed.");
     } catch {

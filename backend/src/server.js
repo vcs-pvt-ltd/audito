@@ -22,6 +22,7 @@ const learningRoutes = require('./routes/learningRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const myLearningRoutes = require('./routes/myLearningRoutes');
 const landingRoutes    = require('./routes/landingRoutes');
+const paymentRoutes    = require('./routes/paymentRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -72,6 +73,7 @@ app.use('/api/learning',        learningRoutes);
 app.use('/api/dashboard',      dashboardRoutes);
 app.use('/api/my-learning',    myLearningRoutes);
 app.use('/api/landing',        landingRoutes);
+app.use('/api/payments',       paymentRoutes);
 
 // 404 handler
 app.use((req, res) => {

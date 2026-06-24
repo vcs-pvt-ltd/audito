@@ -7,7 +7,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2, CheckCircle, ArrowLeft } from "lucide-react";
 import { useAuth, type SubscriptionStatus } from "@/context/AuthContext";
-import { authApi } from "@/lib/api";
+import { type PaymentDetails } from "@/lib/api";
 import SubscriptionExpiredModal from "@/components/auth/SubscriptionExpiredModal";
 
 function LoginForm() {
@@ -21,7 +21,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
-  const [expiredModal, setExpiredModal] = useState<{ open: boolean; subscription?: SubscriptionStatus | null }>({ open: false });
+  const [expiredModal, setExpiredModal] = useState<{ open: boolean; subscription?: SubscriptionStatus | null; payment?: PaymentDetails | null }>({ open: false });
 
   useEffect(() => {
     if (searchParams.get("registered") === "true") {
@@ -45,8 +45,10 @@ function LoginForm() {
 
       if (res.success) {
         router.push("/dashboard");
+      } else if (res.paymentRequired && res.payment?.payment_code) {
+        router.push(`/payment?code=${res.payment.payment_code}`);
       } else if (res.subscriptionExpired) {
-        setExpiredModal({ open: true, subscription: res.subscription });
+        setExpiredModal({ open: true, subscription: res.subscription, payment: res.payment });
       } else {
         setError(res.message || "Login failed.");
       }
@@ -62,6 +64,7 @@ function LoginForm() {
       {expiredModal.open && (
         <SubscriptionExpiredModal
           subscription={expiredModal.subscription}
+          payment={expiredModal.payment}
           onClose={() => setExpiredModal({ open: false })}
         />
       )}
