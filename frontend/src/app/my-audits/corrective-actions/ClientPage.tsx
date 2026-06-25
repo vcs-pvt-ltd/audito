@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi, capApi } from "@/lib/api";
+import { Button, IconButton, Modal, Input } from "@/components/ui";
 import {
   AlertCircle,
   ArrowLeft,
@@ -421,7 +422,7 @@ export default function CorrectiveActionsPage() {
       setCapTitle("");
       router.push(`/my-caps/details?id=${(res.data as { cap_id: number }).cap_id}`);
     } else {
-      setError(res.message || "Failed to create CAP plan.");
+      setError(res.message || "Failed to create CAP.");
     }
   };
 
@@ -441,12 +442,9 @@ export default function CorrectiveActionsPage() {
         {/* Top bar */}
         <div className="shrink-0 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 bg-transparent/80 backdrop-blur-sm border-b border-white/[0.05]">
           <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={() => router.push(`/my-audits/details?id=${auditId}`)}
-              className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all shrink-0"
-            >
+            <IconButton bordered onClick={() => router.push(`/my-audits/details?id=${auditId}`)}>
               <ArrowLeft size={14} />
-            </button>
+            </IconButton>
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-white flex items-center gap-2">
                 <ClipboardList size={15} className="text-amber-400 shrink-0" />
@@ -463,25 +461,9 @@ export default function CorrectiveActionsPage() {
                   <CheckCircle2 size={12} /> Saved
                 </span>
               )}
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white/[0.05] border border-white/10 text-gray-200 hover:bg-white/[0.08] hover:border-white/20 transition-all disabled:opacity-50"
-              >
-                {saving
-                  ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  : <Save size={13} />}
-                <span className="hidden sm:inline">Save</span>
-              </button>
+              <Button variant="secondary" size="sm" leftIcon={<Save size={13}/>} loading={saving} onClick={handleSave}>Save</Button>
               {saved && !existingCap && (
-                <button
-                  onClick={() => { setCapTitle(audit?.title ? `CAP: ${audit.title}` : ""); setShowCreateCapModal(true); }}
-                  disabled={creatingCap}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-60"
-                >
-                  <PlusCircle size={13} />
-                  <span className="hidden sm:inline">Create CAP</span>
-                </button>
+                <Button size="sm" leftIcon={<PlusCircle size={13}/>} onClick={() => { setCapTitle(audit?.title ? `CAP: ${audit.title}` : ""); setShowCreateCapModal(true); }} disabled={creatingCap}>Create CAP</Button>
               )}
             </div>
           )}
@@ -516,20 +498,10 @@ export default function CorrectiveActionsPage() {
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-secondary-500/20 bg-secondary-500/[0.05] px-4 py-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <ClipboardList size={14} className="text-secondary-400 shrink-0" />
-                    <span className="text-sm font-semibold text-white">CAP Plan Created</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium capitalize shrink-0 ${CAP_STATUS_BADGE[existingCap.status] || "bg-gray-500/15 text-gray-400 border-gray-500/30"}`}>
-                      {existingCap.status.replace("_", " ")}
-                    </span>
-                    <span className="text-[11px] text-gray-500 shrink-0 hidden sm:inline">
-                      {existingCap.completed_questions}/{existingCap.total_questions} done
-                    </span>
+                    <span className="text-sm font-semibold text-white">CAP Created</span>
+                   
                   </div>
-                  <button
-                    onClick={() => router.push(`/my-caps/details?id=${existingCap.id}`)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shrink-0"
-                  >
-                    <ExternalLink size={11} /> View CAP
-                  </button>
+                  <Button size="sm" leftIcon={<ExternalLink size={11}/>} onClick={() => router.push(`/my-caps/details?id=${existingCap.id}`)}>View CAP</Button>
                 </div>
               )}
 
@@ -537,7 +509,7 @@ export default function CorrectiveActionsPage() {
               {!saved && items.length > 0 && (
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
                   <AlertCircle size={13} className="text-amber-400 shrink-0" />
-                  <p className="text-xs text-amber-300">Fill in due dates and save to enable CAP plan creation.</p>
+                  <p className="text-xs text-amber-300">Fill in due dates and save to enable CAP creation.</p>
                 </div>
               )}
 
@@ -566,22 +538,9 @@ export default function CorrectiveActionsPage() {
               {/* Mobile action buttons */}
               {items.length > 0 && (
                 <div className="flex gap-2 pt-2 sm:hidden pb-4">
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium bg-white/[0.05] border border-white/10 text-gray-200 disabled:opacity-50"
-                  >
-                    {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Save size={14} />}
-                    Save Actions
-                  </button>
+                  <Button variant="secondary" fullWidth leftIcon={<Save size={14}/>} loading={saving} onClick={handleSave}>Save Actions</Button>
                   {saved && !existingCap && (
-                    <button
-                      onClick={() => { setCapTitle(audit?.title ? `CAP: ${audit.title}` : ""); setShowCreateCapModal(true); }}
-                      disabled={creatingCap}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-60"
-                    >
-                      <PlusCircle size={14} /> Create CAP
-                    </button>
+                    <Button fullWidth leftIcon={<PlusCircle size={14}/>} onClick={() => { setCapTitle(audit?.title ? `CAP: ${audit.title}` : ""); setShowCreateCapModal(true); }} disabled={creatingCap}>Create CAP</Button>
                   )}
                 </div>
               )}
@@ -592,46 +551,25 @@ export default function CorrectiveActionsPage() {
 
       </div>
 
-      {/* Create CAP Modal — bottom sheet on mobile */}
-      {showCreateCapModal && (
-        <div className="fixed inset-0 z-[80] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-white/[0.12] glass shadow-2xl flex flex-col">
-            <div className="flex justify-center pt-3 pb-1 sm:hidden">
-              <div className="w-8 h-1 rounded-full bg-white/20" />
-            </div>
-            <div className="px-5 py-4 border-b border-white/[0.08]">
-              <h3 className="text-base font-semibold text-white">Create CAP Plan</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Give the CAP plan a title before creating.</p>
-            </div>
-            <div className="px-5 py-4 space-y-2">
-              <label className="text-xs text-gray-400 font-medium">CAP Title</label>
-              <input
-                value={capTitle}
-                onChange={e => setCapTitle(e.target.value)}
-                placeholder="Enter CAP title"
-                className="w-full px-3 py-2.5 rounded-lg bg-white/[0.05] border border-white/10 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all"
-              />
-            </div>
-            <div className="px-5 py-4 border-t border-white/[0.08] flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => { if (!creatingCap) setShowCreateCapModal(false); }}
-                className="px-4 py-2 rounded-lg text-xs font-medium text-gray-300 border border-white/10 hover:border-white/20 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateCap}
-                disabled={creatingCap}
-                className="px-4 py-2 rounded-lg text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-60 transition-all"
-              >
-                {creatingCap ? "Creating…" : "Create CAP"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={showCreateCapModal}
+        onClose={() => { if (!creatingCap) setShowCreateCapModal(false); }}
+        title="Create CAP"
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => { if (!creatingCap) setShowCreateCapModal(false); }}>Cancel</Button>
+            <Button loading={creatingCap} onClick={handleCreateCap}>Create CAP</Button>
+          </>
+        }
+      >
+        <Input
+          label="CAP Title"
+          value={capTitle}
+          onChange={e => setCapTitle(e.target.value)}
+          placeholder="Enter CAP title"
+        />
+      </Modal>
 
     </div>
   );

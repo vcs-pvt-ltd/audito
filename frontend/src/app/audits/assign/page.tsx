@@ -19,6 +19,7 @@ import {
   Phone,
   Eye
 } from "lucide-react";
+import { Button, IconButton, fieldClass } from "@/components/ui";
 
 interface TreeNode {
   id: number;
@@ -36,6 +37,7 @@ function AuditAssignContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const auditId = searchParams.get("id");
+  const selectClass = `${fieldClass} pl-12 pr-10 py-4 rounded-2xl hover:border-white/20 appearance-none cursor-pointer`;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -269,9 +271,9 @@ function AuditAssignContent() {
         <AlertCircle size={48} className="text-red-500 mb-4" />
         <h1 className="text-2xl font-bold text-white mb-2">Audit Not Found</h1>
         <p className="text-gray-400 mb-8">The audit assignment you are looking for does not exist or was deleted.</p>
-        <button onClick={() => router.push("/audits")} className="px-6 py-3 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-all">
+        <Button onClick={() => router.push("/audits")} variant="secondary" className="px-6 py-3 rounded-xl">
           Back to Audits
-        </button>
+        </Button>
       </div>
     );
   }
@@ -281,12 +283,15 @@ function AuditAssignContent() {
       <main className="max-w-6xl mx-auto px-6 py-12">
         {/* Header Action */}
         <div className="mb-10 flex items-center justify-between">
-          <button
+          <IconButton
             onClick={() => router.back()}
-            className="flex items-center gap-2 text-gray-400 hover:text-white transition-all bg-white/5 px-4 py-2 rounded-xl border border-white/10 hover:border-white/20 group"
+            bordered
+            size="md"
+            className="bg-white/5 px-4 py-2 rounded-xl group"
+            title="Back"
           >
             <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
-          </button>
+          </IconButton>
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary-500/10 border border-secondary-500/20">
             <div className="w-2 h-2 rounded-full bg-secondary-500 animate-pulse" />
@@ -322,7 +327,7 @@ function AuditAssignContent() {
                           setSelDeptId("");
                           setSelAuditorCode("");
                         }}
-                        className="w-full pl-12 pr-10 py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-secondary-500/50 hover:border-white/20 transition-all appearance-none cursor-pointer"
+                        className={selectClass}
                       >
                         <option value="" className="bg-[#0c2218]">All Branches</option>
                         {branches.map(b => (
@@ -343,7 +348,7 @@ function AuditAssignContent() {
                           setSelDeptId(e.target.value ? Number(e.target.value) : "");
                           setSelAuditorCode("");
                         }}
-                        className="w-full pl-12 pr-10 py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-secondary-500/50 hover:border-white/20 transition-all appearance-none disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        className={`${selectClass} disabled:opacity-30 disabled:cursor-not-allowed`}
                       >
                         <option value="" className="bg-[#0c2218]">{!selBranchId ? "Select branch first" : "All Departments"}</option>
                         {departments.map(d => (
@@ -418,26 +423,22 @@ function AuditAssignContent() {
 
               {/* Action Bar */}
               <div className="px-8 py-6 bg-black/20 border-t border-white/10 flex items-center justify-end gap-4 mt-auto">
-                <button
+                <Button
                   onClick={() => router.back()}
-                  className="px-6 py-3 rounded-2xl font-bold text-gray-400 hover:text-white transition-all text-sm"
+                  variant="ghost"
+                  className="px-6 py-3 rounded-2xl font-bold"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={handleSave}
                   disabled={saving || !selAuditorCode}
-                  className="px-8 py-3.5 rounded-2xl font-bold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-30 disabled:grayscale transition-all flex items-center justify-center gap-2 shadow-lg shadow-secondary-500/20 active:scale-95"
+                  loading={saving}
+                  leftIcon={<UserPlus size={18} strokeWidth={2.5} />}
+                  className="px-8 py-3.5 rounded-2xl font-bold disabled:grayscale shadow-lg shadow-secondary-500/20 active:scale-95"
                 >
-                  {saving ? (
-                    <div className="w-5 h-5 border-2 border-primary-950 border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <UserPlus size={18} strokeWidth={2.5} />
-                      <span>{audit.assigned_auditor_code ? "Update Assignment" : "Finalize Assignment"}</span>
-                    </>
-                  )}
-                </button>
+                  {audit.assigned_auditor_code ? "Update Assignment" : "Finalize Assignment"}
+                </Button>
               </div>
             </div>
           </div>
@@ -453,14 +454,16 @@ function AuditAssignContent() {
                   <ClipboardList size={18} className="text-secondary-400" />
                   Audit Summary
                 </h2>
-                <button
+                <Button
                   onClick={() => router.push(`/audits/details?id=${auditId}`)}
-                  className="p-2 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:border-white/20 transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Eye size={14} />}
+                  className="rounded-xl bg-white/5 text-[10px] font-bold uppercase tracking-widest"
                   title="View Audit Details"
                 >
-                  <Eye size={14} />
                   <span>Preview</span>
-                </button>
+                </Button>
               </div>
 
               <div className="space-y-6">

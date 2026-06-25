@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Search,
 } from "lucide-react";
+import { Button, IconButton, Modal, Input } from "@/components/ui";
 
 interface TreeNode {
   entity_type: string;
@@ -413,7 +414,7 @@ export default function CapCorrectiveActionsPage() {
       setSubCapTitle("");
       router.push(`/my-caps/details?id=${(res.data as { cap_id: number }).cap_id}`);
     } else {
-      setError(res.message || "Failed to create Sub-CAP plan.");
+      setError(res.message || "Failed to create Sub-CAP.");
     }
   };
 
@@ -433,12 +434,9 @@ export default function CapCorrectiveActionsPage() {
         {/* Top bar */}
         <div className="shrink-0 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 bg-transparent/80 backdrop-blur-sm border-b border-white/[0.05]">
           <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={() => router.push(`/my-caps/details?id=${capId}`)}
-              className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all shrink-0"
-            >
+            <IconButton bordered onClick={() => router.push(`/my-caps/details?id=${capId}`)}>
               <ArrowLeft size={14} />
-            </button>
+            </IconButton>
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-white flex items-center gap-2">
                 <ClipboardList size={15} className="text-orange-400 shrink-0" />
@@ -455,25 +453,25 @@ export default function CapCorrectiveActionsPage() {
                   <CheckCircle2 size={12} /> Saved
                 </span>
               )}
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white/[0.05] border border-white/10 text-gray-200 hover:bg-white/[0.08] hover:border-white/20 transition-all disabled:opacity-50"
+                loading={saving}
+                leftIcon={<Save size={13} />}
               >
-                {saving
-                  ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  : <Save size={13} />}
                 <span className="hidden sm:inline">Save</span>
-              </button>
+              </Button>
               {saved && !existingSubCap && (
-                <button
+                <Button
+                  size="sm"
                   onClick={() => { setSubCapTitle(cap?.title ? `Sub-CAP: ${cap.title}` : ""); setShowCreateSubCapModal(true); }}
                   disabled={creatingSubCap}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-60"
+                  leftIcon={<PlusCircle size={13} />}
                 >
-                  <PlusCircle size={13} />
                   <span className="hidden sm:inline">Create Sub-CAP</span>
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -508,20 +506,17 @@ export default function CapCorrectiveActionsPage() {
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-secondary-500/20 bg-secondary-500/[0.05] px-4 py-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <ClipboardList size={14} className="text-secondary-400 shrink-0" />
-                    <span className="text-sm font-semibold text-white">Sub-CAP Plan Created</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium capitalize shrink-0 ${SUB_CAP_STATUS_BADGE[existingSubCap.status] || "bg-gray-500/15 text-gray-400 border-gray-500/30"}`}>
-                      {existingSubCap.status.replace("_", " ")}
-                    </span>
-                    <span className="text-[11px] text-gray-500 shrink-0 hidden sm:inline">
-                      {existingSubCap.completed_questions}/{existingSubCap.total_questions} done
-                    </span>
+                    <span className="text-sm font-semibold text-white">Sub-CAP Created</span>
+                    
                   </div>
-                  <button
+                  <Button
+                    size="sm"
                     onClick={() => router.push(`/my-caps/details?id=${existingSubCap.id}`)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shrink-0"
+                    leftIcon={<ExternalLink size={11} />}
+                    className="shrink-0"
                   >
-                    <ExternalLink size={11} /> View Sub-CAP
-                  </button>
+                    View Sub-CAP
+                  </Button>
                 </div>
               )}
 
@@ -529,7 +524,7 @@ export default function CapCorrectiveActionsPage() {
               {!saved && items.length > 0 && (
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-orange-500/10 border border-orange-500/20">
                   <AlertCircle size={13} className="text-orange-400 shrink-0" />
-                  <p className="text-xs text-orange-300">Fill in due dates and save to enable Sub-CAP plan creation.</p>
+                  <p className="text-xs text-orange-300">Fill in due dates and save to enable Sub-CAP creation.</p>
                 </div>
               )}
 
@@ -558,22 +553,25 @@ export default function CapCorrectiveActionsPage() {
               {/* Mobile action buttons */}
               {items.length > 0 && (
                 <div className="flex gap-2 pt-2 sm:hidden pb-4">
-                  <button
+                  <Button
+                    variant="secondary"
+                    fullWidth
                     onClick={handleSave}
                     disabled={saving}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium bg-white/[0.05] border border-white/10 text-gray-200 disabled:opacity-50"
+                    loading={saving}
+                    leftIcon={<Save size={14} />}
                   >
-                    {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Save size={14} />}
                     Save Actions
-                  </button>
+                  </Button>
                   {saved && !existingSubCap && (
-                    <button
+                    <Button
+                      fullWidth
                       onClick={() => { setSubCapTitle(cap?.title ? `Sub-CAP: ${cap.title}` : ""); setShowCreateSubCapModal(true); }}
                       disabled={creatingSubCap}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-60"
+                      leftIcon={<PlusCircle size={14} />}
                     >
-                      <PlusCircle size={14} /> Create Sub-CAP
-                    </button>
+                      Create Sub-CAP
+                    </Button>
                   )}
                 </div>
               )}
@@ -584,46 +582,30 @@ export default function CapCorrectiveActionsPage() {
 
       </div>
 
-      {/* Create Sub-CAP Modal — bottom sheet on mobile */}
-      {showCreateSubCapModal && (
-        <div className="fixed inset-0 z-[80] flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-white/[0.12] glass shadow-2xl flex flex-col">
-            <div className="flex justify-center pt-3 pb-1 sm:hidden">
-              <div className="w-8 h-1 rounded-full bg-white/20" />
-            </div>
-            <div className="px-5 py-4 border-b border-white/[0.08]">
-              <h3 className="text-base font-semibold text-white">Create Sub-CAP Plan</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Give the Sub-CAP plan a title before creating.</p>
-            </div>
-            <div className="px-5 py-4 space-y-2">
-              <label className="text-xs text-gray-400 font-medium">Sub-CAP Title</label>
-              <input
-                value={subCapTitle}
-                onChange={e => setSubCapTitle(e.target.value)}
-                placeholder="Enter Sub-CAP title"
-                className="w-full px-3 py-2.5 rounded-lg bg-white/[0.05] border border-white/10 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all"
-              />
-            </div>
-            <div className="px-5 py-4 border-t border-white/[0.08] flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => { if (!creatingSubCap) setShowCreateSubCapModal(false); }}
-                className="px-4 py-2 rounded-lg text-xs font-medium text-gray-300 border border-white/10 hover:border-white/20 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateSubCap}
-                disabled={creatingSubCap}
-                className="px-4 py-2 rounded-lg text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-60 transition-all"
-              >
-                {creatingSubCap ? "Creating…" : "Create Sub-CAP"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={showCreateSubCapModal}
+        onClose={() => { if (!creatingSubCap) setShowCreateSubCapModal(false); }}
+        title="Create Sub-CAP"
+        description="Give the Sub-CAP a title before creating."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" fullWidth onClick={() => { if (!creatingSubCap) setShowCreateSubCapModal(false); }}>
+              Cancel
+            </Button>
+            <Button fullWidth onClick={handleCreateSubCap} disabled={creatingSubCap} loading={creatingSubCap}>
+              {creatingSubCap ? "Creating…" : "Create Sub-CAP"}
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Sub-CAP Title"
+          value={subCapTitle}
+          onChange={e => setSubCapTitle(e.target.value)}
+          placeholder="Enter Sub-CAP title"
+        />
+      </Modal>
 
     </div>
   );

@@ -10,6 +10,7 @@ import {
   ChevronDown, ChevronRight, TrendingUp, AlertTriangle, FileText,
   Video, Music, Paperclip, HelpCircle,
 } from "lucide-react";
+import { IconButton } from "@/components/ui";
 import { CapPdfRenderer } from "@/components/cap/CapPdfRenderer";
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -421,12 +422,9 @@ export default function MyCapReportPage() {
           {/* ── Header ── */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => router.push(`/my-caps/details?id=${capId}`)}
-                className="p-2 rounded-xl text-gray-400 hover:text-white border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all shrink-0"
-              >
+              <IconButton bordered onClick={() => router.push(`/my-caps/details?id=${capId}`)}>
                 <ArrowLeft size={16} />
-              </button>
+              </IconButton>
               <div>
                 <h1 className="text-xl font-bold text-white flex items-center gap-2">
                   <BarChart3 size={18} className="text-secondary-400" />

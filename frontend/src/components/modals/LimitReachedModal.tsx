@@ -3,6 +3,7 @@
 import React from "react";
 import { X, ShieldAlert, ArrowUpCircle, Crown } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { Button, IconButton } from "@/components/ui";
 
 interface LimitReachedModalProps {
   isOpen: boolean;
@@ -40,12 +41,9 @@ export default function LimitReachedModal({
               <p className="text-xs text-red-400/80 font-medium uppercase tracking-wider">Plan Limit Reached</p>
             </div>
           </div>
-          <button 
-            onClick={onClose} 
-            className="text-gray-400 hover:text-white transition-colors p-1"
-          >
+          <IconButton onClick={onClose} title="Close">
             <X size={20} />
-          </button>
+          </IconButton>
         </div>
 
         {/* Content */}
@@ -74,22 +72,17 @@ export default function LimitReachedModal({
 
         {/* Footer */}
         <div className="px-6 pb-6 pt-2 flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2.5 rounded-lg text-sm text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all font-medium"
-          >
-            Dismiss
-          </button>
-          <button
+          <Button variant="secondary" fullWidth onClick={onClose}>Dismiss</Button>
+          <Button
+            fullWidth
+            leftIcon={<Crown size={16} />}
             onClick={() => {
               onClose();
               router.push("/settings/billing");
             }}
-            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20 flex items-center justify-center gap-2"
           >
-            <Crown size={16} />
             Upgrade Plan
-          </button>
+          </Button>
         </div>
       </div>
     </div>

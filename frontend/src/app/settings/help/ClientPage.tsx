@@ -262,7 +262,7 @@ export default function HelpPage() {
   if (!admin || !guide) return null;
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl w-full mx-auto space-y-6">
+    <div className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto max-w-6xl w-full mx-auto space-y-6">
 
       {/* Header */}
       <div>

@@ -6,6 +6,8 @@ import { useAuth } from "@/context/AuthContext";
 import { myLearningApi } from "@/lib/api";
 import { ArrowRight, Check, ExternalLink, RefreshCw, Search, Play } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Button, IconButton, Table, THead, Th } from "@/components/ui";
 
 interface MyTraining {
   assignment_id: number;
@@ -102,12 +104,9 @@ export default function MyTrainingsPage() {
             <p className="text-xs text-gray-500 mt-0.5">Watch videos and complete your assigned trainings</p>
           </div>
         </div>
-        <button
-          onClick={load}
-          className="p-2 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-all shadow-sm active:scale-95"
-        >
+        <IconButton bordered size="md" onClick={load} title="Refresh" className="bg-white/5">
           <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-        </button>
+        </IconButton>
       </div>
 
       {/* Search Bar */}
@@ -130,10 +129,11 @@ export default function MyTrainingsPage() {
           <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : items.length === 0 ? (
-        <div className="glass rounded-2xl p-12 text-center border border-white/5">
-          <Check size={40} className="mx-auto text-gray-600 mb-4 opacity-20" />
-          <p className="text-gray-400 font-medium">No trainings assigned.</p>
-        </div>
+        <EmptyState
+          icon={Play}
+          title="No trainings assigned"
+          message="Trainings assigned to you will appear here once your organization adds them."
+        />
       ) : filtered.length === 0 ? (
         <div className="glass rounded-xl p-16 text-center">
           <Play size={36} className="text-gray-600 mx-auto mb-4" />
@@ -143,17 +143,15 @@ export default function MyTrainingsPage() {
       ) : (
         <div className="space-y-4">
           {/* Desktop Table */}
-          <div className="hidden lg:block glass rounded-2xl border border-white/5 overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-white/[0.02] border-b border-white/5">
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500">Training Title</th>
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500">Platform</th>
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500 text-center">Status</th>
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500">Link</th>
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500 text-right">Action</th>
-                </tr>
-              </thead>
+          <div className="hidden lg:block">
+            <Table className="text-left">
+              <THead>
+                <Th>Training Title</Th>
+                <Th>Platform</Th>
+                <Th align="center">Status</Th>
+                <Th>Link</Th>
+                <Th align="right">Action</Th>
+              </THead>
               <tbody className="divide-y divide-white/5">
                 {paginated.map((t) => (
                   <tr key={t.assignment_id} className="hover:bg-white/[0.01] transition-colors group">
@@ -183,7 +181,9 @@ export default function MyTrainingsPage() {
                       </a>
                     </td>
                     <td className="px-6 py-5 text-right">
-                      <button
+                      <Button
+                        size="sm"
+                        rightIcon={<Check size={14} strokeWidth={3} />}
                         onClick={async () => {
                           if (!accessToken) return;
                           setCompleting((p) => ({ ...p, [t.assignment_id]: true }));
@@ -195,15 +195,14 @@ export default function MyTrainingsPage() {
                           }
                         }}
                         disabled={t.status === "completed" || !!completing[t.assignment_id]}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black tracking-wider bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-lg active:translate-y-0.5"
                       >
-                        {t.status === "completed" ? "Done" : (completing[t.assignment_id] ? "Completing..." : "Mark Done")} <Check size={14} strokeWidth={3} />
-                      </button>
+                        {t.status === "completed" ? "Done" : (completing[t.assignment_id] ? "Completing..." : "Mark Done")}
+                      </Button>
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </div>
 
           {/* Mobile Cards */}
@@ -234,7 +233,9 @@ export default function MyTrainingsPage() {
                   </a>
                 </div>
 
-                <button
+                <Button
+                  fullWidth
+                  rightIcon={<Check size={16} strokeWidth={3} />}
                   onClick={async () => {
                     if (!accessToken) return;
                     setCompleting((p) => ({ ...p, [t.assignment_id]: true }));
@@ -246,10 +247,9 @@ export default function MyTrainingsPage() {
                     }
                   }}
                   disabled={t.status === "completed" || !!completing[t.assignment_id]}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-secondary-500 text-primary-950 font-black text-xs tracking-wider shadow-xl shadow-secondary-500/20 active:translate-y-0.5 disabled:opacity-30"
                 >
-                  {t.status === "completed" ? "Training Completed" : (completing[t.assignment_id] ? "Completing..." : "Mark as Completed")} <Check size={16} strokeWidth={3} />
-                </button>
+                  {t.status === "completed" ? "Training Completed" : (completing[t.assignment_id] ? "Completing..." : "Mark as Completed")}
+                </Button>
               </div>
             ))}
           </div>

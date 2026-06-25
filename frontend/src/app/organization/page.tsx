@@ -22,6 +22,7 @@ import {
   TreePine,
 } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
+import { Button, IconButton } from "@/components/ui";
 
 // ─── Config ──────────────────────────────────────────────────────
 
@@ -286,7 +287,6 @@ function AddEntityPanel({
                   </span>
                   <Building2 size={12} className="text-gray-500 flex-shrink-0" />
                   <span className="text-xs text-white truncate">{entity.name}</span>
-                  <span className="text-[10px] text-gray-500 font-mono flex-shrink-0">{entity.code}</span>
                 </button>
                 <button type="button" onClick={() => handleAddOne(entity)}
                   className="text-[10px] text-secondary-400 opacity-0 group-hover/add:opacity-100 flex-shrink-0 ml-2"
@@ -952,33 +952,26 @@ export default function OrganizationPage() {
          
           
           <div className="flex items-center gap-2">
-            <button onClick={expandAll} disabled={!tree}
-              className="px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all bg-white/5 disabled:opacity-30">
+            <Button variant="secondary" size="sm" onClick={expandAll} disabled={!tree}>
               Expand
-            </button>
-            <button onClick={collapseAll}
-              className="px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all bg-white/5">
+            </Button>
+            <Button variant="secondary" size="sm" onClick={collapseAll}>
               Collapse
-            </button>
+            </Button>
             <div className="w-px h-6 bg-white/10 mx-2" />
-            <button onClick={handleRefresh}
-              className="p-2.5 rounded-xl text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all bg-white/5"
-              title="Refresh Tree">
+            <IconButton bordered onClick={handleRefresh} title="Refresh Tree">
               <RefreshCw size={16} />
-            </button>
-            <button
+            </IconButton>
+            <Button
               onClick={handleSaveTree}
               disabled={!hasChanges || isSaving}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-secondary-500 text-primary-950 hover:bg-secondary-400 shadow-lg shadow-secondary-500/10 transition-all active:scale-95 disabled:opacity-20 ml-2"
+              loading={isSaving}
+              leftIcon={isSaving ? undefined : <Save size={18} />}
+              className="ml-2"
             >
-              {isSaving ? (
-                <RefreshCw size={18} className="animate-spin" />
-              ) : (
-                <Save size={18} />
-              )}
               <span className="hidden sm:inline">{isSaving ? "Saving..." : "Save Structure"}</span>
               <span className="sm:hidden">{isSaving ? "Saving..." : "Save"}</span>
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -1036,20 +1029,12 @@ export default function OrganizationPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={handleDiscard} disabled={isSaving}
-              className="px-2 sm:px-4 py-2 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
-              <Ban size={14} />
+            <Button variant="ghost" size="sm" onClick={handleDiscard} disabled={isSaving} leftIcon={<Ban size={14} />}>
               <span className="hidden sm:inline">Discard</span>
-            </button>
-            <button onClick={handleSaveTree} disabled={isSaving}
-              className="px-5 py-2 text-xs font-semibold text-primary-950 bg-secondary-400 hover:bg-secondary-300 rounded-lg shadow-lg shadow-secondary-500/20 transition-all flex items-center gap-2 hover:scale-105 disabled:opacity-70 disabled:hover:scale-100">
-              {isSaving ? (
-                <div className="w-3.5 h-3.5 border-2 border-primary-900 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <Save size={14} />
-              )}
+            </Button>
+            <Button size="sm" onClick={handleSaveTree} disabled={isSaving} loading={isSaving} leftIcon={isSaving ? undefined : <Save size={14} />}>
               {isSaving ? "Synchronizing..." : "Save Structure"}
-            </button>
+            </Button>
           </div>
         </div>
       )}

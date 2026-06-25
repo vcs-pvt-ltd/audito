@@ -21,6 +21,7 @@ import {
   Send,
   BookOpen,
 } from "lucide-react";
+import { Button, IconButton, Modal, Input, Textarea, Table, THead, Th, TBody, Tr, Td } from "@/components/ui";
 
 interface AuditorOption {
   id: number;
@@ -70,8 +71,6 @@ function AddNoticeModal({
     }
   }, [open]);
 
-  if (!open) return null;
-
   const filteredAuditors = auditors.filter(auditor =>
     auditor.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     auditor.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -83,120 +82,105 @@ function AddNoticeModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full max-w-2xl glass border border-white/10 rounded-2xl p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Bell size={20} className="text-secondary-400" />
-            <h2 className="text-lg font-semibold text-white">Create New Notice</h2>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="space-y-5">
-           <div>
-              <label className="block text-xs text-gray-400 mb-2 font-medium">Notice Title <span className="text-secondary-400">*</span></label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-secondary-500/50 outline-none transition-all font-sans"
-                placeholder="Announcement Title"
-              />
-           </div>
-
-           <div>
-              <label className="block text-xs text-gray-400 mb-2 font-medium">Message <span className="text-secondary-400">*</span></label>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={4}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-secondary-500/50 outline-none transition-all font-sans resize-none"
-                placeholder="Describe the notice context..."
-              />
-           </div>
-
-           <div className="grid grid-cols-2 gap-4">
-              <div>
-                 <label className="block text-xs text-gray-400 mb-2 font-medium">Release Date</label>
-                 <input
-                   type="date"
-                   value={noticeDate}
-                   onChange={(e) => setNoticeDate(e.target.value)}
-                   className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-secondary-500/50 outline-none transition-all font-mono"
-                 />
-              </div>
-              <div className="flex flex-col justify-end">
-                 <label className="flex items-center gap-2 p-3.5 rounded-xl border border-white/5 bg-white/5 cursor-pointer hover:bg-white/10 transition-all select-none">
-                    <input
-                      type="checkbox"
-                      checked={assignToAll}
-                      onChange={(e) => setAssignToAll(e.target.checked)}
-                      className="w-4 h-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0"
-                    />
-                    <span className="text-xs font-medium text-gray-400">Assign to all auditors</span>
-                 </label>
-              </div>
-           </div>
-
-           {!assignToAll && (
-              <div className="space-y-3">
-                 <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Search auditors..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white outline-none"
-                    />
-                    <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
-                 </div>
-
-                 <div className="max-h-48 overflow-y-auto space-y-1 rounded-xl border border-white/5 bg-white/5 p-2 pr-1">
-                    {filteredAuditors.map(a => (
-                       <label key={a.user_code} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-transparent hover:border-white/10 hover:bg-white/5 cursor-pointer transition-all group">
-                          <div className="min-w-0">
-                             <p className="text-xs font-medium text-white group-hover:text-secondary-400 transition-colors">{a.first_name} {a.last_name}</p>
-                             <p className="text-[9px] text-gray-500 truncate">{a.email}</p>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={selectedAuditors.includes(a.user_code)}
-                            onChange={() => toggleAuditor(a.user_code)}
-                            className="w-4 h-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0"
-                          />
-                       </label>
-                    ))}
-                    {filteredAuditors.length === 0 && <p className="text-xs text-gray-500 text-center py-4">No matches found</p>}
-                 </div>
-              </div>
-           )}
-        </div>
-
-        <div className="mt-8 flex items-center justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-all"
-          >
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Create New Notice"
+      icon={<Bell size={20} className="text-secondary-400" />}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" fullWidth onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            fullWidth
             disabled={saving || !title.trim() || !message.trim() || (!assignToAll && selectedAuditors.length === 0)}
+            loading={saving}
             onClick={async () => {
               setSaving(true);
               await onSave({ title, message, notice_date: noticeDate, assign_to_all: assignToAll, auditor_codes: selectedAuditors });
               setSaving(false);
               onClose();
             }}
-            className="px-6 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all shadow-lg shadow-secondary-500/10"
           >
             {saving ? "Publishing..." : "Publish Notice"}
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        <Input
+          label="Notice Title"
+          required
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Announcement Title"
+        />
+
+        <Textarea
+          label="Message"
+          required
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          rows={4}
+          placeholder="Describe the notice context..."
+        />
+
+        <div className="grid grid-cols-2 gap-4">
+          <Input
+            type="date"
+            label="Release Date"
+            value={noticeDate}
+            onChange={(e) => setNoticeDate(e.target.value)}
+          />
+          <div className="flex flex-col justify-end">
+            <label className="flex items-center gap-2 p-3.5 rounded-xl border border-white/5 bg-white/5 cursor-pointer hover:bg-white/10 transition-all select-none">
+              <input
+                type="checkbox"
+                checked={assignToAll}
+                onChange={(e) => setAssignToAll(e.target.checked)}
+                className="w-4 h-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0"
+              />
+              <span className="text-xs font-medium text-gray-400">Assign to all auditors</span>
+            </label>
+          </div>
         </div>
+
+        {!assignToAll && (
+          <div className="space-y-3">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search auditors..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white outline-none"
+              />
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
+            </div>
+
+            <div className="max-h-48 overflow-y-auto space-y-1 rounded-xl border border-white/5 bg-white/5 p-2 pr-1">
+              {filteredAuditors.map(a => (
+                <label key={a.user_code} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-transparent hover:border-white/10 hover:bg-white/5 cursor-pointer transition-all group">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-white group-hover:text-secondary-400 transition-colors">{a.first_name} {a.last_name}</p>
+                    <p className="text-[9px] text-gray-500 truncate">{a.email}</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={selectedAuditors.includes(a.user_code)}
+                    onChange={() => toggleAuditor(a.user_code)}
+                    className="w-4 h-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0"
+                  />
+                </label>
+              ))}
+              {filteredAuditors.length === 0 && <p className="text-xs text-gray-500 text-center py-4">No matches found</p>}
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -211,76 +195,56 @@ function ViewNoticeAssignmentsModal({
   notice: NoticeItem | null;
   allAuditors: AuditorOption[];
 }) {
-  if (!open || !notice) return null;
+  if (!notice) return null;
 
-  const assigned = notice.assign_to_all 
-    ? allAuditors 
+  const assigned = notice.assign_to_all
+    ? allAuditors
     : allAuditors.filter(a => notice.assigned_auditor_codes.includes(a.user_code));
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full max-w-3xl glass border border-white/10 rounded-2xl p-6 shadow-2xl shadow-secondary-500/5">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-secondary-500/10 flex items-center justify-center border border-secondary-500/20">
-              <Users size={20} className="text-secondary-400" />
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Active Recipients"
+      description={notice.title}
+      icon={<Users size={20} className="text-secondary-400" />}
+      size="lg"
+      
+    >
+      <div className="overflow-hidden border border-white/5 rounded-xl">
+        <div className="max-h-[50vh] overflow-auto">
+          {assigned.length === 0 ? (
+            <div className="py-16 text-center">
+              <Mail size={40} className="mx-auto text-gray-700 opacity-20 mb-3" />
+              <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">No auditors assigned</p>
             </div>
-            <div>
-              <h2 className="text-white font-bold uppercase tracking-tight">Active Recipients</h2>
-              <p className="text-[10px] text-gray-500 mt-0.5 font-bold uppercase tracking-widest">{notice.title}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="overflow-hidden border border-white/5 rounded-xl">
-          <div className="max-h-[50vh] overflow-auto">
-            {assigned.length === 0 ? (
-              <div className="py-16 text-center">
-                 <Mail size={40} className="mx-auto text-gray-700 opacity-20 mb-3" />
-                 <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">No auditors assigned</p>
-              </div>
-            ) : (
-              <table className="w-full text-sm text-left">
-                <thead className="bg-white/[0.03] sticky top-0 z-10 font-mono italic">
-                  <tr className="border-b border-white/10 text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                    <th className="px-5 py-3 w-12 text-center">#</th>
-                    <th className="px-5 py-3">Auditor Detail</th>
-                    <th className="px-5 py-3 text-right">Identifier</th>
+          ) : (
+            <table className="w-full text-sm text-left">
+              <thead className="bg-white/[0.03] sticky top-0 z-10">
+                <tr className="border-b border-white/10 text-[10px] text-gray-500 font-bold">
+                  <th className="px-5 py-3 w-12 text-center">#</th>
+                  <th className="px-5 py-3">Auditor Detail</th>
+                  <th className="px-5 py-3 text-right">Identifier</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {assigned.map((a, idx) => (
+                  <tr key={a.user_code} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-5 py-4 text-gray-600 text-center">{idx + 1}</td>
+                    <td className="px-5 py-4">
+                      <p className="text-white font-bold text-xs">{a.first_name} {a.last_name}</p>
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <span className="text-[10px] font-black text-secondary-500/60">{a.email}</span>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.04]">
-                  {assigned.map((a, idx) => (
-                    <tr key={a.user_code} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-5 py-4 text-gray-600 font-mono text-center">{idx + 1}</td>
-                      <td className="px-5 py-4">
-                        <p className="text-white font-bold text-xs uppercase tracking-tight">{a.first_name} {a.last_name}</p>
-                        <p className="text-[10px] text-gray-500 font-mono italic mt-0.5">{a.email}</p>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <span className="text-[10px] font-black text-secondary-500/60 font-mono tracking-tighter">{a.user_code}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-6 flex justify-end">
-           <button
-            onClick={onClose}
-            className="px-8 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 transition-all font-mono"
-          >
-            Collapse
-          </button>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -370,21 +334,13 @@ export default function SettingsNoticesPage() {
           <p className="hidden sm:block text-sm text-gray-400 mt-2">Broadcast announcements and updates to auditors</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={fetchData}
-            className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-            title="Refresh"
-          >
+          <IconButton bordered onClick={fetchData} title="Refresh">
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          </button>
-          <button
-            onClick={() => setAddOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10"
-          >
-            <Plus size={16} />
+          </IconButton>
+          <Button onClick={() => setAddOpen(true)} leftIcon={<Plus size={16} />}>
             <span className="hidden sm:block">Publish Notice</span>
             <span className="sm:hidden">New</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -401,68 +357,59 @@ export default function SettingsNoticesPage() {
             </div>
             <p className="text-white font-semibold text-lg mb-2">No Active Notices</p>
             <p className="text-gray-400 text-sm max-w-sm mx-auto mb-6">Create and send announcements to your auditors.</p>
-             <button
-              onClick={() => setAddOpen(true)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
-            >
-              <Plus size={16} />
+             <Button onClick={() => setAddOpen(true)} leftIcon={<Plus size={16} />}>
               Create Notice
-            </button>
+            </Button>
           </div>
         ) : (
           <>
             {/* Desktop Table View */}
-            <div className="glass rounded-xl overflow-hidden hidden md:block border border-white/10 shadow-2xl">
-              <table className="w-full text-left font-sans text-sm">
-                <thead className="bg-white/[0.03]">
-                  <tr className="border-b border-white/10 text-gray-400 font-medium text-xs">
-                    <th className="px-5 py-4 w-12 text-center">#</th>
-                    <th className="px-5 py-4">Title</th>
-                    <th className="px-5 py-4 text-center">Scope</th>
-                    <th className="px-5 py-4 text-center">Released</th>
-                    <th className="px-5 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.06]">
-                  {notices.map((n, idx) => (
-                    <tr key={n.id} className="hover:bg-white/[0.02] transition-colors group">
-                      <td className="px-5 py-5 text-gray-600 text-center font-mono text-[11px]">{n.id}</td>
-                      <td className="px-5 py-5">
+            <div className="hidden md:block">
+              <Table>
+                <THead>
+                  <Th align="center" className="w-12">#</Th>
+                  <Th>Title</Th>
+                  <Th align="center">Scope</Th>
+                  <Th align="center">Released</Th>
+                  <Th align="right">Actions</Th>
+                </THead>
+                <TBody>
+                  {notices.map((n) => (
+                    <Tr key={n.id} className="group">
+                      <Td align="center" className="text-gray-600 font-mono text-[11px]">{n.id}</Td>
+                      <Td>
                         <div className="min-w-[250px]">
-                           <h3 className="text-sm font-semibold text-white group-hover:text-secondary-400 transition-colors">{n.title}</h3>
-                           <p className="text-xs text-gray-400 line-clamp-1 mt-0.5 leading-relaxed">{n.message}</p>
+                          <h3 className="text-sm font-semibold text-white group-hover:text-secondary-400 transition-colors">{n.title}</h3>
+                          <p className="text-xs text-gray-400 line-clamp-1 mt-0.5 leading-relaxed">{n.message}</p>
                         </div>
-                      </td>
-                      <td className="px-5 py-5 text-center">
-                         {n.assign_to_all ? (
-                            <span className="text-xs font-medium text-indigo-300 px-2.5 py-1 rounded bg-indigo-500/10 border border-indigo-500/20">All Auditors</span>
-                         ) : (
-                            <span className="text-xs font-medium text-amber-300 px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/20">Selective</span>
-                         )}
-                      </td>
-                      <td className="px-5 py-5 text-center">
-                         <span className="text-xs text-gray-400">{new Date(n.notice_date).toLocaleDateString()}</span>
-                      </td>
-                      <td className="px-5 py-5 text-right font-sans">
+                      </Td>
+                      <Td align="center">
+                        {n.assign_to_all ? (
+                          <span className="text-xs font-medium text-indigo-300 px-2.5 py-1 rounded bg-indigo-500/10 border border-indigo-500/20">All Auditors</span>
+                        ) : (
+                          <span className="text-xs font-medium text-amber-300 px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/20">Selective</span>
+                        )}
+                      </Td>
+                      <Td align="center">
+                        <span className="text-xs text-gray-400">{new Date(n.notice_date).toLocaleDateString()}</span>
+                      </Td>
+                      <Td align="right">
                         <div className="flex items-center gap-2 justify-end">
-                           <button
-                             onClick={() => setViewId(n.id)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-medium text-secondary-300 hover:text-secondary-200 hover:bg-secondary-500/10 border border-secondary-500/20 transition-all"
-                           >
-                              {n.assign_to_all ? "Auditors" : `${n.assigned_count} Assigned`}
-                           </button>
-                           <button
-                             onClick={() => handleDelete(n.id)}
-                              className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 transition-all"
-                            >
-                              <Trash2 size={14} />
-                           </button>
+                          <button
+                            onClick={() => setViewId(n.id)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-secondary-300 hover:text-secondary-200 hover:bg-secondary-500/10 border border-secondary-500/20 transition-all"
+                          >
+                            {n.assign_to_all ? "Auditors" : `${n.assigned_count} Assigned`}
+                          </button>
+                          <IconButton tone="danger" onClick={() => handleDelete(n.id)}>
+                            <Trash2 size={14} />
+                          </IconButton>
                         </div>
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
 
             {/* Mobile Card View */}
@@ -488,12 +435,9 @@ export default function SettingsNoticesPage() {
                         >
                            {n.assign_to_all ? "Auditors" : `${n.assigned_count} Assigned`}
                         </button>
-                        <button
-                          onClick={() => handleDelete(n.id)}
-                          className="p-2 rounded-lg text-gray-500 hover:text-red-400 transition-colors border border-white/10"
-                        >
+                        <IconButton tone="danger" onClick={() => handleDelete(n.id)}>
                            <Trash2 size={14} />
-                        </button>
+                        </IconButton>
                      </div>
                   </div>
                ))}

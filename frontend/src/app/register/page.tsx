@@ -563,7 +563,6 @@ function RegisterForm() {
     if (!formData.org_phone_number?.trim()) return "Organization phone number is required.";
     if (!formData.address_line_1?.trim()) return "Address line 1 is required.";
     if (!formData.address_line_2?.trim()) return "Address line 2 is required.";
-    if (!formData.address_line_3?.trim()) return "Address line 3 is required.";
     return null;
   };
 
@@ -685,6 +684,12 @@ function RegisterForm() {
                 <h3 className="text-lg font-semibold text-white">Choose Your Plan</h3>
               </div>
 
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-5">
+                  <p className="text-sm text-red-400">{error}</p>
+                </div>
+              )}
+
               {/* Billing toggle */}
               <div className="flex justify-center mb-6">
                 <div className="glass rounded-lg p-1 flex items-center gap-1 border border-white/5">
@@ -798,7 +803,15 @@ function RegisterForm() {
 
               <button
                 type="button"
-                onClick={() => setStep(3)}
+                onClick={() => {
+                  const plan = formData.plan_name;
+                  if (!plan || !["Basic", "Pro", "Elite"].includes(plan)) {
+                    setError("Please select a plan to continue.");
+                    return;
+                  }
+                  setError("");
+                  setStep(3);
+                }}
                 className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-lg transition-all"
               >
                 Next: Organization Details
@@ -985,10 +998,9 @@ function RegisterForm() {
                 />
                 <Input
                   label="Address Line 3"
-                  required
                   value={formData.address_line_3 || ""}
                   onChange={(v) => updateField("address_line_3", v)}
-                  placeholder="City, State/Province, Region"
+                  placeholder="City, State/Province, Region (optional)"
                 />
               </div>
 

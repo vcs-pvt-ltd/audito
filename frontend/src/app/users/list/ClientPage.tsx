@@ -9,6 +9,8 @@ import { usersApi, orgTreeApi, countriesApi, authApi, type Country } from "@/lib
 import { Plus, RefreshCw, Pencil, Trash2, Mail, CheckCircle, Clock, X, UserCheck, Users, Search, Crown, Lock } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Button, IconButton, Table, THead, Th } from "@/components/ui";
 
 // ─── Config per user type slug ───────────────────────────────────
 
@@ -1161,22 +1163,14 @@ export default function UsersClientPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={fetchUsers}
-              className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all font-medium"
-              title="Refresh"
-            >
+            <IconButton bordered size="lg" onClick={fetchUsers} title="Refresh">
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            </button>
+            </IconButton>
             {!config.viewOnly && (
-              <button
-                onClick={handleAdd}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 shadow-lg shadow-secondary-500/10 transition-all active:scale-95"
-              >
-                {isLimitExceeded ? <Crown size={18} /> : <Plus size={18} />}
+              <Button onClick={handleAdd} className="active:scale-95" leftIcon={isLimitExceeded ? <Crown size={18} /> : <Plus size={18} />}>
                 <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Add"}</span>
                 <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : `Add ${config.label}`}</span>
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -1202,11 +1196,16 @@ export default function UsersClientPage() {
             <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : users.length === 0 ? (
-          <div className="glass rounded-xl p-10 text-center">
-            <p className="text-gray-400 text-sm">
-              No {config.labelPlural.toLowerCase()} found. Add your first one above.
-            </p>
-          </div>
+          <EmptyState
+            icon={Users}
+            title={`No ${config.labelPlural.toLowerCase()} yet`}
+            message={`Invite and manage ${config.labelPlural.toLowerCase()} who will be responsible for audits and data entry.`}
+            action={!config.viewOnly ? (
+              <Button onClick={handleAdd} leftIcon={<Plus size={16} />}>
+                {`Add ${config.label}`}
+              </Button>
+            ) : undefined}
+          />
         ) : filtered.length === 0 ? (
           <div className="glass rounded-xl p-16 text-center">
             <Search size={36} className="text-gray-600 mx-auto mb-4" />
@@ -1215,23 +1214,18 @@ export default function UsersClientPage() {
           </div>
         ) : (
           <>
-            <div className="glass rounded-xl overflow-hidden hidden md:block">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/10">
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium w-12">#</th>
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Name</th>
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Email</th>
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Phone</th>
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Country</th>
-                      {effectiveTreeSteps.length > 0 && (
-                        <th className="text-left px-4 py-3 text-gray-400 font-medium">Assigned To</th>
-                      )}
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
-                      <th className="text-right px-4 py-3 text-gray-400 font-medium">Actions</th>
-                    </tr>
-                  </thead>
+            <div className="hidden md:block">
+              <Table>
+                  <THead>
+                    <Th className="w-12">#</Th>
+                    <Th>Name</Th>
+                    <Th>Email</Th>
+                    <Th>Phone</Th>
+                    <Th>Country</Th>
+                    {effectiveTreeSteps.length > 0 && <Th>Assigned To</Th>}
+                    <Th>Status</Th>
+                    <Th align="right">Actions</Th>
+                  </THead>
                   <tbody>
                     {paginated.map((user, index) => {
                       const itemIndex = (currentPage - 1) * pageSize + index + 1;
@@ -1305,8 +1299,7 @@ export default function UsersClientPage() {
                       );
                     })}
                   </tbody>
-                </table>
-              </div>
+                </Table>
             </div>
 
             <div className="md:hidden space-y-3">

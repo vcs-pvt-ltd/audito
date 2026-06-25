@@ -4,10 +4,11 @@ import { useState, useEffect } from "react";
 import { auditorProfileApi } from "@/lib/api";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import {
-  Trash2, FileText, Check, AlertCircle, Save, Paperclip, UploadCloud,
+  Trash2, FileText, Save, Paperclip, UploadCloud,
   User, Briefcase, GraduationCap, Award, Plus, MapPin, Phone,
   Building2, Calendar, ExternalLink,
 } from "lucide-react";
+import { Button, IconButton } from "@/components/ui";
 
 const inputCls =
   "w-full bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all";
@@ -15,6 +16,7 @@ const inputCls =
 const labelCls = "block text-[11px] font-medium text-gray-400 mb-1.5 uppercase tracking-wide";
 
 export function AuditorProfileTabs({ accessToken }: { accessToken: string }) {
+  const { toast } = useUiFeedback();
   const [activeTab, setActiveTab] = useState<"personal" | "experiences" | "qualifications" | "trainings">("personal");
 
   const [profile, setProfile] = useState<any>(null);
@@ -22,7 +24,6 @@ export function AuditorProfileTabs({ accessToken }: { accessToken: string }) {
   const [qualifications, setQualifications] = useState<any[]>([]);
   const [trainings, setTrainings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -43,11 +44,6 @@ export function AuditorProfileTabs({ accessToken }: { accessToken: string }) {
   };
 
   useEffect(() => { loadData(); }, [accessToken]);
-
-  const showMsg = (text: string, type: "success" | "error" = "success") => {
-    setMsg({ text, type });
-    setTimeout(() => setMsg(null), 3000);
-  };
 
   const tabs = [
     { id: "personal" as const, label: "Personal", icon: User, count: null },
@@ -91,27 +87,18 @@ export function AuditorProfileTabs({ accessToken }: { accessToken: string }) {
         })}
       </div>
 
-      {msg && (
-        <div className={`p-3.5 rounded-xl flex items-center gap-3 text-sm font-medium border ${
-          msg.type === "success" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"
-        }`}>
-          {msg.type === "success" ? <Check size={16} /> : <AlertCircle size={16} />}
-          {msg.text}
-        </div>
-      )}
-
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
         {activeTab === "personal" && (
-          <PersonalTab profile={profile} accessToken={accessToken} onSuccess={() => { showMsg("Profile updated."); loadData(); }} />
+          <PersonalTab profile={profile} accessToken={accessToken} onSuccess={() => { toast("Profile updated.", "success"); loadData(); }} />
         )}
         {activeTab === "experiences" && (
-          <ExperiencesTab experiences={experiences} accessToken={accessToken} onSuccess={() => { showMsg("Experience saved."); loadData(); }} />
+          <ExperiencesTab experiences={experiences} accessToken={accessToken} onSuccess={() => { toast("Experience saved.", "success"); loadData(); }} />
         )}
         {activeTab === "qualifications" && (
-          <QualificationsTab qualifications={qualifications} accessToken={accessToken} onSuccess={() => { showMsg("Qualification saved."); loadData(); }} />
+          <QualificationsTab qualifications={qualifications} accessToken={accessToken} onSuccess={() => { toast("Qualification saved.", "success"); loadData(); }} />
         )}
         {activeTab === "trainings" && (
-          <TrainingsTab trainings={trainings} accessToken={accessToken} onSuccess={() => { showMsg("Training saved."); loadData(); }} />
+          <TrainingsTab trainings={trainings} accessToken={accessToken} onSuccess={() => { toast("Training saved.", "success"); loadData(); }} />
         )}
       </div>
     </div>
@@ -170,11 +157,16 @@ function PersonalTab({ profile, accessToken, onSuccess }: any) {
             <p className="text-xs text-gray-500 mt-0.5">Your professional profile information</p>
           </div>
         </div>
-        <button onClick={handleSave} disabled={saving}
-          className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all shrink-0">
-          {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Save size={14} />}
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={saving}
+          loading={saving}
+          leftIcon={<Save size={14} />}
+          className="rounded-xl shrink-0"
+        >
           {saving ? "Saving..." : "Save Details"}
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
@@ -496,11 +488,15 @@ function AddCard({ icon: Icon, title, children, onAdd, adding, addLabel, disable
       {children}
       <div className={`mt-4 flex flex-col sm:flex-row sm:items-center gap-3 ${attachment ? "justify-between" : "justify-end"}`}>
         {attachment}
-        <button onClick={onAdd} disabled={adding || disabled}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-500 text-primary-950 hover:bg-secondary-400 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto">
-          {adding ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Plus size={15} />}
+        <Button
+          onClick={onAdd}
+          disabled={adding || disabled}
+          loading={adding}
+          leftIcon={<Plus size={15} />}
+          className="rounded-xl w-full sm:w-auto"
+        >
           {addLabel}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -549,10 +545,9 @@ function ItemCard({ icon: Icon, title, badge, subtitle, link, onDelete }: {
           )}
         </div>
       </div>
-      <button onClick={onDelete}
-        className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors shrink-0 border border-transparent hover:border-red-500/20">
+      <IconButton tone="danger" onClick={onDelete} className="shrink-0">
         <Trash2 size={15} />
-      </button>
+      </IconButton>
     </div>
   );
 }

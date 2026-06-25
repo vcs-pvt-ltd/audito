@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X } from "lucide-react";
 import { countriesApi, type Country } from "@/lib/api";
+import { Button, Modal } from "@/components/ui";
 
 export interface EntityFormData {
   name: string;
@@ -115,8 +115,6 @@ export default function AddEditEntityModal({
     countriesApi.getAll().then(setCountries);
   }, [open, countries.length]);
 
-  if (!open) return null;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) {
@@ -147,24 +145,9 @@ export default function AddEditEntityModal({
     "w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/30 transition-all";
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative glass rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">
-            {isEdit ? `Edit ${entityLabel}` : `Add ${entityLabel}`}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
+    <Modal open={open} onClose={onClose} size="md" title={isEdit ? `Edit ${entityLabel}` : `Add ${entityLabel}`}>
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
               {error}
@@ -363,27 +346,12 @@ export default function AddEditEntityModal({
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all"
-            >
-              {loading
-                ? "Saving..."
-                : isEdit
-                  ? "Update"
-                  : `Add ${entityLabel}`}
-            </button>
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit" loading={loading}>
+              {loading ? "Saving..." : isEdit ? "Update" : `Add ${entityLabel}`}
+            </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

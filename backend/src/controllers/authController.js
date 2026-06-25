@@ -343,6 +343,14 @@ const register = async (req, res) => {
       }
     }
 
+    // Check duplicate NIC in admins table
+    if (nic) {
+      const [nicRows] = await db.query('SELECT id FROM admins WHERE nic = ? LIMIT 1', [nic]);
+      if (nicRows.length > 0) {
+        return errorResponse(res, 'NIC is already registered with another account.', 409);
+      }
+    }
+
     // Generate entity code + admin user code
     const config = ENTITY_CONFIG[entity_type];
     const orgCode = await config.genCode();

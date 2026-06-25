@@ -17,6 +17,8 @@ import {
   Search,
 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Table, THead, Th } from "@/components/ui";
 
 interface CapSummary {
   id: number;
@@ -288,41 +290,35 @@ export default function CapsPage() {
             <p className="text-red-400">{error}</p>
           </div>
         ) : caps.length === 0 ? (
-          <div className="glass rounded-xl p-20 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-secondary-500/10 flex items-center justify-center mx-auto mb-5">
-              <ClipboardList size={32} className="text-gray-600" />
-            </div>
-            <p className="text-white font-semibold text-lg mb-2">No CAP Yet</p>
-            <p className="text-sm text-gray-500 max-w-sm mx-auto">
-              CAP are created from corrective actions after completing an audit.
-            </p>
-          </div>
+          <EmptyState
+            icon={ClipboardList}
+            title="No CAP Yet"
+            message="CAP are created from corrective actions after completing an audit."
+          />
         ) : filtered.length === 0 ? (
-          <div className="glass rounded-xl p-16 text-center">
-            <ClipboardList size={36} className="text-gray-600 mx-auto mb-4" />
-            <p className="text-white font-medium mb-1">No {STATUS_LABEL[filter] || filter} CAPs</p>
-            <p className="text-gray-400 text-sm">Try selecting a different filter.</p>
-          </div>
+          <EmptyState
+            icon={ClipboardList}
+            title={`No ${STATUS_LABEL[filter] || filter} CAPs`}
+            message="Try selecting a different filter."
+          />
         ) : (
           <>
-            <div className="glass rounded-xl overflow-hidden hidden md:block">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-white/10 text-left">
-                    <th className="px-4 py-3 text-gray-400 font-medium w-10">#</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">CAP</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Auditor</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Status</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Progress</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">
-                      <span className="flex items-center gap-1">
-                        <Calendar size={13} />
-                        Created
-                      </span>
-                    </th>
-                    <th className="px-4 py-3 text-gray-400 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
+            <div className="hidden md:block">
+              <Table>
+                <THead>
+                  <Th className="w-10">#</Th>
+                  <Th>CAP</Th>
+                  <Th>Auditor</Th>
+                  <Th>Status</Th>
+                  <Th>Progress</Th>
+                  <Th>
+                    <span className="flex items-center gap-1">
+                      <Calendar size={13} />
+                      Created
+                    </span>
+                  </Th>
+                  <Th align="right">Action</Th>
+                </THead>
                 <tbody className="divide-y divide-white/[0.06]">
                   {paginated.map((cap, index) => {
                     const pct = cap.total_questions > 0
@@ -386,7 +382,7 @@ export default function CapsPage() {
                     );
                   })}
                 </tbody>
-              </table>
+              </Table>
             </div>
 
             <div className="md:hidden space-y-3">

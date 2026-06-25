@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi, orgTreeApi } from "@/lib/api";
+import { IconButton } from "@/components/ui";
 import {
   ArrowLeft,
   ClipboardCheck,
@@ -360,12 +361,9 @@ export default function MyAuditPreviewPage() {
         {/* Top bar */}
         <div className="shrink-0 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 bg-transparent/80 backdrop-blur-sm border-b border-white/[0.05]">
           <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={isRoot ? () => router.push(`/my-audits/details?id=${auditId}`) : goBack}
-              className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all shrink-0"
-            >
+            <IconButton bordered onClick={isRoot ? () => router.push(`/my-audits/details?id=${auditId}`) : goBack}>
               <ArrowLeft size={14} />
-            </button>
+            </IconButton>
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-white truncate flex items-center gap-2">
                 <ClipboardCheck size={16} className="text-secondary-400 shrink-0" />
@@ -536,23 +534,27 @@ export default function MyAuditPreviewPage() {
                         </div>
                       )}
 
-                      {/* Sub-entity cards (if this entity has children) */}
-                      {subEntities.length > 0 && (
-                        <div className="space-y-3 pt-2">
-                          <h4 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Sub-entities</h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {subEntities.map((child, i) => (
-                              <EntityPreviewCard
-                                key={`${child.code}__${child.edge_id ?? "null"}`}
-                                node={child}
-                                index={i + 1}
-                                questionsMap={entityQuestionsMap}
-                                onClick={() => navigateCard(child)}
-                              />
-                            ))}
+                      {(() => {
+                        const hasSubEntityQuestions = subEntities.some(c => countDescendantQuestions(c, entityQuestionsMap) > 0);
+                        return (
+                          <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/[0.06]">
+                            <button
+                              onClick={() => setStepHistory(h => h.slice(0, -1))}
+                              className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
+                            >
+                              <ArrowLeft size={14} /> Back
+                            </button>
+                            {hasSubEntityQuestions && (
+                              <button
+                                onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: step.entityCode }])}
+                                className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
+                              >
+                                Next <ChevronRight size={14} />
+                              </button>
+                            )}
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   );
                 })()

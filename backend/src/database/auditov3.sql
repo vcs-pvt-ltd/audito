@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1:3306
--- Generation Time: Jun 06, 2026 at 05:36 AM
+-- Generation Time: Jun 24, 2026 at 12:32 PM
 -- Server version: 8.0.36-28
 -- PHP Version: 8.1.33
 
@@ -54,6 +54,9 @@ CREATE TABLE `admins` (
   `profile_image` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `admins`
+--
 -- --------------------------------------------------------
 
 --
@@ -82,13 +85,17 @@ CREATE TABLE `auditors` (
   `email_token` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email_token_expires` datetime DEFAULT NULL,
   `is_active` tinyint(1) DEFAULT '1',
-  `onboarding_completed` tinyint(1) DEFAULT '0',
-  `onboarding_skipped` tinyint(1) DEFAULT '0',
-  `onboarding_completed_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `profile_image` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
+  `profile_image` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `onboarding_completed` tinyint(1) DEFAULT '0',
+  `onboarding_skipped` tinyint(1) DEFAULT '0',
+  `onboarding_completed_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `auditors`
+--
 
 -- --------------------------------------------------------
 
@@ -127,6 +134,10 @@ CREATE TABLE `auditor_notifications` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `auditor_notifications`
+--
 
 -- --------------------------------------------------------
 
@@ -215,6 +226,7 @@ CREATE TABLE `audit_assignments` (
   `assigned_firm_code` varchar(30) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `assigned_org_tree_id` int DEFAULT NULL,
   `budget` decimal(15,2) DEFAULT NULL,
+  `currency` varchar(10) COLLATE utf8mb4_general_ci DEFAULT '$',
   `num_workers` int DEFAULT NULL,
   `start_date` date NOT NULL,
   `end_date` date NOT NULL,
@@ -228,6 +240,10 @@ CREATE TABLE `audit_assignments` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `audit_assignments`
+--
 
 -- --------------------------------------------------------
 
@@ -244,6 +260,11 @@ CREATE TABLE `audit_assignment_entities` (
   `is_active` tinyint(1) DEFAULT '1',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `audit_assignment_entities`
+--
+
 
 -- --------------------------------------------------------
 
@@ -266,6 +287,10 @@ CREATE TABLE `audit_entity_progress` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `audit_entity_progress`
+--
+
 -- --------------------------------------------------------
 
 --
@@ -283,6 +308,11 @@ CREATE TABLE `audit_evidence` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `audit_evidence`
+--
+
+
 -- --------------------------------------------------------
 
 --
@@ -294,7 +324,9 @@ CREATE TABLE `audit_firm_companies` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Audit Firm',
@@ -318,7 +350,9 @@ CREATE TABLE `audit_firm_company_branches` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Audit Firm Company',
@@ -343,7 +377,9 @@ CREATE TABLE `audit_firm_company_departments` (
   `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Audit Firm Company',
@@ -382,7 +418,11 @@ CREATE TABLE `audit_responses` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
+--
+-- Dumping data for table `audit_responses`
+--
+
+ --------------------------------------------------------
 
 --
 -- Table structure for table `caps`
@@ -513,12 +553,18 @@ CREATE TABLE `checklists` (
   `repeat_duration_value` int DEFAULT NULL,
   `repeat_duration_unit` enum('days','weeks','months','years') DEFAULT NULL,
   `budget` decimal(15,2) DEFAULT NULL,
+  `currency` varchar(10) DEFAULT '$',
   `num_workers` int DEFAULT NULL,
   `created_by` varchar(50) NOT NULL,
   `is_active` tinyint(1) DEFAULT '1',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `checklists`
+--
+
 
 -- --------------------------------------------------------
 
@@ -541,6 +587,11 @@ CREATE TABLE `checklist_questions` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+--
+-- Dumping data for table `checklist_questions`
+--
+
+
 -- --------------------------------------------------------
 
 --
@@ -554,6 +605,10 @@ CREATE TABLE `checklist_question_options` (
   `marks` decimal(6,2) NOT NULL DEFAULT '0.00',
   `order_index` int DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `checklist_question_options`
+--
 
 -- --------------------------------------------------------
 
@@ -571,6 +626,10 @@ CREATE TABLE `checklist_types` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+--
+-- Dumping data for table `checklist_types`
+--
+
 -- --------------------------------------------------------
 
 --
@@ -582,7 +641,9 @@ CREATE TABLE `companies` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Company',
@@ -597,6 +658,9 @@ CREATE TABLE `companies` (
   `timezone` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `companies`
+--
 -- --------------------------------------------------------
 
 --
@@ -608,7 +672,9 @@ CREATE TABLE `company_clusters` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Company',
@@ -623,6 +689,11 @@ CREATE TABLE `company_clusters` (
   `timezone` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `company_clusters`
+--
+
+
 -- --------------------------------------------------------
 
 --
@@ -634,7 +705,9 @@ CREATE TABLE `company_departments` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Company',
@@ -652,6 +725,11 @@ CREATE TABLE `company_departments` (
   `timezone` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `company_departments`
+--
+
+
 -- --------------------------------------------------------
 
 --
@@ -663,7 +741,9 @@ CREATE TABLE `company_factories` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Company',
@@ -679,6 +759,11 @@ CREATE TABLE `company_factories` (
   `timezone` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `company_factories`
+--
+
+
 -- --------------------------------------------------------
 
 --
@@ -690,7 +775,9 @@ CREATE TABLE `company_sections` (
   `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `cust_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
@@ -701,6 +788,11 @@ CREATE TABLE `company_sections` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `company_sections`
+--
+
 
 -- --------------------------------------------------------
 
@@ -713,7 +805,9 @@ CREATE TABLE `company_units` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Company',
@@ -729,6 +823,11 @@ CREATE TABLE `company_units` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `timezone` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `company_units`
+--
+
 
 -- --------------------------------------------------------
 
@@ -771,7 +870,9 @@ CREATE TABLE `customers` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Customer',
@@ -795,7 +896,9 @@ CREATE TABLE `customer_buying_offices` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Customer',
@@ -820,7 +923,9 @@ CREATE TABLE `customer_suppliers` (
   `name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
   `registration_number` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `address` text COLLATE utf8mb4_general_ci,
+  `address_line_1` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_2` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `address_line_3` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `phone_number` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `account_type` varchar(50) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Customer',
@@ -831,7 +936,8 @@ CREATE TABLE `customer_suppliers` (
   `csup_code` varchar(20) COLLATE utf8mb4_general_ci NOT NULL,
   `is_active` tinyint(1) DEFAULT '1',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `timezone` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -861,13 +967,17 @@ CREATE TABLE `entity_heads` (
   `email_token` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `email_token_expires` datetime DEFAULT NULL,
   `is_active` tinyint(1) DEFAULT '1',
-  `onboarding_completed` tinyint(1) DEFAULT '0',
-  `onboarding_skipped` tinyint(1) DEFAULT '0',
-  `onboarding_completed_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `profile_image` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL
+  `profile_image` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `onboarding_completed` tinyint(1) DEFAULT '0',
+  `onboarding_skipped` tinyint(1) DEFAULT '0',
+  `onboarding_completed_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `entity_heads`
+--
 
 -- --------------------------------------------------------
 
@@ -1029,6 +1139,11 @@ CREATE TABLE `notices` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `notices`
+--
+
+
 -- --------------------------------------------------------
 
 --
@@ -1087,6 +1202,9 @@ CREATE TABLE `organization_tree` (
   `parent_edge_id` int DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `organization_tree`
+--
 -- --------------------------------------------------------
 
 --
@@ -1096,11 +1214,45 @@ CREATE TABLE `organization_tree` (
 CREATE TABLE `password_reset_otps` (
   `id` int NOT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
-  `otp` varchar(100) COLLATE utf8mb4_general_ci NOT NULL,
+  `otp` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `expires_at` timestamp NOT NULL,
   `used` tinyint(1) DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `payment_transactions`
+--
+
+CREATE TABLE `payment_transactions` (
+  `id` int NOT NULL,
+  `payment_code` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `root_entity_code` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `purpose` enum('registration','upgrade','renewal') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `plan_name` enum('Basic','Pro','Elite') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `billing_cycle` enum('Monthly','Yearly') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Monthly',
+  `amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `currency` varchar(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'USD',
+  `status` enum('pending','paid','failed','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `payer_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `payer_email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `org_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `invoice_number` varchar(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `gateway` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `gateway_reference` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `period_start` datetime DEFAULT NULL,
+  `period_end` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `paid_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `payment_transactions`
+--
+
 
 -- --------------------------------------------------------
 
@@ -1116,6 +1268,11 @@ CREATE TABLE `refresh_tokens` (
   `expires_at` timestamp NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `refresh_tokens`
+--
+
 
 -- --------------------------------------------------------
 
@@ -1141,6 +1298,11 @@ CREATE TABLE `subscriptions` (
   `allow_auditor_eval` tinyint(1) DEFAULT '0',
   `allow_company_to_company` tinyint(1) DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `subscriptions`
+--
+
 
 -- --------------------------------------------------------
 
@@ -1627,6 +1789,16 @@ ALTER TABLE `password_reset_otps`
   ADD KEY `idx_otp` (`otp`);
 
 --
+-- Indexes for table `payment_transactions`
+--
+ALTER TABLE `payment_transactions`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_payment_code` (`payment_code`),
+  ADD UNIQUE KEY `uq_invoice_number` (`invoice_number`),
+  ADD KEY `idx_root_entity` (`root_entity_code`),
+  ADD KEY `idx_status` (`status`);
+
+--
 -- Indexes for table `refresh_tokens`
 --
 ALTER TABLE `refresh_tokens`
@@ -1665,13 +1837,13 @@ ALTER TABLE `training_assignments`
 -- AUTO_INCREMENT for table `admins`
 --
 ALTER TABLE `admins`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `auditors`
 --
 ALTER TABLE `auditors`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `auditor_experiences`
@@ -1683,7 +1855,7 @@ ALTER TABLE `auditor_experiences`
 -- AUTO_INCREMENT for table `auditor_notifications`
 --
 ALTER TABLE `auditor_notifications`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `auditor_profiles`
@@ -1707,25 +1879,25 @@ ALTER TABLE `auditor_trainings`
 -- AUTO_INCREMENT for table `audit_assignments`
 --
 ALTER TABLE `audit_assignments`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `audit_assignment_entities`
 --
 ALTER TABLE `audit_assignment_entities`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `audit_entity_progress`
 --
 ALTER TABLE `audit_entity_progress`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=618;
 
 --
 -- AUTO_INCREMENT for table `audit_evidence`
 --
 ALTER TABLE `audit_evidence`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `audit_firm_companies`
@@ -1749,7 +1921,7 @@ ALTER TABLE `audit_firm_company_departments`
 -- AUTO_INCREMENT for table `audit_responses`
 --
 ALTER TABLE `audit_responses`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `caps`
@@ -1791,61 +1963,61 @@ ALTER TABLE `cap_response_evidence`
 -- AUTO_INCREMENT for table `checklists`
 --
 ALTER TABLE `checklists`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `checklist_questions`
 --
 ALTER TABLE `checklist_questions`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `checklist_question_options`
 --
 ALTER TABLE `checklist_question_options`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
 -- AUTO_INCREMENT for table `checklist_types`
 --
 ALTER TABLE `checklist_types`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `companies`
 --
 ALTER TABLE `companies`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `company_clusters`
 --
 ALTER TABLE `company_clusters`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `company_departments`
 --
 ALTER TABLE `company_departments`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `company_factories`
 --
 ALTER TABLE `company_factories`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `company_sections`
 --
 ALTER TABLE `company_sections`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `company_units`
 --
 ALTER TABLE `company_units`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `corrective_actions`
@@ -1875,7 +2047,7 @@ ALTER TABLE `customer_suppliers`
 -- AUTO_INCREMENT for table `entity_heads`
 --
 ALTER TABLE `entity_heads`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `evaluation_answers`
@@ -1929,7 +2101,7 @@ ALTER TABLE `field_visit_assignments`
 -- AUTO_INCREMENT for table `notices`
 --
 ALTER TABLE `notices`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `notice_auditor_assignments`
@@ -1947,7 +2119,7 @@ ALTER TABLE `organization_links`
 -- AUTO_INCREMENT for table `organization_tree`
 --
 ALTER TABLE `organization_tree`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=47;
 
 --
 -- AUTO_INCREMENT for table `password_reset_otps`
@@ -1956,16 +2128,22 @@ ALTER TABLE `password_reset_otps`
   MODIFY `id` int NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `payment_transactions`
+--
+ALTER TABLE `payment_transactions`
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
 -- AUTO_INCREMENT for table `refresh_tokens`
 --
 ALTER TABLE `refresh_tokens`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=33;
 
 --
 -- AUTO_INCREMENT for table `subscriptions`
 --
 ALTER TABLE `subscriptions`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `trainings`

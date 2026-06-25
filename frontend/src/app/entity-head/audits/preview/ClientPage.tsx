@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi } from "@/lib/api";
 import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
+import { IconButton } from "@/components/ui";
 import {
   AlertCircle,
   ArrowLeft,
@@ -341,7 +342,7 @@ function QuestionPreviewCard({
                   <Camera size={12} className="text-secondary-400" />
                   <span>{response?.evidence.length} evidence file{(response?.evidence.length ?? 0) !== 1 ? "s" : ""} attached</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {(response?.evidence || []).map((ev) => {
                     const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
                     const url = getEvidenceUrl(ev.file_path);
@@ -465,12 +466,9 @@ export default function EntityHeadAuditPreviewPage() {
     <div className="h-screen bg-transparent flex">
       <main className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto">
         <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={() => router.push("/entity-head/audits")}
-            className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-          >
+          <IconButton bordered onClick={() => router.push("/entity-head/audits")}>
             <ArrowLeft size={16} />
-          </button>
+          </IconButton>
           <div className="min-w-0">
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               <ClipboardCheck size={22} className="text-secondary-400" />
@@ -563,7 +561,7 @@ export default function EntityHeadAuditPreviewPage() {
                       </nav>
                     )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {cards.map((n, i) => (
                         <EntityCard
                           key={`${n.code}__${n.edge_id ?? "null"}`}
@@ -586,6 +584,7 @@ export default function EntityHeadAuditPreviewPage() {
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
               const key = progressKey(entityCode, edgeId);
               const qs = (questionsMap[key] || []).slice().sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+              const hasSubEntityQuestions = (node?.children || []).some(c => subtreeHasQuestions(c, questionsMap));
 
               return (
                 <div className="space-y-5">
@@ -617,6 +616,23 @@ export default function EntityHeadAuditPreviewPage() {
                     {qs.map((q, idx) => (
                       <QuestionPreviewCard key={q.id} question={q} response={responseByEntityQuestion.get(`${key}::${q.id}`)} index={idx + 1} />
                     ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/[0.06]">
+                    <button
+                      onClick={() => setStepHistory(h => h.slice(0, -1))}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
+                    >
+                      <ArrowLeft size={14} /> Back
+                    </button>
+                    {hasSubEntityQuestions && (
+                      <button
+                        onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode }])}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
+                      >
+                        Next <ChevronRight size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

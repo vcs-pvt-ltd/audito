@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, Trash2, Users, X, BookOpen, Clock, CheckCircle2, RefreshCw, Play, Search, Pencil, Lock as LockIcon } from "lucide-react";
+import { Plus, Trash2, Users, BookOpen, Clock, CheckCircle2, RefreshCw, Play, Search, Pencil, Lock as LockIcon } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Button, IconButton, Modal, Table, THead, Th } from "@/components/ui";
 
 interface Training {
   id: number;
@@ -64,70 +66,54 @@ function AssignModal({
     if (!open) setSelected({});
   }, [open]);
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative glass rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">Assign to Auditors</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <X size={20} />
-          </button>
+    <Modal open={open} onClose={onClose} size="md" title="Assign to Auditors">
+      <div className="space-y-3">
+        <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+          {auditors.map((a) => (
+            <label
+              key={a.user_code}
+              className="flex items-center justify-between gap-3 p-3 rounded-lg border border-white/5 bg-white/5 cursor-pointer hover:bg-white/10 transition-all group"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white group-hover:text-secondary-400 transition-colors">
+                  {a.first_name} {a.last_name}
+                </p>
+                <p className="text-xs text-gray-500 truncate">{a.email}</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={!!selected[a.user_code]}
+                onChange={(e) =>
+                  setSelected((p) => ({ ...p, [a.user_code]: e.target.checked }))
+                }
+                className="h-4 w-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0 cursor-pointer"
+              />
+            </label>
+          ))}
+          {auditors.length === 0 && (
+            <p className="text-gray-500 text-sm italic text-center py-4">No auditors found.</p>
+          )}
         </div>
 
-        <div className="p-5 space-y-3">
-          <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-            {auditors.map((a) => (
-              <label
-                key={a.user_code}
-                className="flex items-center justify-between gap-3 p-3 rounded-lg border border-white/5 bg-white/5 cursor-pointer hover:bg-white/10 transition-all group"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-white group-hover:text-secondary-400 transition-colors">
-                    {a.first_name} {a.last_name}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">{a.email}</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={!!selected[a.user_code]}
-                  onChange={(e) =>
-                    setSelected((p) => ({ ...p, [a.user_code]: e.target.checked }))
-                  }
-                  className="h-4 w-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0 cursor-pointer"
-                />
-              </label>
-            ))}
-            {auditors.length === 0 && (
-              <p className="text-gray-500 text-sm italic text-center py-4">No auditors found.</p>
-            )}
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={async () => {
-                setLoading(true);
-                await onAssign(selectedCodes);
-                setLoading(false);
-                onClose();
-              }}
-              disabled={loading || selectedCodes.length === 0}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all"
-            >
-              {loading ? "Assigning..." : `Assign (${selectedCodes.length})`}
-            </button>
-          </div>
+        <div className="flex gap-3 pt-2">
+          <Button variant="secondary" fullWidth onClick={onClose}>Cancel</Button>
+          <Button
+            fullWidth
+            loading={loading}
+            disabled={selectedCodes.length === 0}
+            onClick={async () => {
+              setLoading(true);
+              await onAssign(selectedCodes);
+              setLoading(false);
+              onClose();
+            }}
+          >
+            {loading ? "Assigning..." : `Assign (${selectedCodes.length})`}
+          </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -142,24 +128,16 @@ function ViewAssignmentsModal({
   assignments: Assignment[];
   title: string;
 }) {
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative glass rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Assignments</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{title}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5">
-          <div className="border border-white/10 rounded-xl overflow-hidden">
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="lg"
+      title="Assignments"
+      description={title}
+      footer={<Button variant="secondary" className="ml-auto px-6" onClick={onClose}>Close</Button>}
+    >
+      <div className="border border-white/10 rounded-xl overflow-hidden">
             <table className="w-full text-sm text-left">
               <thead className="bg-white/5">
                 <tr className="border-b border-white/10">
@@ -202,18 +180,7 @@ function ViewAssignmentsModal({
               </tbody>
             </table>
           </div>
-        </div>
-
-        <div className="p-5 border-t border-white/10 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:border-white/20 transition-all"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -332,21 +299,13 @@ export default function AuditFirmTrainingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={load}
-            className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all font-medium"
-            title="Refresh"
-          >
+          <IconButton bordered size="lg" onClick={load} title="Refresh">
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          </button>
-          <button
-            onClick={() => router.push("/learning/trainings/create")}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 shadow-lg shadow-secondary-500/10 transition-all active:scale-95"
-          >
-            <Plus size={18} />
+          </IconButton>
+          <Button onClick={() => router.push("/learning/trainings/create")} className="active:scale-95" leftIcon={<Plus size={18} />}>
             <span className="hidden sm:block">Create Training</span>
             <span className="sm:hidden">Add</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -371,9 +330,20 @@ export default function AuditFirmTrainingsPage() {
           <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : trainings.length === 0 ? (
-        <div className="glass rounded-xl p-20 text-center border border-white/5">
-          <p className="text-gray-400 text-sm">No trainings found. Create your first one to get started.</p>
-        </div>
+        <EmptyState
+          icon={Play}
+          title="No trainings yet"
+          message="Create, assign and monitor training videos for your auditors."
+          action={(
+            <button
+              onClick={() => router.push("/learning/trainings/create")}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
+            >
+              <Plus size={16} />
+              Create Training
+            </button>
+          )}
+        />
       ) : filtered.length === 0 ? (
         <div className="glass rounded-xl p-16 text-center">
           <Play size={36} className="text-gray-600 mx-auto mb-4" />
@@ -383,19 +353,16 @@ export default function AuditFirmTrainingsPage() {
       ) : (
         <div className="space-y-4">
           {/* Desktop Table View */}
-          <div className="glass rounded-xl overflow-hidden hidden md:block">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm table-fixed">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium w-12 text-center">#</th>
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium w-[50%]">Title</th>
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium w-28">Platform</th>
-                    <th className="text-center px-4 py-3 text-gray-400 font-medium w-24">Duration</th>
-                    <th className="text-center px-4 py-3 text-gray-400 font-medium w-20">Assigned</th>
-                    <th className="text-right px-4 py-3 text-gray-400 font-medium w-32">Actions</th>
-                  </tr>
-                </thead>
+          <div className="hidden md:block">
+            <Table className="table-fixed">
+                <THead>
+                  <Th align="center" className="w-12">#</Th>
+                  <Th className="w-[50%]">Title</Th>
+                  <Th className="w-28">Platform</Th>
+                  <Th align="center" className="w-24">Duration</Th>
+                  <Th align="center" className="w-20">Assigned</Th>
+                  <Th align="right" className="w-32">Actions</Th>
+                </THead>
                 <tbody className="divide-y divide-white/5">
                   {paginated.map((t, index) => {
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
@@ -480,8 +447,7 @@ export default function AuditFirmTrainingsPage() {
                     );
                   })}
                 </tbody>
-              </table>
-            </div>
+            </Table>
           </div>
 
           {/* Mobile Card View */}

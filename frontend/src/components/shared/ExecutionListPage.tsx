@@ -20,6 +20,8 @@ import {
   ChevronDown,
 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Table, THead, Th, TBody, Tr, Td, Button, IconButton } from "@/components/ui";
 
 interface ExecutionItem {
   id: number;
@@ -310,13 +312,9 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
             </h1>
             <p className="hidden sm:block text-sm text-gray-400 mt-1 ml-[46px]">{labels.description}</p>
           </div>
-          <button
-            onClick={fetchItems}
-            className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-            title="Refresh"
-          >
+          <IconButton bordered onClick={fetchItems} title="Refresh">
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          </button>
+          </IconButton>
         </div>
 
         {/* Search + Date Filters */}
@@ -351,18 +349,20 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                 <ChevronDown size={12} className={`transition-transform duration-200 ${filtersOpen ? "rotate-180" : ""}`} />
               </button>
             )}
-            <button
-              type="button"
+            
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => { setSearchTerm(""); setStartDateFilter(""); setEndDateFilter(""); setFilter("all"); }}
-              className="h-10 px-3 rounded-lg border border-white/10 text-xs font-medium text-gray-400 hover:text-white hover:border-white/20 transition-all shrink-0"
+              className="h-10 shrink-0"
             >
               Reset
-            </button>
+            </Button>
           </div>
 
           {/* Mobile collapsible date filters */}
           {workflowType === "audit" && filtersOpen && (
-            <div className="md:hidden grid grid-cols-2 gap-2.5 px-3 pb-3 pt-1 border-t border-white/[0.06]">
+            <div className="md:hidden flex flex-col gap-2.5 px-3 pb-3 pt-1 border-t border-white/[0.06]">
               <div>
                 <label className="block text-[11px] text-gray-400 mb-1">Start Date</label>
                 <div className="flex items-center gap-2 rounded-lg bg-white/[0.03] border border-white/10 px-3">
@@ -435,13 +435,13 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
             )}
 
             <div className="flex items-end">
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                fullWidth
                 onClick={() => { setSearchTerm(""); setStartDateFilter(""); setEndDateFilter(""); setFilter("all"); }}
-                className="w-full h-10 rounded-lg border border-white/10 text-xs font-semibold text-gray-300 hover:text-white hover:border-white/20 transition-all"
               >
                 Reset
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -480,58 +480,54 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
             <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : items.length === 0 ? (
-          <div className="glass rounded-xl p-20 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-secondary-500/10 flex items-center justify-center mx-auto mb-5">
-              <Icon size={32} className="text-gray-600" />
-            </div>
-            <p className="text-white font-semibold text-lg mb-2">No {labels.title.toLowerCase()} assigned yet</p>
-            <p className="text-gray-400 text-sm max-w-sm mx-auto">Your admin will assign tasks to you when they're ready. Check back later.</p>
-          </div>
+          <EmptyState
+            icon={Icon}
+            title={`No ${labels.title.toLowerCase()} assigned yet`}
+            message="Your admin will assign tasks to you when they're ready. Check back later."
+          />
         ) : filtered.length === 0 ? (
-          <div className="glass rounded-xl p-16 text-center">
-            <Icon size={36} className="text-gray-600 mx-auto mb-4" />
-            <p className="text-white font-medium mb-1">No matching items</p>
-            <p className="text-gray-400 text-sm">Try changing search text, dates, or status.</p>
-          </div>
+          <EmptyState
+            icon={Icon}
+            title="No matching items"
+            message="Try changing search text, dates, or status."
+          />
         ) : (
           <div className="space-y-4">
             {/* Desktop Table */}
-            <div className="glass rounded-xl overflow-hidden hidden md:block">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-white/10 text-left">
-                    <th className="px-4 py-3 text-gray-400 font-medium w-10">#</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Title</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium text-center">Status</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Progress</th>
+            <div className="hidden md:block">
+              <Table>
+                <THead>
+                    <Th className="w-10">#</Th>
+                    <Th>Title</Th>
+                    <Th align="center">Status</Th>
+                    <Th>Progress</Th>
                     {workflowType === "cap" && (
-                      <th className="px-4 py-3 text-gray-400 font-medium">
+                      <Th>
                         <span className="flex items-center gap-1">
                           <Calendar size={13} />
                           Created
                         </span>
-                      </th>
+                      </Th>
                     )}
                     {workflowType === "audit" && (
                       <>
-                        <th className="px-4 py-3 text-gray-400 font-medium">
+                        <Th>
                           <span className="flex items-center gap-1">
                             <Calendar size={13} />
                             Start
                           </span>
-                        </th>
-                        <th className="px-4 py-3 text-gray-400 font-medium">
+                        </Th>
+                        <Th>
                           <span className="flex items-center gap-1">
                             <Calendar size={13} />
                             End
                           </span>
-                        </th>
+                        </Th>
                       </>
                     )}
-                    <th className="px-4 py-3 text-gray-400 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.06]">
+                    <Th align="right">Action</Th>
+                </THead>
+                <TBody>
                   {paginated.map((item, index) => {
                     const displayStatus = normalizeExecutionStatus(item.status, workflowType);
                     const pct = item.progress_pct || Math.round(((item.answered_questions || 0) / (item.total_questions || 1)) * 100);
@@ -540,49 +536,49 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
 
                     return (
-                      <tr
+                      <Tr
                         key={item.id}
                         onClick={() => router.push(`${basePath}/details?id=${item.id}`)}
-                        className="hover:bg-white/[0.02] transition-colors cursor-pointer group"
+                        className="cursor-pointer group"
                       >
-                        <td className="px-4 py-3 text-gray-400">{itemIndex}</td>
-                        <td className="px-4 py-3">
+                        <Td className="text-gray-400">{itemIndex}</Td>
+                        <Td>
                           <div className="flex flex-col gap-0.5">
                             <p className="text-white font-medium">{item.title}</p>
                           </div>
-                        </td>
-                        <td className="px-4 py-3">
+                        </Td>
+                        <Td>
                           <div className={`flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full w-fit mx-auto border text-[10px] font-bold uppercase tracking-wider ${STATUS_BADGE[displayStatus] || STATUS_BADGE["plan"]}`}>
                             {STATUS_ICON[displayStatus]}
                             {displayStatus.replace("_", " ")}
                           </div>
-                        </td>
-                        <td className="px-4 py-3">
+                        </Td>
+                        <Td>
                           <div className="flex items-center gap-3">
                             <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden max-w-xs">
                               <div className="h-full bg-gradient-to-r from-secondary-400 to-secondary-500 transition-all" style={{ width: `${pct}%` }} />
                             </div>
                             <span className="text-xs text-gray-400 font-medium w-8 text-right">{pct}%</span>
                           </div>
-                        </td>
+                        </Td>
                         {workflowType === "cap" && (
-                          <td className="px-4 py-3 text-gray-400">
+                          <Td className="text-gray-400">
                             {fmtDate(item.created_at || "")}
-                          </td>
+                          </Td>
                         )}
                         {workflowType === "audit" && (
                           <>
-                            <td className="px-4 py-3 text-gray-400">
+                            <Td className="text-gray-400">
                               {fmtDate(item.start_date || "")}
                               {item.start_date && !canStart && <p className="text-[10px] text-amber-400 mt-1 font-bold">{daysUntil(item.start_date)} DAYS LEFT</p>}
-                            </td>
-                            <td className="px-4 py-3 text-gray-400">
+                            </Td>
+                            <Td className="text-gray-400">
                               {fmtDate(item.end_date || "")}
                               {remaining < 7 && remaining >= 0 && <p className="text-[10px] text-red-500 mt-1 font-bold">{remaining} DAYS LEFT</p>}
-                            </td>
+                            </Td>
                           </>
                         )}
-                        <td className="px-4 py-3 text-right">
+                        <Td align="right">
                           <div className="flex justify-end">
                             <button
                               onClick={(e) => {
@@ -610,12 +606,12 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                               <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
                             </button>
                           </div>
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     );
                   })}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
 
             {/* Mobile Card-Based Grid */}
@@ -684,12 +680,14 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                         ) : null}
                       </div>
 
-                      <button className="flex items-center gap-1.5 pl-4 pr-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wide bg-secondary-500 text-primary-950 shadow-xl shadow-secondary-500/20 active:translate-y-0.5 transition-all">
+                      <Button
+                        className="pl-4 pr-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wide shadow-xl shadow-secondary-500/20 active:translate-y-0.5"
+                        rightIcon={<ChevronRight size={16} strokeWidth={3} />}
+                      >
                         {workflowType === "audit" ? (
                           item.status === "plan" ? (canStart ? "Start" : "Wait") : "Resume"
                         ) : "Go"}
-                        <ChevronRight size={16} strokeWidth={3} />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 );

@@ -42,6 +42,7 @@ import {
   CheckSquare,
   List,
 } from "lucide-react";
+import { Button, IconButton, Modal } from "@/components/ui";
 
 interface Cap {
   id: number;
@@ -930,16 +931,16 @@ export default function MyCapExecutePage() {
   }
 
   if (isLoading) return <div className="h-screen bg-transparent flex items-center justify-center"><div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" /></div>;
-  if (!admin) return null;
+  if (!admin || !accessToken) return null;
 
   return (
     <div className="h-screen bg-transparent flex">
       <div className="flex-1 flex flex-col overflow-hidden pt-16 lg:pt-0">
         <div className="shrink-0 px-6 py-3 flex items-center justify-between gap-4 bg-transparent/80 backdrop-blur-sm">
           <div className="flex items-center gap-3 min-w-0">
-            <button onClick={() => requestNav(() => router.push(`/my-caps/details?id=${capId}`))} className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all">
+            <IconButton bordered onClick={() => requestNav(() => router.push(`/my-caps/details?id=${capId}`))}>
               <ArrowLeft size={14} />
-            </button>
+            </IconButton>
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-white truncate flex items-center gap-2"><ClipboardList size={15} className="text-secondary-400" />{cap?.title || "CAP Execution"}</h1>
             </div>
@@ -1136,28 +1137,26 @@ export default function MyCapExecutePage() {
                   {/* Navigation bar */}
                   <div className="bottom-0 left-0 right-0 lg:left-0 z-30 p-4 backdrop-blur-md border-t border-white/5">
                     <div className="max-w-4xl mx-auto flex items-center justify-between">
-                      <button
+                      <Button
+                        variant="secondary"
                         onClick={() => setStepHistory((h) => h.slice(0, -1))}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
+                        leftIcon={<ArrowLeft size={14} />}
                       >
-                        <ArrowLeft size={14} /> Back
-                      </button>
+                        Back
+                      </Button>
 
                       <div className="flex items-center gap-2">
-                        <button
+                        <Button
                           onClick={async () => {
                             const ok = await saveAllDirty();
                             if (!ok) toast("Failed to save response.", "error");
                             else toast("All changes saved.", "success");
                           }}
                           disabled={!hasUnsaved}
-                          className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all border ${!hasUnsaved
-                            ? "bg-white/5 text-gray-600 border-white/10 cursor-not-allowed"
-                            : "bg-secondary-500 text-primary-950 border-secondary-400 hover:bg-secondary-400 shadow-lg shadow-secondary-500/20"
-                            }`}
+                          leftIcon={<Save size={14} />}
                         >
-                          <Save size={14} /> Save Changes
-                        </button>
+                          Save Changes
+                        </Button>
 
                         {hasNextQuestionEntities && (
                           <button
@@ -1178,39 +1177,26 @@ export default function MyCapExecutePage() {
           </div>
         )}
 
-        {navModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="w-full max-w-md glass rounded-xl border border-white/10 p-5">
-              <h3 className="text-white font-semibold text-base">Unsaved changes</h3>
-              <p className="text-sm text-gray-400 mt-1">You have unsaved responses.</p>
-              <div className="flex items-center justify-end gap-2 mt-5">
-                <button
-                  onClick={() => { setNavModalOpen(false); pendingNavRef.current = null; }}
-                  className="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:bg-white/[0.05] hover:text-white transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => { discardAllDirty(); setNavModalOpen(false); pendingNavRef.current?.(); }}
-                  className="px-4 py-2 rounded-lg text-sm font-medium text-red-400 border border-red-500/20 hover:bg-red-500/10 transition-all"
-                >
-                  Discard
-                </button>
-                <button
-                  onClick={async () => {
-                    const ok = await saveAllDirty();
-                    if (!ok) return;
-                    setNavModalOpen(false);
-                    pendingNavRef.current?.();
-                  }}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <Modal
+          open={navModalOpen}
+          onClose={() => { setNavModalOpen(false); pendingNavRef.current = null; }}
+          title="Unsaved changes"
+          description="You have unsaved responses."
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" fullWidth onClick={() => { setNavModalOpen(false); pendingNavRef.current = null; }}>
+                Cancel
+              </Button>
+              <Button variant="danger" fullWidth onClick={() => { discardAllDirty(); setNavModalOpen(false); pendingNavRef.current?.(); }}>
+                Discard
+              </Button>
+              <Button fullWidth onClick={async () => { const ok = await saveAllDirty(); if (!ok) return; setNavModalOpen(false); pendingNavRef.current?.(); }}>
+                Save
+              </Button>
+            </>
+          }
+        />
       </div>
     </div>
   );

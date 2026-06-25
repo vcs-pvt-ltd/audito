@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { authApi, usersApi } from "@/lib/api";
 import { CheckCircle2, XCircle, Loader2, ArrowRight, Eye, EyeOff, Lock, Check } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui";
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -217,13 +218,15 @@ function VerifyEmailContent() {
                 </div>
               )}
 
-              <button
+              <Button
                 type="submit"
+                fullWidth
+                loading={setupLoading}
                 disabled={setupLoading}
-                className="w-full flex items-center justify-center gap-2 bg-secondary-500 hover:bg-secondary-600 disabled:opacity-50 text-primary-950 font-semibold px-6 py-3 rounded-xl transition-all mt-2"
+                className="mt-2 rounded-xl py-3 font-semibold"
               >
-                {setupLoading ? <Loader2 size={18} className="animate-spin" /> : "Set Password & Login"}
-              </button>
+                Set Password & Login
+              </Button>
             </form>
           </div>
         )}

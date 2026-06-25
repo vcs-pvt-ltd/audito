@@ -3,15 +3,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditFirmLearningApi } from "@/lib/api";
 import { Plus, ArrowLeft } from "lucide-react";
-
-const inputCls =
-  "w-full bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all";
+import { Button, IconButton, Input, Textarea } from "@/components/ui";
 
 export default function CreateFieldVisitPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const router = useRouter();
+  const { toast } = useUiFeedback();
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,18 +69,16 @@ export default function CreateFieldVisitPage() {
       return;
     }
 
+    toast("Field visit created successfully.", "success");
     router.push("/learning/field-visits");
   };
 
   return (
     <div className="p-6 lg:p-8 pt-20 lg:pt-8 space-y-6 overflow-y-auto">
       <div className="flex items-center gap-3">
-        <button
-          onClick={() => router.back()}
-          className="p-2 rounded-xl text-gray-400 hover:text-white border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all shrink-0"
-        >
+        <IconButton bordered onClick={() => router.back()}>
           <ArrowLeft size={18} />
-        </button>
+        </IconButton>
         <div>
           <h1 className="text-xl font-bold text-white">Create Field Visit</h1>
           <p className="hidden sm:block text-sm text-gray-400 mt-0.5">
@@ -92,9 +90,9 @@ export default function CreateFieldVisitPage() {
       <div className="glass border border-white/10 rounded-2xl p-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-400 mb-1.5">Title <span className="text-red-400">*</span></label>
-            <input
-              className={inputCls}
+            <Input
+              label="Title"
+              required
               placeholder="e.g. Factory Floor Safety Inspection"
               value={form.title}
               onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
@@ -102,9 +100,9 @@ export default function CreateFieldVisitPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">Location Name <span className="text-red-400">*</span></label>
-            <input
-              className={inputCls}
+            <Input
+              label="Location Name"
+              required
               placeholder="e.g. Main Warehouse, Block A"
               value={form.location_name}
               onChange={(e) => setForm((p) => ({ ...p, location_name: e.target.value }))}
@@ -112,9 +110,8 @@ export default function CreateFieldVisitPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">Address</label>
-            <input
-              className={inputCls}
+            <Input
+              label="Address"
               placeholder="Full street address"
               value={form.address}
               onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
@@ -122,9 +119,8 @@ export default function CreateFieldVisitPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">Latitude</label>
-            <input
-              className={inputCls}
+            <Input
+              label="Latitude"
               type="number"
               step="any"
               placeholder="e.g. 37.7749"
@@ -134,9 +130,8 @@ export default function CreateFieldVisitPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">Longitude</label>
-            <input
-              className={inputCls}
+            <Input
+              label="Longitude"
               type="number"
               step="any"
               placeholder="e.g. -122.4194"
@@ -146,9 +141,9 @@ export default function CreateFieldVisitPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">Start Date / Time <span className="text-red-400">*</span></label>
-            <input
-              className={inputCls}
+            <Input
+              label="Start Date / Time"
+              required
               type="datetime-local"
               value={form.start_date}
               onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))}
@@ -156,9 +151,9 @@ export default function CreateFieldVisitPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">End Date / Time <span className="text-red-400">*</span></label>
-            <input
-              className={inputCls}
+            <Input
+              label="End Date / Time"
+              required
               type="datetime-local"
               value={form.end_date}
               onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))}
@@ -166,9 +161,8 @@ export default function CreateFieldVisitPage() {
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-400 mb-1.5">Notes</label>
-            <textarea
-              className={inputCls}
+            <Textarea
+              label="Notes"
               rows={3}
               placeholder="Additional notes or instructions for auditors..."
               value={form.notes}
@@ -184,14 +178,9 @@ export default function CreateFieldVisitPage() {
         )}
 
         <div className="flex items-center justify-end gap-3">
-          <button
-            disabled={saving}
-            onClick={handleCreate}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all"
-          >
-            <Plus size={16} />
+          <Button leftIcon={<Plus size={16}/>} loading={saving} onClick={handleCreate}>
             {saving ? "Creating..." : "Create"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

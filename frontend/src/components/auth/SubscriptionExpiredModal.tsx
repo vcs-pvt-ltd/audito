@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, X, ArrowRight } from "lucide-react";
 import type { SubscriptionStatus } from "@/context/AuthContext";
 import type { PaymentDetails } from "@/lib/api";
+import { IconButton } from "@/components/ui";
 
 /**
  * Shown on the login page when the backend blocks sign-in because the
@@ -40,13 +41,9 @@ export default function SubscriptionExpiredModal({
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#053B36] p-6 shadow-2xl">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
-          aria-label="Close"
-        >
+        <IconButton onClick={onClose} aria-label="Close" className="absolute top-4 right-4">
           <X size={18} />
-        </button>
+        </IconButton>
 
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/10">
           <AlertTriangle size={26} className="text-amber-400" />

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi } from "@/lib/api";
 import { AuditPdfRenderer } from "@/components/audit/AuditPdfRenderer";
+import { IconButton } from "@/components/ui";
 import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
 
 import {
@@ -158,16 +159,31 @@ function sameEntityInstance(
 // ─── Entity Tree Section ──────────────────────────────────────────
 
 function EntityTreeSection({
-  node, report, depth = 0, aggregatedMap,
+  node, report, depth = 0, aggregatedMap, auditEntityCodes,
 }: {
   node: EntityTreeNode;
   report: ReportData;
   depth?: number;
   aggregatedMap?: Map<string, { total_marks: number; obtained_marks: number; cap_required_count: number }>;
+  auditEntityCodes?: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const nodeOrgTreeId = node.edge_id ?? null;
   const nodeKey = `${node.code}__${nodeOrgTreeId ?? "null"}`;
+
+  const isAuditEntity = !auditEntityCodes || auditEntityCodes.has(nodeKey);
+
+  const subtreeHasAuditEntity = (n: EntityTreeNode): boolean => {
+    const k = `${n.code}__${(n.edge_id ?? null) === null ? "null" : n.edge_id}`;
+    if (auditEntityCodes?.has(k)) return true;
+    return (n.children || []).some(subtreeHasAuditEntity);
+  };
+
+  const visibleChildren = auditEntityCodes
+    ? (node.children || []).filter(subtreeHasAuditEntity)
+    : (node.children || []);
+
+  if (auditEntityCodes && !isAuditEntity && visibleChildren.length === 0) return null;
 
   const progress = aggregatedMap?.get(nodeKey) ||
     report.progress.find((p) => sameEntityInstance(node.code, nodeOrgTreeId, p));
@@ -177,12 +193,12 @@ function EntityTreeSection({
     report.audit.entities.find((e) => sameEntityInstance(node.code, nodeOrgTreeId, e))?.entity_name ||
     node.code;
 
-  const questions = report.questions.filter((q) =>
+  const questions = isAuditEntity ? report.questions.filter((q) =>
     sameEntityInstance(node.code, nodeOrgTreeId, q, { allowGeneric: true })
-  );
-  const responses = report.responses.filter((r) =>
+  ) : [];
+  const responses = isAuditEntity ? report.responses.filter((r) =>
     sameEntityInstance(node.code, nodeOrgTreeId, r)
-  );
+  ) : [];
   const capRequiredCount =
     progress && "cap_required_count" in progress
       ? (progress as any).cap_required_count
@@ -194,7 +210,7 @@ function EntityTreeSection({
       : 0;
 
   const hasQuestions = questions.length > 0;
-  const hasChildren = node.children?.length > 0;
+  const hasVisibleChildren = visibleChildren.length > 0;
 
   return (
     <div className={depth > 0 ? "ml-4 border-l border-white/[0.06] pl-3 mt-1" : "mt-1.5"}>
@@ -324,21 +340,22 @@ function EntityTreeSection({
             )}
 
             {/* Children */}
-            {hasChildren && (
+            {hasVisibleChildren && (
               <div className={`px-3 pb-3 space-y-0 ${hasQuestions ? "border-t border-white/[0.06] pt-2" : "pt-2"}`}>
-                {node.children.map((child) => (
+                {visibleChildren.map((child) => (
                   <EntityTreeSection
                     key={child.code}
                     node={child}
                     report={report}
                     depth={depth + 1}
                     aggregatedMap={aggregatedMap}
+                    auditEntityCodes={auditEntityCodes}
                   />
                 ))}
               </div>
             )}
 
-            {!hasQuestions && !hasChildren && (
+            {!hasQuestions && !hasVisibleChildren && (
               <p className="px-4 py-3 text-xs text-gray-600 italic">
                 No questions recorded for this entity.
               </p>
@@ -409,6 +426,16 @@ export default function MyAuditReportPage() {
     return map;
   }, [report, entityTree]);
 
+  const auditEntityCodes = useMemo(() => {
+    if (!report) return new Set<string>();
+    return new Set(
+      (report.audit.entities || []).map((e) => {
+        const id = (e.org_tree_id ?? null);
+        return `${e.entity_code}__${id === null ? "null" : id}`;
+      })
+    );
+  }, [report]);
+
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
   }, [isLoading, admin, router]);
@@ -447,12 +474,9 @@ export default function MyAuditReportPage() {
           {/* ── Header ── */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => router.push(`/my-audits/details?id=${auditId}`)}
-                className="p-2 rounded-xl text-gray-400 hover:text-white border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all shrink-0"
-              >
+              <IconButton bordered onClick={() => router.push(`/my-audits/details?id=${auditId}`)}>
                 <ArrowLeft size={16} />
-              </button>
+              </IconButton>
               <div>
                 <h1 className="text-xl font-bold text-white flex items-center gap-2">
                   <BarChart3 size={18} className="text-secondary-400" />
@@ -568,6 +592,7 @@ export default function MyAuditReportPage() {
                           node={node}
                           report={report}
                           aggregatedMap={aggregatedProgressMap}
+                          auditEntityCodes={auditEntityCodes}
                         />
                       ))
                     ) : (
@@ -575,6 +600,7 @@ export default function MyAuditReportPage() {
                         node={entityTree}
                         report={report}
                         aggregatedMap={aggregatedProgressMap}
+                        auditEntityCodes={auditEntityCodes}
                       />
                     )
                   ) : (
@@ -590,6 +616,7 @@ export default function MyAuditReportPage() {
                         }}
                         report={report}
                         aggregatedMap={aggregatedProgressMap}
+                        auditEntityCodes={auditEntityCodes}
                       />
                     ))
                   )}

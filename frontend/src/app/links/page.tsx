@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
+import EmptyState from "@/components/shared/EmptyState";
 import { countriesApi, linksApi, type Country } from "@/lib/api";
 
 import {
@@ -17,13 +18,13 @@ import {
   Trash2,
   Send,
   Inbox,
-  X,
   Eye,
   Building2,
   User,
   Users,
   Crown,
 } from "lucide-react";
+import { Button, IconButton, Modal, Table, THead, Th, TBody, Tr, Td, Input } from "@/components/ui";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -161,8 +162,6 @@ function ViewDataModal({
   loading: boolean;
   error: string;
 }) {
-  if (!open) return null;
-
   const infoRow = (label: string, value: string | null | undefined) => (
     <div className="flex justify-between py-1.5 border-b border-white/5 last:border-0">
       <span className="text-gray-500 text-xs">{label}</span>
@@ -180,71 +179,49 @@ function ViewDataModal({
   ];
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative glass rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">
-            {data ? `${data.entity_type} Data` : "Entity Data"}
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <X size={20} />
-          </button>
+    <Modal open={open} onClose={onClose} title={data ? `${data.entity_type} Data` : "Entity Data"} size="lg">
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
         </div>
-
-        <div className="p-5 space-y-5">
-          {loading ? (
-            <div className="flex items-center justify-center py-10">
-              <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
+      ) : error ? (
+        <p className="text-red-400 text-sm text-center py-6">{error}</p>
+      ) : !data ? (
+        <p className="text-gray-400 text-sm text-center py-6">No data available.</p>
+      ) : (
+        <div className="space-y-5">
+          {data.entity && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Building2 size={16} className="text-secondary-400" />
+                <h3 className="text-sm font-medium text-white">Organization Info</h3>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                {infoRow("Name", data.entity.name)}
+                {infoRow("Registration No.", data.entity.registration_number)}
+                {infoRow("Email", data.entity.email)}
+                {infoRow("Phone", data.entity.phone_number)}
+                {infoRow("Address", data.entity.address)}
+                {infoRow("Country", data.entity.country)}
+              </div>
             </div>
-          ) : error ? (
-            <p className="text-red-400 text-sm text-center py-6">{error}</p>
-          ) : !data ? (
-            <p className="text-gray-400 text-sm text-center py-6">No data available.</p>
-          ) : (
-            <>
-              {/* Entity Info */}
-              {data.entity && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Building2 size={16} className="text-secondary-400" />
-                    <h3 className="text-sm font-medium text-white">Organization Info</h3>
-                  </div>
-                  <div className="bg-white/5 rounded-lg p-3">
-                    {infoRow("Name", data.entity.name)}
-                    {infoRow("Registration No.", data.entity.registration_number)}
-                    {infoRow("Email", data.entity.email)}
-                    {infoRow("Phone", data.entity.phone_number)}
-                    {infoRow("Address", data.entity.address)}
-                    {infoRow("Country", data.entity.country)}
-                  </div>
-                </div>
-              )}
-
-              {/* Admin Info */}
-              {data.admin && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <User size={16} className="text-secondary-400" />
-                    <h3 className="text-sm font-medium text-white">Admin</h3>
-                  </div>
-                  <div className="bg-white/5 rounded-lg p-3">
-                    {infoRow("Name", `${data.admin.first_name} ${data.admin.last_name}`)}
-                    {infoRow("Email", data.admin.email)}
-                    {infoRow("Phone", data.admin.phone_number)}
-                  </div>
-                </div>
-              )}
-
-             
-
-
-            
-            </>
+          )}
+          {data.admin && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <User size={16} className="text-secondary-400" />
+                <h3 className="text-sm font-medium text-white">Admin</h3>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                {infoRow("Name", `${data.admin.first_name} ${data.admin.last_name}`)}
+                {infoRow("Email", data.admin.email)}
+                {infoRow("Phone", data.admin.phone_number)}
+              </div>
+            </div>
           )}
         </div>
-      </div>
-    </div>
+      )}
+    </Modal>
   );
 }
 
@@ -338,8 +315,6 @@ function CreateLinkModal({
     };
   }, [open, countries.length]);
 
-  if (!open) return null;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canLink) return setError("No link target is available for your entity type.");
@@ -393,147 +368,122 @@ function CreateLinkModal({
     previewDialCode
   );
 
-  const inputClass =
-    "w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/30 transition-all";
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative glass rounded-2xl w-full max-w-md">
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">Request</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <X size={20} />
-          </button>
+    <Modal open={open} onClose={onClose} title="Request" size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
+        {createdLink && (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4">
+            <p className="text-sm font-semibold text-emerald-300">Link request sent</p>
+            <p className="text-xs text-gray-400 mt-1">Share this 6-digit key with the target organization. They must enter it to accept.</p>
+            <div className="mt-3 rounded-lg bg-black/30 border border-white/10 px-4 py-3 text-center font-mono text-2xl tracking-[0.35em] text-white">
+              {createdLink.verification_key}
+            </div>
+          </div>
+        )}
+
+        <p className="text-sm text-gray-400">
+          Send a link request using the organization administrator&apos;s email.
+        </p>
+
+        {canLink ? (
+          <p className="text-xs text-gray-500">
+            Allowed target: <span className="text-gray-300">{targetHint}</span>
+          </p>
+        ) : (
+          <p className="text-sm text-gray-500">No link target is available for your entity type.</p>
+        )}
+
+        <div>
+          <Input
+            label="Administrator Email"
+            required
+            type="email"
+            value={targetEmail}
+            onChange={(e) => {
+              setTargetEmail(e.target.value);
+              setError("");
+              setCreatedLink(null);
+            }}
+            placeholder="e.g. admin@company.com"
+            disabled={!!createdLink}
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Enter the email address of the organization administrator you want to link with.
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
-              {error}
-            </div>
-          )}
+        {!createdLink && (
+          <Button
+            type="button"
+            fullWidth
+            loading={previewLoading}
+            disabled={previewLoading || !targetEmail.trim() || !canLink}
+            onClick={handlePreview}
+            className="text-secondary-300 border-secondary-500/20 bg-secondary-500/10 hover:bg-secondary-500/15"
+          >
+            {previewLoading ? "Verifying..." : "Verify Organization"}
+          </Button>
+        )}
 
-          {createdLink && (
-            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4">
-              <p className="text-sm font-semibold text-emerald-300">Link request sent</p>
-              <p className="text-xs text-gray-400 mt-1">Share this 6-digit key with the target organization. They must enter it to accept.</p>
-              <div className="mt-3 rounded-lg bg-black/30 border border-white/10 px-4 py-3 text-center font-mono text-2xl tracking-[0.35em] text-white">
-                {createdLink.verification_key}
+        {previewIsCurrent && targetPreview && (
+          <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Building2 size={15} className="text-secondary-400" />
+              <p className="text-sm font-semibold text-white">{targetPreview.entity?.name || "Verified Organization"}</p>
+            </div>
+            <div className="grid grid-cols-1 gap-1 text-xs">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Type</span>
+                <span className="text-gray-300 text-right">{targetPreview.entity_type}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Country</span>
+                <span className="text-gray-300 text-right">{targetPreview.entity?.country || "-"}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Organization Email</span>
+                <span className="text-gray-300 text-right break-all">{targetPreview.entity?.email || "-"}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Organization Phone</span>
+                <span className="text-gray-300 text-right">{organizationPhoneWithDialCode}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Address</span>
+                <span className="text-gray-300 text-right">{targetPreview.entity?.address || "-"}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Admin</span>
+                <span className="text-gray-300 text-right">
+                  {targetPreview.admin ? `${targetPreview.admin.first_name} ${targetPreview.admin.last_name}` : "-"}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Admin Phone</span>
+                <span className="text-gray-300 text-right">{adminPhoneWithDialCode}</span>
               </div>
             </div>
-          )}
-
-          <p className="text-sm text-gray-400">
-            Send a link request using the organization administrator&apos;s email.
-          </p>
-
-          {canLink ? (
-            <p className="text-xs text-gray-500">
-              Allowed target: <span className="text-gray-300">{targetHint}</span>
-            </p>
-          ) : (
-            <p className="text-sm text-gray-500">No link target is available for your entity type.</p>
-          )}
-
-          <div>
-            <label className="block text-sm text-gray-400 mb-1.5">
-              Administrator Email <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="email"
-              value={targetEmail}
-              onChange={(e) => {
-                setTargetEmail(e.target.value);
-                setError("");
-                setCreatedLink(null);
-              }}
-              placeholder="e.g. admin@company.com"
-              className={inputClass}
-              disabled={!!createdLink}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Enter the email address of the organization administrator you want to link with.
-            </p>
           </div>
+        )}
 
+        <div className="flex gap-3 pt-2">
+          <Button type="button" variant="secondary" fullWidth onClick={onClose}>
+            {createdLink ? "Close" : "Cancel"}
+          </Button>
           {!createdLink && (
-            <button
-              type="button"
-              onClick={handlePreview}
-              disabled={previewLoading || !targetEmail.trim() || !canLink}
-              className="w-full px-4 py-2.5 rounded-lg text-sm font-medium text-secondary-300 border border-secondary-500/20 bg-secondary-500/10 hover:bg-secondary-500/15 disabled:opacity-50 transition-all"
-            >
-              {previewLoading ? "Verifying..." : "Verify Organization"}
-            </button>
+            <Button type="submit" fullWidth disabled={loading || !canLink || !previewIsCurrent} loading={loading}>
+              Send Request
+            </Button>
           )}
-
-          {previewIsCurrent && targetPreview && (
-            <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Building2 size={15} className="text-secondary-400" />
-                <p className="text-sm font-semibold text-white">{targetPreview.entity?.name || "Verified Organization"}</p>
-              </div>
-              <div className="grid grid-cols-1 gap-1 text-xs">
-                <div className="flex justify-between gap-3">
-                  <span className="text-gray-500">Type</span>
-                  <span className="text-gray-300 text-right">{targetPreview.entity_type}</span>
-                </div>
-               
-               
-                <div className="flex justify-between gap-3">
-                  <span className="text-gray-500">Country</span>
-                  <span className="text-gray-300 text-right">{targetPreview.entity?.country || "-"}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-gray-500">Organization Email</span>
-                  <span className="text-gray-300 text-right break-all">{targetPreview.entity?.email || "-"}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-gray-500">Organization Phone</span>
-                  <span className="text-gray-300 text-right">{organizationPhoneWithDialCode}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-gray-500">Address</span>
-                  <span className="text-gray-300 text-right">{targetPreview.entity?.address || "-"}</span>
-                </div>
-                
-                <div className="flex justify-between gap-3">
-                  <span className="text-gray-500">Admin</span>
-                  <span className="text-gray-300 text-right">
-                    {targetPreview.admin ? `${targetPreview.admin.first_name} ${targetPreview.admin.last_name}` : "-"}
-                  </span>
-                </div>
-               
-                <div className="flex justify-between gap-3">
-                  <span className="text-gray-500">Admin Phone</span>
-                  <span className="text-gray-300 text-right">{adminPhoneWithDialCode}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
-            >
-              {createdLink ? "Close" : "Cancel"}
-            </button>
-            {!createdLink && (
-              <button
-                type="submit"
-                disabled={loading || !canLink || !previewIsCurrent}
-                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all"
-              >
-                {loading ? "Sending..." : "Send Request"}
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -578,7 +528,7 @@ function AcceptLinkModal({
     };
   }, [open, countries.length]);
 
-  if (!open || !link) return null;
+  if (!link) return null;
 
   const requesterDialCode = countries.find(
     (country) => country.country.toLowerCase() === (link.requester_country || "").toLowerCase()
@@ -601,93 +551,76 @@ function AcceptLinkModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative glass rounded-2xl w-full max-w-md">
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">Accept Link Request</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <X size={20} />
-          </button>
+    <Modal open={open} onClose={onClose} title="Accept Link Request" size="sm">
+      <form onSubmit={submit} className="space-y-4">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+        <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Building2 size={15} className="text-secondary-400" />
+            <p className="text-sm font-semibold text-white">{link.requester_name || "Requester Organization"}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-1 text-xs">
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Type</span>
+              <span className="text-gray-300 text-right">{link.requester_type}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Country</span>
+              <span className="text-gray-300 text-right">{link.requester_country || "-"}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Organization Email</span>
+              <span className="text-gray-300 text-right break-all">{link.requester_email || "-"}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Organization Phone</span>
+              <span className="text-gray-300 text-right">{requesterPhone}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Address</span>
+              <span className="text-gray-300 text-right">{link.requester_address || "-"}</span>
+            </div>
+            <div className="flex justify-between gap-3 pt-1 border-t border-white/5 mt-1">
+              <span className="text-gray-500">Admin</span>
+              <span className="text-gray-300 text-right">{link.requester_admin_name || "-"}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Admin Email</span>
+              <span className="text-gray-300 text-right break-all">{link.requester_admin_email || "-"}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Admin Phone</span>
+              <span className="text-gray-300 text-right">{requesterAdminPhone}</span>
+            </div>
+          </div>
         </div>
-        <form onSubmit={submit} className="p-5 space-y-4">
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
-              {error}
-            </div>
-          )}
-          <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Building2 size={15} className="text-secondary-400" />
-              <p className="text-sm font-semibold text-white">{link.requester_name || "Requester Organization"}</p>
-            </div>
-            <div className="grid grid-cols-1 gap-1 text-xs">
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Type</span>
-                <span className="text-gray-300 text-right">{link.requester_type}</span>
-              </div>
-             
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Country</span>
-                <span className="text-gray-300 text-right">{link.requester_country || "-"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Organization Email</span>
-                <span className="text-gray-300 text-right break-all">{link.requester_email || "-"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Organization Phone</span>
-                <span className="text-gray-300 text-right">{requesterPhone}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Address</span>
-                <span className="text-gray-300 text-right">{link.requester_address || "-"}</span>
-              </div>
-              <div className="flex justify-between gap-3 pt-1 border-t border-white/5 mt-1">
-                <span className="text-gray-500">Admin</span>
-                <span className="text-gray-300 text-right">{link.requester_admin_name || "-"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Admin Email</span>
-                <span className="text-gray-300 text-right break-all">{link.requester_admin_email || "-"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Admin Phone</span>
-                <span className="text-gray-300 text-right">{requesterAdminPhone}</span>
-              </div>
-            </div>
-          </div>
-          <p className="text-sm text-gray-400">
-            Enter the 6-digit key shared by the requester to confirm this link.
-          </p>
-          <input
-            value={key}
-            onChange={(e) => setKey(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            inputMode="numeric"
-            pattern="[0-9]{6}"
-            placeholder="000000"
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-3 text-white text-center text-xl font-mono tracking-[0.35em] placeholder-gray-600 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/30 transition-all"
-            autoFocus
-          />
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || key.length !== 6}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-400 disabled:opacity-50 transition-all"
-            >
-              {loading ? "Accepting..." : "Accept"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <p className="text-sm text-gray-400">
+          Enter the 6-digit key shared by the requester to confirm this link.
+        </p>
+        <input
+          value={key}
+          onChange={(e) => setKey(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          inputMode="numeric"
+          pattern="[0-9]{6}"
+          placeholder="000000"
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-3 text-white text-center text-xl font-mono tracking-[0.35em] placeholder-gray-600 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/30 transition-all"
+          autoFocus
+        />
+        <div className="flex gap-3 pt-2">
+          <Button type="button" variant="secondary" fullWidth onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" fullWidth disabled={loading || key.length !== 6} loading={loading}
+            className="bg-emerald-500 text-white hover:bg-emerald-400">
+            {loading ? "Accepting..." : "Accept"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -857,21 +790,16 @@ export default function LinksPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={fetchData}
-              className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-              title="Refresh"
-            >
+            <IconButton bordered onClick={fetchData} title="Refresh">
               <RefreshCw size={16} />
-            </button>
+            </IconButton>
             {canRequest && (
-              <button
+              <Button
+                leftIcon={admin?.plan_limits && !admin.plan_limits.company_to_company ? <Crown size={16} /> : <Plus size={16} />}
                 onClick={handleOpenCreateLink}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10"
               >
-                {admin?.plan_limits && !admin.plan_limits.company_to_company ? <Crown size={16} /> : <Plus size={16} />}
                 {admin?.plan_limits && !admin.plan_limits.company_to_company ? "Upgrade" : "Request"}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -920,95 +848,70 @@ export default function LinksPage() {
         ) : tab === "links" ? (
           /* ─── My Links Tab ─── */
           links.length === 0 ? (
-            <div className="glass rounded-xl p-10 text-center">
-              <LinkIcon size={40} className="text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-400 text-sm">
-                No links yet.{" "}
-                {canRequest
-                  ? "Use \u201cRequest Link\u201d to connect with an upper-level entity."
-                  : "Other entities can request to link with you."}
-              </p>
-            </div>
+            <EmptyState
+              icon={LinkIcon}
+              title="No links yet"
+              message={canRequest
+                ? "Use \u201cRequest Link\u201d to connect with an upper-level entity."
+                : "Other entities can request to link with you."}
+            />
           ) : (
-            <div className="glass rounded-xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/10">
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Direction</th>
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium whitespace-nowrap">Organization</th>
-                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Date</th>
-                      <th className="text-right px-4 py-3 text-gray-400 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {links.map((link) => {
-                      const other = otherSide(link);
-                      return (
-                        <tr
-                          key={link.link_code}
-                          className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
-                        >
-                          <td className="px-4 py-3">
-                            <StatusBadge status={link.status} />
-                          </td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">
-                            {other.direction === "to" ? (
-                              <span className="text-blue-400">→ Linked to</span>
-                            ) : (
-                              <span className="text-purple-400">← Linked from</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-col">
-                              <span className="text-white font-medium">{other.name || "Unknown Entity"}</span>
-                              <span className="text-[9px] uppercase font-bold text-gray-500 tracking-wider">
-                                {other.type}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">
-                            {new Date(link.requested_at).toLocaleDateString()}
-                          </td>
-                          <td className="px-4 py-3 text-right flex items-center justify-end gap-1">
-                            {link.status === "accepted" && link.target_code === entityCode && (
-                              <button
-                                onClick={() => handleViewData(link.link_code)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all"
-                                title="View entity data"
-                              >
-                                <Eye size={15} />
-                              </button>
-                            )}
-                            {/* Requester: cancel while pending | Target: remove at any non-rejected status */}
-                            {link.status !== "rejected" &&
-                              (link.target_code === entityCode ||
-                                (link.requester_code === entityCode && link.status === "pending")) && (
-                              <button
-                                onClick={() => handleRemove(link.link_code)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                                title={link.status === "pending" ? "Cancel request" : "Remove link"}
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <Table>
+              <THead>
+                <Th>Status</Th>
+                <Th>Direction</Th>
+                <Th className="whitespace-nowrap">Organization</Th>
+                <Th>Date</Th>
+                <Th align="right">Actions</Th>
+              </THead>
+              <TBody>
+                {links.map((link) => {
+                  const other = otherSide(link);
+                  return (
+                    <Tr key={link.link_code}>
+                      <Td><StatusBadge status={link.status} /></Td>
+                      <Td className="text-xs">
+                        {other.direction === "to" ? (
+                          <span className="text-blue-400">→ Linked to</span>
+                        ) : (
+                          <span className="text-purple-400">← Linked from</span>
+                        )}
+                      </Td>
+                      <Td>
+                        <div className="flex flex-col">
+                          <span className="text-white font-medium">{other.name || "Unknown Entity"}</span>
+                          <span className="text-[9px] uppercase font-bold text-gray-500 tracking-wider">{other.type}</span>
+                        </div>
+                      </Td>
+                      <Td className="text-gray-500 text-xs">{new Date(link.requested_at).toLocaleDateString()}</Td>
+                      <Td align="right" className="flex items-center justify-end gap-1">
+                        {link.status === "accepted" && link.target_code === entityCode && (
+                          <IconButton tone="secondary" title="View entity data" onClick={() => handleViewData(link.link_code)}>
+                            <Eye size={15} />
+                          </IconButton>
+                        )}
+                        {link.status !== "rejected" &&
+                          (link.target_code === entityCode ||
+                            (link.requester_code === entityCode && link.status === "pending")) && (
+                          <IconButton tone="danger" title={link.status === "pending" ? "Cancel request" : "Remove link"} onClick={() => handleRemove(link.link_code)}>
+                            <Trash2 size={15} />
+                          </IconButton>
+                        )}
+                      </Td>
+                    </Tr>
+                  );
+                })}
+              </TBody>
+            </Table>
           )
         ) : (
           /* ─── Incoming Requests Tab ─── */
           pendingRequests.length === 0 ? (
-            <div className="glass rounded-xl p-10 text-center">
-              <Inbox size={40} className="text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-400 text-sm">No pending link requests.</p>
-            </div>
+            <EmptyState
+              icon={Inbox}
+              title="No pending link requests"
+              message="Incoming requests from other entities will appear here."
+            />
           ) : (
             <div className="space-y-3">
               {pendingRequests.map((link) => (
@@ -1031,20 +934,24 @@ export default function LinksPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <button
+                    <Button
+                      size="sm"
+                      leftIcon={<CheckCircle size={14} />}
+                      disabled={actionLoading === link.link_code}
                       onClick={() => setAcceptingLink(link)}
-                      disabled={actionLoading === link.link_code}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 disabled:opacity-50 transition-all"
+                      className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
                     >
-                      <CheckCircle size={14} /> Accept
-                    </button>
-                    <button
+                      Accept
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      leftIcon={<XCircle size={14} />}
+                      disabled={actionLoading === link.link_code}
                       onClick={() => handleRespond(link.link_code, "reject")}
-                      disabled={actionLoading === link.link_code}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 disabled:opacity-50 transition-all"
                     >
-                      <XCircle size={14} /> Reject
-                    </button>
+                      Reject
+                    </Button>
                   </div>
                 </div>
               ))}

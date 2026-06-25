@@ -16,6 +16,8 @@ import {
   AlertTriangle
 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Table, THead, Th } from "@/components/ui";
 
 interface AuditAssignment {
   id: number;
@@ -237,36 +239,30 @@ export default function EntityHeadAuditsPage() {
             <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : audits.length === 0 ? (
-          <div className="glass rounded-xl p-20 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-secondary-500/10 flex items-center justify-center mx-auto mb-5">
-              <ClipboardCheck size={32} className="text-gray-600" />
-            </div>
-            <p className="text-white font-semibold text-lg mb-2">No audits found</p>
-            <p className="text-gray-400 text-sm max-w-sm mx-auto">
-              There are no audits assigned to your organization tree at this time.
-            </p>
-          </div>
+          <EmptyState
+            icon={ClipboardCheck}
+            title="No audits found"
+            message="There are no audits assigned to your organization tree at this time."
+          />
         ) : filtered.length === 0 ? (
-          <div className="glass rounded-xl p-16 text-center">
-            <AlertTriangle size={36} className="text-gray-600 mx-auto mb-4" />
-            <p className="text-white font-medium mb-1">No matching audits</p>
-            <p className="text-gray-400 text-sm">Try adjusting your filters or search query.</p>
-          </div>
+          <EmptyState
+            icon={AlertTriangle}
+            title="No matching audits"
+            message="Try adjusting your filters or search query."
+          />
         ) : (
           <div className="space-y-4">
-            <div className="glass rounded-xl overflow-hidden hidden md:block">
-              <table className="w-full text-sm text-left">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="px-4 py-3 text-gray-400 font-medium w-12 text-center">#</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Audit</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Type</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Start Date</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">End Date</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Status</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Progress</th>
-                  </tr>
-                </thead>
+            <div className="hidden md:block">
+              <Table className="text-left">
+                <THead>
+                  <Th align="center" className="w-12">#</Th>
+                  <Th>Audit</Th>
+                  <Th>Type</Th>
+                  <Th>Start Date</Th>
+                  <Th>End Date</Th>
+                  <Th>Status</Th>
+                  <Th>Progress</Th>
+                </THead>
                 <tbody className="divide-y divide-white/[0.06]">
                   {paginated.map((a, index) => {
                     const pct = a.progress_pct || 0;
@@ -317,7 +313,7 @@ export default function EntityHeadAuditsPage() {
                     );
                   })}
                 </tbody>
-              </table>
+              </Table>
             </div>
 
             {/* Mobile View */}

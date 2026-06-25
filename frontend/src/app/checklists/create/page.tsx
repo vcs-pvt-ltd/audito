@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { checklistApi, orgTreeApi, type QuestionPayload, type QuestionOption } from "@/lib/api";
+import { Button, IconButton, Modal, Input, Textarea } from "@/components/ui";
 
 import {
   ChevronLeft,
@@ -501,36 +502,35 @@ function AddQuestionModal({ open, entities, onClose, onAdd }: {
 }) {
   const [selected, setSelected] = useState("");
   useEffect(() => { if (open) setSelected(""); }, [open]);
-  if (!open) return null;
   const node = entities.find(e => e.code === selected);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="glass rounded-2xl w-full max-w-sm shadow-2xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <h3 className="text-white font-semibold">Choose Entity</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={18} /></button>
-        </div>
-        <div className="p-5 space-y-4">
-          <p className="text-sm text-gray-400">Select the entity to add questions for:</p>
-          <select value={selected} onChange={e => setSelected(e.target.value)} className={inputCls}>
-            <option value="" className="bg-[#0c2218] text-white">Select entity...</option>
-            {entities.map(n => (
-              <option key={n.code} value={n.code} className="bg-[#0c2218] text-white">[{n.entity_type}] {n.name}</option>
-            ))}
-          </select>
-          <div className="flex gap-3 pt-1">
-            <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all">Cancel</button>
-            <button
-              disabled={!selected}
-              onClick={() => { if (node) { onAdd(node.code, node.entity_type, node.name); onClose(); } }}
-              className="flex-1 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-50"
-            >
-              Add Questions
-            </button>
-          </div>
-        </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Choose Entity"
+      size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={!selected}
+            onClick={() => { if (node) { onAdd(node.code, node.entity_type, node.name); onClose(); } }}
+          >
+            Add Questions
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-gray-400">Select the entity to add questions for:</p>
+        <select value={selected} onChange={e => setSelected(e.target.value)} className={inputCls}>
+          <option value="" className="bg-[#0c2218] text-white">Select entity...</option>
+          {entities.map(n => (
+            <option key={n.code} value={n.code} className="bg-[#0c2218] text-white">[{n.entity_type}] {n.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -544,68 +544,48 @@ function ExcelConfirmModal({ open, questions, uploadResult, treeRoot, onConfirm,
   onConfirm: (qs: QuestionForm[]) => void;
   onDiscard: () => void;
 }) {
-  if (!open) return null;
   const entityCodesWithQs = new Set(questions.map(q => questionKey(q)));
   const prunedRoot = treeRoot ? pruneTreeByEntityCodes(treeRoot, entityCodesWithQs) : null;
   const totalEntityCount = prunedRoot ? countPrunedEntities(prunedRoot) : entityCodesWithQs.size;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[85vh] glass">
-        <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-secondary-500/20 border border-secondary-500/30 flex items-center justify-center">
-              <FileText size={17} className="text-secondary-400" />
-            </div>
-            <div>
-              <h2 className="text-white font-semibold">Confirm Excel Import</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {questions.length} question{questions.length !== 1 ? "s" : ""} across {totalEntityCount} entit{totalEntityCount !== 1 ? "ies" : "y"}
-                {uploadResult?.errors?.length ? ` · ${uploadResult.errors.length} row(s) skipped` : ""}
-              </p>
-            </div>
-          </div>
-          <button onClick={onDiscard} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-
-        {uploadResult?.errors?.length ? (
-          <div className="mx-6 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <p className="text-xs font-medium text-amber-400 mb-1.5">Skipped rows:</p>
-            <ul className="space-y-0.5 max-h-20 overflow-y-auto">
-              {uploadResult.errors.map((e, i) => <li key={i} className="text-[11px] text-amber-300/80">• {e}</li>)}
-            </ul>
-          </div>
-        ) : null}
-
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
-          {prunedRoot ? (
-            ENTITY_TYPE_COLORS[prunedRoot.entity_type]
-              ? <ExcelTreeEntityNode node={prunedRoot} questions={questions} />
-              : (prunedRoot.children ?? []).map(child => <ExcelTreeEntityNode key={child.code} node={child} questions={questions} />)
-          ) : (
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-10 text-center">
-              <p className="text-white font-medium mb-1">No hierarchy available</p>
-              <p className="text-gray-500 text-sm">Upload succeeded but org tree is not available to preview.</p>
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-4 border-t border-white/[0.08] flex items-center gap-3 justify-between shrink-0">
-          <button onClick={onDiscard} className="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all">
-            Discard
-          </button>
-          <button
-            onClick={() => onConfirm(questions)}
-            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
-          >
-            <Check size={14} />
+    <Modal
+      open={open}
+      onClose={onDiscard}
+      title="Confirm Excel Import"
+      description={`${questions.length} question${questions.length !== 1 ? "s" : ""} across ${totalEntityCount} entit${totalEntityCount !== 1 ? "ies" : "y"}${uploadResult?.errors?.length ? ` · ${uploadResult.errors.length} row(s) skipped` : ""}`}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onDiscard}>Discard</Button>
+          <Button leftIcon={<Check size={14} />} onClick={() => onConfirm(questions)}>
             Add {questions.length} Question{questions.length !== 1 ? "s" : ""}
-          </button>
+          </Button>
+        </>
+      }
+    >
+      {uploadResult?.errors?.length ? (
+        <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <p className="text-xs font-medium text-amber-400 mb-1.5">Skipped rows:</p>
+          <ul className="space-y-0.5 max-h-20 overflow-y-auto">
+            {uploadResult.errors.map((e, i) => <li key={i} className="text-[11px] text-amber-300/80">• {e}</li>)}
+          </ul>
         </div>
+      ) : null}
+
+      <div className="space-y-1">
+        {prunedRoot ? (
+          ENTITY_TYPE_COLORS[prunedRoot.entity_type]
+            ? <ExcelTreeEntityNode node={prunedRoot} questions={questions} />
+            : (prunedRoot.children ?? []).map(child => <ExcelTreeEntityNode key={child.code} node={child} questions={questions} />)
+        ) : (
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-10 text-center">
+            <p className="text-white font-medium mb-1">No hierarchy available</p>
+            <p className="text-gray-500 text-sm">Upload succeeded but org tree is not available to preview.</p>
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -984,15 +964,12 @@ export default function CreateChecklistPage() {
 
         {/* Page header */}
         <div className="flex items-center gap-3 mb-6 sm:mb-8">
-          <button
-            onClick={() => {
-              const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
-              router.push(`/checklists${isOnboarding ? "?onboarding=1" : ""}`);
-            }}
-            className="p-2 sm:p-3 rounded-xl sm:rounded-2xl text-gray-400 hover:text-white border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all shrink-0"
-          >
+          <IconButton bordered onClick={() => {
+            const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
+            router.push(`/checklists${isOnboarding ? "?onboarding=1" : ""}`);
+          }}>
             <ChevronLeft size={20} />
-          </button>
+          </IconButton>
           <div>
             <h1 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
               <ClipboardList size={20} className="text-secondary-400" />
@@ -1281,18 +1258,18 @@ export default function CreateChecklistPage() {
 
         {/* ─── Wizard Nav ── */}
         <div className="mt-6 sm:mt-8 flex items-center justify-between gap-3 p-3 sm:p-4 glass rounded-xl border border-white/10">
-          <button
-            onClick={() => setStep(s => Math.max(1, s - 1))}
+          <Button
+            variant="secondary"
+            leftIcon={<ChevronLeft size={15} />}
             disabled={step === 1}
-            className="flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl text-sm font-medium border border-white/10 hover:border-white/20 disabled:opacity-40 transition-all"
+            onClick={() => setStep(s => Math.max(1, s - 1))}
           >
-            <ChevronLeft size={15} />
-            <span className="hidden sm:inline">Previous</span>
-            <span className="sm:hidden">Back</span>
-          </button>
+            Previous
+          </Button>
 
           {step < 3 ? (
-            <button
+            <Button
+              rightIcon={<ChevronRight size={15} />}
               onClick={() => {
                 if (step === 1) {
                   if (!formData.name.trim()) { setSaveError("Checklist name is required to continue."); return; }
@@ -1308,19 +1285,17 @@ export default function CreateChecklistPage() {
                 setSaveError("");
                 setStep(s => s + 1);
               }}
-              className="flex items-center gap-1.5 sm:gap-2 px-5 sm:px-8 py-2.5 sm:py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-xl transition-all"
             >
-              Next <ChevronRight size={15} />
-            </button>
+              Next
+            </Button>
           ) : (
-            <button
+            <Button
+              leftIcon={saving ? undefined : <Save size={16} />}
+              loading={saving}
               onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 sm:gap-2 px-5 sm:px-8 py-2.5 sm:py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-xl transition-all disabled:opacity-60"
             >
-              {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
               {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Checklist"}
-            </button>
+            </Button>
           )}
         </div>
 
@@ -1344,32 +1319,38 @@ export default function CreateChecklistPage() {
           }}
         />
 
-        {showTypeModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-transparent/80 backdrop-blur-sm">
-            <div className="bg-primary-900 max-w-sm w-full rounded-2xl border border-white/10 overflow-hidden shadow-2xl flex flex-col animate-in fade-in zoom-in duration-200">
-              <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
-                <h2 className="text-lg font-semibold text-white">New Checklist Type</h2>
-                <button onClick={() => setShowTypeModal(false)} className="p-1 rounded-md text-gray-500 hover:text-white hover:bg-white/10 transition-colors"><X size={18} /></button>
-              </div>
-              <div className="p-5 flex flex-col gap-4">
-                <div>
-                  <FieldLabel label="Type Name" required />
-                  <input type="text" placeholder="e.g. Health & Safety" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} className={inputCls} autoFocus />
-                </div>
-                <div>
-                  <FieldLabel label="Description" />
-                  <textarea placeholder="Optional description..." value={newTypeDesc} onChange={(e) => setNewTypeDesc(e.target.value)} className={`${inputCls} resize-none`} rows={3} />
-                </div>
-              </div>
-              <div className="px-5 py-4 border-t border-white/5 bg-white/[0.01] flex items-center gap-3 justify-end">
-                <button onClick={() => setShowTypeModal(false)} className="px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors font-medium">Cancel</button>
-                <button onClick={handleCreateType} disabled={creatingType || !newTypeName.trim()} className="px-4 py-2 rounded-lg text-sm bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold transition-colors disabled:opacity-50 flex items-center gap-2">
-                  {creatingType ? <Loader2 size={16} className="animate-spin" /> : "Create Type"}
-                </button>
-              </div>
-            </div>
+        <Modal
+          open={showTypeModal}
+          onClose={() => setShowTypeModal(false)}
+          title="New Checklist Type"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setShowTypeModal(false)}>Cancel</Button>
+              <Button loading={creatingType} disabled={creatingType || !newTypeName.trim()} onClick={handleCreateType}>
+                Create Type
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            <Input
+              label="Type Name"
+              required
+              placeholder="e.g. Health & Safety"
+              value={newTypeName}
+              onChange={(e) => setNewTypeName(e.target.value)}
+              autoFocus
+            />
+            <Textarea
+              label="Description"
+              placeholder="Optional description..."
+              value={newTypeDesc}
+              onChange={(e) => setNewTypeDesc(e.target.value)}
+              rows={3}
+            />
           </div>
-        )}
+        </Modal>
       </main>
     </div>
   );

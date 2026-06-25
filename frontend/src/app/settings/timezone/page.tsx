@@ -4,6 +4,7 @@ import { Loader2, Save, Clock, Search, Check, ChevronDown, X } from "lucide-reac
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { settingsApi, timezonesApi, type TimezoneOption } from "@/lib/api";
+import { Button } from "@/components/ui";
 
 export default function TimeZoneSettingsPage() {
   const { admin, accessToken } = useAuth();
@@ -88,7 +89,7 @@ export default function TimeZoneSettingsPage() {
   if (!admin) return null;
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl w-full mx-auto space-y-6">
+    <div className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto max-w-6xl w-full mx-auto space-y-6">
 
       {/* Header */}
       <div>
@@ -206,14 +207,15 @@ export default function TimeZoneSettingsPage() {
             </div>
 
             {/* Save button */}
-            <button
+            <Button
               onClick={handleSave}
-              disabled={saving || !selectedTz}
-              className="flex items-center gap-2 bg-secondary-500 hover:bg-secondary-400 text-primary-950 font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 w-full sm:w-auto justify-center"
+              disabled={!selectedTz}
+              loading={saving}
+              leftIcon={<Save size={16} />}
+              className="shrink-0 w-full sm:w-auto"
             >
-              {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
               {saving ? "Saving..." : "Save"}
-            </button>
+            </Button>
           </div>
         )}
 
