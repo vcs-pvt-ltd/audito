@@ -21,6 +21,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import CompleteAuditModal, { EntityProgress } from "@/components/audit/CompleteAuditModal";
+import { Button, IconButton } from "@/components/ui";
 
 // --- Components ---
 
@@ -173,7 +174,7 @@ function MyAuditDetailsContent() {
           <AlertTriangle className="text-red-500 w-16 h-16 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-white mb-2">Error</h2>
           <p className="text-gray-400 mb-6">{error || "Could not load audit details"}</p>
-          <button onClick={() => router.back()} className="w-full bg-white/5 py-3 rounded-xl text-white font-bold">Back</button>
+          <Button variant="secondary" fullWidth onClick={() => router.back()}>Back</Button>
         </div>
       </div>
     );
@@ -214,9 +215,9 @@ function MyAuditDetailsContent() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
-          <button onClick={() => router.push("/my-audits")} className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
+          <IconButton bordered onClick={() => router.push("/my-audits")}>
             <ArrowLeft size={18} />
-          </button>
+          </IconButton>
           <div>
             <h1 className="text-2xl sm:text-3xl font-black font-semibold">{audit.title}</h1>
 
@@ -259,14 +260,7 @@ function MyAuditDetailsContent() {
             {/* Actions */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-white/5">
               {isPending && (
-                <button
-                  onClick={handleStart}
-                  disabled={starting}
-                  className="w-full bg-secondary-500 hover:bg-secondary-400 text-primary-950 font-black py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-secondary-500/15"
-                >
-                  {starting ? <div className="w-4 h-4 border-2 border-primary-950 border-t-transparent rounded-full animate-spin" /> : <PlayCircle size={18} />}
-                  Start Audit
-                </button>
+                <Button fullWidth leftIcon={starting ? undefined : <PlayCircle size={18}/>} loading={starting} onClick={handleStart}>Start Audit</Button>
               )}
               {isInProgress && (
                 <>

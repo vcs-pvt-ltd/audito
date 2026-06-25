@@ -600,7 +600,7 @@ export const auditExecutionApi = {
     apiRequest(`/audit-execution/${id}/start`, { method: "POST", token }),
 
   respond: (token: string, id: number | string, data: {
-    org_tree_id: number;
+    org_tree_id: number | null;
     entity_code: string;
     question_id: number;
     answer_text?: string;

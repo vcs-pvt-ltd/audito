@@ -13,6 +13,37 @@ const AuditExecutionModel = {
   // ── RESPONSES ────────────────────────────────────────────────────
 
   async upsertResponse({ audit_id, org_tree_id, entity_code, question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by }) {
+    const normId = (org_tree_id !== null && org_tree_id !== undefined) ? (org_tree_id || null) : null;
+    const vals = [
+      answer_text || null,
+      selected_option_ids ? JSON.stringify(selected_option_ids) : null,
+      marks_obtained || 0, remarks || null,
+      cap_required ? 1 : 0, status || 'answered', answered_by,
+    ];
+
+    if (normId === null) {
+      // MySQL treats NULLs as distinct in UNIQUE keys, so ON DUPLICATE KEY UPDATE never fires.
+      // Use explicit UPDATE → INSERT to prevent duplicate rows.
+      const [upd] = await db.query(
+        `UPDATE audit_responses SET answer_text=?, selected_option_ids=?, marks_obtained=?, remarks=?, cap_required=?, status=?, answered_by=?, answered_at=NOW()
+         WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=? AND question_id=?`,
+        [...vals, audit_id, entity_code, question_id]
+      );
+      if (upd.affectedRows > 0) {
+        const [r] = await db.query(
+          'SELECT id FROM audit_responses WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=? AND question_id=? ORDER BY id DESC LIMIT 1',
+          [audit_id, entity_code, question_id]
+        );
+        return r[0]?.id;
+      }
+      const [ins] = await db.query(
+        `INSERT INTO audit_responses (audit_id, org_tree_id, entity_code, question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by, answered_at)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [audit_id, entity_code, question_id, ...vals]
+      );
+      return ins.insertId;
+    }
+
     const [res] = await db.query(
       `INSERT INTO audit_responses
          (audit_id, org_tree_id, entity_code, question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by, answered_at)
@@ -25,17 +56,12 @@ const AuditExecutionModel = {
          cap_required = VALUES(cap_required),
          status = VALUES(status),
          answered_at = NOW()`,
-      [audit_id, org_tree_id || null, entity_code, question_id,
-        answer_text || null,
-        selected_option_ids ? JSON.stringify(selected_option_ids) : null,
-        marks_obtained || 0, remarks || null,
-        cap_required ? 1 : 0, status || 'answered', answered_by]
+      [audit_id, normId, entity_code, question_id, ...vals]
     );
-    // Return the id (insertId for new, or fetch for existing)
     if (res.insertId) return res.insertId;
     const [rows] = await db.query(
-      'SELECT id FROM audit_responses WHERE audit_id = ? AND org_tree_id <=> ? AND entity_code = ? AND question_id = ?',
-      [audit_id, org_tree_id || null, entity_code, question_id]
+      'SELECT id FROM audit_responses WHERE audit_id=? AND org_tree_id<=>? AND entity_code=? AND question_id=?',
+      [audit_id, normId, entity_code, question_id]
     );
     return rows[0]?.id;
   },
@@ -56,9 +82,14 @@ const AuditExecutionModel = {
     const [rows] = await db.query(
       `SELECT r.*
        FROM audit_responses r
-       WHERE r.audit_id = ? AND r.org_tree_id <=> ? AND r.entity_code = ?
+       INNER JOIN (
+         SELECT MAX(id) AS max_id
+         FROM audit_responses
+         WHERE audit_id = ? AND org_tree_id <=> ? AND entity_code = ?
+         GROUP BY question_id
+       ) dedup ON r.id = dedup.max_id
        ORDER BY r.question_id`,
-      [audit_id, org_tree_id || null, entity_code]
+      [audit_id, org_tree_id ?? null, entity_code, audit_id, org_tree_id ?? null, entity_code]
     );
     return rows;
   },
@@ -78,9 +109,15 @@ const AuditExecutionModel = {
     const [rows] = await db.query(
       `SELECT r.*
        FROM audit_responses r
+       INNER JOIN (
+         SELECT MAX(id) AS max_id
+         FROM audit_responses
+         WHERE audit_id = ?
+         GROUP BY entity_code, org_tree_id, question_id
+       ) dedup ON r.id = dedup.max_id
        WHERE r.audit_id = ?
        ORDER BY r.org_tree_id, r.entity_code, r.question_id`,
-      [audit_id]
+      [audit_id, audit_id]
     );
     return rows;
   },
@@ -223,28 +260,55 @@ const AuditExecutionModel = {
   // ── ENTITY PROGRESS ──────────────────────────────────────────────
 
   async upsertProgress({ audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status }) {
+    const normId = (org_tree_id !== null && org_tree_id !== undefined) ? (org_tree_id || null) : null;
+    const completedAt = status === 'completed' ? new Date() : null;
+    const updateVals = [total_questions, answered_questions, total_marks, obtained_marks, status, completedAt];
+
+    if (normId === null) {
+      // MySQL treats NULLs as distinct in UNIQUE keys, so ON DUPLICATE KEY UPDATE never fires.
+      const [upd] = await db.query(
+        `UPDATE audit_entity_progress SET total_questions=?, answered_questions=?, total_marks=?, obtained_marks=?, status=?, completed_at=?
+         WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=?`,
+        [...updateVals, audit_id, entity_code]
+      );
+      if (upd.affectedRows === 0) {
+        await db.query(
+          `INSERT INTO audit_entity_progress (audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status, completed_at)
+           VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+          [audit_id, entity_code, ...updateVals]
+        );
+      }
+      return;
+    }
+
     await db.query(
       `INSERT INTO audit_entity_progress
          (audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status, completed_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
-         org_tree_id = VALUES(org_tree_id),
          total_questions = VALUES(total_questions),
          answered_questions = VALUES(answered_questions),
          total_marks = VALUES(total_marks),
          obtained_marks = VALUES(obtained_marks),
          status = VALUES(status),
          completed_at = VALUES(completed_at)`,
-      [audit_id, org_tree_id || null, entity_code, total_questions, answered_questions,
-        total_marks, obtained_marks, status,
-        status === 'completed' ? new Date() : null]
+      [audit_id, normId, entity_code, ...updateVals]
     );
   },
 
   async getProgress(audit_id) {
     const [rows] = await db.query(
-      'SELECT * FROM audit_entity_progress WHERE audit_id = ? ORDER BY org_tree_id, entity_code',
-      [audit_id]
+      `SELECT p.*
+       FROM audit_entity_progress p
+       INNER JOIN (
+         SELECT MAX(id) AS max_id
+         FROM audit_entity_progress
+         WHERE audit_id = ?
+         GROUP BY entity_code, org_tree_id
+       ) dedup ON p.id = dedup.max_id
+       WHERE p.audit_id = ?
+       ORDER BY p.org_tree_id, p.entity_code`,
+      [audit_id, audit_id]
     );
     return rows;
   },

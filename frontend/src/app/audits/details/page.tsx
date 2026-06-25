@@ -35,6 +35,7 @@ import {
   calculateProgress 
 } from "@/utils/executionService";
 import { ENTITY_TYPE_COLORS } from "@/utils/executionFormatters";
+import { Button, IconButton } from "@/components/ui";
 
 // --- Interfaces ---
 
@@ -472,12 +473,7 @@ function AuditDetailsContent() {
           <AlertTriangle className="text-red-500 w-16 h-16 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-white mb-2">Error</h2>
           <p className="text-gray-400 mb-6">{error || "Audit not found"}</p>
-          <button
-            onClick={() => router.back()}
-            className="w-full bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2"
-          >
-            <ArrowLeft size={18} /> Go Back
-          </button>
+          <Button variant="secondary" fullWidth leftIcon={<ArrowLeft size={18}/>} onClick={() => router.back()}>Go Back</Button>
         </div>
       </div>
     );
@@ -516,12 +512,9 @@ function AuditDetailsContent() {
       <div className="max-w-5xl mx-auto">
         {/* Header Section */}
         <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={() => router.push(`/audits`)}
-            className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-          >
+          <IconButton bordered onClick={() => router.push(`/audits`)}>
             <ArrowLeft size={16} />
-          </button>
+          </IconButton>
           <div className="min-w-0">
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               <ClipboardList size={22} className="text-secondary-400" />
@@ -548,13 +541,7 @@ function AuditDetailsContent() {
                     Review the assignment information before opening the question preview.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowPreview(true)}
-                  className="w-full sm:w-auto bg-secondary-500 hover:bg-secondary-400 text-primary-950 font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-xl shadow-secondary-500/15"
-                >
-                  <Eye size={18} /> Preview Questions
-                </button>
+                <Button leftIcon={<Eye size={18}/>} onClick={() => setShowPreview(true)}>Preview Questions</Button>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">
@@ -684,6 +671,8 @@ function AuditDetailsContent() {
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
               const key = progressKey(entityCode, edgeId);
               const qs = (questionsByKey[key] || []).slice().sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+              const nodeChildren = node ? (node.children || []) : [];
+              const hasChildrenWithQuestions = nodeChildren.some(c => subtreeHasQuestions(c));
 
               return (
                 <div className="space-y-5">
@@ -720,6 +709,23 @@ function AuditDetailsContent() {
                       <div className="glass rounded-xl p-8 text-center border border-dashed border-white/10">
                         <p className="text-gray-500 italic">No questions found for this entity.</p>
                       </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/[0.06]">
+                    <button
+                      onClick={() => setStepHistory(h => h.slice(0, -1))}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
+                    >
+                      <ArrowLeft size={14} /> Back
+                    </button>
+                    {hasChildrenWithQuestions && (
+                      <button
+                        onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode }])}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
+                      >
+                        Next <ChevronRight size={14} />
+                      </button>
                     )}
                   </div>
                 </div>

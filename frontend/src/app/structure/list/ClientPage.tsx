@@ -12,9 +12,11 @@ import EntityTable, {
 import AddEditEntityModal, {
   type EntityFormData,
 } from "@/components/structure/AddEditEntityModal";
-import { Plus, RefreshCw, Pencil, Trash2, Search, Crown, Lock } from "lucide-react";
+import { Plus, RefreshCw, Pencil, Trash2, Search, Crown, Lock, Building2 } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Button, IconButton } from "@/components/ui";
 
 // ─── Configuration per entity type ───────────────────────────────
 
@@ -441,24 +443,19 @@ export default function SetupStructurePage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={fetchEntities}
-              className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all font-medium"
-              title="Refresh"
-            >
+            <IconButton bordered size="lg" onClick={fetchEntities} title="Refresh">
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            </button>
+            </IconButton>
             {canCreateEntities && (
-              <button
+              <Button
                 onClick={handleAdd}
                 disabled={!!orderBlockMessage}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10 disabled:opacity-20"
+                leftIcon={isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
               >
-                {isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
                 <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Add"}</span>
                 <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : `Add ${config.label}`}</span>
-              </button>
-            )} 
+              </Button>
+            )}
           </div>
         </div>
 
@@ -489,11 +486,21 @@ export default function SetupStructurePage() {
             <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : entities.length === 0 ? (
-          <div className="glass rounded-xl p-10 text-center">
-            <p className="text-gray-400 text-sm">
-              No {config.labelPlural.toLowerCase()} found. Add your first one above.
-            </p>
-          </div>
+          <EmptyState
+            icon={Building2}
+            title={`No ${config.labelPlural.toLowerCase()} yet`}
+            message={`Define and manage ${config.labelPlural.toLowerCase()} to build your organizational hierarchy.`}
+            action={canCreateEntities ? (
+              <button
+                onClick={handleAdd}
+                disabled={!!orderBlockMessage}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-20"
+              >
+                <Plus size={16} />
+                {`Add ${config.label}`}
+              </button>
+            ) : undefined}
+          />
         ) : filtered.length === 0 ? (
           <div className="glass rounded-xl p-16 text-center">
             <Search size={36} className="text-gray-600 mx-auto mb-4" />

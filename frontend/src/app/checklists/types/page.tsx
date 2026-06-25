@@ -18,6 +18,8 @@ import {
   Tag,
 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Button, IconButton, Modal, Table, THead, Th, TBody, Tr, Td, Input, Textarea } from "@/components/ui";
 
 interface ChecklistType {
   id: number;
@@ -69,70 +71,44 @@ function TypeModal({
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="glass rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <h3 className="text-white font-semibold">
-            {initial ? "Edit Checklist Type" : "New Checklist Type"}
-          </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <X size={18} />
-          </button>
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title={initial ? "Edit Checklist Type" : "New Checklist Type"}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Name"
+          required
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="e.g. Safety Inspection"
+        />
+        <Textarea
+          label="Description"
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          rows={3}
+          placeholder="Brief description of this checklist type..."
+          className="resize-none"
+        />
+
+        {error && (
+          <p className="text-red-400 text-sm bg-red-500/10 rounded-lg px-3 py-2">{error}</p>
+        )}
+
+        <div className="flex gap-3 pt-1">
+          <Button type="button" variant="secondary" fullWidth onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" fullWidth loading={saving} leftIcon={<Check size={14} />}>
+            {initial ? "Save Changes" : "Create Type"}
+          </Button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1.5">
-              Name <span className="text-red-400">*</span>
-            </label>
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Safety Inspection"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1.5">Description</label>
-            <textarea
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              rows={3}
-              placeholder="Brief description of this checklist type..."
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all resize-none"
-            />
-          </div>
-
-          {error && (
-            <p className="text-red-400 text-sm bg-red-500/10 rounded-lg px-3 py-2">{error}</p>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-60"
-            >
-              {saving ? (
-                <div className="w-4 h-4 border-2 border-primary-950 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <Check size={14} />
-              )}
-              {initial ? "Save Changes" : "Create Type"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -203,9 +179,9 @@ export default function ChecklistTypesPage() {
       return;
     }
     const ok = await confirm({
-      title: "Deactivate Checklist Type",
-      message: `Deactivate checklist type "${name}"?`,
-      confirmText: "Deactivate",
+      title: "Delete Checklist Type",
+      message: `Delete checklist type "${name}"?`,
+      confirmText: "Delete",
       variant: "warning",
     });
     if (!ok) return;
@@ -213,10 +189,10 @@ export default function ChecklistTypesPage() {
     const res = await checklistApi.deactivateType(accessToken, id);
     setDeleting(null);
     if (res.success) {
-      toast("Checklist type deactivated successfully.", "success");
+      toast("Checklist type deleted successfully.", "success");
       fetchTypes();
     } else {
-      toast(res.message || "Failed to deactivate checklist type.", "error");
+      toast(res.message || "Failed to delete checklist type.", "error");
     }
   };
 
@@ -246,21 +222,13 @@ export default function ChecklistTypesPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={fetchTypes}
-              className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-              title="Refresh"
-            >
+            <IconButton bordered size="lg" onClick={fetchTypes} title="Refresh">
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            </button>
-            <button
-              onClick={() => { setEditItem(null); setModalOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
-            >
-              <Plus size={16} />
+            </IconButton>
+            <Button onClick={() => { setEditItem(null); setModalOpen(true); }} leftIcon={<Plus size={16} />}>
               <span className="sm:hidden">Add</span>
               <span className="hidden sm:block">Add Type</span>
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -270,49 +238,42 @@ export default function ChecklistTypesPage() {
             <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : types.length === 0 ? (
-          <div className="glass rounded-xl p-14 text-center">
-            <Tag size={36} className="text-gray-600 mx-auto mb-4" />
-            <p className="text-white font-medium mb-1">No checklist types yet</p>
-            <p className="text-gray-400 text-sm mb-6">
-              Create types to categorise your checklists (e.g. Safety, Quality, Compliance).
-            </p>
-            <button
-              onClick={() => { setEditItem(null); setModalOpen(true); }}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
-            >
-              <Plus size={16} />
-              Add Type
-            </button>
-          </div>
+          <EmptyState
+            icon={Tag}
+            title="No checklist types yet"
+            message="Create types to categorise your checklists (e.g. Safety, Quality, Compliance)."
+            action={(
+              <button
+                onClick={() => { setEditItem(null); setModalOpen(true); }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
+              >
+                <Plus size={16} />
+                Add Type
+              </button>
+            )}
+          />
         ) : (
           <>
-            <div className="glass rounded-xl overflow-hidden hidden md:block">
-              <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium w-12">#</th>
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Name</th>
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Description</th>
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
-                    <th className="text-right px-4 py-3 text-gray-400 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="hidden md:block">
+              <Table>
+                <THead>
+                  <Th className="w-12">#</Th>
+                  <Th>Name</Th>
+                  <Th>Description</Th>
+                  <Th>Status</Th>
+                  <Th align="right">Actions</Th>
+                </THead>
+                <TBody>
                   {paginated.map((t, index) => {
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
                     return (
-                      <tr
-                        key={t.id}
-                        className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
-                      >
-                        <td className="px-4 py-3 text-gray-400 text-sm">{itemIndex}</td>
-                        <td className="px-4 py-3 text-white font-medium">{t.name}</td>
-                      
-                        <td className="px-4 py-3 text-gray-400 max-w-xs">
+                      <Tr key={t.id}>
+                        <Td className="text-gray-400 text-sm">{itemIndex}</Td>
+                        <Td className="text-white font-medium">{t.name}</Td>
+                        <Td className="text-gray-400 max-w-xs">
                           <span className="line-clamp-2">{t.description || "—"}</span>
-                        </td>
-                        <td className="px-4 py-3">
+                        </Td>
+                        <Td>
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                               t.is_active
@@ -322,46 +283,32 @@ export default function ChecklistTypesPage() {
                           >
                             {t.is_active ? "Active" : "Inactive"}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
+                        </Td>
+                        <Td align="right">
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => { setEditItem(t); setModalOpen(true); }}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all"
-                              title="Edit"
-                            >
+                            <IconButton tone="secondary" onClick={() => { setEditItem(t); setModalOpen(true); }} title="Edit">
                               <Pencil size={15} />
-                            </button>
+                            </IconButton>
                             {(t.checklist_count ?? 0) > 0 ? (
-                              <button
-                                onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)}
-                                className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
-                                title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Click for details.`}
-                              >
+                              <IconButton tone="warning" onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)} title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Click for details.`}>
                                 <Lock size={15} />
-                              </button>
+                              </IconButton>
                             ) : (
-                              <button
-                                onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)}
-                                disabled={deleting === t.id}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
-                                title="Deactivate"
-                              >
+                              <IconButton tone="danger" onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)} disabled={deleting === t.id} title="Delete">
                                 {deleting === t.id ? (
                                   <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
                                 ) : (
                                   <Trash2 size={15} />
                                 )}
-                              </button>
+                              </IconButton>
                             )}
                           </div>
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     );
                   })}
-                </tbody>
-              </table>
-              </div>
+                </TBody>
+              </Table>
             </div>
 
             <div className="md:hidden space-y-3">
@@ -386,34 +333,21 @@ export default function ChecklistTypesPage() {
                       </span>
                     </div>
                     <div className="mt-3 flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => { setEditItem(t); setModalOpen(true); }}
-                        className="p-2 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all"
-                        title="Edit"
-                      >
+                      <IconButton size="md" tone="secondary" onClick={() => { setEditItem(t); setModalOpen(true); }} title="Edit">
                         <Pencil size={15} />
-                      </button>
+                      </IconButton>
                       {(t.checklist_count ?? 0) > 0 ? (
-                        <button
-                          onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)}
-                          className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
-                          title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Tap for details.`}
-                        >
+                        <IconButton size="md" tone="warning" onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)} title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Tap for details.`}>
                           <Lock size={15} />
-                        </button>
+                        </IconButton>
                       ) : (
-                        <button
-                          onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)}
-                          disabled={deleting === t.id}
-                          className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
-                          title="Deactivate"
-                        >
+                        <IconButton size="md" tone="danger" onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)} disabled={deleting === t.id} title="Delete">
                           {deleting === t.id ? (
                             <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
                           ) : (
                             <Trash2 size={15} />
                           )}
-                        </button>
+                        </IconButton>
                       )}
                     </div>
                   </div>

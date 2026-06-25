@@ -20,6 +20,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { auditApi, checklistApi, usersApi, structureApi, orgTreeApi, paymentApi, type PaymentDetails } from "@/lib/api";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
+import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui";
 
 const COMPARISON_ROWS = [
   { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6"] },
@@ -93,11 +94,12 @@ export default function BillingPage() {
 
   useEffect(() => {
     if (accessToken && admin?.role === "admin") {
+      const isCompany = admin?.account_type === "Company";
       Promise.all([
         auditApi.list(accessToken),
         checklistApi.list(accessToken),
         usersApi.list(accessToken, "Auditor"),
-        structureApi.listByType(accessToken, "Department"),
+        isCompany ? structureApi.listByType(accessToken, "department") : Promise.resolve({ success: true, data: { items: [] } }),
         orgTreeApi.getTree(accessToken),
       ])
         .then(([auditsRes, checklistsRes, auditorsRes, deptsRes, treeRes]) => {
@@ -353,38 +355,38 @@ export default function BillingPage() {
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Plan Comparison</h2>
 
           {/* Desktop table */}
-          <div className="hidden lg:block glass rounded-xl border border-white/10 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-white/[0.03] border-b border-white/[0.06]">
-                  <th className="text-left px-6 py-4 text-xs font-semibold uppercase tracking-wide text-secondary-400 w-2/5">Feature</th>
-                  {visiblePlans.map((p) => (
-                    <th key={p.name} className="px-6 py-4 text-xs font-semibold text-white text-center">
-                      {p.name}
-                      {currentPlan.name === p.name && (
-                        <span className="ml-1.5 text-[9px] text-secondary-400 font-normal">(current)</span>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {workspaceRows.map((row) => (
-                  <tr key={row.feature} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="px-6 py-4 text-sm text-gray-300">{row.feature}</td>
-                    {row.values.map((v, i) => (
-                      <td key={i} className="px-6 py-4 text-sm text-white font-semibold text-center">{v}</td>
-                    ))}
-                  </tr>
+          <div className="hidden lg:block">
+            <Table>
+              <THead>
+                <Th className="w-2/5 text-secondary-400">Feature</Th>
+                {visiblePlans.map((p) => (
+                  <Th key={p.name} align="center" className="text-white font-semibold">
+                    {p.name}
+                    {currentPlan.name === p.name && (
+                      <span className="ml-1.5 text-[9px] text-secondary-400 font-normal">(current)</span>
+                    )}
+                  </Th>
                 ))}
-                <tr className="bg-white/[0.02] border-y border-white/[0.04]">
-                  <td className="px-6 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-gray-500" colSpan={planCols + 1}>Core Features</td>
-                </tr>
-                {coreRows.map((row) => (
-                  <tr key={row.feature} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="px-6 py-4 text-sm text-gray-300">{row.feature}</td>
+              </THead>
+              <TBody>
+                {workspaceRows.map((row) => (
+                  <Tr key={row.feature}>
+                    <Td className="text-gray-300">{row.feature}</Td>
                     {row.values.map((v, i) => (
-                      <td key={i} className="px-6 py-4 text-center">
+                      <Td key={i} align="center" className="text-white font-semibold">{v}</Td>
+                    ))}
+                  </Tr>
+                ))}
+                <Tr className="bg-white/[0.02]">
+                  <Td colSpan={planCols + 1} className="py-2.5 text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+                    Core Features
+                  </Td>
+                </Tr>
+                {coreRows.map((row) => (
+                  <Tr key={row.feature}>
+                    <Td className="text-gray-300">{row.feature}</Td>
+                    {row.values.map((v, i) => (
+                      <Td key={i} align="center">
                         {typeof v === "boolean" ? (
                           v ? (
                             <span className="inline-flex w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/20 items-center justify-center mx-auto">
@@ -398,12 +400,12 @@ export default function BillingPage() {
                         ) : (
                           <span className="text-sm text-white font-semibold">{v}</span>
                         )}
-                      </td>
+                      </Td>
                     ))}
-                  </tr>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
 
           {/* Mobile + tablet cards */}

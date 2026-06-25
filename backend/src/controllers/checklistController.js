@@ -685,14 +685,11 @@ async function buildOrgEntityMaps(adminCode, entityType) {
  */
 function buildStructurePaths(typeOrder, entityTypeMap, entityNameMap, childrenMap, adminCode) {
   const paths = [];
-  const visited = new Set();
 
-  function dfs(code, currentPath) {
-    // Prevent infinite recursion from circular references in the tree
-    if (visited.has(code)) {
-      return;
-    }
-    visited.add(code);
+  function dfs(code, currentPath, ancestors) {
+    // Prevent cycles in the current path only — allows the same entity to appear
+    // in multiple branches when it belongs to several parent subtrees.
+    if (ancestors.has(code)) return;
 
     const type = entityTypeMap[code];
     const name = entityNameMap[code] || code;
@@ -703,6 +700,7 @@ function buildStructurePaths(typeOrder, entityTypeMap, entityNameMap, childrenMa
     newPath[typeIdx] = name;
     for (let i = typeIdx + 1; i < typeOrder.length; i++) newPath[i] = '';
 
+    const newAncestors = new Set([...ancestors, code]);
     const relevantChildren = (childrenMap[code] || []).filter(c => {
       const ct = entityTypeMap[c];
       return ct && typeOrder.includes(ct);
@@ -712,7 +710,7 @@ function buildStructurePaths(typeOrder, entityTypeMap, entityNameMap, childrenMa
       paths.push(newPath);
     } else {
       for (const childCode of relevantChildren) {
-        dfs(childCode, newPath);
+        dfs(childCode, newPath, newAncestors);
       }
     }
   }
@@ -722,8 +720,10 @@ function buildStructurePaths(typeOrder, entityTypeMap, entityNameMap, childrenMa
   // Pre-fill the admin entity's own name in the first column of every path
   const adminTypeIdx = typeOrder.indexOf(entityTypeMap[adminCode]);
   if (adminTypeIdx >= 0) emptyPath[adminTypeIdx] = entityNameMap[adminCode] || adminCode;
+
+  const adminAncestors = new Set([adminCode]);
   for (const rootCode of rootChildren) {
-    dfs(rootCode, emptyPath);
+    dfs(rootCode, [...emptyPath], adminAncestors);
   }
   return paths;
 }

@@ -512,13 +512,17 @@ const submitResponse = async (req, res) => {
       marks_obtained, remarks, cap_required,
     } = req.body;
 
-    if (!org_tree_id || !entity_code || !question_id) {
-      return errorResponse(res, 'org_tree_id, entity_code and question_id are required.', 400);
+    if (!entity_code || !question_id) {
+      return errorResponse(res, 'entity_code and question_id are required.', 400);
     }
+
+    const safeOrgTreeId = (org_tree_id !== undefined && org_tree_id !== null)
+      ? parseInt(org_tree_id)
+      : null;
 
     const responseId = await AuditExecutionModel.upsertResponse({
       audit_id: parseInt(id),
-      org_tree_id: parseInt(org_tree_id),
+      org_tree_id: safeOrgTreeId,
       entity_code,
       question_id: parseInt(question_id),
       answer_text, selected_option_ids,
@@ -529,16 +533,16 @@ const submitResponse = async (req, res) => {
     });
 
     // Update entity progress
-    const allResponses = await AuditExecutionModel.getResponsesByEntity(parseInt(id), parseInt(org_tree_id), entity_code);
+    const allResponses = await AuditExecutionModel.getResponsesByEntity(parseInt(id), safeOrgTreeId, entity_code);
     const questions = await ChecklistModel.listQuestions(audit.checklist_id);
-    const entQs = buildQuestionsForEntityInstance(questions, entity_code, parseInt(org_tree_id));
+    const entQs = buildQuestionsForEntityInstance(questions, entity_code, safeOrgTreeId);
     const totalMarks = entQs.reduce((s, q) => s + parseFloat(q.total_marks || 0), 0);
     const answeredCount = allResponses.filter(r => r.status === 'answered').length;
     const obtainedMarks = allResponses.reduce((s, r) => s + parseFloat(r.marks_obtained || 0), 0);
     const progressStatus = answeredCount >= entQs.length ? 'completed' : 'in_progress';
 
     await AuditExecutionModel.upsertProgress({
-      audit_id: parseInt(id), org_tree_id: parseInt(org_tree_id), entity_code,
+      audit_id: parseInt(id), org_tree_id: safeOrgTreeId, entity_code,
       total_questions: entQs.length, answered_questions: answeredCount,
       total_marks: totalMarks, obtained_marks: obtainedMarks,
       status: progressStatus,

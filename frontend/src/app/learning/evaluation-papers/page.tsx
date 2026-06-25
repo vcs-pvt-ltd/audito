@@ -6,8 +6,10 @@ import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, RefreshCw, Trash2, Users, X, Trophy, AlertTriangle, CheckCircle2, Clock, Calendar, BookOpen, ClipboardList, Search, Crown, Lock as LockIcon } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Trophy, Clock, ClipboardList, Search, Crown, Lock as LockIcon } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Button, IconButton, Modal, Table, THead, Th, Input } from "@/components/ui";
 
 interface Paper {
   id: number;
@@ -47,8 +49,6 @@ interface Auditor {
   email: string;
 }
 
-const inputClass = "w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/30 transition-all";
-
 function AssignModal({
   open, onClose, onAssign, auditors,
 }: {
@@ -67,48 +67,37 @@ function AssignModal({
     if (!open) { setSelected({}); setDueDate(""); }
   }, [open]);
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative glass rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">Assign Evaluation Paper</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><X size={20} /></button>
+    <Modal open={open} onClose={onClose} size="md" title="Assign Evaluation Paper">
+      <div className="space-y-4">
+        <Input label="Due Date" required type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-2">Select Auditors</p>
+          {auditors.map((a) => (
+            <label key={a.user_code} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-white/5 bg-white/5 cursor-pointer hover:bg-white/10 transition-all group">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white group-hover:text-secondary-400 transition-colors">{a.first_name} {a.last_name}</p>
+                <p className="text-xs text-gray-500 truncate">{a.email}</p>
+              </div>
+              <input type="checkbox" checked={!!selected[a.user_code]}
+                onChange={(e) => setSelected((p) => ({ ...p, [a.user_code]: e.target.checked }))}
+                className="h-4 w-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0 cursor-pointer" />
+            </label>
+          ))}
         </div>
-        <div className="p-5 space-y-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1.5">Due Date *</label>
-            <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputClass} />
-          </div>
-          <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-2">Select Auditors</p>
-            {auditors.map((a) => (
-              <label key={a.user_code} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-white/5 bg-white/5 cursor-pointer hover:bg-white/10 transition-all group">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-white group-hover:text-secondary-400 transition-colors">{a.first_name} {a.last_name}</p>
-                  <p className="text-xs text-gray-500 truncate">{a.email}</p>
-                </div>
-                <input type="checkbox" checked={!!selected[a.user_code]}
-                  onChange={(e) => setSelected((p) => ({ ...p, [a.user_code]: e.target.checked }))}
-                  className="h-4 w-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0 cursor-pointer" />
-              </label>
-            ))}
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-lg text-sm text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all">Cancel</button>
-            <button
-              onClick={async () => { setLoading(true); await onAssign(selectedCodes, dueDate); setLoading(false); onClose(); }}
-              disabled={loading || selectedCodes.length === 0 || !dueDate}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-50 transition-all"
-            >
-              {loading ? "Assigning..." : `Assign (${selectedCodes.length})`}
-            </button>
-          </div>
+        <div className="flex gap-3 pt-2">
+          <Button variant="secondary" fullWidth onClick={onClose}>Cancel</Button>
+          <Button
+            fullWidth
+            loading={loading}
+            disabled={selectedCodes.length === 0 || !dueDate}
+            onClick={async () => { setLoading(true); await onAssign(selectedCodes, dueDate); setLoading(false); onClose(); }}
+          >
+            {loading ? "Assigning..." : `Assign (${selectedCodes.length})`}
+          </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -117,20 +106,16 @@ function ViewAssignmentsModal({
 }: {
   open: boolean; onClose: () => void; assignments: Assignment[]; title: string;
 }) {
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative glass rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Submissions</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{title}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><X size={20} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-5">
-          <div className="border border-white/10 rounded-xl overflow-hidden">
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="xl"
+      title="Submissions"
+      description={title}
+      footer={<Button variant="secondary" className="ml-auto px-6" onClick={onClose}>Close</Button>}
+    >
+      <div className="border border-white/10 rounded-xl overflow-hidden">
             <table className="w-full text-sm text-left">
               <thead className="bg-white/5">
                 <tr className="border-b border-white/10">
@@ -177,12 +162,7 @@ function ViewAssignmentsModal({
               </tbody>
             </table>
           </div>
-        </div>
-        <div className="p-5 border-t border-white/10 flex justify-end">
-          <button onClick={onClose} className="px-6 py-2 rounded-lg text-sm text-gray-400 border border-white/10 hover:border-white/20 transition-all">Close</button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -271,21 +251,23 @@ export default function AuditFirmEvaluationPapersPage() {
           <p className="hidden sm:block text-sm text-gray-400 mt-0.5">Manage assessments and track auditor knowledge scores.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={load} className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all" title="Refresh">
+          <IconButton bordered size="lg" onClick={load} title="Refresh">
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          </button>
-          <button onClick={() => {
+          </IconButton>
+          <Button
+            className="active:scale-95"
+            leftIcon={admin?.plan_limits && !admin.plan_limits.auditor_eval ? <Crown size={18} /> : <Plus size={18} />}
+            onClick={() => {
               if (admin?.plan_limits && !admin.plan_limits.auditor_eval) {
                 setLimitModalOpen(true);
                 return;
               }
               router.push("/learning/evaluation-papers/create");
             }}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 shadow-lg shadow-secondary-500/10 transition-all active:scale-95">
-            {admin?.plan_limits && !admin.plan_limits.auditor_eval ? <Crown size={18} /> : <Plus size={18} />}
+          >
             <span className="hidden sm:block">{admin?.plan_limits && !admin.plan_limits.auditor_eval ? "Upgrade" : "New Paper"}</span>
             <span className="sm:hidden">{admin?.plan_limits && !admin.plan_limits.auditor_eval ? "Upgrade" : "Add"}</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -305,9 +287,22 @@ export default function AuditFirmEvaluationPapersPage() {
           <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : papers.length === 0 ? (
-        <div className="glass rounded-xl p-20 text-center border border-white/5 text-gray-400 text-sm">
-          No evaluation papers found. Create your first paper to evaluate auditors.
-        </div>
+        <EmptyState
+          icon={ClipboardList}
+          title="No evaluation papers yet"
+          message="Create your first paper to assess auditors and track their knowledge scores."
+          action={(
+            <Button
+              leftIcon={admin?.plan_limits && !admin.plan_limits.auditor_eval ? <Crown size={16} /> : <Plus size={16} />}
+              onClick={() => {
+                if (admin?.plan_limits && !admin.plan_limits.auditor_eval) { setLimitModalOpen(true); return; }
+                router.push("/learning/evaluation-papers/create");
+              }}
+            >
+              {admin?.plan_limits && !admin.plan_limits.auditor_eval ? "Upgrade" : "New Paper"}
+            </Button>
+          )}
+        />
       ) : filtered.length === 0 ? (
         <div className="glass rounded-xl p-16 text-center">
           <ClipboardList size={36} className="text-gray-600 mx-auto mb-4" />
@@ -318,20 +313,17 @@ export default function AuditFirmEvaluationPapersPage() {
         <div className="space-y-4">
 
           {/* Desktop Table — text-left on table, explicit overrides for centered/right cols */}
-          <div className="glass rounded-xl overflow-hidden hidden md:block">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="px-4 py-3 text-gray-400 font-medium w-10 text-center">#</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Paper Name</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium text-center w-24">Questions</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium text-center w-24">Pass %</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium text-center w-24">Time</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium text-center w-20">Assigned</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium text-right w-28">Actions</th>
-                  </tr>
-                </thead>
+          <div className="hidden md:block">
+            <Table className="text-left">
+                <THead>
+                  <Th align="center" className="w-10">#</Th>
+                  <Th>Paper Name</Th>
+                  <Th align="center" className="w-24">Questions</Th>
+                  <Th align="center" className="w-24">Pass %</Th>
+                  <Th align="center" className="w-24">Time</Th>
+                  <Th align="center" className="w-20">Assigned</Th>
+                  <Th align="right" className="w-28">Actions</Th>
+                </THead>
                 <tbody className="divide-y divide-white/5">
                   {paginated.map((p, index) => {
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
@@ -388,8 +380,7 @@ export default function AuditFirmEvaluationPapersPage() {
                     );
                   })}
                 </tbody>
-              </table>
-            </div>
+            </Table>
           </div>
 
           {/* Mobile Cards */}

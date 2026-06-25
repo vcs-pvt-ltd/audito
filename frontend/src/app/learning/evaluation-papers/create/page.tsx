@@ -10,6 +10,7 @@ import {
   Check, ChevronDown, Circle, CheckSquare,
   ClipboardList, FileText, Upload, ChevronRight,
 } from "lucide-react";
+import { Button, IconButton, Modal, Input, Textarea } from "@/components/ui";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,9 +38,6 @@ function normalizeAnswerType(raw: string): QuestionForm["answer_type"] {
   if (v === "dropdown" || v === "select") return "dropdown";
   return "single_option";
 }
-
-const inputCls =
-  "w-full bg-white/5 border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all";
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -126,16 +124,6 @@ function SectionHeader({ num, label, desc }: { num: number; label: string; desc:
         <p className="text-sm text-gray-400 mt-0.5 leading-relaxed">{desc}</p>
       </div>
     </div>
-  );
-}
-
-// ─── Field Label ──────────────────────────────────────────────────────────────
-
-function FieldLabel({ label, required }: { label: string; required?: boolean }) {
-  return (
-    <label className="block text-sm text-gray-400 mb-1.5">
-      {label} {required && <span className="text-red-400">*</span>}
-    </label>
   );
 }
 
@@ -348,82 +336,56 @@ function ExcelConfirmModal({
   onConfirm: () => void;
   onDiscard: () => void;
 }) {
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[85vh] glass">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.08]">
-          <div>
-            <h2 className="text-white font-semibold">Confirm Excel Import</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{questions.length} question(s) parsed</p>
-          </div>
-          <button
-            onClick={onDiscard}
-            className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <X size={16} />
-          </button>
+    <Modal
+      open={open}
+      onClose={onDiscard}
+      title="Confirm Excel Import"
+      description={`${questions.length} question(s) parsed`}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onDiscard}>Discard</Button>
+          <Button leftIcon={<Check size={14}/>} disabled={questions.length === 0} onClick={onConfirm}>
+            Add {questions.length} Question{questions.length !== 1 ? "s" : ""}
+          </Button>
+        </>
+      }
+    >
+      {errors.length > 0 && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <p className="text-xs font-medium text-amber-400 mb-1.5">Skipped rows:</p>
+          <ul className="space-y-0.5 max-h-20 overflow-y-auto">
+            {errors.map((e, i) => (
+              <li key={i} className="text-[11px] text-amber-300/80">• {e}</li>
+            ))}
+          </ul>
         </div>
-
-        {errors.length > 0 && (
-          <div className="mx-5 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <p className="text-xs font-medium text-amber-400 mb-1.5">Skipped rows:</p>
-            <ul className="space-y-0.5 max-h-20 overflow-y-auto">
-              {errors.map((e, i) => (
-                <li key={i} className="text-[11px] text-amber-300/80">
-                  • {e}
-                </li>
-              ))}
-            </ul>
+      )}
+      <div className="space-y-2">
+        {questions.map((q, idx) => (
+          <div key={idx} className="border border-white/10 rounded-xl p-3 bg-white/[0.03]">
+            <p className="text-sm text-white font-medium">{idx + 1}. {q.question_text}</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Type: <span className="text-gray-300">{q.answer_type}</span>
+            </p>
+            {q.options.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                {q.options.map((o, oi) => (
+                  <div key={oi} className="text-xs text-gray-300 border border-white/10 rounded px-2 py-1 bg-black/10 flex items-center justify-between gap-2">
+                    <span className="truncate">{o.text}</span>
+                    <span className="text-gray-500 shrink-0">{o.marks}pts</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+        ))}
+        {questions.length === 0 && (
+          <p className="text-sm text-gray-500 text-center py-8">No questions parsed.</p>
         )}
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {questions.map((q, idx) => (
-            <div key={idx} className="border border-white/10 rounded-xl p-3 bg-white/[0.03]">
-              <p className="text-sm text-white font-medium">
-                {idx + 1}. {q.question_text}
-              </p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Type: <span className="text-gray-300">{q.answer_type}</span>
-              </p>
-              {q.options.length > 0 && (
-                <div className="mt-2 grid grid-cols-2 gap-1.5">
-                  {q.options.map((o, oi) => (
-                    <div
-                      key={oi}
-                      className="text-xs text-gray-300 border border-white/10 rounded px-2 py-1 bg-black/10 flex items-center justify-between gap-2"
-                    >
-                      <span className="truncate">{o.text}</span>
-                      <span className="text-gray-500 shrink-0">{o.marks}pts</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-          {questions.length === 0 && (
-            <p className="text-sm text-gray-500 text-center py-8">No questions parsed.</p>
-          )}
-        </div>
-
-        <div className="px-5 py-4 border-t border-white/[0.08] flex items-center justify-between">
-          <button
-            onClick={onDiscard}
-            className="px-4 py-2 rounded-lg text-sm text-gray-400 border border-white/10 hover:border-white/20 transition-all"
-          >
-            Discard
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={questions.length === 0}
-            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-50"
-          >
-            <Check size={14} /> Add {questions.length} Question{questions.length !== 1 ? "s" : ""}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -600,12 +562,9 @@ export default function CreateEvaluationPaperPage() {
       <main className="flex-1 p-4 sm:p-6 lg:p-8 pt-20 lg:pt-8">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6 sm:mb-8">
-          <button
-            onClick={() => router.push("/learning/evaluation-papers")}
-            className="p-2 sm:p-3 rounded-xl sm:rounded-2xl text-gray-400 hover:text-white border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all shrink-0"
-          >
+          <IconButton bordered onClick={() => router.push("/learning/evaluation-papers")}>
             <ArrowLeft size={20} />
-          </button>
+          </IconButton>
           <div>
             <h1 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
               <ClipboardList size={20} className="text-secondary-400" />
@@ -644,9 +603,9 @@ export default function CreateEvaluationPaperPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div className="sm:col-span-2">
-                <FieldLabel label="Title" required />
-                <input
-                  className={inputCls}
+                <Input
+                  label="Title"
+                  required
                   placeholder="e.g. Q1 Safety Knowledge Assessment"
                   value={form.title}
                   onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
@@ -654,9 +613,9 @@ export default function CreateEvaluationPaperPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <FieldLabel label="Description" required />
-                <textarea
-                  className={`${inputCls} resize-none`}
+                <Textarea
+                  label="Description"
+                  required
                   rows={3}
                   placeholder="Brief description of what this evaluation paper covers..."
                   value={form.description}
@@ -665,23 +624,21 @@ export default function CreateEvaluationPaperPage() {
               </div>
 
               <div>
-                <FieldLabel label="Time Limit (minutes)" required />
-                <input
-                  className={inputCls}
+                <Input
+                  label="Time Limit (minutes)"
+                  required
                   type="number"
                   min={1}
                   placeholder="e.g. 60"
                   value={form.time_limit_minutes}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, time_limit_minutes: e.target.value }))
-                  }
+                  onChange={(e) => setForm((p) => ({ ...p, time_limit_minutes: e.target.value }))}
                 />
               </div>
 
               <div>
-                <FieldLabel label="Pass Marks (%)" required />
-                <input
-                  className={inputCls}
+                <Input
+                  label="Pass Marks (%)"
+                  required
                   type="number"
                   min={0}
                   max={100}
@@ -865,39 +822,23 @@ export default function CreateEvaluationPaperPage() {
 
         {/* Navigation bar */}
         <div className="mt-6 sm:mt-8 flex items-center justify-between gap-3 p-3 sm:p-4 glass rounded-xl border border-white/10">
-          <button
-            onClick={() => {
-              setSaveError("");
-              setStep(1);
-            }}
+          <Button
+            variant="secondary"
+            leftIcon={<ArrowLeft size={15} />}
             disabled={step === 1}
-            className="flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl text-sm font-medium border border-white/10 hover:border-white/20 disabled:opacity-40 transition-all"
+            onClick={() => { setSaveError(""); setStep(1); }}
           >
-            <ArrowLeft size={15} />
-            <span className="hidden sm:inline">Previous</span>
-            <span className="sm:hidden">Back</span>
-          </button>
+            Previous
+          </Button>
 
           {step === 1 ? (
-            <button
-              onClick={goToStep2}
-              className="flex items-center gap-1.5 sm:gap-2 px-5 sm:px-8 py-2.5 sm:py-3 bg-secondary-500 hover:bg-secondary-400 text-primary-950 font-semibold rounded-xl transition-all"
-            >
-              Next <ChevronRight size={15} />
-            </button>
+            <Button rightIcon={<ChevronRight size={15} />} onClick={goToStep2}>
+              Next
+            </Button>
           ) : (
-            <button
-              onClick={handleFinish}
-              disabled={finishing}
-              className="flex items-center gap-1.5 sm:gap-2 px-5 sm:px-8 py-2.5 sm:py-3 bg-secondary-500 hover:bg-secondary-400 text-primary-950 font-semibold rounded-xl transition-all disabled:opacity-60"
-            >
-              {finishing ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Check size={16} />
-              )}
+            <Button loading={finishing} leftIcon={finishing ? undefined : <Check size={16} />} onClick={handleFinish}>
               {finishing ? "Creating…" : "Create Paper"}
-            </button>
+            </Button>
           )}
         </div>
 

@@ -30,6 +30,8 @@ import { structureApi, usersApi } from "@/lib/api";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Button, IconButton, Table, THead, Th } from "@/components/ui";
 
 interface AuditAssignment {
   id: number;
@@ -308,22 +310,14 @@ export default function AuditsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={fetchAudits}
-              className="p-2.5 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-              title="Refresh"
-            >
+            <IconButton bordered size="lg" onClick={fetchAudits} title="Refresh">
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            </button>
+            </IconButton>
             {!isFirmAdmin && (
-              <button
-                onClick={handleNewAuditClick}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10"
-              >
-                {isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
+              <Button onClick={handleNewAuditClick} leftIcon={isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}>
                 <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Create"}</span>
                 <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : "Create New Audit"}</span>
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -377,19 +371,13 @@ export default function AuditsPage() {
             <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : audits.length === 0 ? (
-          <div className="glass rounded-xl p-20 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-secondary-500/10 flex items-center justify-center mx-auto mb-5">
-              <ClipboardCheck size={32} className="text-gray-600" />
-            </div>
-            <p className="text-white font-semibold text-lg mb-2">
-              {isFirmAdmin ? "No audits assigned yet" : "No audit assignments yet"}
-            </p>
-            <p className="text-gray-400 text-sm max-w-sm mx-auto mb-6">
-              {isFirmAdmin
-                ? "When a customer assigns an audit to your firm, it will appear here."
-                : "Go to Checklists and click \"Assign Audit\" to create your first assignment."}
-            </p>
-            {!isFirmAdmin && (
+          <EmptyState
+            icon={ClipboardCheck}
+            title={isFirmAdmin ? "No audits assigned yet" : "No audit assignments yet"}
+            message={isFirmAdmin
+              ? "When a customer assigns an audit to your firm, it will appear here."
+              : "Go to Checklists and click \"Assign Audit\" to create your first assignment."}
+            action={!isFirmAdmin ? (
               <button
                 onClick={handleNewAuditClick}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
@@ -397,33 +385,30 @@ export default function AuditsPage() {
                 {isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
                 {isLimitExceeded ? "Upgrade" : "Go to Checklists"}
               </button>
-            )}
-          </div>
+            ) : undefined}
+          />
         ) : filtered.length === 0 ? (
-          <div className="glass rounded-xl p-16 text-center">
-            <ClipboardCheck size={36} className="text-gray-600 mx-auto mb-4" />
-            <p className="text-white font-medium mb-1">No {STATUS_LABEL[filter] || filter} audits</p>
-            <p className="text-gray-400 text-sm">Try selecting a different filter.</p>
-          </div>
+          <EmptyState
+            icon={ClipboardCheck}
+            title={`No ${STATUS_LABEL[filter] || filter} audits`}
+            message="Try selecting a different filter."
+          />
         ) : (
           <>
-            <div className="glass rounded-xl overflow-hidden hidden md:block">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-white/10 text-left">
-                    <th className="px-4 py-3 text-gray-400 font-medium w-12">#</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Audit</th>
-
-                    <th className="px-4 py-3 text-gray-400 font-medium">Type</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Start Date</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">End Date</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Budget</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Workers</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Status</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium">Progress</th>
-                    <th className="px-4 py-3 text-gray-400 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
+            <div className="hidden md:block">
+              <Table>
+                <THead>
+                  <Th className="w-12">#</Th>
+                  <Th>Audit</Th>
+                  <Th>Type</Th>
+                  <Th>Start Date</Th>
+                  <Th>End Date</Th>
+                  <Th>Budget</Th>
+                  <Th>Workers</Th>
+                  <Th>Status</Th>
+                  <Th>Progress</Th>
+                  <Th align="right">Actions</Th>
+                </THead>
                 <tbody className="divide-y divide-white/[0.06]">
                   {paginated.map((a, index) => {
                     const pct = a.progress_pct || 0;
@@ -541,7 +526,7 @@ export default function AuditsPage() {
                     );
                   })}
                 </tbody>
-              </table>
+              </Table>
             </div>
 
             <div className="md:hidden space-y-3">

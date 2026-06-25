@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { capApi } from "@/lib/api";
 import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
+import { Button, IconButton } from "@/components/ui";
 import {
   AlertCircle,
   ArrowLeft,
@@ -492,12 +493,9 @@ export default function ClientPage() {
     <div className="h-screen bg-transparent flex">
       <main className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto">
         <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={() => router.push(`/caps`)}
-            className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-          >
+          <IconButton bordered onClick={() => router.push(`/caps`)}>
             <ArrowLeft size={16} />
-          </button>
+          </IconButton>
           <div className="min-w-0">
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               <ClipboardList size={22} className="text-secondary-400" />
@@ -531,13 +529,7 @@ export default function ClientPage() {
                     Review the corrective action plan context before opening the question preview.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowPreview(true)}
-                  className="w-full sm:w-auto bg-secondary-500 hover:bg-secondary-400 text-primary-950 font-black px-5 py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-xl shadow-secondary-500/15"
-                >
-                  <Eye size={18} /> Preview Questions
-                </button>
+                <Button leftIcon={<Eye size={18}/>} onClick={() => setShowPreview(true)}>Preview Questions</Button>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">
@@ -681,6 +673,8 @@ export default function ClientPage() {
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
               const key = progressKey(entityCode, edgeId);
               const qs = (questionsByKey[key] || []).slice().sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+              const nodeChildren = node ? (node.children || []) : [];
+              const hasChildrenWithQuestions = nodeChildren.some(c => subtreeHasQuestions(c, questionsByKey));
 
               return (
                 <div className="space-y-5">
@@ -712,6 +706,23 @@ export default function ClientPage() {
                     {qs.map((q, idx) => (
                       <QuestionPreviewCard key={q.id} question={q} response={responsesByQuestion[q.id]} index={idx + 1} />
                     ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/[0.06]">
+                    <button
+                      onClick={() => setStepHistory(h => h.slice(0, -1))}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
+                    >
+                      <ArrowLeft size={14} /> Back
+                    </button>
+                    {hasChildrenWithQuestions && (
+                      <button
+                        onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode }])}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
+                      >
+                        Next <ChevronRight size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

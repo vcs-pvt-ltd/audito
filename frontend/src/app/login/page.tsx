@@ -69,12 +69,6 @@ function LoginForm() {
         />
       )}
 
-      {/* Background decorative elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/3 right-1/3 w-80 h-80 bg-secondary-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 left-1/3 w-60 h-60 bg-accent-500/5 rounded-full blur-3xl" />
-        <div className="absolute top-0 left-0 w-full h-full bg-[url('/grid.svg')] opacity-5" />
-      </div>
 
       <div className="relative w-full max-w-md">
         {/* Form Card */}

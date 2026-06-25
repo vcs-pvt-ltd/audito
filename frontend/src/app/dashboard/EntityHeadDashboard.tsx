@@ -324,11 +324,13 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
   useEffect(() => {
     if (!accessToken || !admin) return;
 
-    // Only fetch if chart filters differ from initial on first load or have changed thereafter
     let alive = true;
     setIsChartLoading(true);
 
-    dashboardApi.overview(accessToken, chartFilters).then((res) => {
+    // entity_code is a frontend-only drill-down; never send it to the backend
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { entity_code: _ec, ...apiFilters } = chartFilters;
+    dashboardApi.overview(accessToken, apiFilters).then((res) => {
       if (!alive) return;
       if (res.success && res.data) {
         setChartOverview(res.data as DashboardOverview);
@@ -658,17 +660,15 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
         const descendantEdgeIds = getDescendantEdgeIds(child);
         const stats = aggregateScores(descendantCodes, rawPerf, descendantEdgeIds);
 
-        if (stats.hasData) {
-          results.push({
-            entity_code: childCode,
-            entity_name: childName,
-            entity_type: childType,
-            audit_count: stats.audit_count,
-            score_pct: stats.score_pct,
-            total_marks: stats.total_marks,
-            obtained_marks: stats.obtained_marks,
-          });
-        }
+        results.push({
+          entity_code: childCode,
+          entity_name: childName,
+          entity_type: childType,
+          audit_count: stats.audit_count,
+          score_pct: stats.score_pct,
+          total_marks: stats.total_marks,
+          obtained_marks: stats.obtained_marks,
+        });
       }
     }
 
@@ -679,8 +679,6 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
       const descendantCodes = getDescendantCodes(selectedNode);
       const descendantEdgeIds = getDescendantEdgeIds(selectedNode);
       const stats = aggregateScores(descendantCodes, rawPerf, descendantEdgeIds);
-
-      if (!stats.hasData) return [];
 
       return [
         {
@@ -904,7 +902,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
           <div className="xl:flex-1 flex flex-col min-h-0 min-w-0">
             <div className="flex items-center justify-between mb-2 px-1">
               <h2 className="text-sm font-medium text-[#ffffffe6] tracking-wide">
-                {admin.account_type === 'Audit Firm' || admin.account_type === 'Audit Firm Company' ? "Audit Activity" : "performance progress"}
+                {admin.account_type === 'Audit Firm' || admin.account_type === 'Audit Firm Company' ? "Audit Activity" : "Performance Progress"}
               </h2>
               {!isAuditFirm && (
                 <button

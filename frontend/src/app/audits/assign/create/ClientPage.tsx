@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditApi, checklistApi, orgTreeApi, usersApi } from "@/lib/api";
-import { ArrowLeft, ClipboardCheck, Building2, Users, DollarSign, Calendar, ChevronDown, ChevronRight, CheckSquare, Square, AlertCircle, Loader2, FileText } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Building2, Users, DollarSign, Calendar, ChevronDown, ChevronRight, CheckSquare, Square, AlertCircle, FileText } from "lucide-react";
+import { Button, IconButton, Input, Textarea, fieldClass } from "@/components/ui";
 
 const ENTITY_TYPE_COLORS: Record<string, string> = {
   "Customer": "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
@@ -167,7 +168,8 @@ export default function AssignAuditPage() {
   );
   if (!admin) return null;
 
-  const inputCls = "w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/10 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/50 transition-all text-sm";
+  const inputAccentCls = "px-4 py-3 rounded-xl bg-white/[0.03] placeholder-gray-600 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/50";
+  const inputCls = `${fieldClass} ${inputAccentCls}`;
 
   return (
     <div className="min-h-screen bg-transparent">
@@ -175,9 +177,9 @@ export default function AssignAuditPage() {
 
         {/* Header */}
         <div className="flex items-center gap-3 mb-6 max-w-6xl mx-auto">
-          <button onClick={() => router.back()} className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all bg-white/5">
+          <IconButton onClick={() => router.back()} bordered size="md" title="Back" className="bg-white/5">
             <ArrowLeft size={16} />
-          </button>
+          </IconButton>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
               <ClipboardCheck size={22} className="text-amber-400" /> Assign Audit
@@ -210,10 +212,7 @@ export default function AssignAuditPage() {
                   <h2 className="text-white font-semibold text-xs uppercase tracking-wider flex items-center gap-2">
                     <ClipboardCheck size={14} className="text-amber-400" /> Audit Details
                   </h2>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-2">Audit Title <span className="text-red-400">*</span></label>
-                    <input type="text" value={title} onChange={e => setTitle(e.target.value)} required className={inputCls} placeholder="Enter audit title" />
-                  </div>
+                  <Input label="Audit Title" required type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter audit title" className={inputAccentCls} />
                   <div>
                     <label className="block text-xs font-medium text-gray-400 mb-2.5">Audit Type <span className="text-red-400">*</span></label>
                     <div className="grid grid-cols-2 gap-3">
@@ -248,14 +247,8 @@ export default function AssignAuditPage() {
                     )}
                   </h2>
                   <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-400 mb-2">Start Date <span className="text-red-400">*</span></label>
-                      <input type="date" required value={startDate} onChange={e => setStartDate(e.target.value)} className={`${inputCls} [color-scheme:dark]`} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-400 mb-2">End Date <span className="text-red-400">*</span></label>
-                      <input type="date" required value={endDate} onChange={e => setEndDate(e.target.value)} className={`${inputCls} [color-scheme:dark]`} />
-                    </div>
+                    <Input label="Start Date" required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`${inputAccentCls} [color-scheme:dark]`} />
+                    <Input label="End Date" required type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`${inputAccentCls} [color-scheme:dark]`} />
                   </div>
                 </div>
 
@@ -278,14 +271,17 @@ export default function AssignAuditPage() {
                         </select>
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-400 mb-2">Workers <span className="text-red-400">*</span></label>
-                      <div className="relative">
-                        <Users size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                        <input type="number" min="1" value={numWorkers} onChange={e => setNumWorkers(e.target.value)} required
-                          className={`${inputCls} pl-9`} placeholder="Number" />
-                      </div>
-                    </div>
+                    <Input
+                      label="Workers"
+                      required
+                      type="number"
+                      min="1"
+                      value={numWorkers}
+                      onChange={e => setNumWorkers(e.target.value)}
+                      leftAddon={<Users size={14} />}
+                      className={inputAccentCls}
+                      placeholder="Number"
+                    />
                   </div>
                 </div>
 
@@ -294,9 +290,13 @@ export default function AssignAuditPage() {
                   <h2 className="text-white font-semibold text-xs uppercase tracking-wider flex items-center gap-2">
                     <FileText size={14} className="text-amber-400" /> Notes <span className="text-gray-500 font-normal normal-case text-[10px] ml-1">(Optional)</span>
                   </h2>
-                  <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4}
-                    className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/10 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/50 transition-all text-sm resize-none"
-                    placeholder="Additional context or instructions..." />
+                  <Textarea
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    rows={4}
+                    className={`${inputAccentCls} resize-none`}
+                    placeholder="Additional context or instructions..."
+                  />
                 </div>
               </div>
 
@@ -348,8 +348,8 @@ export default function AssignAuditPage() {
                       <span className="text-gray-500 text-[10px] bg-white/5 px-2 py-0.5 rounded-full">{selectedKeys.size} / {entities.length}</span>
                     </div>
                     <div className="flex gap-2">
-                      <button type="button" onClick={selectAll} className="flex-1 py-1.5 rounded-lg border border-white/10 text-gray-400 hover:text-white hover:border-white/20 hover:bg-white/5 transition-all text-xs font-medium">Select All</button>
-                      <button type="button" onClick={clearAll} className="flex-1 py-1.5 rounded-lg border border-white/10 text-gray-400 hover:text-white hover:border-white/20 hover:bg-white/5 transition-all text-xs font-medium">Clear All</button>
+                      <Button type="button" variant="secondary" size="sm" fullWidth onClick={selectAll}>Select All</Button>
+                      <Button type="button" variant="secondary" size="sm" fullWidth onClick={clearAll}>Clear All</Button>
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto pr-1">
@@ -391,15 +391,17 @@ export default function AssignAuditPage() {
                 </div>
               )}
               <div className="flex flex-col sm:flex-row gap-3">
-                <button type="submit" disabled={submitting}
-                  className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-400 text-black shadow-[0_4px_20px_rgba(251,191,36,0.2)] disabled:opacity-50 disabled:pointer-events-none transition-all">
-                  {submitting ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
-                  {submitting ? "Creating..." : "Create Audit Assignment"}
-                </button>
-                <button type="button" onClick={() => router.back()}
-                  className="flex items-center justify-center px-5 py-3.5 rounded-xl text-sm font-medium text-gray-400 hover:text-white border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all">
+                <Button
+                  type="submit"
+                  loading={submitting}
+                  leftIcon={<ClipboardCheck size={16} />}
+                  className="px-6 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black shadow-[0_4px_20px_rgba(251,191,36,0.2)]"
+                >
+                  Create Audit Assignment
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => router.back()} className="px-5 py-3.5 rounded-xl">
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
 

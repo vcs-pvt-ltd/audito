@@ -3,16 +3,18 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { authApi, countriesApi, type Country } from "@/lib/api";
 
 import {
   User, Mail, Phone, MapPin, CreditCard, Lock,
-  Eye, EyeOff, Check, AlertCircle, ShieldCheck,
+  Eye, EyeOff, Check, ShieldCheck,
   Key, LogOut, ChevronRight, Pencil, X, Save, FileText,
   Camera, Trash2, BadgeCheck,
 } from "lucide-react";
 
 import { AuditorProfileTabs } from "./AuditorProfileTabs";
+import { Button, IconButton } from "@/components/ui";
 
 interface Organization {
   name: string;
@@ -89,6 +91,7 @@ const inputCls =
 export default function ProfilePage() {
   const { admin, accessToken, isLoading, logout, refreshMe } = useAuth();
   const router = useRouter();
+  const { toast } = useUiFeedback();
 
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -102,8 +105,6 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ first_name: "", last_name: "", phone_prefix: "+94", phone_local: "", nic: "", country: "" });
   const [saving, setSaving] = useState(false);
-  const [profileMsg, setProfileMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -113,7 +114,6 @@ export default function ProfilePage() {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [passwordMsg, setPasswordMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
 
   const passwordRequirements = useMemo(() => [
@@ -158,22 +158,20 @@ export default function ProfilePage() {
     if (!profile) return;
     const { code, local } = extractPhone(profile.phone_number, profile.country);
     setEditForm({ first_name: profile.first_name, last_name: profile.last_name, phone_prefix: code, phone_local: local, nic: profile.nic || "", country: profile.country || "" });
-    setProfileMsg(null);
     setShowCountryDropdown(false);
     setCountrySearch("");
     setEditing(true);
   };
 
-  const handleEditCancel = () => { setEditing(false); setProfileMsg(null); setShowCountryDropdown(false); setCountrySearch(""); };
+  const handleEditCancel = () => { setEditing(false); setShowCountryDropdown(false); setCountrySearch(""); };
 
   const handleEditSave = async () => {
     if (!accessToken || !profile) return;
     if (!editForm.first_name.trim() || !editForm.last_name.trim()) {
-      setProfileMsg({ type: "error", text: "First name and last name are required." });
+      toast("First name and last name are required.", "error");
       return;
     }
     setSaving(true);
-    setProfileMsg(null);
     try {
       const fullPhone = editForm.phone_local.trim() ? `${editForm.phone_prefix} ${editForm.phone_local.trim()}` : "";
       const res = await authApi.updateProfile(accessToken, {
@@ -185,15 +183,15 @@ export default function ProfilePage() {
         profile_image: profile.profile_image,
       });
       if (res.success) {
-        setProfileMsg({ type: "success", text: "Profile updated successfully." });
+        toast("Profile updated successfully.", "success");
         setEditing(false);
         await fetchProfile();
         await refreshMe();
       } else {
-        setProfileMsg({ type: "error", text: res.message || "Failed to update profile." });
+        toast(res.message || "Failed to update profile.", "error");
       }
     } catch {
-      setProfileMsg({ type: "error", text: "Something went wrong." });
+      toast("Something went wrong.", "error");
     } finally {
       setSaving(false);
     }
@@ -205,11 +203,10 @@ export default function ProfilePage() {
     const file = e.target.files?.[0];
     if (!file || !accessToken || !profile) return;
     if (file.size > 2 * 1024 * 1024) {
-      setProfileMsg({ type: "error", text: "Image size should be less than 2MB." });
+      toast("Image size should be less than 2MB.", "error");
       return;
     }
     setUploadingImage(true);
-    setProfileMsg(null);
     const reader = new FileReader();
     reader.onload = async () => {
       try {
@@ -223,26 +220,25 @@ export default function ProfilePage() {
           profile_image: base64Str,
         });
         if (res.success) {
-          setProfileMsg({ type: "success", text: "Profile image updated." });
+          toast("Profile image updated.", "success");
           await fetchProfile();
           await refreshMe();
         } else {
-          setProfileMsg({ type: "error", text: res.message || "Failed to update profile image." });
+          toast(res.message || "Failed to update profile image.", "error");
         }
       } catch {
-        setProfileMsg({ type: "error", text: "Failed to upload image." });
+        toast("Failed to upload image.", "error");
       } finally {
         setUploadingImage(false);
       }
     };
-    reader.onerror = () => { setProfileMsg({ type: "error", text: "Failed to read file." }); setUploadingImage(false); };
+    reader.onerror = () => { toast("Failed to read file.", "error"); setUploadingImage(false); };
     reader.readAsDataURL(file);
   };
 
   const handleRemoveImage = async () => {
     if (!accessToken || !profile) return;
     setUploadingImage(true);
-    setProfileMsg(null);
     try {
       const res = await authApi.updateProfile(accessToken, {
         first_name: profile.first_name,
@@ -253,14 +249,14 @@ export default function ProfilePage() {
         profile_image: null,
       });
       if (res.success) {
-        setProfileMsg({ type: "success", text: "Profile image removed." });
+        toast("Profile image removed.", "success");
         await fetchProfile();
         await refreshMe();
       } else {
-        setProfileMsg({ type: "error", text: res.message || "Failed to remove profile image." });
+        toast(res.message || "Failed to remove profile image.", "error");
       }
     } catch {
-      setProfileMsg({ type: "error", text: "Failed to remove profile image." });
+      toast("Failed to remove profile image.", "error");
     } finally {
       setUploadingImage(false);
     }
@@ -268,26 +264,25 @@ export default function ProfilePage() {
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPasswordMsg(null);
     if (!passwordRequirements.every(r => r.met)) {
-      setPasswordMsg({ type: "error", text: "Password does not meet all requirements." });
+      toast("Password does not meet all requirements.", "error");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordMsg({ type: "error", text: "Passwords do not match." });
+      toast("Passwords do not match.", "error");
       return;
     }
     setChangingPassword(true);
     try {
       const res = await authApi.changePassword(accessToken!, currentPassword, newPassword);
       if (res.success) {
-        setPasswordMsg({ type: "success", text: "Password changed successfully." });
+        toast("Password changed successfully.", "success");
         setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
       } else {
-        setPasswordMsg({ type: "error", text: res.message || "Failed to change password." });
+        toast(res.message || "Failed to change password.", "error");
       }
     } catch {
-      setPasswordMsg({ type: "error", text: "Something went wrong." });
+      toast("Something went wrong.", "error");
     } finally {
       setChangingPassword(false);
     }
@@ -478,27 +473,22 @@ export default function ProfilePage() {
                     </button>
                   ) : (
                     <div className="flex items-center gap-2 shrink-0">
-                      <button onClick={handleEditCancel}
-                        className="p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 border border-white/10 transition-all" title="Cancel">
+                      <IconButton bordered onClick={handleEditCancel} title="Cancel">
                         <X size={16} />
-                      </button>
-                      <button onClick={handleEditSave} disabled={saving}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-50">
-                        {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Save size={13} />}
+                      </IconButton>
+                      <Button
+                        size="sm"
+                        onClick={handleEditSave}
+                        disabled={saving}
+                        loading={saving}
+                        leftIcon={<Save size={13} />}
+                        className="rounded-xl"
+                      >
                         Save
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>
-
-                {profileMsg && (
-                  <div className={`flex items-center gap-3 p-3.5 rounded-xl mb-5 text-sm border ${
-                    profileMsg.type === "success" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"
-                  }`}>
-                    {profileMsg.type === "success" ? <Check size={18} /> : <AlertCircle size={18} />}
-                    <span className="font-medium">{profileMsg.text}</span>
-                  </div>
-                )}
 
                 {editing ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
@@ -620,14 +610,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {passwordMsg && (
-                  <div className={`flex items-center gap-3 p-3.5 rounded-xl mb-5 text-sm border ${
-                    passwordMsg.type === "success" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"
-                  }`}>
-                    {passwordMsg.type === "success" ? <Check size={18} /> : <AlertCircle size={18} />}
-                    <span className="font-medium">{passwordMsg.text}</span>
-                  </div>
-                )}
+
 
                 <form onSubmit={handleChangePassword} className="space-y-5">
                   {/* Three password fields in one row */}
@@ -688,11 +671,15 @@ export default function ProfilePage() {
                   )}
 
                   <div className="flex justify-end">
-                    <button type="submit" disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <Button
+                      type="submit"
+                      disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
+                      loading={changingPassword}
+                      rightIcon={changingPassword ? undefined : <ChevronRight size={16} />}
+                      className="rounded-xl"
+                    >
                       {changingPassword ? "Updating..." : "Save New Password"}
-                      {!changingPassword && <ChevronRight size={16} />}
-                    </button>
+                    </Button>
                   </div>
                 </form>
               </div>

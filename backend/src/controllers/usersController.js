@@ -182,15 +182,12 @@ const createUser = async (req, res) => {
       return errorResponse(res, `You cannot create "${user_type}" users for this account type.`, 403);
     }
 
-    // NIC uniqueness: ensure NIC (if provided) is not already used by any user/admin
+    // NIC uniqueness: check only within the target table (same person can be admin + auditor + entity head)
     if (nic) {
       try {
-        const [aRows] = await db.query('SELECT id FROM auditors WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
-        if (aRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
-        const [hRows] = await db.query('SELECT id FROM entity_heads WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
-        if (hRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
-        const [admRows] = await db.query('SELECT id FROM admins WHERE nic = ? LIMIT 1', [nic]);
-        if (admRows.length > 0) return errorResponse(res, 'NIC is already in use by another account.', 409);
+        const table = isAuditor(user_type) ? 'auditors' : 'entity_heads';
+        const [dupRows] = await db.query(`SELECT id FROM ${table} WHERE nic = ? AND is_active = TRUE LIMIT 1`, [nic]);
+        if (dupRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
       } catch (nicErr) {
         console.error('NIC uniqueness check failed:', nicErr);
       }
@@ -431,18 +428,13 @@ const updateUser = async (req, res) => {
     }
 
     const Model = user._table === 'auditor' ? AuditorModel : EntityHeadModel;
-    // NIC uniqueness on update
+    // NIC uniqueness on update: check only within the same table, excluding self
     if (req.body.nic) {
       try {
         const nic = req.body.nic;
-        const [aRows] = await db.query('SELECT id FROM auditors WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
-        if (aRows.length > 0 && user._table !== 'auditor') return errorResponse(res, 'NIC is already in use by another user.', 409);
-        if (aRows.length > 0 && user._table === 'auditor' && aRows[0].id !== user.id) return errorResponse(res, 'NIC is already in use by another user.', 409);
-        const [hRows] = await db.query('SELECT id FROM entity_heads WHERE nic = ? AND is_active = TRUE LIMIT 1', [nic]);
-        if (hRows.length > 0 && user._table !== 'entity_head') return errorResponse(res, 'NIC is already in use by another user.', 409);
-        if (hRows.length > 0 && user._table === 'entity_head' && hRows[0].id !== user.id) return errorResponse(res, 'NIC is already in use by another user.', 409);
-        const [admRows] = await db.query('SELECT id FROM admins WHERE nic = ? LIMIT 1', [nic]);
-        if (admRows.length > 0) return errorResponse(res, 'NIC is already in use by another account.', 409);
+        const table = user._table === 'auditor' ? 'auditors' : 'entity_heads';
+        const [dupRows] = await db.query(`SELECT id FROM ${table} WHERE nic = ? AND is_active = TRUE AND id != ? LIMIT 1`, [nic, user.id]);
+        if (dupRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
       } catch (nicErr) {
         console.error('NIC uniqueness check failed (update):', nicErr);
       }

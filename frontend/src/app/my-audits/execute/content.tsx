@@ -24,6 +24,7 @@ import {
 import { CircularProgress } from "@/components/shared/CircularProgress";
 
 import EvidenceModal from "@/components/audit/EvidenceModal";
+import { Button, IconButton, Modal } from "@/components/ui";
 import {
   ArrowLeft,
   ClipboardCheck,
@@ -326,14 +327,10 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
   }, [marksObtained, maxMarks]);
 
   const handleSave = async (): Promise<boolean> => {
-    if (!orgTreeId || Number(orgTreeId) <= 0) {
-      setSaveErr('Please select the entity from the organization tree (org_tree_id missing).');
-      return false;
-    }
     setSaveErr("");
     setSaving(true);
     const res = await auditExecutionApi.respond(accessToken, auditId, {
-      org_tree_id: Number(orgTreeId),
+      org_tree_id: orgTreeId > 0 ? Number(orgTreeId) : null,
       entity_code: entityCode,
       question_id: question.id,
       answer_text: question.answer_type === "free_text" ? answerText : undefined,
@@ -349,14 +346,10 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
   };
 
   const handleSaveOnly = async (): Promise<boolean> => {
-    if (!orgTreeId || Number(orgTreeId) <= 0) {
-      setSaveErr('Please select the entity from the organization tree (org_tree_id missing).');
-      return false;
-    }
     setSaveErr("");
     setSaving(true);
     const res = await auditExecutionApi.respond(accessToken, auditId, {
-      org_tree_id: Number(orgTreeId),
+      org_tree_id: orgTreeId > 0 ? Number(orgTreeId) : null,
       entity_code: entityCode,
       question_id: question.id,
       answer_text: question.answer_type === "free_text" ? answerText : undefined,
@@ -390,10 +383,6 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
       return false;
     }
     setEvidenceErr("");
-    if (!orgTreeId || Number(orgTreeId) <= 0) {
-      setSaveErr('Please select the entity from the organization tree (org_tree_id missing).');
-      return false;
-    }
     setSaveErr("");
     if (file.size > MAX_EVIDENCE_BYTES) {
       setEvidenceErr(`File size must be 2MB or less. Selected: ${fmtFileSize(file.size)}`);
@@ -408,7 +397,7 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     // If there's no saved response yet, create one automatically so evidence can be attached
     if (!responseId) {
       const saveRes = await auditExecutionApi.respond(accessToken, auditId, {
-        org_tree_id: Number(orgTreeId),
+        org_tree_id: orgTreeId > 0 ? Number(orgTreeId) : null,
         entity_code: entityCode,
         question_id: question.id,
         answer_text: question.answer_type === "free_text" ? answerText : undefined,
@@ -939,7 +928,7 @@ export default function MyAuditExecutePage() {
       </div>
     );
   }
-  if (!admin) return null;
+  if (!admin || !accessToken) return null;
 
   // Build helpers
   const questionsMap: Record<string, ChecklistQuestion[]> = {};
@@ -1016,12 +1005,9 @@ export default function MyAuditExecutePage() {
         {/* Top bar */}
         <div className="shrink-0 px-6 py-3 flex items-center justify-between gap-4 bg-transparent/80 backdrop-blur-sm">
           <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={() => requestNav(() => router.push(`/my-audits/details?id=${auditId}`))}
-              className="p-2 rounded-lg text-gray-400 hover:text-white border border-white/10 hover:border-white/20 transition-all shrink-0"
-            >
+            <IconButton bordered onClick={() => requestNav(() => router.push(`/my-audits/details?id=${auditId}`))}>
               <ArrowLeft size={14} />
-            </button>
+            </IconButton>
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-white truncate flex items-center gap-2">
                 <ClipboardCheck size={16} className="text-amber-400 shrink-0" />
@@ -1067,23 +1053,26 @@ export default function MyAuditExecutePage() {
               const pushStep = (s: typeof step) => setStepHistory(h => [...h, s]);
               const navigateNode = (nd: TreeNode) => {
                 const code = nd.code;
-                const k = progressKey(code, nd.edge_id ?? null);
-                // Check if this entity has questions IN the audit
-                const hasQ = (questionsMap[k]?.length || 0) > 0;
-                // Check if this entity has children (all direct children, not filtered)
+                const edgeId = nd.edge_id ?? null;
+                const k = progressKey(code, edgeId);
+                let hasQ = (questionsMap[k]?.length || 0) > 0;
+                let resolvedTreeId = edgeId ? Number(edgeId) : 0;
+                // When edge_id is absent, scan questionsMap for this entity's org_tree_id
+                if (!resolvedTreeId) {
+                  const matchKey = Object.keys(questionsMap)
+                    .filter(mk => mk.includes('__'))
+                    .find(mk => mk.split('__')[0] === code && (questionsMap[mk]?.length || 0) > 0);
+                  if (matchKey) {
+                    hasQ = true;
+                    const idPart = matchKey.split('__')[1];
+                    if (idPart && idPart !== 'null') resolvedTreeId = Number(idPart);
+                  }
+                }
                 const hasKids = (nd.children ?? []).length > 0;
-                
                 if (!hasQ && hasKids) {
-                  // No questions but has children: drill down to show children entities
                   pushStep({ mode: "cards", parentCode: code });
-                } else if (hasQ) {
-                  // Has questions: show them with tree node context
-                  const treeId = nd.edge_id ? Number(nd.edge_id) : 0;
-                  pushStep({ mode: "questions", entityCode: code, orgTreeId: treeId });
                 } else {
-                  // No questions and no children: still show questions view for this entity
-                  const treeId = nd.edge_id ? Number(nd.edge_id) : 0;
-                  pushStep({ mode: "questions", entityCode: code, orgTreeId: treeId });
+                  pushStep({ mode: "questions", entityCode: code, orgTreeId: resolvedTreeId });
                 }
               };
               const navigate = (code: string) => {
@@ -1384,56 +1373,39 @@ export default function MyAuditExecutePage() {
       </div>
 
       {/* Unsaved changes modal */}
-      {navModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md glass rounded-xl border border-white/10 p-5">
-            <h3 className="text-white font-semibold text-base">Unsaved changes</h3>
-            <p className="text-sm text-gray-400 mt-1">You have unsaved responses for this question.</p>
-
-            <div className="flex items-center justify-end gap-2 mt-5">
-              <button
-                onClick={() => {
-                  setNavModalOpen(false);
-                  pendingNavRef.current = null;
-                }}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={async () => {
-                  discardAllDirty();
-                  setNavModalOpen(false);
-                  const fn = pendingNavRef.current;
-                  pendingNavRef.current = null;
-                  fn?.();
-                }}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/15 transition-all"
-              >
-                Discard
-              </button>
-
-              <button
-                onClick={async () => {
-                  const ok = await saveAllDirty();
-                  if (!ok) {
-                    toast("Failed to save response.", "error");
-                    return;
-                  }
-                  setNavModalOpen(false);
-                  const fn = pendingNavRef.current;
-                  pendingNavRef.current = null;
-                  fn?.();
-                }}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={navModalOpen}
+        onClose={() => { setNavModalOpen(false); pendingNavRef.current = null; }}
+        title="Unsaved changes"
+        description="You have unsaved responses for this question."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => { setNavModalOpen(false); pendingNavRef.current = null; }}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={async () => {
+              discardAllDirty();
+              setNavModalOpen(false);
+              const fn = pendingNavRef.current;
+              pendingNavRef.current = null;
+              fn?.();
+            }}>
+              Discard
+            </Button>
+            <Button onClick={async () => {
+              const ok = await saveAllDirty();
+              if (!ok) { toast("Failed to save response.", "error"); return; }
+              setNavModalOpen(false);
+              const fn = pendingNavRef.current;
+              pendingNavRef.current = null;
+              fn?.();
+            }}>
+              Save
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }

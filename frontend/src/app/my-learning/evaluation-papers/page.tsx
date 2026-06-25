@@ -6,6 +6,8 @@ import { useAuth } from "@/context/AuthContext";
 import { myLearningApi } from "@/lib/api";
 import { ArrowRight, ClipboardList, RefreshCw, Search } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
+import EmptyState from "@/components/shared/EmptyState";
+import { Button, IconButton, Table, THead, Th } from "@/components/ui";
 
 interface MyPaper {
   assignment_id: number;
@@ -100,12 +102,9 @@ export default function MyEvaluationPapersPage() {
             <p className="text-xs text-gray-500 mt-0.5">Manage and attempt your assigned evaluation papers</p>
           </div>
         </div>
-        <button 
-          onClick={load}
-          className="p-2 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-all"
-        >
+        <IconButton bordered size="md" onClick={load} title="Refresh" className="bg-white/5">
           <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-        </button>
+        </IconButton>
       </div>
 
       {/* Search Bar */}
@@ -128,10 +127,11 @@ export default function MyEvaluationPapersPage() {
           <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : items.length === 0 ? (
-        <div className="glass rounded-2xl p-12 text-center border border-white/5">
-          <ClipboardList size={40} className="mx-auto text-gray-600 mb-4 opacity-20" />
-          <p className="text-gray-400 font-medium">No evaluation papers assigned.</p>
-        </div>
+        <EmptyState
+          icon={ClipboardList}
+          title="No evaluation papers assigned"
+          message="Evaluation papers assigned to you will appear here once your organization adds them."
+        />
       ) : filtered.length === 0 ? (
         <div className="glass rounded-xl p-16 text-center">
           <ClipboardList size={36} className="text-gray-600 mx-auto mb-4" />
@@ -141,17 +141,15 @@ export default function MyEvaluationPapersPage() {
       ) : (
         <div className="space-y-4">
           {/* Desktop Table */}
-          <div className="hidden md:block glass rounded-2xl border border-white/5 overflow-hidden">
-            <table className="w-full text-left border-collapse table-fixed">
-              <thead>
-                <tr className="bg-white/[0.02] border-b border-white/5">
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500 w-[50%]">Paper Details</th>
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500 text-center w-24">Status</th>
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500 text-center w-20">Questions</th>
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500 text-center w-28">Result</th>
-                  <th className="px-6 py-4 text-[10px] font-black tracking-widest text-gray-500 text-right w-32">Action</th>
-                </tr>
-              </thead>
+          <div className="hidden md:block">
+            <Table className="text-left table-fixed">
+              <THead>
+                <Th className="w-[50%]">Paper Details</Th>
+                <Th align="center" className="w-24">Status</Th>
+                <Th align="center" className="w-20">Questions</Th>
+                <Th align="center" className="w-28">Result</Th>
+                <Th align="right" className="w-32">Action</Th>
+              </THead>
               <tbody className="divide-y divide-white/5">
                 {paginated.map((p) => {
                   const hasScore = p.last_score !== null && p.last_score !== undefined;
@@ -197,19 +195,17 @@ export default function MyEvaluationPapersPage() {
                         {p.assignment_status === "submitted" ? (
                           <span className="text-xs font-bold text-gray-600 tracking-widest px-4 py-2">Completed</span>
                         ) : (
-                          <button
-                            onClick={() => router.push(`/my-learning/evaluation-papers/details?id=${p.paper_id}`)}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black tracking-wider bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/10 active:translate-y-0.5"
-                          >
-                            Start <ArrowRight size={14} strokeWidth={3} />
-                          </button>
+                          <Button size="sm" rightIcon={<ArrowRight size={14} strokeWidth={3} />}
+                            onClick={() => router.push(`/my-learning/evaluation-papers/details?id=${p.paper_id}`)}>
+                            Start
+                          </Button>
                         )}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
-            </table>
+            </Table>
           </div>
 
           {/* Mobile Cards */}
@@ -254,12 +250,10 @@ export default function MyEvaluationPapersPage() {
                       Completed
                     </div>
                   ) : (
-                    <button
-                      onClick={() => router.push(`/my-learning/evaluation-papers/details?id=${p.paper_id}`)}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-secondary-500 text-primary-950 font-black text-sm uppercase tracking-wider shadow-xl shadow-secondary-500/20 active:translate-y-0.5"
-                    >
-                      Start Attempt <ArrowRight size={16} strokeWidth={3} />
-                    </button>
+                    <Button fullWidth rightIcon={<ArrowRight size={16} strokeWidth={3} />}
+                      onClick={() => router.push(`/my-learning/evaluation-papers/details?id=${p.paper_id}`)}>
+                      Start Attempt
+                    </Button>
                   )}
                 </div>
               );

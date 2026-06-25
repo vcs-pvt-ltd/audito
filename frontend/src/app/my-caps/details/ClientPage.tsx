@@ -26,6 +26,7 @@ import {
   Zap,
   FileText,
 } from "lucide-react";
+import { Button, IconButton } from "@/components/ui";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -335,9 +336,9 @@ export default function MyCapDetailPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
-          <button onClick={() => router.push(backPath)} className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
+          <IconButton bordered onClick={() => router.push(backPath)}>
             <ArrowLeft size={18} />
-          </button>
+          </IconButton>
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl sm:text-3xl font-black font-semibold truncate">{cap.title}</h1>
           </div>
@@ -388,12 +389,14 @@ export default function MyCapDetailPage() {
             {/* Actions */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-white/5">
               {isPending && (
-                <button
+                <Button
+                  fullWidth
                   onClick={() => router.push(`/my-caps/execute?id=${capId}`)}
-                  className="w-full bg-secondary-500 hover:bg-secondary-400 text-primary-950 font-black py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-secondary-500/15"
+                  leftIcon={<Zap size={18} />}
+                  className="py-3 rounded-xl font-black shadow-lg shadow-secondary-500/15"
                 >
-                  <Zap size={18} /> Start CAP
-                </button>
+                  Start CAP
+                </Button>
               )}
               {isInProgress && (
                 <>
@@ -415,12 +418,15 @@ export default function MyCapDetailPage() {
               )}
               {isCompleted && (
                 <>
-                  <button
+                  <Button
+                    variant="secondary"
+                    fullWidth
                     disabled
-                    className="w-full bg-white/[0.03] text-gray-500 font-black py-3 rounded-xl text-sm border border-white/10 flex items-center justify-center gap-2 cursor-not-allowed"
+                    leftIcon={<Zap size={18} />}
+                    className="py-3 rounded-xl font-black"
                   >
-                    <Zap size={18} /> Completed
-                  </button>
+                    Completed
+                  </Button>
                   <button
                     onClick={() => router.push(`/my-caps/report?id=${capId}`)}
                     className="w-full bg-emerald-500 text-primary-950 font-black py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/15"
@@ -430,12 +436,15 @@ export default function MyCapDetailPage() {
                 </>
               )}
 
-              <button
+              <Button
+                variant="secondary"
+                fullWidth
                 onClick={() => router.push(`/my-caps/preview?id=${capId}`)}
-                className="w-full glass hover:bg-white/5 text-gray-300 font-bold py-3 rounded-xl text-sm border border-white/10 transition-all flex items-center justify-center gap-2"
+                leftIcon={<Building2 size={17} />}
+                className="py-3 rounded-xl font-bold glass"
               >
-                <Building2 size={17} /> Preview
-              </button>
+                Preview
+              </Button>
             </div>
           </div>
 
