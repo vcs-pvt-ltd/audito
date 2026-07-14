@@ -12,7 +12,7 @@ import { noticeApi, linksApi } from "@/lib/api";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
   ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
-  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote,
 } from "lucide-react";
 
 // ─── Avatar helper (mirrors profile page) ────────────────────────
@@ -229,6 +229,9 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
     { type: "link", label: "Dashboard", path: "/admin-panel/dashboard", icon: LayoutDashboard },
     { type: "link", label: "Messages", path: "/admin-panel/messages", icon: Mail, matchPrefix: true },
     { type: "link", label: "Promo Codes", path: "/admin-panel/promo-codes", icon: CreditCard, matchPrefix: true },
+    { type: "link", label: "Custom Solutions", path: "/admin-panel/custom-solutions", icon: Puzzle, matchPrefix: true },
+    { type: "link", label: "Payments", path: "/admin-panel/payments", icon: Banknote, matchPrefix: true },
+    { type: "link", label: "Organizations", path: "/admin-panel/organizations", icon: Building2, matchPrefix: true },
     { type: "link", label: "Admins", path: "/admin-panel/admins", icon: Shield, matchPrefix: true },
   ],
 };
@@ -646,7 +649,7 @@ export default function Sidebar() {
         <div className={`h-16 flex items-center border-b border-white/10 ${collapsed ? "px-2 justify-center" : "px-5 justify-between"}`}>
           <div className="flex items-center gap-2">
             {!collapsed && (
-              <Link href="/dashboard"><Image src={auditoLogo} alt="Audito" width={90} height={20} className="h-6" /></Link>
+              <Link href={admin?.role === "audito_admin" ? "/admin-panel/dashboard" : "/dashboard"}><Image src={auditoLogo} alt="Audito" width={90} height={20} className="h-6" /></Link>
             )}
           </div>
           <div className="flex items-center gap-1">

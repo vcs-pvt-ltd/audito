@@ -305,6 +305,61 @@ const sendContactReplyEmail = async (toEmail, userName, originalMessage, replyCo
   await transporter.sendMail(mailOptions);
 };
 
+/**
+ * Send custom solution price notification to user
+ */
+const sendCustomSolutionPriceEmail = async (toEmail, userName, { orgName, price, billingCycle, paymentUrl }) => {
+  const { html, attachments } = getEmailTemplate({
+    title: 'Your Custom Plan is Ready',
+    subtitle: 'Complete your payment to get started',
+    content: `
+      <p style="color: #333; font-size: 16px;">Hi ${userName},</p>
+      <p style="color: #555; font-size: 14px; line-height: 1.6;">
+        Great news! We've reviewed your custom solution request for <strong>${orgName}</strong> and have prepared a tailored plan for your organization.
+      </p>
+      <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin-top: 20px;">
+        <h3 style="color: #00374B; margin-top: 0;">Plan Summary</h3>
+        <table style="width: 100%; font-size: 14px;">
+          <tr>
+            <td style="color: #999; padding: 5px 0;">Plan Type:</td>
+            <td style="color: #00374B; font-weight: 700; text-align: right;">Custom</td>
+          </tr>
+          <tr>
+            <td style="color: #999; padding: 5px 0;">Billing Cycle:</td>
+            <td style="color: #00374B; font-weight: 700; text-align: right;">${billingCycle}</td>
+          </tr>
+          <tr>
+            <td style="color: #999; padding: 5px 0;">Amount:</td>
+            <td style="color: #00374B; font-weight: 700; text-align: right; font-size: 16px;">$${price}${billingCycle === 'Monthly' ? '/month' : '/year'}</td>
+          </tr>
+        </table>
+      </div>
+      <p style="color: #555; font-size: 14px; line-height: 1.6; margin-top: 20px;">
+        Please complete your payment to activate your custom plan and start using Audito.
+      </p>
+      <div style="text-align: center; margin: 26px 0;">
+        <a href="${paymentUrl}"
+           style="background-color: #12B572; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block;">
+          Complete Payment
+        </a>
+      </div>
+      <p style="color: #888; font-size: 12px; line-height: 1.5;">
+        If you have any questions about your plan, please don't hesitate to contact us.
+      </p>
+    `,
+  });
+
+  const mailOptions = {
+    from: `"Audito" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: 'Audito - Your Custom Plan is Ready',
+    html,
+    attachments,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
 module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail,
@@ -312,5 +367,6 @@ module.exports = {
   sendOtpEmail,
   sendAuditAssignedEmail,
   sendContactEmail,
-  sendContactReplyEmail
+  sendContactReplyEmail,
+  sendCustomSolutionPriceEmail,
 };

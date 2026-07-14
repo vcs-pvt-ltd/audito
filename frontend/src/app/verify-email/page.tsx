@@ -15,6 +15,7 @@ function VerifyEmailContent() {
   const [message, setMessage] = useState("");
   const [userData, setUserData] = useState<{ email: string; first_name: string; admin_id?: string } | null>(null);
   const [paymentCode, setPaymentCode] = useState<string | null>(null);
+  const [customSolutionPending, setCustomSolutionPending] = useState(false);
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -57,6 +58,9 @@ function VerifyEmailContent() {
             if (data?.payment?.payment_code) {
               setPaymentCode(data.payment.payment_code);
               setMessage("Your email is verified. Continue to complete your subscription payment.");
+            } else if (data?.custom_solution_pending) {
+              setCustomSolutionPending(true);
+              setMessage("Your email has been verified! Your custom solution request is being reviewed by our team. We'll notify you via email once pricing is ready.");
             } else {
               setMessage("Your email has been successfully verified! You can now log in to your account.");
             }
@@ -130,7 +134,7 @@ function VerifyEmailContent() {
                 href="/login"
                 className="w-full flex items-center justify-center gap-2 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold px-6 py-3 rounded-xl transition-colors"
               >
-                Proceed to Login <ArrowRight size={18} />
+                {customSolutionPending ? "Go to Login" : "Proceed to Login"} <ArrowRight size={18} />
               </Link>
             )}
           </div>
