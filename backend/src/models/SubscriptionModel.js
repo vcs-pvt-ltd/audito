@@ -44,12 +44,13 @@ const PLAN_LIMITS = {
   }
 };
 
-// Database enum values are: Basic | Pro | Elite
+// Database enum values are: Basic | Pro | Elite | Custom
 const PLAN_NAME_ALIASES = {
   Free: 'Basic',
   Basic: 'Basic',
   Pro: 'Pro',
-  Elite: 'Elite'
+  Elite: 'Elite',
+  Custom: 'Custom'
 };
 
 // Monthly list price (USD). Yearly applies a 20% discount on 12 months.
@@ -115,7 +116,7 @@ const SubscriptionModel = {
   // on root_entity_code (one row per org), so this upserts that row: updates the
   // plan / billing period / limits in place if it exists, or inserts it for a
   // paid registration where the row was deferred. Returns { start, end }.
-  async activatePaidSubscription(rootEntityCode, planName, billingCycle) {
+  async activatePaidSubscription(rootEntityCode, planName, billingCycle, customLimits = null) {
     const start = new Date();
     const end = new Date();
 
@@ -128,7 +129,7 @@ const SubscriptionModel = {
     }
 
     const effectivePlanName = normalizePlanName(planName);
-    const limits = PLAN_LIMITS[effectivePlanName] || PLAN_LIMITS['Basic'];
+    const limits = customLimits || PLAN_LIMITS[effectivePlanName] || PLAN_LIMITS['Basic'];
 
     const subscription_id = await genSubscriptionId();
     await db.query(

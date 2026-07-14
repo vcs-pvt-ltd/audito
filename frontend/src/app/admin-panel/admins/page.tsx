@@ -61,6 +61,7 @@ export default function AdminsPage() {
     setError("");
     try {
       const params: { role?: string; is_active?: string; search?: string } = {};
+      params.role = "audito_admin";
       if (filter === "active") params.is_active = "true";
       if (filter === "inactive") params.is_active = "false";
       if (search.trim()) params.search = search.trim();
@@ -212,10 +213,10 @@ export default function AdminsPage() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Shield size={22} className="text-secondary-400" /> Admins
+            <Shield size={22} className="text-secondary-400" /> Audito Admins
           </h1>
           <p className="text-gray-400 text-sm mt-1">
-            Manage admin and audito_admin accounts
+            Manage audito admin accounts
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -301,7 +302,6 @@ export default function AdminsPage() {
             <THead>
               <Th>Name</Th>
               <Th>Email</Th>
-              <Th>Role</Th>
               <Th>Created</Th>
               <Th>Verified</Th>
               <Th>Status</Th>
@@ -317,15 +317,6 @@ export default function AdminsPage() {
                   </Td>
                   <Td>
                     <span className="text-gray-400 text-sm">{adm.email}</span>
-                  </Td>
-                  <Td>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                      adm.role === 'audito_admin'
-                        ? 'bg-secondary-500/10 border border-secondary-500/30 text-secondary-400'
-                        : 'bg-blue-500/10 border border-blue-500/30 text-blue-400'
-                    }`}>
-                      {adm.role === 'audito_admin' ? 'Audito Admin' : 'Admin'}
-                    </span>
                   </Td>
                   <Td>
                     <span className="text-gray-400 text-xs">

@@ -96,6 +96,15 @@ export interface RegisterPayload {
   plan_name?: string;
   billing_cycle?: string;
   timezone?: string;
+  custom_solution?: {
+    max_company_levels: number;
+    max_departments: number;
+    max_audits: number;
+    max_checklists: number;
+    max_auditors: number;
+    allow_auditor_eval: boolean;
+    allow_company_to_company: boolean;
+  };
 }
 
 export interface LoginPayload {
@@ -1144,6 +1153,86 @@ export interface PaymentDetails {
   created_at?: string | null;
 }
 
+export interface CustomSolutionRequest {
+  request_id: string;
+  root_entity_code: string;
+  admin_id: string;
+  org_name: string;
+  org_email: string;
+  entity_type: string;
+  max_company_levels: number;
+  max_departments: number;
+  max_audits: number;
+  max_checklists: number;
+  max_auditors: number;
+  allow_auditor_eval: boolean;
+  allow_company_to_company: boolean;
+  status: "pending" | "priced" | "accepted" | "rejected";
+  assigned_price: number | null;
+  assigned_billing_cycle: string | null;
+  admin_notes: string | null;
+  payment_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminDashboardStats {
+  counts: {
+    messages: number;
+    messages_unread: number;
+    promo_codes: number;
+    promo_codes_active: number;
+    custom_solutions: number;
+    custom_solutions_pending: number;
+    organizations: number;
+    organizations_paid: number;
+    audito_admins: number;
+  };
+  charts: {
+    registrations: { period_label: string; count: number }[];
+    plan_distribution: { plan_name: string; count: number }[];
+  };
+}
+
+export interface AdminPayment {
+  transaction_id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  gateway: string | null;
+  purpose: string;
+  org_name: string | null;
+  org_name_resolved: string | null;
+  plan_name: string;
+  billing_cycle: string;
+  invoice_number: string | null;
+  paid_at: string | null;
+  created_at: string;
+  admin_first_name: string | null;
+  admin_last_name: string | null;
+  admin_email: string | null;
+  entity_type: string | null;
+}
+
+export interface RegisteredOrganization {
+  root_entity_code: string;
+  plan_name: string;
+  billing_cycle: string;
+  is_active: number;
+  start_date: string;
+  end_date: string;
+  created_at: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  account_type: string | null;
+  entity_type: string | null;
+  country: string | null;
+  admin_active: number | null;
+  email_verified: number | null;
+  org_name: string | null;
+}
+
 export const paymentApi = {
   // Public — payment page lookup & confirmation (temporary; gateway webhook later)
   get: (code: string) => apiRequest<{ payment: PaymentDetails }>(`/payments/${code}`),
@@ -1284,4 +1373,38 @@ export const adminApi = {
       method: "DELETE",
       token,
     }),
+
+  // Custom solution requests
+  listCustomSolutions: (token: string, params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    const query = qs.toString();
+    return apiRequest<CustomSolutionRequest[]>(`/admin/custom-solutions${query ? `?${query}` : ""}`, { token });
+  },
+
+  getCustomSolution: (token: string, requestId: string) =>
+    apiRequest<CustomSolutionRequest>(`/admin/custom-solutions/${requestId}`, { token }),
+
+  assignCustomSolutionPrice: (token: string, requestId: string, data: {
+    assigned_price: number;
+    assigned_billing_cycle: "Monthly" | "Yearly";
+    admin_notes?: string;
+  }) =>
+    apiRequest(`/admin/custom-solutions/${requestId}/assign-price`, {
+      method: "POST",
+      body: data as unknown as Record<string, unknown>,
+      token,
+    }),
+
+  // Dashboard stats
+  getDashboardStats: (token: string, period: string = "monthly") =>
+    apiRequest<AdminDashboardStats>(`/admin/stats?period=${period}`, { token }),
+
+  // Registered organizations
+  listOrganizations: (token: string) =>
+    apiRequest<RegisteredOrganization[]>("/admin/organizations", { token }),
+
+  // Payment transactions
+  listPayments: (token: string) =>
+    apiRequest<AdminPayment[]>("/admin/payments", { token }),
 };

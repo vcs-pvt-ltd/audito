@@ -470,6 +470,18 @@ function RegisterForm() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError] = useState("");
 
+  const [isCustomPlan, setIsCustomPlan] = useState(false);
+  const [customLimitsReady, setCustomLimitsReady] = useState(false);
+  const [customSolution, setCustomSolution] = useState({
+    max_company_levels: 1,
+    max_departments: 4,
+    max_audits: 2,
+    max_checklists: 3,
+    max_auditors: 1,
+    allow_auditor_eval: false,
+    allow_company_to_company: false,
+  });
+
   const [formData, setFormData] = useState<RegisterPayload & { promo_code?: string }>({
     entity_type: "Customer",
     org_name: "",
@@ -512,6 +524,31 @@ function RegisterForm() {
       setSelectedEntityType(defaultEntity);
       setFormData((prev) => ({ ...prev, entity_type: defaultEntity }));
     }
+
+    const plan = searchParams.get("plan");
+    if (plan === "Custom") {
+      setIsCustomPlan(true);
+      setFormData((prev) => ({ ...prev, plan_name: "Custom" }));
+
+      // Check if coming from /custom-solution with pre-configured limits
+      try {
+        const raw = sessionStorage.getItem("custom_solution_payload");
+        if (raw) {
+          const payload = JSON.parse(raw);
+          sessionStorage.removeItem("custom_solution_payload");
+          if (payload.customSolution) {
+            setCustomSolution(payload.customSolution);
+            setCustomLimitsReady(true);
+          }
+          if (payload.billing_cycle) {
+            setFormData((prev) => ({ ...prev, billing_cycle: payload.billing_cycle }));
+          }
+          // Stay at step 1 so user can select account type; step 2 will be skipped
+        }
+      } catch {
+        // Ignore parse errors — fall through to normal flow
+      }
+    }
   }, [searchParams]);
 
   // Auto-sync org_email to admin email
@@ -542,7 +579,8 @@ function RegisterForm() {
       return;
     }
     setError("");
-    setStep(2);
+    // If custom limits were pre-configured on /custom-solution, skip step 2
+    setStep(customLimitsReady ? 3 : 2);
   };
 
   const passwordRequirements = useMemo(() => ({
@@ -636,7 +674,10 @@ function RegisterForm() {
     setLoading(true);
     setError("");
     try {
-      const res = (await authApi.register(formData)) as { success: boolean; message?: string };
+      const payload = isCustomPlan
+        ? { ...formData, custom_solution: customSolution }
+        : formData;
+      const res = (await authApi.register(payload)) as { success: boolean; message?: string };
       // Email verification comes first; paid plans continue to payment after
       // the email is verified (see the verify-email page).
       if (res.success) setIsRegistered(true);
@@ -711,8 +752,125 @@ function RegisterForm() {
           />
         )}
 
-        {/* ─── Step 2: Pricing Plans ─────────────────────────────────── */}
-        {step === 2 && (() => {
+        {/* ─── Step 2: Pricing Plans or Custom Configuration ──────────── */}
+        {step === 2 && isCustomPlan && (() => {
+          const customFeatures = [
+            { key: "max_company_levels" as const, label: "Company Levels", min: 1, max: 20, desc: "Hierarchical organizational levels" },
+            { key: "max_departments" as const, label: "Departments", min: 1, max: 100, desc: "Department entities in your organization" },
+            { key: "max_audits" as const, label: "Audits", min: 1, max: 100, desc: "Active audit assignments" },
+            { key: "max_checklists" as const, label: "Audit Checklists", min: 1, max: 100, desc: "Reusable audit checklist templates" },
+            { key: "max_auditors" as const, label: "Auditors", min: 1, max: 100, desc: "Auditor accounts on your team" },
+          ];
+
+          return (
+            <div className="glass rounded-2xl p-6 sm:p-8">
+              <div className="flex items-center gap-2 mb-5">
+                <button type="button" onClick={() => setStep(1)} className="text-gray-400 hover:text-white transition-colors">
+                  <ArrowLeft size={18} />
+                </button>
+                <h3 className="text-lg font-semibold text-white">Configure Your Custom Plan</h3>
+              </div>
+
+              <p className="text-sm text-gray-400 mb-6">
+                Specify the features and limits your organization needs. Our team will review your requirements and assign a custom price.
+              </p>
+
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-5">
+                  <p className="text-sm text-red-400">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-5 mb-6">
+                <p className="text-[10px] tracking-[2px] text-secondary-600 uppercase">Resource Limits</p>
+                {customFeatures.map((feat) => (
+                  <div key={feat.key} className="flex items-center justify-between gap-4 p-3 rounded-xl bg-white/5 border border-white/10">
+                    <div>
+                      <p className="text-sm font-medium text-white">{feat.label}</p>
+                      <p className="text-[11px] text-gray-500">{feat.desc}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCustomSolution(prev => ({ ...prev, [feat.key]: Math.max(feat.min, prev[feat.key] - 1) }))}
+                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors text-lg font-bold"
+                      >
+                        -
+                      </button>
+                      <span className="w-12 text-center text-white font-semibold text-lg">{customSolution[feat.key]}</span>
+                      <button
+                        type="button"
+                        onClick={() => setCustomSolution(prev => ({ ...prev, [feat.key]: Math.min(feat.max, prev[feat.key] + 1) }))}
+                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors text-lg font-bold"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <p className="text-[10px] tracking-[2px] text-secondary-600 uppercase pt-2">Premium Features</p>
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-white">Auditor Evaluation System</p>
+                      <p className="text-[11px] text-gray-500">Evaluate auditor performance with tests and scoring</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCustomSolution(prev => ({ ...prev, allow_auditor_eval: !prev.allow_auditor_eval }))}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${customSolution.allow_auditor_eval ? "bg-secondary-500" : "bg-white/20"}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${customSolution.allow_auditor_eval ? "translate-x-5" : ""}`} />
+                    </button>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-white">Company-to-Company Linking</p>
+                      <p className="text-[11px] text-gray-500">Link and collaborate with external organizations</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCustomSolution(prev => ({ ...prev, allow_company_to_company: !prev.allow_company_to_company }))}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${customSolution.allow_company_to_company ? "bg-secondary-500" : "bg-white/20"}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${customSolution.allow_company_to_company ? "translate-x-5" : ""}`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-secondary-500/10 border border-secondary-500/20 mb-6">
+                <p className="text-xs text-secondary-400 font-semibold uppercase tracking-wide mb-2">Your Custom Selection</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <span className="text-gray-400">Company Levels: <span className="text-white font-medium">{customSolution.max_company_levels}</span></span>
+                  <span className="text-gray-400">Departments: <span className="text-white font-medium">{customSolution.max_departments}</span></span>
+                  <span className="text-gray-400">Audits: <span className="text-white font-medium">{customSolution.max_audits}</span></span>
+                  <span className="text-gray-400">Checklists: <span className="text-white font-medium">{customSolution.max_checklists}</span></span>
+                  <span className="text-gray-400">Auditors: <span className="text-white font-medium">{customSolution.max_auditors}</span></span>
+                  <span className="text-gray-400">Auditor Eval: <span className="text-white font-medium">{customSolution.allow_auditor_eval ? "Yes" : "No"}</span></span>
+                  <span className="text-gray-400">Company Link: <span className="text-white font-medium">{customSolution.allow_company_to_company ? "Yes" : "No"}</span></span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setError("");
+                  setStep(3);
+                }}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-lg transition-all"
+              >
+                Next: Organization Details
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          );
+        })()}
+
+        {step === 2 && !isCustomPlan && (() => {
           const isYearly = formData.billing_cycle === "Yearly";
           const price = (monthly: number) =>
             isYearly ? Math.round(monthly * 12 * 0.8) : monthly;

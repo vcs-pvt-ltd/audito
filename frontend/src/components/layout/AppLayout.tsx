@@ -66,14 +66,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { admin, isLoading } = useAuth();
   const router = useRouter();
 
-  const publicRoutes = ["/", "/login", "/register", "/forgot-password", "/verify-email", "/payment"];
+  const publicRoutes = ["/", "/login", "/register", "/forgot-password", "/verify-email", "/payment", "/custom-solution"];
   const isPublicRoute =
     publicRoutes.includes(pathname) ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/register") ||
     pathname.startsWith("/verify-email") ||
     pathname.startsWith("/forgot-password") ||
-    pathname.startsWith("/payment");
+    pathname.startsWith("/payment") ||
+    pathname.startsWith("/custom-solution");
 
   useEffect(() => {
     if (!isLoading && !admin && !isPublicRoute) router.replace("/login");

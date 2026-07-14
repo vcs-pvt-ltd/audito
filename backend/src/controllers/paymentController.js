@@ -10,12 +10,13 @@
 
 const PaymentModel = require('../models/PaymentModel');
 const SubscriptionModel = require('../models/SubscriptionModel');
+const CustomSolutionModel = require('../models/CustomSolutionModel');
 const AdminModel = require('../models/AdminModel');
 const LinkBillingCreditModel = require('../models/LinkBillingCreditModel');
 const { getOrgName } = require('../utils/orgLookup');
 const { successResponse, errorResponse } = require('../utils/helpers');
 
-const VALID_PLANS = ['Pro', 'Elite'];
+const VALID_PLANS = ['Pro', 'Elite', 'Custom'];
 const VALID_CYCLES = ['Monthly', 'Yearly'];
 
 // Client-safe projection — never exposes internal ids.
@@ -120,10 +121,28 @@ const confirmPayment = async (req, res) => {
     }
 
     // registration / upgrade / renewal all resolve to: activate the paid plan.
+    // For Custom plans, fetch the limits from the custom solution request.
+    let customLimits = null;
+    if (payment.plan_name === 'Custom') {
+      const csr = await CustomSolutionModel.findByOrgCode(payment.root_entity_code);
+      if (csr) {
+        customLimits = {
+          company_level: csr.max_company_levels,
+          department: csr.max_departments,
+          audits: csr.max_audits,
+          checklists: csr.max_checklists,
+          auditors: csr.max_auditors,
+          auditor_eval: !!csr.allow_auditor_eval,
+          company_to_company: !!csr.allow_company_to_company,
+        };
+      }
+    }
+
     const { start, end } = await SubscriptionModel.activatePaidSubscription(
       payment.root_entity_code,
       payment.plan_name,
-      payment.billing_cycle
+      payment.billing_cycle,
+      customLimits
     );
 
     // Apply any available link billing credits

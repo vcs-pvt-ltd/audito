@@ -22,4 +22,18 @@ router.post('/admins', adminController.createAdmin);
 router.post('/admins/:id/toggle-status', adminController.toggleAdminStatus);
 router.delete('/admins/:id', adminController.deleteAdmin);
 
+// Custom solution requests
+router.get('/custom-solutions', adminController.listCustomSolutions);
+router.get('/custom-solutions/:requestId', adminController.getCustomSolution);
+router.post('/custom-solutions/:requestId/assign-price', adminController.assignCustomSolutionPrice);
+
+// Dashboard stats
+router.get('/stats', adminController.getDashboardStats);
+
+// Registered organizations
+router.get('/organizations', adminController.listOrganizations);
+
+// Payment transactions
+router.get('/payments', adminController.listPayments);
+
 module.exports = router;

@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@next/third-parties": "^16.2.10",
     "framer-motion": "^12.38.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",

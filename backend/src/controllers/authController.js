@@ -45,6 +45,7 @@ const { sendVerificationEmail } = require('../services/emailService');
 const PaymentModel = require('../models/PaymentModel');
 const { getOrgName } = require('../utils/orgLookup');
 const SubscriptionModel = require('../models/SubscriptionModel');
+const CustomSolutionModel = require('../models/CustomSolutionModel');
 const fs = require('fs');
 const path = require('path');
 
@@ -306,7 +307,8 @@ const register = async (req, res) => {
       plan_name,
       billing_cycle,
       timezone,
-      promo_code
+      promo_code,
+      custom_solution
     } = req.body;
 
     // Validate required fields
@@ -416,13 +418,33 @@ const register = async (req, res) => {
 
     // Free plans are activated immediately. Paid plans defer the subscription
     // until payment is confirmed — until then limits fall back to Basic.
-    let planAmount = SubscriptionModel.computeAmount(plan_name, billing_cycle);
+    // Custom plans are also deferred until admin assigns a price.
+    const isCustomPlan = plan_name === 'Custom';
+    let planAmount = isCustomPlan ? 0 : SubscriptionModel.computeAmount(plan_name, billing_cycle);
     if (discount > 0) {
       planAmount = planAmount * (1 - discount / 100);
       planAmount = Math.max(0, parseFloat(planAmount.toFixed(2)));
     }
     if (planAmount <= 0) {
       await SubscriptionModel.createSubscription(connection, orgCode, plan_name, 'None');
+    }
+
+    // For custom plans, store the custom solution request
+    if (isCustomPlan && custom_solution) {
+      await CustomSolutionModel.create({
+        root_entity_code: orgCode,
+        admin_id: adminId,
+        org_name,
+        org_email: org_email || email,
+        entity_type,
+        max_company_levels: custom_solution.max_company_levels || 1,
+        max_departments: custom_solution.max_departments || 4,
+        max_audits: custom_solution.max_audits || 2,
+        max_checklists: custom_solution.max_checklists || 3,
+        max_auditors: custom_solution.max_auditors || 1,
+        allow_auditor_eval: custom_solution.allow_auditor_eval || false,
+        allow_company_to_company: custom_solution.allow_company_to_company || false,
+      });
     }
 
     await connection.commit();
@@ -589,6 +611,38 @@ const login = async (req, res) => {
             },
           },
           'Please complete your subscription payment to continue.'
+        );
+      }
+
+      // Check if custom solution has been priced — route to payment
+      const customPriced = await CustomSolutionModel.findByOrgCode(activeRecord.entity_code);
+      if (customPriced && customPriced.status === 'priced' && customPriced.payment_code) {
+        const customPayment = await PaymentModel.findByCode(customPriced.payment_code);
+        if (customPayment && customPayment.status === 'pending') {
+          return successResponse(
+            res,
+            {
+              payment_required: true,
+              payment: {
+                payment_code: customPayment.payment_code,
+                plan_name: 'Custom',
+                billing_cycle: customPayment.billing_cycle,
+                amount: Number(customPayment.amount),
+                currency: customPayment.currency,
+              },
+            },
+            'Your custom plan is ready. Please complete payment to continue.'
+          );
+        }
+      }
+
+      // Check if custom solution is still pending admin review
+      const customPending = await CustomSolutionModel.findByOrgCodePending(activeRecord.entity_code);
+      if (customPending) {
+        return successResponse(
+          res,
+          { custom_solution_pending: true },
+          'Your custom solution request is being reviewed. We will notify you via email once pricing is ready.'
         );
       }
     }
@@ -1108,10 +1162,34 @@ const verifyEmail = async (req, res) => {
       }
       await AdminModel.markAsVerified(admin.admin_id);
       const pendingPayment = await PaymentModel.findPendingByOrgPurpose(admin.entity_code, 'registration');
+
+      // Check if this is a custom solution that has been priced
+      let customSolutionPayment = null;
+      let custom_solution_pending = false;
+      if (!pendingPayment && admin.entity_code) {
+        const customReq = await CustomSolutionModel.findByOrgCode(admin.entity_code);
+        if (customReq) {
+          if (customReq.status === 'priced' && customReq.payment_code) {
+            const cp = await PaymentModel.findByCode(customReq.payment_code);
+            if (cp && cp.status === 'pending') {
+              customSolutionPayment = {
+                payment_code: cp.payment_code,
+                plan_name: 'Custom',
+                billing_cycle: cp.billing_cycle,
+                amount: Number(cp.amount),
+              };
+            }
+          } else if (customReq.status === 'pending') {
+            custom_solution_pending = true;
+          }
+        }
+      }
+
       return successResponse(res, {
         email: admin.email,
         first_name: admin.first_name,
         needs_password: false,
+        custom_solution_pending,
         payment: pendingPayment
           ? {
               payment_code: pendingPayment.payment_code,
@@ -1119,7 +1197,7 @@ const verifyEmail = async (req, res) => {
               billing_cycle: pendingPayment.billing_cycle,
               amount: Number(pendingPayment.amount),
             }
-          : null,
+          : customSolutionPayment,
       }, 'Email verified successfully. You may now log in.', 200);
     }
 

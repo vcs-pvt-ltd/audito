@@ -6,7 +6,6 @@ import { Check, X } from "lucide-react";
 import { useState } from "react";
 import logo from "@/assets/logo/audito_logo.png";
 import Reveal from "./Reveal";
-import { useLanding } from "@/context/LandingContext";
 
 type Plan = {
   name: string;
@@ -21,16 +20,17 @@ const PLAN_DEFS = [
   { name: "Basic", priceMonthly: 0, description: "Perfect for trying out Audito", cta: "Get Started", href: "/register" },
   { name: "Pro", priceMonthly: 99, description: "For growing teams", cta: "Get Started", href: "/register" },
   { name: "Elite", priceMonthly: 299, description: "For large organizations", cta: "Get Started", href: "/register" },
+  { name: "Custom", priceMonthly: 0, description: "Tailored to your needs", cta: "Contact Us", href: "/custom-solution" },
 ];
 
 const comparisonRows = [
-  { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15"] },
-  { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true] },
-  { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6", "Custom"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16", "Custom"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14", "Custom"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25", "Custom"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15", "Custom"] },
+  { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true, true] },
+  { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true, true] },
 ];
 
 type CardProps = { plan: Plan };
@@ -95,8 +95,26 @@ const EliteCard = ({ plan }: CardProps) => (
   </div>
 );
 
+const CustomCard = ({ plan }: CardProps) => (
+  <div className="pricing-card rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#1a1a2e]/60 to-[#16213e]/60 h-full flex flex-col relative overflow-hidden">
+    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-[#EECA53]/10 to-transparent rounded-bl-full" />
+    <div className="flex justify-start mb-4">
+      <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
+      <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">{plan.name}</h3>
+    </div>
+    <div className="text-start mb-2">
+      <span className="text-4xl sm:text-5xl font-bold text-[#EECA53]">Custom</span>
+    </div>
+    <p className="text-sm mb-5 text-start text-gray-400">{plan.description}</p>
+    <Link href={plan.href}
+      className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-primary-950 bg-gradient-to-r from-[#EECA53] to-[#E1A300] hover:brightness-105 hover:shadow-lg hover:shadow-[#D9A346]/30 active:scale-[0.98]"
+    >
+      {plan.cta}
+    </Link>
+  </div>
+);
+
 export default function PricingSection() {
-  const { setActiveSection } = useLanding();
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
 
   const plans: Plan[] = PLAN_DEFS.map((p) => ({
@@ -190,7 +208,7 @@ export default function PricingSection() {
 
         {/* Desktop comparison table */}
         <Reveal variant="up" className="hidden lg:block max-w-6xl xl:max-w-7xl mx-auto overflow-x-auto mb-8">
-          <div className="min-w-[820px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
+          <div className="min-w-[920px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-white/5 text-secondary-400">
@@ -198,6 +216,7 @@ export default function PricingSection() {
                   <th className="px-5 py-4 text-xs font-semibold">Audito Basic</th>
                   <th className="px-5 py-4 text-xs font-semibold">Audito Pro</th>
                   <th className="px-5 py-4 text-xs font-semibold">Audito Elite</th>
+                  <th className="px-5 py-4 text-xs font-semibold">Audito Custom</th>
                 </tr>
               </thead>
               <tbody>
@@ -205,13 +224,15 @@ export default function PricingSection() {
                   <tr key={row.feature} className="table-row border-t border-white/5">
                     <td className="px-5 py-4 text-gray-200">{row.feature}</td>
                     {row.values.map((v, i) => (
-                      <td key={i} className="px-5 py-4 text-center text-white font-medium">{v}</td>
+                      <td key={i} className="px-5 py-4 text-center text-white font-medium">
+                        {v === "Custom" ? <span className="text-[#EECA53] font-semibold">Custom</span> : v}
+                      </td>
                     ))}
                   </tr>
                 ))}
                 <tr className="border-t border-white/10 bg-white/5">
                   <td className="px-5 py-3 text-xs tracking-wide font-semibold uppercase text-secondary-400">Core Features</td>
-                  <td /><td /><td />
+                  <td /><td /><td /><td />
                 </tr>
                 {coreRows.map((row) => (
                   <tr key={row.feature} className="table-row border-t border-white/5">
@@ -236,11 +257,11 @@ export default function PricingSection() {
           {workspaceRows.map((row) => (
             <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
               <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-              <div className="grid grid-cols-3 divide-x divide-white/10">
-                {["Basic", "Pro", "Elite"].map((name, i) => (
+              <div className="grid grid-cols-4 divide-x divide-white/10">
+                {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
                   <div key={name} className="flex flex-col items-center py-3 gap-1">
                     <span className="text-[10px] text-gray-400">{name}</span>
-                    <span className="text-sm font-semibold text-white">{row.values[i]}</span>
+                    <span className={`text-sm font-semibold ${name === "Custom" ? "text-[#EECA53]" : "text-white"}`}>{row.values[i]}</span>
                   </div>
                 ))}
               </div>
@@ -250,8 +271,8 @@ export default function PricingSection() {
           {coreRows.map((row) => (
             <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
               <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-              <div className="grid grid-cols-3 divide-x divide-white/10">
-                {["Basic", "Pro", "Elite"].map((name, i) => (
+              <div className="grid grid-cols-4 divide-x divide-white/10">
+                {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
                   <div key={name} className="flex flex-col items-center py-3 gap-1">
                     <span className="text-[10px] text-gray-400">{name}</span>
                     {row.values[i]
@@ -295,7 +316,7 @@ export default function PricingSection() {
         </div>
 
         {/* Desktop cards */}
-        <div className="hidden lg:grid grid-cols-3 gap-6 xl:gap-8 max-w-6xl xl:max-w-7xl mx-auto mb-8 items-stretch">
+        <div className="hidden lg:grid grid-cols-4 gap-6 xl:gap-8 max-w-7xl mx-auto mb-8 items-stretch">
           <Reveal variant="up" delay={0} className="h-full">
             <div className={`h-full transition-opacity duration-300 ${billingCycle === "yearly" ? "opacity-40 pointer-events-none select-none" : ""}`}>
               {billingCycle === "yearly" && (
@@ -311,6 +332,7 @@ export default function PricingSection() {
           </Reveal>
           <Reveal variant="up" delay={120} className="h-full"><ProCard plan={plans[1]} /></Reveal>
           <Reveal variant="up" delay={240} className="h-full"><EliteCard plan={plans[2]} /></Reveal>
+          <Reveal variant="up" delay={360} className="h-full"><CustomCard plan={plans[3]} /></Reveal>
         </div>
 
         {/* Tablet cards */}
@@ -327,6 +349,7 @@ export default function PricingSection() {
             </div>
             <EliteCard plan={plans[2]} />
           </div>
+          <div className="w-full"><CustomCard plan={plans[3]} /></div>
         </div>
 
         {/* Mobile cards */}
@@ -341,17 +364,11 @@ export default function PricingSection() {
             )}
           </div>
           <EliteCard plan={plans[2]} />
+          <CustomCard plan={plans[3]} />
         </div>
 
 
-        <p className="text-center text-sm text-gray-400 mt-8">
-          Need a custom solution?{" "}
-          <button onClick={() => setActiveSection(3)}
-            className="contact-link text-secondary-400 underline font-medium"
-          >
-            Contact our sales team here
-          </button>
-        </p>
+        
       </div>
     </section>
   );

@@ -9,6 +9,7 @@ import {
   FileCheck,
   LayoutDashboard,
   UserCircle2,
+  Puzzle,
 } from "lucide-react";
 
 type NavItem = {
@@ -51,6 +52,7 @@ function getNavItems(role: string): NavItem[] {
       { label: "Dashboard", path: "/admin-panel/dashboard", icon: LayoutDashboard },
       { label: "Messages", path: "/admin-panel/messages", icon: Mail, matchPrefix: true },
       { label: "Promos", path: "/admin-panel/promo-codes", icon: ClipboardCheck, matchPrefix: true },
+      { label: "Custom", path: "/admin-panel/custom-solutions", icon: Puzzle, matchPrefix: true },
       { label: "Profile", path: "/profile", icon: UserCircle2 },
     ];
   }

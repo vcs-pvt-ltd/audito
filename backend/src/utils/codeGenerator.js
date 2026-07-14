@@ -131,6 +131,7 @@ const generateCapResponseId = () => generateTableId('cap_responses', 'cap_respon
 const generateOrganizationLinkId = () => generateTableId('organization_links', 'organization_link_id', 'OLNK', 5);
 const generateLinkBillingCreditId = () => generateTableId('link_billing_credits', 'link_billing_credit_id', 'LBC', 5);
 const generateLinkCreditApplicationId = () => generateTableId('link_credit_applications', 'link_credit_application_id', 'LCA', 5);
+const generateCustomSolutionRequestId = () => generateTableId('custom_solution_requests', 'request_id', 'CSR', 6);
 
 module.exports = {
   generateTableId,
@@ -189,4 +190,5 @@ module.exports = {
   generateOrganizationLinkId,
   generateLinkBillingCreditId,
   generateLinkCreditApplicationId,
+  generateCustomSolutionRequestId,
 };
