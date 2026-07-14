@@ -18,19 +18,19 @@ type Plan = {
 };
 
 const PLAN_DEFS = [
-  { name: "Basic",  priceMonthly: 0,   description: "Perfect for trying out Audito", cta: "Get Started", href: "/register" },
-  { name: "Pro",    priceMonthly: 99,  description: "For growing teams",             cta: "Get Started", href: "/register" },
-  { name: "Elite",  priceMonthly: 299, description: "For large organizations",       cta: "Get Started", href: "/register" },
+  { name: "Basic", priceMonthly: 0, description: "Perfect for trying out Audito", cta: "Get Started", href: "/register" },
+  { name: "Pro", priceMonthly: 99, description: "For growing teams", cta: "Get Started", href: "/register" },
+  { name: "Elite", priceMonthly: 299, description: "For large organizations", cta: "Get Started", href: "/register" },
 ];
 
 const comparisonRows = [
-  { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company",     values: ["1", "2", "6"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Departments",           values: ["4", "8", "16"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits",      values: ["2", "6", "14"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists",      values: ["3", "6", "25"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors",    values: ["1", "3", "15"] },
-  { group: "CORE FEATURES",        feature: "Auditor Evaluation System", values: [false, false, true] },
-  { group: "CORE FEATURES",        feature: "Link Company to Company",   values: [false, false, true] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15"] },
+  { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true] },
+  { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
 ];
 
 type CardProps = { plan: Plan };
@@ -109,7 +109,7 @@ export default function PricingSection() {
   }));
 
   const workspaceRows = comparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
-  const coreRows      = comparisonRows.filter((r) => r.group === "CORE FEATURES");
+  const coreRows = comparisonRows.filter((r) => r.group === "CORE FEATURES");
 
   return (
     <section className="relative pt-20 pb-14 sm:py-18 lg:py-24 overflow-y-auto">
@@ -188,26 +188,101 @@ export default function PricingSection() {
           </p>
         </Reveal>
 
+        {/* Desktop comparison table */}
+        <Reveal variant="up" className="hidden lg:block max-w-6xl xl:max-w-7xl mx-auto overflow-x-auto mb-8">
+          <div className="min-w-[820px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-white/5 text-secondary-400">
+                  <th className="text-left px-5 py-4 text-xs tracking-wide font-semibold uppercase">Workspace Management</th>
+                  <th className="px-5 py-4 text-xs font-semibold">Audito Basic</th>
+                  <th className="px-5 py-4 text-xs font-semibold">Audito Pro</th>
+                  <th className="px-5 py-4 text-xs font-semibold">Audito Elite</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workspaceRows.map((row) => (
+                  <tr key={row.feature} className="table-row border-t border-white/5">
+                    <td className="px-5 py-4 text-gray-200">{row.feature}</td>
+                    {row.values.map((v, i) => (
+                      <td key={i} className="px-5 py-4 text-center text-white font-medium">{v}</td>
+                    ))}
+                  </tr>
+                ))}
+                <tr className="border-t border-white/10 bg-white/5">
+                  <td className="px-5 py-3 text-xs tracking-wide font-semibold uppercase text-secondary-400">Core Features</td>
+                  <td /><td /><td />
+                </tr>
+                {coreRows.map((row) => (
+                  <tr key={row.feature} className="table-row border-t border-white/5">
+                    <td className="px-5 py-4 text-gray-200">{row.feature}</td>
+                    {row.values.map((v, i) => (
+                      <td key={i} className="px-5 py-4 text-center">
+                        {v
+                          ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950 shadow-sm shadow-secondary-500/40"><Check size={12} /></span>
+                          : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400"><X size={12} /></span>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Reveal>
+
+        {/* Mobile/tablet comparison */}
+        <div className="lg:hidden max-w-3xl mx-auto space-y-4 mb-8">
+          <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1">Workspace Management</p>
+          {workspaceRows.map((row) => (
+            <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
+              <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
+              <div className="grid grid-cols-3 divide-x divide-white/10">
+                {["Basic", "Pro", "Elite"].map((name, i) => (
+                  <div key={name} className="flex flex-col items-center py-3 gap-1">
+                    <span className="text-[10px] text-gray-400">{name}</span>
+                    <span className="text-sm font-semibold text-white">{row.values[i]}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1 pt-2">Core Features</p>
+          {coreRows.map((row) => (
+            <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
+              <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
+              <div className="grid grid-cols-3 divide-x divide-white/10">
+                {["Basic", "Pro", "Elite"].map((name, i) => (
+                  <div key={name} className="flex flex-col items-center py-3 gap-1">
+                    <span className="text-[10px] text-gray-400">{name}</span>
+                    {row.values[i]
+                      ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950"><Check size={12} /></span>
+                      : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400"><X size={12} /></span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+
         {/* Billing switch */}
         <div className="flex justify-center mb-8 sm:mb-10">
           <div className="glass rounded-lg p-1 flex items-center gap-1 border border-white/5">
             <button
               onClick={() => setBillingCycle("monthly")}
-              className={`px-4 sm:px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
-                billingCycle === "monthly"
+              className={`px-4 sm:px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${billingCycle === "monthly"
                   ? "bg-secondary-500 text-primary-950 shadow"
                   : "text-gray-400 hover:text-white"
-              }`}
+                }`}
             >
               Monthly
             </button>
             <button
               onClick={() => setBillingCycle("yearly")}
-              className={`relative px-4 sm:px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
-                billingCycle === "yearly"
+              className={`relative px-4 sm:px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${billingCycle === "yearly"
                   ? "bg-secondary-500 text-primary-950 shadow"
                   : "text-gray-400 hover:text-white"
-              }`}
+                }`}
             >
               Yearly
               {billingCycle !== "yearly" && (
@@ -256,7 +331,7 @@ export default function PricingSection() {
 
         {/* Mobile cards */}
         <div className="flex flex-col md:hidden gap-5 max-w-sm mx-auto mb-8">
-          <ProCard   plan={plans[1]} />
+          <ProCard plan={plans[1]} />
           <div className={`transition-opacity duration-300 ${billingCycle === "yearly" ? "opacity-40 pointer-events-none select-none relative" : ""}`}>
             <BasicCard plan={plans[0]} />
             {billingCycle === "yearly" && (
@@ -268,81 +343,6 @@ export default function PricingSection() {
           <EliteCard plan={plans[2]} />
         </div>
 
-        {/* Desktop comparison table */}
-        <Reveal variant="up" className="hidden lg:block max-w-6xl xl:max-w-7xl mx-auto overflow-x-auto">
-          <div className="min-w-[820px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-white/5 text-secondary-400">
-                  <th className="text-left px-5 py-4 text-xs tracking-wide font-semibold uppercase">Workspace Management</th>
-                  <th className="px-5 py-4 text-xs font-semibold">Audito Basic</th>
-                  <th className="px-5 py-4 text-xs font-semibold">Audito Pro</th>
-                  <th className="px-5 py-4 text-xs font-semibold">Audito Elite</th>
-                </tr>
-              </thead>
-              <tbody>
-                {workspaceRows.map((row) => (
-                  <tr key={row.feature} className="table-row border-t border-white/5">
-                    <td className="px-5 py-4 text-gray-200">{row.feature}</td>
-                    {row.values.map((v, i) => (
-                      <td key={i} className="px-5 py-4 text-center text-white font-medium">{v}</td>
-                    ))}
-                  </tr>
-                ))}
-                <tr className="border-t border-white/10 bg-white/5">
-                  <td className="px-5 py-3 text-xs tracking-wide font-semibold uppercase text-secondary-400">Core Features</td>
-                  <td /><td /><td />
-                </tr>
-                {coreRows.map((row) => (
-                  <tr key={row.feature} className="table-row border-t border-white/5">
-                    <td className="px-5 py-4 text-gray-200">{row.feature}</td>
-                    {row.values.map((v, i) => (
-                      <td key={i} className="px-5 py-4 text-center">
-                        {v
-                          ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950 shadow-sm shadow-secondary-500/40"><Check size={12} /></span>
-                          : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400"><X size={12} /></span>}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Reveal>
-
-        {/* Mobile/tablet comparison */}
-        <div className="lg:hidden max-w-3xl mx-auto space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1">Workspace Management</p>
-          {workspaceRows.map((row) => (
-            <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
-              <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-              <div className="grid grid-cols-3 divide-x divide-white/10">
-                {["Basic", "Pro", "Elite"].map((name, i) => (
-                  <div key={name} className="flex flex-col items-center py-3 gap-1">
-                    <span className="text-[10px] text-gray-400">{name}</span>
-                    <span className="text-sm font-semibold text-white">{row.values[i]}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1 pt-2">Core Features</p>
-          {coreRows.map((row) => (
-            <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
-              <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-              <div className="grid grid-cols-3 divide-x divide-white/10">
-                {["Basic", "Pro", "Elite"].map((name, i) => (
-                  <div key={name} className="flex flex-col items-center py-3 gap-1">
-                    <span className="text-[10px] text-gray-400">{name}</span>
-                    {row.values[i]
-                      ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950"><Check size={12} /></span>
-                      : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400"><X size={12} /></span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
 
         <p className="text-center text-sm text-gray-400 mt-8">
           Need a custom solution?{" "}

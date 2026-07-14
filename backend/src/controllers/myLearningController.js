@@ -1,5 +1,6 @@
 const { db } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/helpers');
+const { generateEvaluationAttemptId, generateEvaluationAnswerId, generateEvaluationAnswerIds } = require('../utils/codeGenerator');
 
 // Ensure the user is an auditor
 function ensureAuditor(req, res) {
@@ -19,11 +20,11 @@ const listMyTrainings = async (req, res) => {
     if (!ensureAuditor(req, res)) return;
 
     const [rows] = await db.query(
-      `SELECT a.id AS assignment_id, a.status AS status, a.assigned_at, a.completed_at,
-              t.id AS training_id, t.title, t.platform, t.video_url, t.description, t.duration_minutes
+      `SELECT a.training_assignment_id AS assignment_id, a.status AS status, a.assigned_at, a.completed_at,
+              t.training_id, t.title, t.platform, t.video_url, t.description, t.duration_minutes
        FROM training_assignments a
-       JOIN trainings t ON a.training_id = t.id
-       WHERE a.auditor_user_code = ?
+       JOIN trainings t ON a.training_id = t.training_id
+       WHERE a.auditor_id = ?
        ORDER BY a.assigned_at DESC`,
       [req.user.userCode]
     );
@@ -44,7 +45,7 @@ const completeTraining = async (req, res) => {
     const [result] = await db.query(
       `UPDATE training_assignments
        SET status = 'completed', completed_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND auditor_user_code = ?`,
+       WHERE training_assignment_id = ? AND auditor_id = ?`,
       [assignmentId, req.user.userCode]
     );
 
@@ -68,11 +69,11 @@ const listMyFieldVisits = async (req, res) => {
     if (!ensureAuditor(req, res)) return;
 
     const [rows] = await db.query(
-      `SELECT a.id AS assignment_id, a.status AS status, a.assigned_at, a.check_in_time, a.check_out_time,
-              v.id AS field_visit_id, v.title, v.location_name, v.address, v.latitude, v.longitude, v.start_date, v.end_date, v.notes
+      `SELECT a.field_visit_assignment_id AS assignment_id, a.status AS status, a.assigned_at, a.check_in_time, a.check_out_time,
+              v.field_visit_id, v.title, v.location_name, v.address, v.latitude, v.longitude, v.start_date, v.end_date, v.notes
        FROM field_visit_assignments a
-       JOIN field_visits v ON a.field_visit_id = v.id
-       WHERE a.auditor_user_code = ?
+       JOIN field_visits v ON a.field_visit_id = v.field_visit_id
+       WHERE a.auditor_id = ?
        ORDER BY a.assigned_at DESC`,
       [req.user.userCode]
     );
@@ -93,7 +94,7 @@ const completeFieldVisit = async (req, res) => {
     const [result] = await db.query(
       `UPDATE field_visit_assignments
        SET status = 'completed', check_in_time = COALESCE(check_in_time, CURRENT_TIMESTAMP), check_out_time = CURRENT_TIMESTAMP
-       WHERE id = ? AND auditor_user_code = ?`,
+       WHERE field_visit_assignment_id = ? AND auditor_id = ?`,
       [assignmentId, req.user.userCode]
     );
 
@@ -117,20 +118,20 @@ const listMyEvaluationPapers = async (req, res) => {
     if (!ensureAuditor(req, res)) return;
 
     const [rows] = await db.query(
-      `SELECT a.id AS assignment_id, a.status AS status, a.assigned_at, a.due_date,
-              p.id AS paper_id, p.title, p.description, p.time_limit_minutes, p.pass_marks,
-              (SELECT COUNT(*) FROM evaluation_questions q WHERE q.paper_id = p.id) AS question_count,
+      `SELECT a.evaluation_assignment_id AS assignment_id, a.status AS status, a.assigned_at, a.due_date,
+              p.evaluation_paper_id AS paper_id, p.title, p.description, p.time_limit_minutes, p.pass_marks,
+              (SELECT COUNT(*) FROM evaluation_questions q WHERE q.paper_id = p.evaluation_paper_id) AS question_count,
               att.submitted_at AS last_submitted_at, att.score AS last_score, att.max_score AS last_max_score
        FROM evaluation_assignments a
-       JOIN evaluation_papers p ON a.paper_id = p.id
+       JOIN evaluation_papers p ON a.paper_id = p.evaluation_paper_id
        LEFT JOIN (
-         SELECT paper_id, auditor_user_code, MAX(id) AS max_attempt_id
+         SELECT paper_id, auditor_id, MAX(evaluation_attempt_id) AS max_attempt_id
          FROM evaluation_attempts
-         WHERE auditor_user_code = ?
-         GROUP BY paper_id, auditor_user_code
-       ) latest_attempt ON p.id = latest_attempt.paper_id
-       LEFT JOIN evaluation_attempts att ON latest_attempt.max_attempt_id = att.id
-       WHERE a.auditor_user_code = ? AND p.is_active = 1
+         WHERE auditor_id = ?
+         GROUP BY paper_id, auditor_id
+       ) latest_attempt ON p.evaluation_paper_id = latest_attempt.paper_id
+       LEFT JOIN evaluation_attempts att ON latest_attempt.max_attempt_id = att.evaluation_attempt_id
+       WHERE a.auditor_id = ? AND p.is_active = 1
        ORDER BY a.assigned_at DESC`,
       [req.user.userCode, req.user.userCode]
     );
@@ -150,8 +151,8 @@ const getMyEvaluationPaper = async (req, res) => {
 
     // Check assignment
     const [assignments] = await db.query(
-      `SELECT id, due_date, status FROM evaluation_assignments
-       WHERE paper_id = ? AND auditor_user_code = ? LIMIT 1`,
+      `SELECT evaluation_assignment_id AS id, due_date, status FROM evaluation_assignments
+       WHERE paper_id = ? AND auditor_id = ? LIMIT 1`,
       [paperId, req.user.userCode]
     );
 
@@ -163,9 +164,9 @@ const getMyEvaluationPaper = async (req, res) => {
 
     // Get paper
     const [papers] = await db.query(
-      `SELECT id, title, description, time_limit_minutes, pass_marks
+      `SELECT evaluation_paper_id AS id, title, description, time_limit_minutes, pass_marks
        FROM evaluation_papers
-       WHERE id = ? AND is_active = 1 LIMIT 1`,
+       WHERE evaluation_paper_id = ? AND is_active = 1 LIMIT 1`,
       [paperId]
     );
 
@@ -175,10 +176,10 @@ const getMyEvaluationPaper = async (req, res) => {
 
     // Get questions
     const [questions] = await db.query(
-      `SELECT id, question_text, marks, sort_order
+      `SELECT evaluation_question_id AS id, question_text, marks, sort_order
        FROM evaluation_questions
        WHERE paper_id = ?
-       ORDER BY sort_order ASC, id ASC`,
+       ORDER BY sort_order ASC, evaluation_question_id ASC`,
       [paperId]
     );
 
@@ -188,10 +189,10 @@ const getMyEvaluationPaper = async (req, res) => {
     if (qIds.length > 0) {
       const placeholders = qIds.map(() => '?').join(',');
       [options] = await db.query(
-        `SELECT id, question_id, option_text, marks
+        `SELECT evaluation_question_option_id AS id, question_id, option_text, marks
          FROM evaluation_question_options
          WHERE question_id IN (${placeholders})
-         ORDER BY id ASC`,
+         ORDER BY evaluation_question_option_id ASC`,
         qIds
       );
     }
@@ -232,8 +233,8 @@ const submitMyEvaluationPaper = async (req, res) => {
 
     // Check assignment
     const [assignments] = await db.query(
-      `SELECT id, due_date FROM evaluation_assignments
-       WHERE paper_id = ? AND auditor_user_code = ? LIMIT 1`,
+      `SELECT evaluation_assignment_id AS id, due_date FROM evaluation_assignments
+       WHERE paper_id = ? AND auditor_id = ? LIMIT 1`,
       [paperId, req.user.userCode]
     );
 
@@ -250,7 +251,7 @@ const submitMyEvaluationPaper = async (req, res) => {
 
     // Get paper
     const [papers] = await db.query(
-      `SELECT id, pass_marks FROM evaluation_papers WHERE id = ? AND is_active = 1 LIMIT 1`,
+      `SELECT evaluation_paper_id AS id, pass_marks FROM evaluation_papers WHERE evaluation_paper_id = ? AND is_active = 1 LIMIT 1`,
       [paperId]
     );
     if (papers.length === 0) {
@@ -260,7 +261,7 @@ const submitMyEvaluationPaper = async (req, res) => {
 
     // Get all questions and correct options
     const [questions] = await db.query(
-      `SELECT id, marks FROM evaluation_questions WHERE paper_id = ?`,
+      `SELECT evaluation_question_id AS id, marks FROM evaluation_questions WHERE paper_id = ?`,
       [paperId]
     );
 
@@ -269,7 +270,7 @@ const submitMyEvaluationPaper = async (req, res) => {
     if (qIds.length > 0) {
       const placeholders = qIds.map(() => '?').join(',');
       [allOptions] = await db.query(
-        `SELECT id, question_id, marks FROM evaluation_question_options WHERE question_id IN (${placeholders})`,
+        `SELECT evaluation_question_option_id AS id, question_id, marks FROM evaluation_question_options WHERE question_id IN (${placeholders})`,
         qIds
       );
     }
@@ -281,14 +282,14 @@ const submitMyEvaluationPaper = async (req, res) => {
     const processedAnswers = [];
 
     for (const q of questions) {
-      const ans = answers.find((a) => Number(a.question_id) === q.id);
-      const selectedOptionId = ans ? Number(ans.selected_option_id) : null;
+      const ans = answers.find((a) => String(a.question_id) === String(q.id));
+      const selectedOptionId = ans ? String(ans.selected_option_id) : null;
 
       let isCorrect = 0;
       let marksAwarded = 0;
 
       if (selectedOptionId) {
-        const opt = allOptions.find((o) => o.id === selectedOptionId && o.question_id === q.id);
+        const opt = allOptions.find((o) => String(o.id) === selectedOptionId && String(o.question_id) === String(q.id));
         if (opt) {
           marksAwarded = Number(opt.marks || 0);
           if (marksAwarded === Number(q.marks)) {
@@ -315,35 +316,37 @@ const submitMyEvaluationPaper = async (req, res) => {
       await connection.beginTransaction();
 
       // Create evaluation attempt
-      const [attemptRes] = await connection.query(
-        `INSERT INTO evaluation_attempts (paper_id, auditor_user_code, score, max_score, passed, submitted_at)
-         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [paperId, req.user.userCode, totalScore, maxScore, passed]
+      const attemptId = await generateEvaluationAttemptId();
+      await connection.query(
+        `INSERT INTO evaluation_attempts (evaluation_attempt_id, paper_id, auditor_id, score, max_score, passed, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [attemptId, paperId, req.user.userCode, totalScore, maxScore, passed]
       );
-      const attemptId = attemptRes.insertId;
 
       // Create evaluation answers
       if (processedAnswers.length > 0) {
-        const answerValues = processedAnswers.map((ans) => [
-          attemptId,
-          ans.question_id,
-          ans.selected_option_id,
-          ans.is_correct,
-          ans.marks_awarded,
-        ]);
+  const answerIds = await generateEvaluationAnswerIds(processedAnswers.length);
+  const answerValues = processedAnswers.map((ans, i) => [
+    answerIds[i],
+    attemptId,
+    ans.question_id,
+    ans.selected_option_id,
+    ans.is_correct,
+    ans.marks_awarded,
+  ]);
 
-        await connection.query(
-          `INSERT INTO evaluation_answers (attempt_id, question_id, selected_option_id, is_correct, marks_awarded)
-           VALUES ?`,
-          [answerValues]
-        );
-      }
+  await connection.query(
+    `INSERT INTO evaluation_answers (evaluation_answer_id, attempt_id, question_id, selected_option_id, is_correct, marks_awarded)
+     VALUES ?`,
+    [answerValues]
+  );
+}
 
       // Update assignment status to 'submitted'
       await connection.query(
         `UPDATE evaluation_assignments
          SET status = 'submitted'
-         WHERE id = ?`,
+         WHERE evaluation_assignment_id = ?`,
         [assignment.id]
       );
 

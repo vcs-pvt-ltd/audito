@@ -2,6 +2,7 @@ const { successResponse, errorResponse } = require('../utils/helpers');
 const AuditorModel = require('../models/AuditorModel');
 const NoticeModel = require('../models/NoticeModel');
 const NotificationModel = require('../models/NotificationModel');
+const { getAccessibleEntityCodes, resolveEntityNames } = require('../utils/accessHelper');
 
 exports.listAuditorsForNotices = async (req, res) => {
   try {
@@ -15,7 +16,12 @@ exports.listAuditorsForNotices = async (req, res) => {
 
 exports.listNotices = async (req, res) => {
   try {
-    const notices = await NoticeModel.listByAdmin(req.user.entityCode);
+    const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+    const notices = await NoticeModel.listByAdmin(accessibleCodes);
+    const nameMap = await resolveEntityNames(accessibleCodes);
+    for (const n of notices) {
+      n.entity_name = n.created_by_entity_code !== req.user.entityCode ? (nameMap.get(n.created_by_entity_code)?.name || null) : null;
+    }
     return successResponse(res, { notices });
   } catch (error) {
     console.error('Error listing notices:', error);
@@ -35,7 +41,7 @@ exports.createNotice = async (req, res) => {
       message,
       notice_date,
       assign_to_all: !!assign_to_all,
-      created_by_admin_id: req.user.id,
+      created_by_admin_id: req.user.userCode,
       created_by_entity_code: req.user.entityCode,
     });
 
@@ -52,7 +58,7 @@ exports.createNotice = async (req, res) => {
 
 exports.updateNotice = async (req, res) => {
   try {
-    const noticeId = Number(req.params.id);
+    const noticeId = req.params.id;
     const { title, message, notice_date, assign_to_all, auditor_codes } = req.body;
 
     if (!noticeId) {
@@ -86,7 +92,7 @@ exports.updateNotice = async (req, res) => {
 
 exports.deleteNotice = async (req, res) => {
   try {
-    const noticeId = Number(req.params.id);
+    const noticeId = req.params.id;
     if (!noticeId) {
       return errorResponse(res, 'Invalid notice id.', 400);
     }
@@ -105,14 +111,14 @@ exports.getMyNotices = async (req, res) => {
     const manualNotices = await NoticeModel.getNoticesForAuditor(req.user.createdByEntityCode, req.user.userCode);
     for (const n of manualNotices || []) {
       await NotificationModel.createIfNotExists({
-        auditor_code: req.user.userCode,
+        auditor_id: req.user.userCode,
         created_by_entity_code: req.user.createdByEntityCode,
         type: 'notice',
         title: n.title || 'Notice',
         message: n.message || '',
         audit_id: null,
         notify_date: n.notice_date || null,
-        notification_key: `notice:${n.id}:${req.user.userCode}`,
+        notification_key: `notice:${n.notice_id}:${req.user.userCode}`,
       });
     }
 

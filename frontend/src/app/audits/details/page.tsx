@@ -43,16 +43,16 @@ interface AuditEntity {
   entity_code: string;
   entity_type: string;
   entity_name: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
 }
 
 interface AuditDetail {
-  id: number;
+  audit_id: string;
   title: string;
   status: string;
   entities: AuditEntity[];
   checklist_name?: string;
-  checklist_id?: number;
+  checklist_id?: string;
   budget: string | number | null;
   currency: string | null;
   num_workers: number | null;
@@ -74,12 +74,14 @@ interface AuditDetail {
 
 interface QuestionOption {
   id: number;
+  checklist_question_option_id: string;
   option_text: string;
   marks: number;
 }
 
 interface AuditQuestion {
   id: number;
+  checklist_question_id: string;
   question_text: string;
   answer_type: string;
   total_marks: number;
@@ -88,10 +90,10 @@ interface AuditQuestion {
 }
 
 interface AuditResponse {
-  id: number;
-  question_id: number;
+  audit_response_id: string;
+  checklist_question_id: string;
   entity_code: string;
-  org_tree_id: number;
+  org_tree_id: string;
   answer_text: string | null;
   selected_option_ids: string | null | number[];
   marks_obtained: number;
@@ -104,7 +106,7 @@ interface TreeNode {
   entity_type: string;
   code: string;
   name: string;
-  edge_id?: number | null;
+  edge_id?: string | null;
   children?: TreeNode[];
 }
 
@@ -114,7 +116,7 @@ function formatAnswer(q: AuditQuestion, r?: AuditResponse): string {
   const answerText = (r?.answer_text || "").trim();
   const selected = normalizeSelectedOptionIds(r?.selected_option_ids || null);
   const selectedText = (q.options || [])
-    .filter((o) => selected.includes(o.id))
+    .filter((o) => selected.includes(o.checklist_question_option_id))
     .map((o) => o.option_text);
   const optStr = selectedText.length ? selectedText.join(", ") : "";
   if (answerText && optStr) return `${answerText} (${optStr})`;
@@ -222,7 +224,7 @@ function EntityCard({
   node: TreeNode;
   index: number;
   questionsByKey: Record<string, AuditQuestion[]>;
-  responsesByQuestionId: Record<number, AuditResponse>;
+  responsesByQuestionId: Record<string, AuditResponse>;
   onClick: () => void;
 }) {
   const getSubtreeProgress = (n: TreeNode) => {
@@ -232,7 +234,7 @@ function EntityCard({
       const k = progressKey(nd.code, nd.edge_id ?? null);
       const qs = questionsByKey[k] || [];
       const ans = qs.reduce((s, q) => {
-        const hasAns = !!formatAnswer(q, responsesByQuestionId[q.id]);
+        const hasAns = !!formatAnswer(q, responsesByQuestionId[q.checklist_question_id]);
         return s + (hasAns ? 1 : 0);
       }, 0);
       t += qs.length;
@@ -350,7 +352,7 @@ function QuestionPreviewCard({
                     <span>{response?.evidence?.length} evidence file{(response?.evidence?.length ?? 0) !== 1 ? "s" : ""}</span>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {(response?.evidence || []).map((ev) => {
                     const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
                     const url = getEvidenceUrl(ev.file_path);
@@ -392,7 +394,7 @@ function AuditDetailsContent() {
   const [showPreview, setShowPreview] = useState(false);
   
   const [stepHistory, setStepHistory] = useState<
-    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: number | null })[]
+    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
   >([{ mode: "cards", parentCode: null }]);
 
   const fetchAuditData = useCallback(async () => {
@@ -459,8 +461,8 @@ function AuditDetailsContent() {
   }, [questions]);
 
   const responsesByQuestionId = useMemo(() => {
-    const m: Record<number, AuditResponse> = {};
-    for (const r of responses) m[r.question_id] = r;
+    const m: Record<string, AuditResponse> = {};
+    for (const r of responses) m[r.checklist_question_id] = r;
     return m;
   }, [responses]);
 
@@ -491,7 +493,7 @@ function AuditDetailsContent() {
     return tree ? walk(tree) : null;
   };
 
-  const findNodeByEdgeId = (node: TreeNode, edgeId: number): TreeNode | null => {
+  const findNodeByEdgeId = (node: TreeNode, edgeId: string | null): TreeNode | null => {
     if (node.edge_id === edgeId) return node;
     for (const c of node.children || []) {
       const f = findNodeByEdgeId(c, edgeId);
@@ -665,7 +667,7 @@ function AuditDetailsContent() {
               }
 
               const node = step.orgTreeId != null
-                ? findNodeByEdgeId(tree, Number(step.orgTreeId))
+                ? findNodeByEdgeId(tree, step.orgTreeId)
                 : findInTree(step.entityCode);
               const entityCode = step.entityCode;
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
@@ -703,7 +705,7 @@ function AuditDetailsContent() {
                   <div className="space-y-3">
                     {qs.length > 0 ? (
                       qs.map((q, idx) => (
-                        <QuestionPreviewCard key={q.id} question={q} response={responsesByQuestionId[q.id]} index={idx + 1} />
+                        <QuestionPreviewCard key={q.checklist_question_id} question={q} response={responsesByQuestionId[q.checklist_question_id]} index={idx + 1} />
                       ))
                     ) : (
                       <div className="glass rounded-xl p-8 text-center border border-dashed border-white/10">

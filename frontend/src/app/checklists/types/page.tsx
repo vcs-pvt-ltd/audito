@@ -22,7 +22,7 @@ import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Modal, Table, THead, Th, TBody, Tr, Td, Input, Textarea } from "@/components/ui";
 
 interface ChecklistType {
-  id: number;
+  checklist_type_id: string;
   name: string;
   description: string | null;
   is_active: boolean;
@@ -123,7 +123,7 @@ export default function ChecklistTypesPage() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<ChecklistType | null>(null);
-  const [deleting, setDeleting] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -157,7 +157,7 @@ export default function ChecklistTypesPage() {
   const handleSubmit = async (data: ChecklistTypePayload) => {
     if (!accessToken) return;
     if (editItem) {
-      const res = await checklistApi.updateType(accessToken, editItem.id, data);
+      const res = await checklistApi.updateType(accessToken, editItem.checklist_type_id, data);
       if (!res.success) throw new Error(res.message || "Failed to update.");
       toast("Checklist type updated successfully.", "success");
     } else {
@@ -168,7 +168,7 @@ export default function ChecklistTypesPage() {
     fetchTypes();
   };
 
-  const handleDelete = async (id: number, name: string, usageCount = 0) => {
+  const handleDelete = async (id: string, name: string, usageCount = 0) => {
     if (!accessToken) return;
     // Safety net: a type in use by checklists can't be deleted (backend 403).
     if (usageCount > 0) {
@@ -267,7 +267,7 @@ export default function ChecklistTypesPage() {
                   {paginated.map((t, index) => {
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
                     return (
-                      <Tr key={t.id}>
+                      <Tr key={t.checklist_type_id}>
                         <Td className="text-gray-400 text-sm">{itemIndex}</Td>
                         <Td className="text-white font-medium">{t.name}</Td>
                         <Td className="text-gray-400 max-w-xs">
@@ -290,12 +290,12 @@ export default function ChecklistTypesPage() {
                               <Pencil size={15} />
                             </IconButton>
                             {(t.checklist_count ?? 0) > 0 ? (
-                              <IconButton tone="warning" onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)} title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Click for details.`}>
+                              <IconButton tone="warning" onClick={() => handleDelete(t.checklist_type_id, t.name, t.checklist_count ?? 0)} title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Click for details.`}>
                                 <Lock size={15} />
                               </IconButton>
                             ) : (
-                              <IconButton tone="danger" onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)} disabled={deleting === t.id} title="Delete">
-                                {deleting === t.id ? (
+                              <IconButton tone="danger" onClick={() => handleDelete(t.checklist_type_id, t.name, t.checklist_count ?? 0)} disabled={deleting === t.checklist_type_id} title="Delete">
+                                {deleting === t.checklist_type_id ? (
                                   <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
                                 ) : (
                                   <Trash2 size={15} />
@@ -315,7 +315,7 @@ export default function ChecklistTypesPage() {
               {paginated.map((t, index) => {
                 const itemIndex = (currentPage - 1) * pageSize + index + 1;
                 return (
-                  <div key={t.id} className="glass rounded-xl border border-white/10 p-4">
+                  <div key={t.checklist_type_id} className="glass rounded-xl border border-white/10 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-xs text-gray-500">#{itemIndex}</p>
@@ -337,12 +337,12 @@ export default function ChecklistTypesPage() {
                         <Pencil size={15} />
                       </IconButton>
                       {(t.checklist_count ?? 0) > 0 ? (
-                        <IconButton size="md" tone="warning" onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)} title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Tap for details.`}>
+                        <IconButton size="md" tone="warning" onClick={() => handleDelete(t.checklist_type_id, t.name, t.checklist_count ?? 0)} title={`Used by ${t.checklist_count} checklist${t.checklist_count === 1 ? "" : "s"}. Tap for details.`}>
                           <Lock size={15} />
                         </IconButton>
                       ) : (
-                        <IconButton size="md" tone="danger" onClick={() => handleDelete(t.id, t.name, t.checklist_count ?? 0)} disabled={deleting === t.id} title="Delete">
-                          {deleting === t.id ? (
+                        <IconButton size="md" tone="danger" onClick={() => handleDelete(t.checklist_type_id, t.name, t.checklist_count ?? 0)} disabled={deleting === t.checklist_type_id} title="Delete">
+                          {deleting === t.checklist_type_id ? (
                             <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
                           ) : (
                             <Trash2 size={15} />

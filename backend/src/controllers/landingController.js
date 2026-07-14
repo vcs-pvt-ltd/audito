@@ -1,3 +1,4 @@
+const ContactMessageModel = require('../models/ContactMessageModel');
 const { sendContactEmail } = require('../services/emailService');
 
 /**
@@ -5,7 +6,7 @@ const { sendContactEmail } = require('../services/emailService');
  */
 const submitContactForm = async (req, res) => {
   try {
-    const { name, email, company, phone, message } = req.body;
+    const { name, email, company, phone, country, message } = req.body;
 
     if (!name || !email || !message) {
       return res.status(400).json({ 
@@ -14,8 +15,11 @@ const submitContactForm = async (req, res) => {
       });
     }
 
+    // Save message to database
+    await ContactMessageModel.create({ name, email, company, phone, country, message });
+
     // Pass data to email service
-    await sendContactEmail({ name, email, company, phone, message });
+    await sendContactEmail({ name, email, company, phone, country, message });
 
     return res.status(200).json({ 
       success: true, 

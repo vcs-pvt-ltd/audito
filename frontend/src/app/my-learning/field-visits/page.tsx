@@ -10,12 +10,12 @@ import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Table, THead, Th } from "@/components/ui";
 
 interface MyFieldVisit {
-  assignment_id: number;
+  assignment_id: string;
   status: "assigned" | "completed";
   assigned_at: string;
   check_in_time?: string | null;
   check_out_time?: string | null;
-  field_visit_id: number;
+  field_visit_id: string;
   title: string;
   location_name?: string | null;
   address?: string | null;
@@ -32,7 +32,7 @@ export default function MyFieldVisitsPage() {
 
   const [items, setItems] = useState<MyFieldVisit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [completing, setCompleting] = useState<Record<number, boolean>>({});
+  const [completing, setCompleting] = useState<Record<string, boolean>>({});
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);

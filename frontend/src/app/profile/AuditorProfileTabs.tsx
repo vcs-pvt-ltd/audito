@@ -283,7 +283,7 @@ function ExperiencesTab({ experiences, accessToken, onSuccess }: any) {
     } finally { setAdding(false); }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     const ok = await confirm({ title: "Delete Experience", message: "Are you sure you want to delete this experience?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
     await auditorProfileApi.deleteExperience(accessToken, id);
@@ -337,7 +337,7 @@ function QualificationsTab({ qualifications, accessToken, onSuccess }: any) {
     } finally { setAdding(false); }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     const ok = await confirm({ title: "Delete Qualification", message: "Are you sure you want to delete this qualification?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
     await auditorProfileApi.deleteQualification(accessToken, id);
@@ -393,7 +393,7 @@ function TrainingsTab({ trainings, accessToken, onSuccess }: any) {
     } finally { setAdding(false); }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     const ok = await confirm({ title: "Delete Training", message: "Are you sure you want to delete this training?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
     await auditorProfileApi.deleteTraining(accessToken, id);

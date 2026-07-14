@@ -20,7 +20,7 @@ import EmptyState from "@/components/shared/EmptyState";
 import { Table, THead, Th } from "@/components/ui";
 
 interface AuditAssignment {
-  id: number;
+  audit_id: string;
   audit_code: string;
   title: string;
   checklist_name: string | null;
@@ -269,13 +269,13 @@ export default function EntityHeadAuditsPage() {
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
                     return (
                       <tr
-                        key={a.id}
+                        key={a.audit_id}
                         className="hover:bg-white/[0.02] transition-colors group"
                       >
                         <td className="px-4 py-3 text-gray-400 text-sm text-center">{itemIndex}</td>
                         <td className="px-4 py-3">
                           <button
-                            onClick={() => router.push(`/entity-head/audits/preview?id=${a.id}`)}
+                            onClick={() => router.push(`/entity-head/audits/preview?audit_id=${a.audit_id}`)}
                             className="text-secondary-400 hover:text-secondary-300 font-medium hover:underline underline-offset-2 transition-colors text-left"
                           >
                             {a.title}
@@ -323,8 +323,8 @@ export default function EntityHeadAuditsPage() {
                 const itemIndex = (currentPage - 1) * pageSize + index + 1;
                 return (
                   <div
-                    key={a.id}
-                    onClick={() => router.push(`/entity-head/audits/preview?id=${a.id}`)}
+                    key={a.audit_id}
+                    onClick={() => router.push(`/entity-head/audits/preview?audit_id=${a.audit_id}`)}
                     className="glass rounded-xl p-4 space-y-3 cursor-pointer hover:bg-white/[0.04] transition-all"
                   >
                     <div className="flex justify-between items-start">

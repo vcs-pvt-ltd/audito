@@ -4,7 +4,7 @@ export interface TreeNode {
   entity_type: string;
   code: string;
   name: string;
-  edge_id?: number | null;
+  edge_id?: string | null;
   children?: TreeNode[];
   [key: string]: any;
 }
@@ -18,8 +18,8 @@ export function findNode(node: TreeNode, code: string): TreeNode | null {
   return null;
 }
 
-export function findNodeByEdgeId(node: TreeNode, edgeId: number): TreeNode | null {
-  if (node.edge_id === edgeId) return node;
+export function findNodeByEdgeId(node: TreeNode, edgeId: string | null): TreeNode | null {
+  if (String(node.edge_id ?? "") === String(edgeId ?? "")) return node;
   for (const child of node.children || []) {
     const found = findNodeByEdgeId(child, edgeId);
     if (found) return found;
@@ -56,7 +56,8 @@ export function getAggProgress(
   node: TreeNode,
   codes: Set<string>,
   progressMap: Record<string, any>,
-  keyGenerator?: (code: string, node: TreeNode) => string
+  keyGenerator?: (code: string, node: TreeNode) => string,
+  questionsMap?: Record<string, any[]>
 ): { tQ: number; aQ: number } {
   let tQ = 0;
   let aQ = 0;
@@ -67,10 +68,13 @@ export function getAggProgress(
   if (pData) {
     tQ += pData.total_questions || 0;
     aQ += pData.answered_questions || 0;
+  } else if (questionsMap && codes.has(key)) {
+    const qs = questionsMap[key];
+    if (qs) tQ += qs.length;
   }
   
   for (const child of node.children || []) {
-    const c = getAggProgress(child, codes, progressMap, keyGenerator);
+    const c = getAggProgress(child, codes, progressMap, keyGenerator, questionsMap);
     tQ += c.tQ;
     aQ += c.aQ;
   }

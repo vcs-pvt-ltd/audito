@@ -70,7 +70,7 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string; subscriptionExpired?: boolean; subscription?: SubscriptionStatus; paymentRequired?: boolean; payment?: PaymentDetails | null }>;
+  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string; role?: string; subscriptionExpired?: boolean; subscription?: SubscriptionStatus; paymentRequired?: boolean; payment?: PaymentDetails | null }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
   switchAccount: (targetRole: string, password?: string) => Promise<{ success: boolean; message?: string; needsPassword?: boolean }>;
@@ -178,6 +178,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.success && res.data?.admin && res.data?.tokens) {
         loginPasswordRef.current = payload.password;
         persist(res.data.admin, res.data.accounts || [], res.data.tokens.accessToken, res.data.tokens.refreshToken, res.data.subscription ?? null);
+        // Return the role so login page can redirect correctly
+        return { success: true, message: res.message, role: res.data.admin.role };
       }
       return { success: res.success, message: res.message };
     },

@@ -13,7 +13,7 @@ function VerifyEmailContent() {
 
   const [status, setStatus] = useState<"loading" | "success" | "error" | "set-password">("loading");
   const [message, setMessage] = useState("");
-  const [userData, setUserData] = useState<{ email: string; first_name: string } | null>(null);
+  const [userData, setUserData] = useState<{ email: string; first_name: string; admin_id?: string } | null>(null);
   const [paymentCode, setPaymentCode] = useState<string | null>(null);
 
   const [password, setPassword] = useState("");
@@ -50,7 +50,7 @@ function VerifyEmailContent() {
         if (res.success) {
           const data = res.data;
           if (data?.needs_password) {
-            setUserData({ email: data.email, first_name: data.first_name });
+            setUserData({ email: data.email, first_name: data.first_name, admin_id: data.admin_id });
             setStatus("set-password");
           } else {
             setStatus("success");
@@ -84,7 +84,14 @@ function VerifyEmailContent() {
     if (password !== confirmPassword) { setSetupError("Passwords do not match."); return; }
 
     setSetupLoading(true);
-    const res = await usersApi.setPassword(userData.email, password);
+    let res;
+    if (userData.admin_id) {
+      // Admin invited by audito_admin — use token-based set-password
+      res = await authApi.setAdminPassword(token!, password);
+    } else {
+      // Auditor / Entity Head — use email-based set-password
+      res = await usersApi.setPassword(userData.email, password);
+    }
     setSetupLoading(false);
     if (res.success) {
       setStatus("success");

@@ -12,7 +12,7 @@ const AuditExecutionModel = {
 
   // ── RESPONSES ────────────────────────────────────────────────────
 
-  async upsertResponse({ audit_id, org_tree_id, entity_code, question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by }) {
+  async upsertResponse({ audit_response_id, audit_id, org_tree_id, entity_code, checklist_question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by }) {
     const normId = (org_tree_id !== null && org_tree_id !== undefined) ? (org_tree_id || null) : null;
     const vals = [
       answer_text || null,
@@ -26,28 +26,28 @@ const AuditExecutionModel = {
       // Use explicit UPDATE → INSERT to prevent duplicate rows.
       const [upd] = await db.query(
         `UPDATE audit_responses SET answer_text=?, selected_option_ids=?, marks_obtained=?, remarks=?, cap_required=?, status=?, answered_by=?, answered_at=NOW()
-         WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=? AND question_id=?`,
-        [...vals, audit_id, entity_code, question_id]
+         WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=? AND checklist_question_id=?`,
+        [...vals, audit_id, entity_code, checklist_question_id]
       );
       if (upd.affectedRows > 0) {
         const [r] = await db.query(
-          'SELECT id FROM audit_responses WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=? AND question_id=? ORDER BY id DESC LIMIT 1',
-          [audit_id, entity_code, question_id]
+          'SELECT audit_response_id FROM audit_responses WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=? AND checklist_question_id=? ORDER BY audit_response_id DESC LIMIT 1',
+          [audit_id, entity_code, checklist_question_id]
         );
-        return r[0]?.id;
+        return r[0]?.audit_response_id;
       }
       const [ins] = await db.query(
-        `INSERT INTO audit_responses (audit_id, org_tree_id, entity_code, question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by, answered_at)
-         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-        [audit_id, entity_code, question_id, ...vals]
+        `INSERT INTO audit_responses (audit_response_id, audit_id, org_tree_id, entity_code, checklist_question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by, answered_at)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [audit_response_id, audit_id, entity_code, checklist_question_id, ...vals]
       );
-      return ins.insertId;
+      return audit_response_id;
     }
 
     const [res] = await db.query(
       `INSERT INTO audit_responses
-         (audit_id, org_tree_id, entity_code, question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by, answered_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+         (audit_response_id, audit_id, org_tree_id, entity_code, checklist_question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by, answered_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
        ON DUPLICATE KEY UPDATE
          answer_text = VALUES(answer_text),
          selected_option_ids = VALUES(selected_option_ids),
@@ -56,24 +56,24 @@ const AuditExecutionModel = {
          cap_required = VALUES(cap_required),
          status = VALUES(status),
          answered_at = NOW()`,
-      [audit_id, normId, entity_code, question_id, ...vals]
+      [audit_response_id, audit_id, normId, entity_code, checklist_question_id, ...vals]
     );
-    if (res.insertId) return res.insertId;
+    if (res.insertId) return audit_response_id;
     const [rows] = await db.query(
-      'SELECT id FROM audit_responses WHERE audit_id=? AND org_tree_id<=>? AND entity_code=? AND question_id=?',
-      [audit_id, normId, entity_code, question_id]
+      'SELECT audit_response_id FROM audit_responses WHERE audit_id=? AND org_tree_id<=>? AND entity_code=? AND checklist_question_id=?',
+      [audit_id, normId, entity_code, checklist_question_id]
     );
-    return rows[0]?.id;
+    return rows[0]?.audit_response_id;
   },
 
-  async getResponse(audit_id, org_tree_id, question_id) {
+  async getResponse(audit_id, org_tree_id, checklist_question_id) {
     const [rows] = await db.query(
-      `SELECT r.*, GROUP_CONCAT(e.id) AS evidence_ids
+      `SELECT r.*, GROUP_CONCAT(e.audit_evidence_id) AS evidence_ids
        FROM audit_responses r
-       LEFT JOIN audit_evidence e ON e.response_id = r.id
-       WHERE r.audit_id = ? AND r.org_tree_id <=> ? AND r.question_id = ?
-       GROUP BY r.id`,
-      [audit_id, org_tree_id || null, question_id]
+       LEFT JOIN audit_evidence e ON e.audit_response_id = r.audit_response_id
+       WHERE r.audit_id = ? AND r.org_tree_id <=> ? AND r.checklist_question_id = ?
+       GROUP BY r.audit_response_id`,
+      [audit_id, org_tree_id || null, checklist_question_id]
     );
     return rows[0] || null;
   },
@@ -83,12 +83,12 @@ const AuditExecutionModel = {
       `SELECT r.*
        FROM audit_responses r
        INNER JOIN (
-         SELECT MAX(id) AS max_id
+         SELECT MAX(audit_response_id) AS max_audit_response_id
          FROM audit_responses
          WHERE audit_id = ? AND org_tree_id <=> ? AND entity_code = ?
-         GROUP BY question_id
-       ) dedup ON r.id = dedup.max_id
-       ORDER BY r.question_id`,
+         GROUP BY checklist_question_id
+       ) dedup ON r.audit_response_id = dedup.max_audit_response_id
+       ORDER BY r.checklist_question_id`,
       [audit_id, org_tree_id ?? null, entity_code, audit_id, org_tree_id ?? null, entity_code]
     );
     return rows;
@@ -99,7 +99,7 @@ const AuditExecutionModel = {
       `SELECT r.*
        FROM audit_responses r
        WHERE r.audit_id = ? AND r.entity_code = ?
-       ORDER BY r.question_id`,
+       ORDER BY r.checklist_question_id`,
       [audit_id, entity_code]
     );
     return rows;
@@ -110,13 +110,13 @@ const AuditExecutionModel = {
       `SELECT r.*
        FROM audit_responses r
        INNER JOIN (
-         SELECT MAX(id) AS max_id
+         SELECT MAX(audit_response_id) AS max_audit_response_id
          FROM audit_responses
          WHERE audit_id = ?
-         GROUP BY entity_code, org_tree_id, question_id
-       ) dedup ON r.id = dedup.max_id
+         GROUP BY entity_code, org_tree_id, checklist_question_id
+       ) dedup ON r.audit_response_id = dedup.max_audit_response_id
        WHERE r.audit_id = ?
-       ORDER BY r.org_tree_id, r.entity_code, r.question_id`,
+       ORDER BY r.org_tree_id, r.entity_code, r.checklist_question_id`,
       [audit_id, audit_id]
     );
     return rows;
@@ -124,19 +124,19 @@ const AuditExecutionModel = {
 
   // ── EVIDENCE ─────────────────────────────────────────────────────
 
-  async addEvidence({ response_id, file_type, file_path, file_name, file_size, uploaded_by }) {
-    const [res] = await db.query(
-      `INSERT INTO audit_evidence (response_id, file_type, file_path, file_name, file_size, uploaded_by)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [response_id, file_type, file_path, file_name || null, file_size || 0, uploaded_by]
+  async addEvidence({ audit_evidence_id, audit_response_id, file_type, file_path, file_name, file_size, uploaded_by }) {
+    await db.query(
+      `INSERT INTO audit_evidence (audit_evidence_id, audit_response_id, file_type, file_path, file_name, file_size, uploaded_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [audit_evidence_id, audit_response_id, file_type, file_path, file_name || null, file_size || 0, uploaded_by]
     );
-    return res.insertId;
+    return audit_evidence_id;
   },
 
-  async getEvidence(response_id) {
+  async getEvidence(audit_response_id) {
     const [rows] = await db.query(
-      'SELECT * FROM audit_evidence WHERE response_id = ? ORDER BY created_at',
-      [response_id]
+      'SELECT * FROM audit_evidence WHERE audit_response_id = ? ORDER BY created_at',
+      [audit_response_id]
     );
     return rows;
   },
@@ -144,18 +144,18 @@ const AuditExecutionModel = {
   async getEvidenceByAudit(audit_id) {
     const [rows] = await db.query(
       `SELECT e.* FROM audit_evidence e
-       INNER JOIN audit_responses r ON r.id = e.response_id
+       INNER JOIN audit_responses r ON r.audit_response_id = e.audit_response_id
        WHERE r.audit_id = ?
-       ORDER BY e.response_id, e.created_at`,
+       ORDER BY e.audit_response_id, e.created_at`,
       [audit_id]
     );
     return rows;
   },
 
-  async deleteEvidence(id) {
-    const [rows] = await db.query('SELECT * FROM audit_evidence WHERE id = ?', [id]);
+  async deleteEvidence(audit_evidence_id) {
+    const [rows] = await db.query('SELECT * FROM audit_evidence WHERE audit_evidence_id = ?', [audit_evidence_id]);
     if (!rows[0]) return null;
-    await db.query('DELETE FROM audit_evidence WHERE id = ?', [id]);
+    await db.query('DELETE FROM audit_evidence WHERE audit_evidence_id = ?', [audit_evidence_id]);
     return rows[0];
   },
 
@@ -164,11 +164,11 @@ const AuditExecutionModel = {
   async listCapRequiredItems(audit_id) {
     const [rows] = await db.query(
       `SELECT
-         r.id AS response_id,
+         r.audit_response_id AS response_id,
          r.audit_id,
          r.org_tree_id,
          r.entity_code,
-         r.question_id,
+         r.checklist_question_id AS question_id,
          r.answer_text,
          r.selected_option_ids,
          r.marks_obtained,
@@ -183,7 +183,7 @@ const AuditExecutionModel = {
          q.order_index,
          q.entity_type
        FROM audit_responses r
-       INNER JOIN checklist_questions q ON q.id = r.question_id
+       INNER JOIN checklist_questions q ON q.checklist_question_id = r.checklist_question_id
        WHERE r.audit_id = ? AND r.cap_required = 1
        ORDER BY r.entity_code, q.order_index`,
       [audit_id]
@@ -200,66 +200,66 @@ const AuditExecutionModel = {
   },
 
   async upsertCorrectiveAction({
+    corrective_action_id,
     audit_id,
-    response_id,
+    audit_response_id,
     entity_code,
-    question_id,
+    checklist_question_id,
     org_tree_id,
-    responsible_person_code,
+    responsible_entity_head_id,
     responsible_person_name,
     due_date,
     created_by,
   }) {
     const [existing] = await db.query(
-      `SELECT id FROM corrective_actions WHERE audit_id = ? AND response_id = ? LIMIT 1`,
-      [audit_id, response_id]
+      `SELECT corrective_action_id FROM corrective_actions WHERE audit_id = ? AND audit_response_id = ? LIMIT 1`,
+      [audit_id, audit_response_id]
     );
 
     if (!existing.length) {
-      const cap_code = `CAP-${audit_id}-${response_id}`;
-      const [res] = await db.query(
+      await db.query(
         `INSERT INTO corrective_actions
-           (cap_code, audit_id, response_id, entity_code, question_id, org_tree_id,
-            responsible_person_code, responsible_person_name, due_date, created_by)
+           (corrective_action_id, audit_id, audit_response_id, entity_code, checklist_question_id, org_tree_id,
+            responsible_entity_head_id, responsible_person_name, due_date, created_by)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          cap_code,
+          corrective_action_id,
           audit_id,
-          response_id,
+          audit_response_id,
           entity_code,
-          question_id,
+          checklist_question_id,
           org_tree_id || null,
-          responsible_person_code || null,
+          responsible_entity_head_id || null,
           responsible_person_name || null,
           due_date || null,
           created_by,
         ]
       );
-      return res.insertId;
+      return corrective_action_id;
     }
 
     await db.query(
       `UPDATE corrective_actions
-       SET responsible_person_code = ?,
+       SET responsible_entity_head_id = ?,
            responsible_person_name = ?,
            due_date = ?,
            org_tree_id = ?
-       WHERE audit_id = ? AND response_id = ?`,
+       WHERE audit_id = ? AND audit_response_id = ?`,
       [
-        responsible_person_code || null,
+        responsible_entity_head_id || null,
         responsible_person_name || null,
         due_date || null,
         org_tree_id || null,
         audit_id,
-        response_id,
+        audit_response_id,
       ]
     );
-    return existing[0].id;
+    return existing[0].corrective_action_id;
   },
 
   // ── ENTITY PROGRESS ──────────────────────────────────────────────
 
-  async upsertProgress({ audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status }) {
+  async upsertProgress({ audit_entity_progress_id, audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status }) {
     const normId = (org_tree_id !== null && org_tree_id !== undefined) ? (org_tree_id || null) : null;
     const completedAt = status === 'completed' ? new Date() : null;
     const updateVals = [total_questions, answered_questions, total_marks, obtained_marks, status, completedAt];
@@ -273,9 +273,9 @@ const AuditExecutionModel = {
       );
       if (upd.affectedRows === 0) {
         await db.query(
-          `INSERT INTO audit_entity_progress (audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status, completed_at)
-           VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
-          [audit_id, entity_code, ...updateVals]
+          `INSERT INTO audit_entity_progress (audit_entity_progress_id, audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status, completed_at)
+           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+          [audit_entity_progress_id, audit_id, entity_code, ...updateVals]
         );
       }
       return;
@@ -283,8 +283,8 @@ const AuditExecutionModel = {
 
     await db.query(
       `INSERT INTO audit_entity_progress
-         (audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (audit_entity_progress_id, audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          total_questions = VALUES(total_questions),
          answered_questions = VALUES(answered_questions),
@@ -292,7 +292,7 @@ const AuditExecutionModel = {
          obtained_marks = VALUES(obtained_marks),
          status = VALUES(status),
          completed_at = VALUES(completed_at)`,
-      [audit_id, normId, entity_code, ...updateVals]
+      [audit_entity_progress_id, audit_id, normId, entity_code, ...updateVals]
     );
   },
 
@@ -301,11 +301,11 @@ const AuditExecutionModel = {
       `SELECT p.*
        FROM audit_entity_progress p
        INNER JOIN (
-         SELECT MAX(id) AS max_id
+         SELECT MAX(audit_entity_progress_id) AS max_audit_entity_progress_id
          FROM audit_entity_progress
          WHERE audit_id = ?
          GROUP BY entity_code, org_tree_id
-       ) dedup ON p.id = dedup.max_id
+       ) dedup ON p.audit_entity_progress_id = dedup.max_audit_entity_progress_id
        WHERE p.audit_id = ?
        ORDER BY p.org_tree_id, p.entity_code`,
       [audit_id, audit_id]
@@ -331,17 +331,17 @@ const AuditExecutionModel = {
 
   // ── AUDIT STATUS ─────────────────────────────────────────────────
 
-  async startAudit(id) {
+  async startAudit(audit_id) {
     await db.query(
-      "UPDATE audit_assignments SET status = 'in_progress' WHERE id = ? AND status = 'plan'",
-      [id]
+      "UPDATE audit_assignments SET status = 'in_progress' WHERE audit_id = ? AND status = 'plan'",
+      [audit_id]
     );
   },
 
-  async completeAudit(id) {
+  async completeAudit(audit_id) {
     await db.query(
-      "UPDATE audit_assignments SET status = 'completed', completed_at = NOW() WHERE id = ?",
-      [id]
+      "UPDATE audit_assignments SET status = 'completed', completed_at = NOW() WHERE audit_id = ?",
+      [audit_id]
     );
   },
 
@@ -350,13 +350,13 @@ const AuditExecutionModel = {
   async getEntityTree(audit_id) {
     // Get audit entity codes. These are the nodes assigned to the audit.
     const [entities] = await db.query(
-      'SELECT org_tree_id, entity_code, entity_type FROM audit_assignment_entities WHERE assignment_id = ? AND is_active = TRUE',
+      'SELECT org_tree_id, entity_code, entity_type FROM audit_assignment_entities WHERE audit_id = ? AND is_active = TRUE',
       [audit_id]
     );
     if (!entities.length) return null;
 
     const [[audit]] = await db.query(
-      'SELECT created_by FROM audit_assignments WHERE id = ? AND is_active = TRUE',
+      'SELECT created_by FROM audit_assignments WHERE audit_id = ? AND is_active = TRUE',
       [audit_id]
     );
     const auditRootCode = audit?.created_by || null;
@@ -374,7 +374,7 @@ const AuditExecutionModel = {
         const [assignedRoots] = await db.query(
           `SELECT DISTINCT root_entity_code
              FROM organization_tree
-            WHERE id IN (${edgePH}) AND is_active = TRUE`,
+            WHERE org_tree_id IN (${edgePH}) AND is_active = TRUE`,
           assignedEdgeIds
         );
         assignedRootCodes = assignedRoots.map((r) => r.root_entity_code).filter(Boolean);
@@ -390,16 +390,16 @@ const AuditExecutionModel = {
       const edgePH = assignedEdgeIds.map(() => '?').join(',');
       const [rows] = await db.query(
         `WITH RECURSIVE chain AS (
-           SELECT id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
+           SELECT org_tree_id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
            FROM organization_tree
-           WHERE id IN (${edgePH}) AND is_active = TRUE
+           WHERE org_tree_id IN (${edgePH}) AND is_active = TRUE
            UNION ALL
-           SELECT ot.id, ot.parent_code, ot.parent_type, ot.child_code, ot.child_type, ot.root_entity_code, ot.parent_edge_id
+           SELECT ot.org_tree_id, ot.parent_code, ot.parent_type, ot.child_code, ot.child_type, ot.root_entity_code, ot.parent_edge_id
            FROM organization_tree ot
-           INNER JOIN chain c ON c.parent_edge_id = ot.id
+           INNER JOIN chain c ON c.parent_edge_id = ot.org_tree_id
            WHERE ot.is_active = TRUE
          )
-         SELECT DISTINCT id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
+         SELECT DISTINCT org_tree_id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
          FROM chain`,
         assignedEdgeIds
       );
@@ -454,7 +454,7 @@ const AuditExecutionModel = {
     if (auditRootCode && filteredEdges.some((e) => e.edge_path)) {
       const edgePathMap = new Map();
       for (const edge of filteredEdges) {
-        const parts = String(edge.edge_path || edge.id).split(',');
+        const parts = String(edge.edge_path || edge.org_tree_id).split(',');
         const parentPath = parts.length === 1 ? 'ROOT' : parts.slice(0, -1).join(',');
         if (!edgePathMap.has(parentPath)) edgePathMap.set(parentPath, []);
         edgePathMap.get(parentPath).push(edge);
@@ -471,7 +471,7 @@ const AuditExecutionModel = {
               code: edge.child_code,
               name: nameMap[edge.child_code] || edge.child_code,
               entity_type: typeMap[edge.child_code] || edge.child_type || '',
-              edge_id: edge.id,
+              edge_id: edge.org_tree_id,
               children: buildChildrenByPath(edge.edge_path, nextPathCodes),
             };
           });
@@ -488,11 +488,11 @@ const AuditExecutionModel = {
 
     const buildFromEdge = (edgeRow, visitedEdgeIds = new Set()) => {
       if (!edgeRow) return null;
-      if (visitedEdgeIds.has(edgeRow.id)) return null;
+      if (visitedEdgeIds.has(edgeRow.org_tree_id)) return null;
       const nextVisited = new Set(visitedEdgeIds);
-      nextVisited.add(edgeRow.id);
+      nextVisited.add(edgeRow.org_tree_id);
 
-      const childEdges = childrenByParentEdgeId.get(edgeRow.id) || [];
+      const childEdges = childrenByParentEdgeId.get(edgeRow.org_tree_id) || [];
       const children = childEdges
         .map(e => buildFromEdge(e, nextVisited))
         .filter(Boolean);
@@ -501,7 +501,7 @@ const AuditExecutionModel = {
         code: edgeRow.child_code,
         name: nameMap[edgeRow.child_code] || edgeRow.child_code,
         entity_type: typeMap[edgeRow.child_code] || edgeRow.child_type || '',
-        edge_id: edgeRow.id,
+        edge_id: edgeRow.org_tree_id,
         children,
       };
     };

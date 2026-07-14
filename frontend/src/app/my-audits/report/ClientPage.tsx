@@ -30,8 +30,9 @@ import {
 // ─── Types ────────────────────────────────────────────────────────
 
 interface EntityProgress {
+  audit_entity_progress_id?: string;
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   entity_name?: string;
   total_questions: number;
   answered_questions: number;
@@ -41,7 +42,7 @@ interface EntityProgress {
 }
 
 interface Evidence {
-  id: number;
+  id: string;
   file_type: string;
   file_path: string;
   file_name: string;
@@ -49,10 +50,10 @@ interface Evidence {
 }
 
 interface AuditResponse {
-  id: number;
-  question_id: number;
+  audit_response_id: string;
+  checklist_question_id: string;
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   answer_text: string | null;
   selected_option_ids: string | null;
   marks_obtained: number;
@@ -63,25 +64,27 @@ interface AuditResponse {
 }
 
 interface QuestionOption {
-  id: number;
+  id: string;
+  checklist_question_option_id: string;
   option_text: string;
   marks: number;
 }
 
 interface Question {
-  id: number;
+  id: string;
+  checklist_question_id: string;
   question_text: string;
   answer_type: string;
   total_marks: number;
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   order_index: number;
   options: QuestionOption[];
 }
 
 interface AuditEntity {
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   entity_type: string;
   entity_name: string;
 }
@@ -90,13 +93,13 @@ interface EntityTreeNode {
   code: string;
   name: string;
   entity_type: string;
-  edge_id?: number | null;
+  edge_id?: string | null;
   children: EntityTreeNode[];
 }
 
 interface ReportData {
   audit: {
-    id: number;
+    audit_id: string;
     audit_code: string;
     title: string;
     status: string;
@@ -144,8 +147,8 @@ function getScoreStroke(pct: number) {
 
 function sameEntityInstance(
   entityCode: string,
-  orgTreeId: number | null | undefined,
-  item: { entity_code: string; org_tree_id?: number | null },
+  orgTreeId: string | null | undefined,
+  item: { entity_code: string; org_tree_id?: string | null },
   { allowGeneric = false }: { allowGeneric?: boolean } = {}
 ) {
   const normalizedOrgTreeId = orgTreeId ?? null;
@@ -270,7 +273,7 @@ function EntityTreeSection({
               <div className="px-4 py-3 space-y-2">
                 {questions.map((q) => {
                   const resp = responses.find(
-                    (r) => r.question_id === q.id && sameEntityInstance(node.code, nodeOrgTreeId, r)
+                    (r) => r.checklist_question_id === q.checklist_question_id && sameEntityInstance(node.code, nodeOrgTreeId, r)
                   );
                   const hasCap = (resp?.cap_required || 0) === 1;
                   const qPct = q.total_marks > 0
@@ -398,7 +401,7 @@ export default function MyAuditReportPage() {
       let total_marks = 0, obtained_marks = 0, cap_required_count = 0;
       nodeQuestions.forEach((q) => {
         total_marks += Number(q.total_marks || 0);
-        const r = nodeResponses.find((resp) => resp.question_id === q.id);
+        const r = nodeResponses.find((resp) => resp.checklist_question_id === q.checklist_question_id);
         if (r) {
           obtained_marks += Number(r.marks_obtained || 0);
           if (r.cap_required === 1) cap_required_count++;

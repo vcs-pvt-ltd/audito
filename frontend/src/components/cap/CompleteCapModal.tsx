@@ -7,10 +7,10 @@ import { progressKey } from "@/utils/executionService";
 import { Button, IconButton } from "@/components/ui";
 
 export interface CapProgress {
-  id: number;
-  cap_id: number;
+  id: string;
+  cap_id: string;
   entity_code: string;
-  org_tree_id: number | null;
+  org_tree_id: string | null;
   total_questions: number;
   answered_questions: number;
   status: string;
@@ -21,15 +21,14 @@ interface TreeNode {
   entity_type: string;
   code: string;
   name: string;
-  edge_id?: number | string | null;
+  edge_id?: string | null;
   children: TreeNode[];
   [key: string]: unknown;
 }
 
 interface Cap {
-  id: number;
-  cap_plan_code: string;
-  audit_id: number;
+  cap_id: string;
+  audit_id: string;
   audit_code: string;
   audit_title: string;
   title: string;
@@ -41,12 +40,12 @@ interface Cap {
 }
 
 interface CapQuestion {
-  id: number;
-  cap_id: number;
-  corrective_action_id: number;
+  cap_question_id: string;
+  cap_id: string;
+  corrective_action_id: string;
   entity_code: string;
-  org_tree_id: number | null;
-  question_id: number;
+  org_tree_id: string | null;
+  question_id: string;
   status: string;
   question_text: string;
   answer_type: string;
@@ -57,19 +56,19 @@ interface CapQuestion {
   responsible_person_name: string | null;
   due_date: string | null;
   severity: string;
-  options: { id: number; option_text: string; marks: number }[];
+  options: { id: string; checklist_question_option_id: string; option_text: string; marks: number }[];
 }
 
 interface CapResponse {
-  id: number;
-  cap_question_id: number;
+  cap_response_id: string;
+  cap_question_id: string;
   response_text: string | null;
   answer_text?: string | null;
   selected_option_ids?: string | null;
   remarks?: string | null;
   status: string;
   responded_by: string;
-  evidence?: { id: number; file_path: string; file_name: string; file_type: string }[];
+  evidence?: { id: string; file_path: string; file_name: string; file_type: string }[];
 }
 
 interface CompleteCapModalProps {
@@ -83,40 +82,38 @@ interface CompleteCapModalProps {
   capId: number | string;
 }
 
-function normalizeSelectedOptionIds(selected_option_ids: unknown): number[] {
+function normalizeSelectedOptionIds(selected_option_ids: unknown): string[] {
   if (selected_option_ids == null) return [];
   if (Array.isArray(selected_option_ids)) {
     return selected_option_ids
-      .map((v) => (typeof v === "number" ? v : parseInt(String(v), 10)))
-      .filter((n) => Number.isFinite(n));
+      .map((v) => String(v).trim())
+      .filter((s) => s.length > 0);
   }
-  if (typeof selected_option_ids === "number") return [selected_option_ids];
-  if (typeof selected_option_ids !== "string") return [];
-  const raw = selected_option_ids.trim();
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map((v) => (typeof v === "number" ? v : parseInt(String(v), 10)))
-        .filter((n) => Number.isFinite(n));
+  if (typeof selected_option_ids === "string") {
+    const raw = selected_option_ids.trim();
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((v) => String(v).trim())
+          .filter((s) => s.length > 0);
+      }
+      if (typeof parsed === "string") return [parsed.trim()];
+      if (parsed != null) return [String(parsed)];
+    } catch {
+      // fallthrough
     }
-    if (typeof parsed === "number") return [parsed];
-    if (typeof parsed === "string") {
-      const n = parseInt(parsed, 10);
-      return Number.isFinite(n) ? [n] : [];
+    if (raw.includes(",")) {
+      return raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
     }
-  } catch {
-    // fallthrough
+    return [raw];
   }
-  if (raw.includes(",")) {
-    return raw
-      .split(",")
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => Number.isFinite(n));
-  }
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) ? [n] : [];
+  if (typeof selected_option_ids === "number") return [String(selected_option_ids)];
+  return [];
 }
 
 function getPathToNode(node: TreeNode, code: string, edgeId: number | string | null, trail: TreeNode[] = []): TreeNode[] | null {
@@ -147,7 +144,7 @@ export default function CompleteCapModal({
   const [cap, setCap] = useState<Cap | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [questions, setQuestions] = useState<CapQuestion[]>([]);
-  const [responses, setResponses] = useState<Record<number, CapResponse>>({});
+  const [responses, setResponses] = useState<Record<string, CapResponse>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const progressMap = useMemo(() => {
@@ -177,8 +174,8 @@ export default function CompleteCapModal({
 
     try {
       const [detailRes, respRes] = await Promise.all([
-        capApi.get(accessToken, capId),
-        capApi.getResponses(accessToken, capId),
+        capApi.get(accessToken, String(capId)),
+        capApi.getResponses(accessToken, String(capId)),
       ]);
 
       if (detailRes.success && detailRes.data) {
@@ -197,7 +194,7 @@ export default function CompleteCapModal({
 
       if (respRes.success && respRes.data) {
         const rd = respRes.data as { responses: CapResponse[] };
-        const map: Record<number, CapResponse> = {};
+        const map: Record<string, CapResponse> = {};
         for (const r of rd.responses || []) {
           map[r.cap_question_id] = r;
         }
@@ -290,7 +287,14 @@ export default function CompleteCapModal({
     }
 
     const selIds = normalizeSelectedOptionIds(r.selected_option_ids);
-    const selected = (q.options || []).filter((o) => selIds.includes(o.id));
+    const selStrings = Array.isArray(r.selected_option_ids)
+      ? r.selected_option_ids.map(String)
+      : typeof r.selected_option_ids === "string"
+        ? (() => { try { const p = JSON.parse(r.selected_option_ids); return Array.isArray(p) ? p.map(String) : [String(p)]; } catch { return r.selected_option_ids.split(",").map((s: string) => s.trim()); } })()
+        : [];
+    const selected = (q.options || []).filter((o) =>
+      selIds.includes(o.id) || selStrings.includes(o.checklist_question_option_id)
+    );
     return (
       <div className="space-y-1">
         {selected.length > 0 ? (
@@ -371,9 +375,9 @@ export default function CompleteCapModal({
                 .slice()
                 .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
                 .map((q, idx) => {
-                  const r = responses[q.id];
+                  const r = responses[q.cap_question_id];
                   return (
-                    <div key={q.id} className="px-4 py-3">
+                    <div key={q.cap_question_id} className="px-4 py-3">
                       <p className="text-xs text-gray-500 mb-1">Action {idx + 1}</p>
                       <p className="text-sm text-gray-200">{q.question_text}</p>
                       {q.ca_description && (

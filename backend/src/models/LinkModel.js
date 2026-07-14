@@ -27,12 +27,12 @@ async function ensureSecurityColumns() {
 }
 
 const LinkModel = {
-  async create({ link_code, requester_type, requester_code, requester_level, target_type, target_code, target_level, verification_key_hash }) {
+  async create({ organization_link_id, link_code, requester_type, requester_code, requester_level, target_type, target_code, target_level, verification_key_hash }) {
     await ensureSecurityColumns();
     const [result] = await db.query(
-      `INSERT INTO organization_links (link_code, requester_type, requester_code, requester_level, target_type, target_code, target_level, verification_key_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [link_code, requester_type, requester_code, requester_level, target_type, target_code, target_level, verification_key_hash || null]
+      `INSERT INTO organization_links (organization_link_id, link_code, requester_type, requester_code, requester_level, target_type, target_code, target_level, verification_key_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [organization_link_id, link_code, requester_type, requester_code, requester_level, target_type, target_code, target_level, verification_key_hash || null]
     );
     return result;
   },

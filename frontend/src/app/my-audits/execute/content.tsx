@@ -59,9 +59,9 @@ interface QuestionCardHandle {
 interface QuestionCardProps {
   question: ChecklistQuestion;
   response?: AuditResponse;
-  auditId: number;
+  auditId: string;
   entityCode: string;
-  orgTreeId: number;
+  orgTreeId: string | null;
   accessToken: string;
   onSaved: () => Promise<void>;
   onDirtyChange?: (questionId: number, dirty: boolean) => void;
@@ -76,6 +76,7 @@ type TreeNode = SharedTreeNode & { [key: string]: unknown };
 
 interface QuestionOption {
   id: number;
+  checklist_question_option_id: string;
   option_text: string;
   marks: number;
   order_index: number;
@@ -83,11 +84,13 @@ interface QuestionOption {
 
 interface ChecklistQuestion {
   id: number;
+  checklist_question_id: string;
   question_text: string;
   answer_type: "free_text" | "single_option" | "multiple_options" | "dropdown";
   total_marks: number;
   order_index: number;
   entity_code: string;
+  org_tree_id?: string | null;
   options: QuestionOption[];
 }
 
@@ -97,7 +100,7 @@ interface EntityQuestion {
 }
 
 interface Evidence {
-  id: number;
+  id: string;
   file_type: string;
   file_path: string;
   file_name: string;
@@ -105,8 +108,8 @@ interface Evidence {
 }
 
 interface AuditResponse {
-  id: number;
-  question_id: number;
+  audit_response_id: string;
+  checklist_question_id: string;
   entity_code: string;
   answer_text: string | null;
   selected_option_ids: string | null;
@@ -118,8 +121,9 @@ interface AuditResponse {
 }
 
 interface EntityProgress {
+  audit_entity_progress_id?: string;
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   total_questions: number;
   answered_questions: number;
   total_marks: number;
@@ -131,17 +135,18 @@ interface AuditEntity {
   entity_code: string;
   entity_type: string;
   entity_name: string;
+  org_tree_id?: string | null;
 }
 
 interface AuditDetail {
-  id: number;
+  audit_id: string;
   audit_code: string;
   title: string;
   audit_type: string;
   status: string;
   start_date: string;
   end_date: string;
-  checklist_id: number | null;
+  checklist_id: string | null;
   checklist_name: string | null;
   entities: AuditEntity[];
   entity_questions: EntityQuestion[];
@@ -169,17 +174,19 @@ const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
 // ─── Entity Card ─────────────────────────────────────────────────
 
 function EntityCard({
-  node, index, auditEntityKeys, progressMap, onClick,
+  node, index, auditEntityKeys, progressMap, questionsMap, onClick,
 }: {
   node: TreeNode; index: number; auditEntityKeys: Set<string>;
   progressMap: Record<string, EntityProgress>;
+  questionsMap: Record<string, ChecklistQuestion[]>;
   onClick: () => void;
 }) {
   const { tQ, aQ } = getAggProgress(
     node,
     auditEntityKeys,
     progressMap,
-    (code, n) => progressKey(code, n.edge_id ?? null)
+    (code, n) => progressKey(code, n.edge_id ?? null),
+    questionsMap
   );
   const pct = tQ > 0 ? Math.round((aQ / tQ) * 100) : 0;
   const subsections = (node.children ?? []).length;  // Show all direct children, not filtered
@@ -253,7 +260,7 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
   }, [response?.answer_text, response?.selected_option_ids, response?.marks_obtained, response?.remarks, response?.cap_required]);
 
   const [answerText, setAnswerText] = useState(baseline.answerText);
-  const [selectedOptions, setSelectedOptions] = useState<number[]>(baseline.selectedOptions);
+  const [selectedOptions, setSelectedOptions] = useState<string[]>(baseline.selectedOptions);
   const [freeTextMarks, setFreeTextMarks] = useState(baseline.freeTextMarks);
   const [remarks, setRemarks] = useState(baseline.remarks);
   const [capRequired, setCapRequired] = useState(baseline.capRequired);
@@ -281,12 +288,12 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
   const computeMarks = useCallback((): number => {
     if (question.answer_type === "free_text") return freeTextMarks;
     if (question.answer_type === "single_option" || question.answer_type === "dropdown") {
-      const opt = question.options.find(o => o.id === selectedOptions[0]);
+      const opt = question.options.find(o => o.checklist_question_option_id === selectedOptions[0]);
       return opt ? Number(opt.marks) || 0 : 0;
     }
     // multiple_options — sum all selected
     return question.options
-      .filter(o => selectedOptions.includes(o.id))
+      .filter(o => selectedOptions.includes(o.checklist_question_option_id))
       .reduce((s, o) => s + (Number(o.marks) || 0), 0);
   }, [question, selectedOptions, freeTextMarks]);
 
@@ -294,8 +301,8 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
   const canToggleCap = marksObtained < maxMarks;
 
   const dirty = useMemo(() => {
-    const selA = (selectedOptions || []).slice().sort((a, b) => a - b);
-    const selB = (baseline.selectedOptions || []).slice().sort((a, b) => a - b);
+    const selA = (selectedOptions || []).slice().sort();
+    const selB = (baseline.selectedOptions || []).slice().sort();
     const sameSel = selA.length === selB.length && selA.every((v, i) => v === selB[i]);
     return (
       (answerText || "") !== (baseline.answerText || "") ||
@@ -330,11 +337,11 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     setSaveErr("");
     setSaving(true);
     const res = await auditExecutionApi.respond(accessToken, auditId, {
-      org_tree_id: orgTreeId > 0 ? Number(orgTreeId) : null,
+      org_tree_id: orgTreeId || null,
       entity_code: entityCode,
-      question_id: question.id,
+      question_id: question.checklist_question_id,
       answer_text: question.answer_type === "free_text" ? answerText : undefined,
-      selected_option_ids: selectedOptions.length > 0 ? selectedOptions : undefined,
+      selected_option_ids: selectedOptions.length > 0 ? selectedOptions.map(String) : undefined,
       marks_obtained: marksObtained,
       remarks: remarks || undefined,
       cap_required: canToggleCap ? capRequired : false,
@@ -349,11 +356,11 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     setSaveErr("");
     setSaving(true);
     const res = await auditExecutionApi.respond(accessToken, auditId, {
-      org_tree_id: orgTreeId > 0 ? Number(orgTreeId) : null,
+      org_tree_id: orgTreeId || null,
       entity_code: entityCode,
-      question_id: question.id,
+      question_id: question.checklist_question_id,
       answer_text: question.answer_type === "free_text" ? answerText : undefined,
-      selected_option_ids: selectedOptions.length > 0 ? selectedOptions : undefined,
+      selected_option_ids: selectedOptions.length > 0 ? selectedOptions.map(String) : undefined,
       marks_obtained: marksObtained,
       remarks: remarks || undefined,
       cap_required: canToggleCap ? capRequired : false,
@@ -392,16 +399,16 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     setUploading(true);
     setEvidenceToast("");
 
-    let responseId = response?.id ?? null;
+    let responseId = response?.audit_response_id ?? null;
 
     // If there's no saved response yet, create one automatically so evidence can be attached
     if (!responseId) {
       const saveRes = await auditExecutionApi.respond(accessToken, auditId, {
-        org_tree_id: orgTreeId > 0 ? Number(orgTreeId) : null,
+        org_tree_id: orgTreeId || null,
         entity_code: entityCode,
-        question_id: question.id,
+        question_id: question.checklist_question_id,
         answer_text: question.answer_type === "free_text" ? answerText : undefined,
-        selected_option_ids: selectedOptions.length > 0 ? selectedOptions : undefined,
+        selected_option_ids: selectedOptions.length > 0 ? selectedOptions.map(String) : undefined,
         marks_obtained: marksObtained,
         remarks: remarks || undefined,
         cap_required: canToggleCap ? capRequired : false,
@@ -412,7 +419,7 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
         return false;
       }
       // try to extract created response id from response
-      responseId = (saveRes.data && ((saveRes.data as any).id ?? (saveRes.data as any).response_id ?? (saveRes.data as any).response?.id)) || null;
+      responseId = (saveRes.data && ((saveRes.data as any).audit_response_id ?? (saveRes.data as any).response_id ?? (saveRes.data as any).response?.audit_response_id)) || null;
       // refresh parent state
       await onSaved();
       if (!responseId) {
@@ -426,7 +433,7 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     const fileType = file.type.startsWith("image/") ? "image" :
       file.type.startsWith("video/") ? "video" : "audio";
 
-    const res = await auditExecutionApi.uploadEvidence(accessToken, auditId, Number(responseId), file, fileType);
+    const res = await auditExecutionApi.uploadEvidence(accessToken, auditId, String(responseId), file, fileType);
     if (res && (res.success || res.data)) {
       // server sometimes returns raw object; normalize
       const newEvidence = (res.data && res.data) || (res as any);
@@ -443,12 +450,12 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     return false;
   };
 
-  const handleDeleteEvidence = async (evidenceId: number) => {
-    await auditExecutionApi.deleteEvidence(accessToken, evidenceId);
+  const handleDeleteEvidence = async (evidenceId: string) => {
+    await auditExecutionApi.deleteEvidence(accessToken, String(evidenceId));
     setEvidence(prev => prev.filter(e => e.id !== evidenceId));
   };
 
-  const toggleOption = (optId: number) => {
+  const toggleOption = (optId: string) => {
     if (question.answer_type === "single_option" || question.answer_type === "dropdown") {
       setSelectedOptions([optId]);
     } else {
@@ -545,12 +552,12 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
           ) : question.answer_type === "dropdown" ? (
             <select
               value={selectedOptions[0] || ""}
-              onChange={(e) => setSelectedOptions(e.target.value ? [parseInt(e.target.value)] : [])}
+              onChange={(e) => setSelectedOptions(e.target.value ? [e.target.value] : [])}
               className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-secondary-500/40 transition-colors"
             >
               <option value="">Select an option...</option>
               {question.options.map(opt => (
-                <option key={opt.id} value={opt.id} className="bg-primary-900 text-white">
+                <option key={opt.checklist_question_option_id} value={opt.checklist_question_option_id} className="bg-primary-900 text-white">
                   {opt.option_text} ({opt.marks} pts)
                 </option>
               ))}
@@ -558,11 +565,11 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {question.options.map(opt => {
-                const isSelected = selectedOptions.includes(opt.id);
+                const isSelected = selectedOptions.includes(opt.checklist_question_option_id);
                 return (
                   <button
-                    key={opt.id}
-                    onClick={() => toggleOption(opt.id)}
+                    key={opt.checklist_question_option_id}
+                    onClick={() => toggleOption(opt.checklist_question_option_id)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${
                       isSelected
                         ? "bg-secondary-500/15 border-secondary-500/40 text-white"
@@ -784,7 +791,7 @@ export default function MyAuditExecutePage() {
   const [prunedTree, setPrunedTree] = useState<TreeNode | null>(null);
   const [responses, setResponses] = useState<Record<string, AuditResponse[]>>({});
   const [stepHistory, setStepHistory] = useState<
-    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: number })[]
+    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
   >([{ mode: "cards", parentCode: null }]);
   const contentRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
@@ -979,7 +986,7 @@ export default function MyAuditExecutePage() {
     const resp = responses[k] || [];
     let answered = 0;
     for (const q of qs) {
-      const r = resp.find(rr => rr.question_id === q.id);
+      const r = resp.find(rr => rr.checklist_question_id === q.checklist_question_id);
       if (isAnswered(r)) answered++;
     }
     return s + answered;
@@ -989,7 +996,7 @@ export default function MyAuditExecutePage() {
   const activeStep = stepHistory[stepHistory.length - 1];
   let activeEntityProgress: EntityProgress | null = null;
   if (activeStep?.mode === "questions") {
-    if (activeStep.orgTreeId && activeStep.orgTreeId > 0) {
+    if (activeStep.orgTreeId) {
       activeEntityProgress = progressMap[progressKey(activeStep.entityCode, activeStep.orgTreeId)] || null;
     }
     if (!activeEntityProgress) {
@@ -1056,7 +1063,7 @@ export default function MyAuditExecutePage() {
                 const edgeId = nd.edge_id ?? null;
                 const k = progressKey(code, edgeId);
                 let hasQ = (questionsMap[k]?.length || 0) > 0;
-                let resolvedTreeId = edgeId ? Number(edgeId) : 0;
+                let resolvedTreeId = edgeId || null;
                 // When edge_id is absent, scan questionsMap for this entity's org_tree_id
                 if (!resolvedTreeId) {
                   const matchKey = Object.keys(questionsMap)
@@ -1065,7 +1072,7 @@ export default function MyAuditExecutePage() {
                   if (matchKey) {
                     hasQ = true;
                     const idPart = matchKey.split('__')[1];
-                    if (idPart && idPart !== 'null') resolvedTreeId = Number(idPart);
+                    if (idPart && idPart !== 'null') resolvedTreeId = idPart;
                   }
                 }
                 const hasKids = (nd.children ?? []).length > 0;
@@ -1120,7 +1127,8 @@ export default function MyAuditExecutePage() {
                     node,
                     auditEntityKeys,
                     progressMap,
-                    (code, n) => progressKey(code, n.edge_id ?? null)
+                    (code, n) => progressKey(code, n.edge_id ?? null),
+                    questionsMap
                   );
                   return tQ > 0;
                 });
@@ -1156,7 +1164,7 @@ export default function MyAuditExecutePage() {
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         {cards.map((node, i) => (
                           <EntityCard key={`${node.code}__${node.edge_id ?? "null"}`} node={node} index={i + 1}
-                            auditEntityKeys={auditEntityKeys} progressMap={progressMap}
+                            auditEntityKeys={auditEntityKeys} progressMap={progressMap} questionsMap={questionsMap}
                             onClick={() => navigateNode(node)} />
                         ))}
                       </div>
@@ -1172,13 +1180,13 @@ export default function MyAuditExecutePage() {
                         .filter((e) => {
                           const k = progressKey(e.entity_code, (e as any).org_tree_id ?? null);
                           const prog = progressMap[k];
-                          const tQ = prog?.total_questions || 0;
+                          const tQ = prog?.total_questions || questionsMap[k]?.length || 0;
                           return tQ > 0;
                         })
                         .map((e, i) => {
                         const k = progressKey(e.entity_code, (e as any).org_tree_id ?? null);
                         const prog = progressMap[k];
-                        const tQ = prog?.total_questions || 0;
+                        const tQ = prog?.total_questions || questionsMap[k]?.length || 0;
                         const aQ = prog?.answered_questions || 0;
                         const pct = tQ > 0 ? Math.round((aQ / tQ) * 100) : 0;
                         const status = pct >= 100 ? "Completed" : aQ > 0 ? "In Progress" : "Not Started";
@@ -1186,7 +1194,7 @@ export default function MyAuditExecutePage() {
                         return (
                           <div
                             key={k}
-                            onClick={() => pushStep({ mode: "questions", entityCode: e.entity_code, orgTreeId: Number((e as any).org_tree_id ?? 0) })}
+                            onClick={() => pushStep({ mode: "questions", entityCode: e.entity_code, orgTreeId: (e as any).org_tree_id || null })}
                             className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg group">
                             <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
                               <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white">{i + 1}</span>
@@ -1215,17 +1223,17 @@ export default function MyAuditExecutePage() {
               const entityCode = step.entityCode;
               // Use edge_id lookup if available and positive, otherwise lookup by entity code
               const currentNode = prunedTree
-                ? (step.orgTreeId && step.orgTreeId > 0 ? findNodeByEdgeId(prunedTree, step.orgTreeId) : findNode(prunedTree, entityCode))
+                ? (step.orgTreeId ? findNodeByEdgeId(prunedTree, step.orgTreeId) : findNode(prunedTree, entityCode))
                 : null;
-              const stepOrgTreeId = step.orgTreeId && step.orgTreeId > 0 ? step.orgTreeId : null;
+              const stepOrgTreeId = step.orgTreeId || null;
               // Prefer an explicit node edge id (currentNode) or the step's orgTreeId.
               // When resolving audit entity entries, match by both `entity_code` and
               // `org_tree_id` (or `assigned_org_tree_id`) so duplicate codes at
               // different tree edges are not collapsed.
-              const explicitEdgeId = (currentNode?.edge_id && currentNode.edge_id > 0) ? currentNode.edge_id : null;
+              const explicitEdgeId = currentNode?.edge_id || null;
               const auditEntities = audit?.entities || [];
-              let auditOrgTreeId: number | null = null;
-              if (step.orgTreeId && step.orgTreeId > 0) auditOrgTreeId = step.orgTreeId;
+              let auditOrgTreeId: string | null = null;
+              if (step.orgTreeId) auditOrgTreeId = step.orgTreeId;
               else if (explicitEdgeId) auditOrgTreeId = explicitEdgeId;
               else {
                 // If caller didn't provide an edge, try to find a unique matching entry
@@ -1236,7 +1244,6 @@ export default function MyAuditExecutePage() {
 
               const orgTreeIdForKey = auditOrgTreeId ?? null;
               const currentKey = progressKey(entityCode, orgTreeIdForKey);
-              const orgTreeIdNum = orgTreeIdForKey ? Number(orgTreeIdForKey) : 0;
               const questions = questionsMap[currentKey] || [];
               const entityResponses = responses[currentKey] || [];
               const children = currentNode ? (currentNode.children ?? []) : [];  // Show all children without filtering
@@ -1246,7 +1253,8 @@ export default function MyAuditExecutePage() {
                   child,
                   auditEntityKeys,
                   progressMap,
-                  (code, n) => progressKey(code, n.edge_id ?? null)
+                  (code, n) => progressKey(code, n.edge_id ?? null),
+                  questionsMap
                 );
                 return tQ > 0;
               });
@@ -1285,16 +1293,16 @@ export default function MyAuditExecutePage() {
                         </div>
                       )}
                       {questions.map((q) => {
-                        const resp = entityResponses.find(r => r.question_id === q.id);
+                        const resp = entityResponses.find(r => r.checklist_question_id === q.checklist_question_id);
                         return (
                           <QuestionCard
-                            key={q.id}
+                            key={q.checklist_question_id}
                             ref={(r) => { questionCardRefs.current[q.id] = r; }}
                             question={q}
                             response={resp}
-                            auditId={audit.id}
+                            auditId={audit.audit_id}
                             entityCode={entityCode}
-                            orgTreeId={orgTreeIdNum}
+                            orgTreeId={orgTreeIdForKey}
                             accessToken={accessToken!}
                             onSaved={refreshResponses}
                             onDirtyChange={handleDirtyChange}
@@ -1330,7 +1338,7 @@ export default function MyAuditExecutePage() {
                           }
                           toast("All changes saved.", "success");
                           const isFullyAnswered = questions.every(q => {
-                            const r = (responses[currentKey] || []).find(rr => rr.question_id === q.id);
+                            const r = (responses[currentKey] || []).find(rr => rr.checklist_question_id === q.checklist_question_id);
                             const st = String((r as any)?.status || "").toLowerCase();
                             return st === "answered" || st === "completed";
                           });

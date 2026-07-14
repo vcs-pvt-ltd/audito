@@ -81,11 +81,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const isAuthPage = pathname === "/" || pathname === "/login" || pathname === "/register";
-    if (!isLoading && admin && isAuthPage) router.replace("/dashboard");
+    if (!isLoading && admin && isAuthPage) {
+      if (admin.role === "audito_admin") {
+        router.replace("/admin-panel/dashboard");
+      } else {
+        router.replace("/dashboard");
+      }
+    }
   }, [admin, isLoading, pathname, router]);
 
   useEffect(() => {
     if (isLoading || !admin) return;
+    // audito_admin has no onboarding
+    if (admin.role === "audito_admin") return;
     const onboardingDone = !!admin.onboarding_completed || !!admin.onboarding_skipped;
     const adminExemptRoutes = ["/onboarding", "/profile", "/settings/organization", "/organization", "/structure", "/users", "/checklists", "/audits"];
     const userExemptRoutes = ["/onboarding", "/profile", "/settings/organization"];

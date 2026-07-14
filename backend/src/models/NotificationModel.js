@@ -1,8 +1,10 @@
 const { db } = require('../config/db');
+const { generateTableId } = require('../utils/codeGenerator');
 
 const NotificationModel = {
   async create({
-    auditor_code,
+    auditor_notification_id,
+    auditor_id,
     created_by_entity_code,
     type,
     title,
@@ -11,12 +13,16 @@ const NotificationModel = {
     notify_date = null,
     notification_key = null,
   }) {
-    const [res] = await db.query(
+    if (!auditor_notification_id) {
+      auditor_notification_id = await generateTableId('auditor_notifications', 'auditor_notification_id', 'ANOT', 5);
+    }
+    await db.query(
       `INSERT INTO auditor_notifications
-         (auditor_code, created_by_entity_code, type, title, message, audit_id, notify_date, notification_key, is_read)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+         (auditor_notification_id, auditor_id, created_by_entity_code, type, title, message, audit_id, notify_date, notification_key, is_read)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
-        auditor_code,
+        auditor_notification_id,
+        auditor_id,
         created_by_entity_code,
         type,
         title,
@@ -26,7 +32,7 @@ const NotificationModel = {
         notification_key,
       ]
     );
-    return res.insertId;
+    return auditor_notification_id;
   },
 
   async createIfNotExists(payload) {
@@ -34,55 +40,55 @@ const NotificationModel = {
       return this.create(payload);
     }
     const [rows] = await db.query(
-      `SELECT id FROM auditor_notifications WHERE notification_key = ? LIMIT 1`,
+      `SELECT auditor_notification_id FROM auditor_notifications WHERE notification_key = ? LIMIT 1`,
       [payload.notification_key]
     );
-    if (rows.length) return rows[0].id;
+    if (rows.length) return rows[0].auditor_notification_id;
     return this.create(payload);
   },
 
-  async listForAuditor(createdByEntityCode, auditorCode) {
+  async listForAuditor(createdByEntityCode, auditorId) {
     const [rows] = await db.query(
-      `SELECT id, type, title, message, audit_id, notify_date, created_at, is_read
+      `SELECT auditor_notification_id, type, title, message, audit_id, notify_date, created_at, is_read
        FROM auditor_notifications
        WHERE is_active = TRUE
          AND created_by_entity_code = ?
-         AND auditor_code = ?
+         AND auditor_id = ?
          AND (
            (type = 'audit_start' AND DATE(notify_date) = CURDATE())
            OR
            (type <> 'audit_start' AND (notify_date IS NULL OR DATE(notify_date) <= CURDATE()))
          )
        ORDER BY created_at DESC`,
-      [createdByEntityCode, auditorCode]
+      [createdByEntityCode, auditorId]
     );
     return rows;
   },
 
-  async deleteByAuditForOtherAuditors(auditId, keepAuditorCode) {
+  async deleteByAuditForOtherAuditors(auditId, keepAuditorId) {
     await db.query(
       `DELETE FROM auditor_notifications
        WHERE audit_id = ?
-         AND auditor_code <> ?
+         AND auditor_id <> ?
          AND type IN ('audit_assigned', 'audit_start')`,
-      [Number(auditId), keepAuditorCode]
+      [auditId, keepAuditorId]
     );
   },
 
-  async markReadStateForAuditor(id, auditorCode, isRead) {
+  async markReadStateForAuditor(auditor_notification_id, auditorId, isRead) {
     await db.query(
       `UPDATE auditor_notifications
        SET is_read = ?
-       WHERE id = ? AND auditor_code = ?`,
-      [isRead ? 1 : 0, Number(id), auditorCode]
+       WHERE auditor_notification_id = ? AND auditor_id = ?`,
+      [isRead ? 1 : 0, auditor_notification_id, auditorId]
     );
   },
 
-  async deleteForAuditor(id, auditorCode) {
+  async deleteForAuditor(auditor_notification_id, auditorId) {
     await db.query(
       `DELETE FROM auditor_notifications
-       WHERE id = ? AND auditor_code = ?`,
-      [Number(id), auditorCode]
+       WHERE auditor_notification_id = ? AND auditor_id = ?`,
+      [auditor_notification_id, auditorId]
     );
   },
 

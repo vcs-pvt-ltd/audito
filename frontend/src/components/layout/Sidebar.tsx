@@ -12,7 +12,7 @@ import { noticeApi, linksApi } from "@/lib/api";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
   ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
-  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail,
 } from "lucide-react";
 
 // ─── Avatar helper (mirrors profile page) ────────────────────────
@@ -225,16 +225,23 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
     { type: "link", label: "CAPs", path: "/entity-head/caps", icon: ClipboardList, matchPrefix: true },
     { type: "link", label: "Help", path: "/settings/help", icon: HelpCircle },
   ],
+  audito_admin: [
+    { type: "link", label: "Dashboard", path: "/admin-panel/dashboard", icon: LayoutDashboard },
+    { type: "link", label: "Messages", path: "/admin-panel/messages", icon: Mail, matchPrefix: true },
+    { type: "link", label: "Promo Codes", path: "/admin-panel/promo-codes", icon: CreditCard, matchPrefix: true },
+    { type: "link", label: "Admins", path: "/admin-panel/admins", icon: Shield, matchPrefix: true },
+  ],
 };
 
 const ACCOUNT_LABELS: Record<string, string> = {
   Customer: "Customer", Company: "Company", "Audit Firm": "Audit Firm",
 };
 const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin", auditor: "Auditor", entity_head: "Entity Head",
+  admin: "Admin", auditor: "Auditor", entity_head: "Entity Head", audito_admin: "Audito Admin",
 };
 
 function resolveNavKey(role: string, accountType?: string | null): string {
+  if (role === "audito_admin") return "audito_admin";
   if (role === "admin") {
     const normalized = accountType === "Audit Firm Company" ? "Audit Firm" : (accountType ?? "");
     const key = `admin:${normalized}`;
@@ -534,13 +541,13 @@ export default function Sidebar() {
     if (!accessToken || !n?.id) return;
     try {
       if (action === "read") {
-        await noticeApi.markRead(accessToken, Number(n.id));
+        await noticeApi.markRead(accessToken, n.id);
         setNotices((prev) => prev.map((x) => x.id === n.id ? { ...x, is_read: true } : x));
       } else if (action === "unread") {
-        await noticeApi.markUnread(accessToken, Number(n.id));
+        await noticeApi.markUnread(accessToken, n.id);
         setNotices((prev) => prev.map((x) => x.id === n.id ? { ...x, is_read: false } : x));
       } else {
-        await noticeApi.deleteMine(accessToken, Number(n.id));
+        await noticeApi.deleteMine(accessToken, n.id);
         setNotices((prev) => prev.filter((x) => x.id !== n.id));
       }
     } catch { /* no-op */ }

@@ -10,31 +10,31 @@ const { db } = require('../config/db');
 
 const EntityHeadModel = {
 
-  async create({ user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, email_token, email_token_expires }) {
-    const [result] = await db.query(
-      `INSERT INTO entity_heads (user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, email_token, email_token_expires)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [user_code, first_name, last_name, email, phone_number || null, nic || null, country || null, role, user_type, assigned_entity_type || null, assigned_entity_code || null, assigned_org_tree_id || null, created_by_admin_id, created_by_entity_code, email_token, email_token_expires]
+  async create({ entity_head_id, first_name, last_name, email, phone_number, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, email_token, email_token_expires }) {
+    await db.query(
+      `INSERT INTO entity_heads (entity_head_id, first_name, last_name, email, phone_number, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, email_token, email_token_expires)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [entity_head_id, first_name, last_name, email, phone_number || null, country || null, role, user_type, assigned_entity_type || null, assigned_entity_code || null, assigned_org_tree_id || null, created_by_admin_id, created_by_entity_code, email_token, email_token_expires]
     );
-    return result.insertId;
+    return entity_head_id;
   },
 
-  async createVerified({ user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, password }) {
-    const [result] = await db.query(
-      `INSERT INTO entity_heads (user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, password, email_verified)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
-      [user_code, first_name, last_name, email, phone_number || null, nic || null, country || null, role, user_type, assigned_entity_type || null, assigned_entity_code || null, assigned_org_tree_id || null, created_by_admin_id, created_by_entity_code, password]
+  async createVerified({ entity_head_id, first_name, last_name, email, phone_number, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, password }) {
+    await db.query(
+      `INSERT INTO entity_heads (entity_head_id, first_name, last_name, email, phone_number, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, password, email_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
+      [entity_head_id, first_name, last_name, email, phone_number || null, country || null, role, user_type, assigned_entity_type || null, assigned_entity_code || null, assigned_org_tree_id || null, created_by_admin_id, created_by_entity_code, password]
     );
-    return result.insertId;
+    return entity_head_id;
   },
 
-  async findById(id) {
-    const [rows] = await db.query('SELECT * FROM entity_heads WHERE id = ? AND is_active = TRUE', [id]);
+  async findById(entity_head_id) {
+    const [rows] = await db.query('SELECT * FROM entity_heads WHERE entity_head_id = ? AND is_active = TRUE', [entity_head_id]);
     return rows[0] || null;
   },
 
-  async findByCode(user_code) {
-    const [rows] = await db.query('SELECT * FROM entity_heads WHERE user_code = ? AND is_active = TRUE', [user_code]);
+  async findByCode(entity_head_id) {
+    const [rows] = await db.query('SELECT * FROM entity_heads WHERE entity_head_id = ? AND is_active = TRUE', [entity_head_id]);
     return rows[0] || null;
   },
 
@@ -43,32 +43,32 @@ const EntityHeadModel = {
     return rows[0] || null;
   },
 
-  async getOnboardingStatus(id) {
+  async getOnboardingStatus(entity_head_id) {
     const [rows] = await db.query(
       `SELECT onboarding_completed, onboarding_skipped, onboarding_completed_at
        FROM entity_heads
-       WHERE id = ?`,
-      [id]
+       WHERE entity_head_id = ?`,
+      [entity_head_id]
     );
     return rows[0] || null;
   },
 
-  async updateOnboardingStatus(id, { completed, skipped }) {
+  async updateOnboardingStatus(entity_head_id, { completed, skipped }) {
     await db.query(
       `UPDATE entity_heads
        SET onboarding_completed = ?, onboarding_skipped = ?,
            onboarding_completed_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE onboarding_completed_at END
-       WHERE id = ?`,
-      [completed ? 1 : 0, skipped ? 1 : 0, completed ? 1 : 0, id]
+       WHERE entity_head_id = ?`,
+      [completed ? 1 : 0, skipped ? 1 : 0, completed ? 1 : 0, entity_head_id]
     );
   },
 
-  async resetOnboardingStatus(id) {
+  async resetOnboardingStatus(entity_head_id) {
     await db.query(
       `UPDATE entity_heads
        SET onboarding_completed = 0, onboarding_skipped = 0, onboarding_completed_at = NULL
-       WHERE id = ?`,
-      [id]
+       WHERE entity_head_id = ?`,
+      [entity_head_id]
     );
   },
 
@@ -80,19 +80,19 @@ const EntityHeadModel = {
     return rows[0] || null;
   },
 
-  async verifyEmail(id) {
+  async verifyEmail(entity_head_id) {
     await db.query(
-      'UPDATE entity_heads SET email_verified = TRUE, email_token = NULL, email_token_expires = NULL WHERE id = ?',
-      [id]
+      'UPDATE entity_heads SET email_verified = TRUE, email_token = NULL, email_token_expires = NULL WHERE entity_head_id = ?',
+      [entity_head_id]
     );
   },
 
-  async setPassword(id, hashedPassword) {
-    await db.query('UPDATE entity_heads SET password = ? WHERE id = ?', [hashedPassword, id]);
+  async setPassword(entity_head_id, hashedPassword) {
+    await db.query('UPDATE entity_heads SET password = ? WHERE entity_head_id = ?', [hashedPassword, entity_head_id]);
   },
 
   async listByCreator(entityCode, userType) {
-    let query = 'SELECT id, user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM entity_heads WHERE created_by_entity_code = ? AND is_active = TRUE';
+    let query = 'SELECT entity_head_id AS user_code, entity_head_id, first_name, last_name, email, phone_number, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM entity_heads WHERE created_by_entity_code = ? AND is_active = TRUE';
     const params = [entityCode];
     if (userType) {
       query += ' AND user_type = ?';
@@ -106,7 +106,7 @@ const EntityHeadModel = {
   async listByCreators(entityCodes, userType) {
     if (!entityCodes.length) return [];
     const placeholders = entityCodes.map(() => '?').join(',');
-    let query = `SELECT id, user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM entity_heads WHERE created_by_entity_code IN (${placeholders}) AND is_active = TRUE`;
+    let query = `SELECT entity_head_id AS user_code, entity_head_id, first_name, last_name, email, phone_number, country, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM entity_heads WHERE created_by_entity_code IN (${placeholders}) AND is_active = TRUE`;
     const params = [...entityCodes];
     if (userType) {
       query += ' AND user_type = ?';
@@ -117,8 +117,8 @@ const EntityHeadModel = {
     return rows;
   },
 
-  async update(id, fields) {
-    const allowed = ['first_name', 'last_name', 'phone_number', 'nic', 'country', 'assigned_entity_type', 'assigned_entity_code', 'assigned_org_tree_id'];
+  async update(entity_head_id, fields) {
+    const allowed = ['first_name', 'last_name', 'phone_number', 'country', 'assigned_entity_type', 'assigned_entity_code', 'assigned_org_tree_id'];
     const sets = [];
     const values = [];
     for (const key of allowed) {
@@ -128,17 +128,17 @@ const EntityHeadModel = {
       }
     }
     if (sets.length === 0) return;
-    values.push(id);
-    await db.query(`UPDATE entity_heads SET ${sets.join(', ')} WHERE id = ?`, values);
+    values.push(entity_head_id);
+    await db.query(`UPDATE entity_heads SET ${sets.join(', ')} WHERE entity_head_id = ?`, values);
   },
 
-  async deleteById(id) {
-    await db.query('DELETE FROM entity_heads WHERE id = ?', [id]);
+  async deleteById(entity_head_id) {
+    await db.query('DELETE FROM entity_heads WHERE entity_head_id = ?', [entity_head_id]);
   },
 
   async findByEntityCode(entityCode) {
     const [rows] = await db.query(
-      `SELECT id, user_code, first_name, last_name, email, role, user_type, assigned_entity_type, assigned_entity_code
+      `SELECT entity_head_id, first_name, last_name, email, role, user_type, assigned_entity_type, assigned_entity_code
        FROM entity_heads
        WHERE assigned_entity_code = ? AND is_active = TRUE`,
       [entityCode]
@@ -151,7 +151,7 @@ const EntityHeadModel = {
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
     const [rows] = await db.query(
-      `SELECT id, user_code, first_name, last_name, email, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id
+      `SELECT entity_head_id, first_name, last_name, email, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id
        FROM entity_heads
        WHERE assigned_org_tree_id IN (${placeholders}) AND is_active = TRUE`,
       ids
@@ -162,7 +162,7 @@ const EntityHeadModel = {
   async findOneByOrgTreeId(orgTreeId) {
     if (!orgTreeId) return null;
     const [rows] = await db.query(
-      `SELECT id, user_code, first_name, last_name, email, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id
+      `SELECT entity_head_id, first_name, last_name, email, role, user_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id
        FROM entity_heads
        WHERE assigned_org_tree_id = ? AND is_active = TRUE
        ORDER BY created_at DESC
@@ -172,10 +172,10 @@ const EntityHeadModel = {
     return rows[0] || null;
   },
 
-  async regenerateToken(id, token, expires) {
+  async regenerateToken(entity_head_id, token, expires) {
     await db.query(
-      'UPDATE entity_heads SET email_token = ?, email_token_expires = ? WHERE id = ?',
-      [token, expires, id]
+      'UPDATE entity_heads SET email_token = ?, email_token_expires = ? WHERE entity_head_id = ?',
+      [token, expires, entity_head_id]
     );
   }
 };

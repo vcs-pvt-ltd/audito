@@ -6,7 +6,7 @@
  *
  * GET    /api/org-tree                      Full nested tree
  * POST   /api/org-tree                      Add child under parent
- * DELETE /api/org-tree/:id                   Remove a tree edge
+ * DELETE /api/org-tree/:id          Remove a tree edge
  * GET    /api/org-tree/entities/:entityType  List all entities of a type
  */
 

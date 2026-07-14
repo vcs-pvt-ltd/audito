@@ -26,7 +26,7 @@ import { useUiFeedback } from "@/context/UiFeedbackContext";
 import TablePagination from "@/components/shared/TablePagination";
 
 interface Checklist {
-  id: number;
+  checklist_id: string;
   name: string;
   description: string | null;
   checklist_type_id: number | null;
@@ -53,7 +53,7 @@ export default function ChecklistsPage() {
 
   const [checklists, setChecklists] = useState<Checklist[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [auditLimitModalOpen, setAuditLimitModalOpen] = useState(false);
   const [auditCount, setAuditCount] = useState(0);
@@ -137,7 +137,7 @@ export default function ChecklistsPage() {
   const isLimitExceeded = admin?.plan_limits && checklists.length >= admin.plan_limits.checklists;
   const isAuditLimitExceeded = admin?.plan_limits && auditCount >= admin.plan_limits.audits;
 
-  const handleAssignAuditClick = (id: number) => {
+  const handleAssignAuditClick = (id: string) => {
     if (isAuditLimitExceeded) {
       setAuditLimitModalOpen(true);
     } else {
@@ -146,16 +146,16 @@ export default function ChecklistsPage() {
     }
   };
 
-  const detailsPath = (id: number) =>
+  const detailsPath = (id: string) =>
     `/checklists/details?id=${id}${isOnboarding ? "&onboarding=1" : ""}`;
 
-  const editPath = (id: number) =>
+  const editPath = (id: string) =>
     `/checklists/create?id=${id}${isOnboarding ? "&onboarding=1" : ""}`;
 
   const assignedAuditCount = (checklist: Checklist) =>
     Number(checklist.assigned_audit_count || 0);
 
-  const handleDelete = async (id: number, name: string, auditCount = 0) => {
+  const handleDelete = async (id: string, name: string, auditCount = 0) => {
     if (!accessToken) return;
     // Safety net for race conditions: a checklist in use by an audit can't be
     // deleted (backend 403). Explain why instead of firing a doomed request.
@@ -322,11 +322,11 @@ export default function ChecklistsPage() {
                   const auditCount = assignedAuditCount(cl);
                   const isEditDisabled = auditCount > 0;
                   return (
-                    <tr key={cl.id} className="hover:bg-white/[0.02] transition-colors">
+                    <tr key={cl.checklist_id} className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-4 py-3 text-gray-400 text-sm">{itemIndex}</td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => router.push(detailsPath(cl.id))}
+                          onClick={() => router.push(detailsPath(cl.checklist_id))}
                           className="text-secondary-400 hover:text-secondary-300 font-medium hover:underline underline-offset-2 transition-colors text-left"
                           title="View checklist details"
                         >
@@ -373,7 +373,7 @@ export default function ChecklistsPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 justify-end">
                           <button
-                            onClick={() => handleAssignAuditClick(cl.id)}
+                            onClick={() => handleAssignAuditClick(cl.checklist_id)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all whitespace-nowrap text-amber-400 hover:bg-amber-500/10 border-amber-500/20 hover:border-amber-500/40"
                             title={isAuditLimitExceeded ? "Audit limit reached — upgrade your plan" : "Assign Audit"}
                           >
@@ -385,7 +385,7 @@ export default function ChecklistsPage() {
                               if (isEditDisabled) {
                                 toast(`This checklist is used in ${auditCount} audit${auditCount === 1 ? "" : "s"}; editing is disabled. Cancel or remove those audits first.`, "warning");
                               } else {
-                                router.push(editPath(cl.id));
+                                router.push(editPath(cl.checklist_id));
                               }
                             }}
                             className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all"
@@ -395,7 +395,7 @@ export default function ChecklistsPage() {
                           </button>
                           {isEditDisabled ? (
                             <button
-                              onClick={() => handleDelete(cl.id, cl.name, auditCount)}
+                              onClick={() => handleDelete(cl.checklist_id, cl.name, auditCount)}
                               className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 border border-white/10 transition-all"
                               title={`Used in ${auditCount} audit${auditCount === 1 ? "" : "s"}. Click for details.`}
                             >
@@ -403,12 +403,12 @@ export default function ChecklistsPage() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => handleDelete(cl.id, cl.name, auditCount)}
-                              disabled={deleting === cl.id}
+                              onClick={() => handleDelete(cl.checklist_id, cl.name, auditCount)}
+                              disabled={deleting === cl.checklist_id}
                               className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 transition-all disabled:opacity-50"
                               title="Delete"
                             >
-                              {deleting === cl.id ? (
+                              {deleting === cl.checklist_id ? (
                                 <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
                               ) : (
                                 <Trash2 size={14} />
@@ -431,12 +431,12 @@ export default function ChecklistsPage() {
                 const auditCount = assignedAuditCount(cl);
                 const isEditDisabled = auditCount > 0;
                 return (
-                  <div key={cl.id} className="glass rounded-xl border border-white/10 p-4">
+                  <div key={cl.checklist_id} className="glass rounded-xl border border-white/10 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-xs text-gray-500">#{itemIndex}</p>
                         <button
-                          onClick={() => router.push(detailsPath(cl.id))}
+                          onClick={() => router.push(detailsPath(cl.checklist_id))}
                           className="text-sm font-semibold text-secondary-400 hover:text-secondary-300 text-left truncate block"
                           title="View checklist details"
                         >
@@ -474,7 +474,7 @@ export default function ChecklistsPage() {
 
                     <div className="mt-3 flex items-center justify-end gap-2">
                       <button
-                        onClick={() => handleAssignAuditClick(cl.id)}
+                        onClick={() => handleAssignAuditClick(cl.checklist_id)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all text-amber-400 hover:bg-amber-500/10 border-amber-500/20 hover:border-amber-500/40"
                         title={isAuditLimitExceeded ? "Audit limit reached — upgrade your plan" : "Assign Audit"}
                       >
@@ -486,7 +486,7 @@ export default function ChecklistsPage() {
                           if (isEditDisabled) {
                             toast(`This checklist is used in ${auditCount} audit${auditCount === 1 ? "" : "s"}; editing is disabled. Cancel or remove those audits first.`, "warning");
                           } else {
-                            router.push(editPath(cl.id));
+                            router.push(editPath(cl.checklist_id));
                           }
                         }}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 border border-white/10 hover:border-secondary-500/20 transition-all"
@@ -496,7 +496,7 @@ export default function ChecklistsPage() {
                       </button>
                       {isEditDisabled ? (
                         <button
-                          onClick={() => handleDelete(cl.id, cl.name, auditCount)}
+                          onClick={() => handleDelete(cl.checklist_id, cl.name, auditCount)}
                           className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 border border-white/10 transition-all"
                           title={`Used in ${auditCount} audit${auditCount === 1 ? "" : "s"}. Tap for details.`}
                         >
@@ -504,12 +504,12 @@ export default function ChecklistsPage() {
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleDelete(cl.id, cl.name, auditCount)}
-                          disabled={deleting === cl.id}
+                          onClick={() => handleDelete(cl.checklist_id, cl.name, auditCount)}
+                          disabled={deleting === cl.checklist_id}
                           className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 transition-all disabled:opacity-50"
                           title="Delete"
                         >
-                          {deleting === cl.id ? (
+                          {deleting === cl.checklist_id ? (
                             <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
                           ) : (
                             <Trash2 size={14} />

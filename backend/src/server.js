@@ -23,6 +23,8 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const myLearningRoutes = require('./routes/myLearningRoutes');
 const landingRoutes    = require('./routes/landingRoutes');
 const paymentRoutes    = require('./routes/paymentRoutes');
+const adminRoutes      = require('./routes/adminRoutes');
+const billingCreditRoutes = require('./routes/billingCreditRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -74,6 +76,8 @@ app.use('/api/dashboard',      dashboardRoutes);
 app.use('/api/my-learning',    myLearningRoutes);
 app.use('/api/landing',        landingRoutes);
 app.use('/api/payments',       paymentRoutes);
+app.use('/api/admin',          adminRoutes);
+app.use('/api/billing/credits', billingCreditRoutes);
 
 // 404 handler
 app.use((req, res) => {

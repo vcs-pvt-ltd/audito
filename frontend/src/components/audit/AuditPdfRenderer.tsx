@@ -10,6 +10,7 @@ import auditoLogo from "../../assets/logo/audito_logo.png";
 
 // ─── Types ────────────────────────────────────────────────────────
 interface EntityProgress {
+  audit_entity_progress_id?: string;
   entity_code: string;
   entity_name?: string;
   total_questions: number;
@@ -17,11 +18,11 @@ interface EntityProgress {
   total_marks: number;
   obtained_marks: number;
   status: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
 }
 
 interface Evidence {
-  id: number;
+  id: string;
   file_type: string;
   file_path: string;
   file_name: string;
@@ -29,10 +30,10 @@ interface Evidence {
 }
 
 interface AuditResponse {
-  id: number;
-  question_id: number;
+  audit_response_id: string;
+  checklist_question_id: string;
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   answer_text: string | null;
   selected_option_ids: string | null;
   marks_obtained: number;
@@ -43,13 +44,15 @@ interface AuditResponse {
 }
 
 interface QuestionOption {
-  id: number;
+  id: string;
+  checklist_question_option_id: string;
   option_text: string;
   marks: number;
 }
 
 interface Question {
-  id: number;
+  id: string;
+  checklist_question_id: string;
   question_text: string;
   answer_type: string;
   total_marks: number;
@@ -66,7 +69,7 @@ interface AuditEntity {
 
 interface ReportData {
   audit: {
-    id: number;
+    audit_id: string;
     audit_code: string;
     title: string;
     status: string;
@@ -109,7 +112,7 @@ interface EntityTreeNode {
   code: string;
   name?: string;
   entity_type?: string;
-  edge_id?: number | null;
+  edge_id?: string | null;
   children?: EntityTreeNode[];
 }
 
@@ -189,7 +192,7 @@ export function AuditPdfRenderer({ report, entityTree }: AuditPdfRendererProps) 
 
 
   const fetchEntityTree = async (
-    auditId: number
+    auditId: string
   ): Promise<EntityTreeNode | null> => {
     try {
       const token = getAccessToken();
@@ -207,14 +210,14 @@ export function AuditPdfRenderer({ report, entityTree }: AuditPdfRendererProps) 
 
     setDownloading(true);
     try {
-      const tree = entityTree || (await fetchEntityTree(report.audit.id));
+      const tree = entityTree || (await fetchEntityTree(report.audit.audit_id));
       const doc = new jsPDF({ unit: "pt", format: "a4" });
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 50;
 
       const title = report.audit.title || "Audit Report";
-      const auditCode = report.audit.audit_code || String(report.audit.id);
+      const auditCode = report.audit.audit_code || String(report.audit.audit_id);
 
       // ── Color Palette ──────────────────────────────────────────
       const PRIMARY: [number, number, number]    = [16, 185, 129];
@@ -601,8 +604,8 @@ summaryMetrics.forEach((metric, i) => {
             const selectedTexts = q.options
               .filter(
                 (opt) =>
-                  parsedIds.includes(opt.id) ||
-                  parsedIds.includes(String(opt.id))
+                  parsedIds.includes(opt.checklist_question_option_id) ||
+                  parsedIds.includes(String(opt.checklist_question_option_id))
               )
               .map((opt) => opt.option_text);
             if (selectedTexts.length) {
@@ -752,7 +755,7 @@ summaryMetrics.forEach((metric, i) => {
       const responseByEntityQuestion = new Map<string, AuditResponse>();
       for (const r of report.responses) {
         // Use org_tree_id in the key to support reused entity codes
-        const key = `${r.entity_code}::${r.org_tree_id ?? "null"}::${r.question_id}`;
+        const key = `${r.entity_code}::${r.org_tree_id ?? "null"}::${r.checklist_question_id}`;
         responseByEntityQuestion.set(key, r);
       }
 
@@ -809,18 +812,18 @@ summaryMetrics.forEach((metric, i) => {
             
             if (instanceResponses.length > 0) {
               const qs = report.questions.filter(q => 
-                instanceResponses.some(r => r.question_id === q.id)
+                instanceResponses.some(r => r.checklist_question_id === q.checklist_question_id)
               ).sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
 
               if (qs.length) {
                 cy = drawFindingsTableHeader(cy);
                 qs.forEach((q, idx) => {
                   const resp = responseByEntityQuestion.get(
-                    `${nodeRespKeyBase}::${q.id}`
+                    `${nodeRespKeyBase}::${q.checklist_question_id}`
                   );
                   const qNo = `${prefix}.${idx + 1}`;
                   questionNumberByEntityQuestion.set(
-                    `${nodeRespKeyBase}::${q.id}`,
+                    `${nodeRespKeyBase}::${q.checklist_question_id}`,
                     qNo
                   );
                   cy = renderQuestionRow(q, resp, cy, qNo);
@@ -880,9 +883,9 @@ summaryMetrics.forEach((metric, i) => {
           cy = drawFindingsTableHeader(cy);
 
           qs.forEach((q, index) => {
-            const resp = responseByEntityQuestion.get(`${code}::${q.id}`);
+            const resp = responseByEntityQuestion.get(`${code}::${q.checklist_question_id}`);
             const qNo = String(q.order_index || index + 1);
-            questionNumberByEntityQuestion.set(`${code}::${q.id}`, qNo);
+            questionNumberByEntityQuestion.set(`${code}::${q.checklist_question_id}`, qNo);
             cy = renderQuestionRow(q, resp, cy, qNo);
           });
         }
@@ -890,7 +893,7 @@ summaryMetrics.forEach((metric, i) => {
 
       // ─── Evidence & Remarks Section ────────────────────────────
       const responsesWithDetails = report.responses.filter((r) => {
-        const q = report.questions.find((q) => q.id === r.question_id);
+        const q = report.questions.find((q) => q.checklist_question_id === r.checklist_question_id);
         return q && (r.remarks || (r.evidence && r.evidence.length > 0));
       });
 
@@ -931,8 +934,8 @@ summaryMetrics.forEach((metric, i) => {
         cy += 35;
 
         const sorted = [...responsesWithDetails].sort((a, b) => {
-          const keyA = `${a.entity_code}::${a.org_tree_id ?? "null"}::${a.question_id}`;
-          const keyB = `${b.entity_code}::${b.org_tree_id ?? "null"}::${b.question_id}`;
+          const keyA = `${a.entity_code}::${a.org_tree_id ?? "null"}::${a.checklist_question_id}`;
+          const keyB = `${b.entity_code}::${b.org_tree_id ?? "null"}::${b.checklist_question_id}`;
           const qa = questionNumberByEntityQuestion.get(keyA) || "";
           const qb = questionNumberByEntityQuestion.get(keyB) || "";
           return qa.localeCompare(qb, undefined, {
@@ -942,10 +945,10 @@ summaryMetrics.forEach((metric, i) => {
         });
 
         for (const resp of sorted) {
-          const q = report.questions.find((qq) => qq.id === resp.question_id);
+          const q = report.questions.find((qq) => qq.checklist_question_id === resp.checklist_question_id);
           if (!q) continue;
 
-          const respKey = `${resp.entity_code}::${resp.org_tree_id ?? "null"}::${resp.question_id}`;
+          const respKey = `${resp.entity_code}::${resp.org_tree_id ?? "null"}::${resp.checklist_question_id}`;
           const qNo = questionNumberByEntityQuestion.get(respKey) || "—";
           const hasEvidence = resp.evidence && resp.evidence.length > 0;
           const hasRemark =

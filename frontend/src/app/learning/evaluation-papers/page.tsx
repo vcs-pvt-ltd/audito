@@ -6,13 +6,14 @@ import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, RefreshCw, Trash2, Trophy, Clock, ClipboardList, Search, Crown, Lock as LockIcon } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Trophy, Clock, ClipboardList, Search, Crown, Lock as LockIcon, Building2 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Modal, Table, THead, Th, Input } from "@/components/ui";
 
 interface Paper {
   id: number;
+  evaluation_paper_id: string;
   title: string;
   description?: string | null;
   time_limit_minutes?: number | null;
@@ -22,23 +23,24 @@ interface Paper {
   is_active?: number | boolean;
   question_count?: number;
   assigned_count?: number;
+  entity_name?: string | null;
 }
 
 interface Assignment {
-  assignment_id: number;
+  assignment_id: string;
   assigned_at: string;
   due_date: string | null;
   assignment_status: "assigned" | "submitted";
-  paper_id: number;
+  paper_id: string;
   paper_title: string;
   pass_marks: number | null;
   auditor_user_code: string;
   auditor_first_name: string;
   auditor_last_name: string;
   auditor_email: string;
-  score: number | null;
-  max_score: number | null;
-  passed: number | boolean | null;
+  score: number | string | null;
+  max_score: number | string | null;
+  passed: number | boolean | string | null;
   submitted_at: string | null;
 }
 
@@ -129,8 +131,10 @@ function ViewAssignmentsModal({
               <tbody className="divide-y divide-white/5">
                 {assignments.map((a, idx) => {
                   const isSubmitted = a.assignment_status === "submitted";
-                  const isPassedFlag = a.passed === 1 || a.passed === true;
-                  const percent = a.max_score ? Math.round(((a.score || 0) / a.max_score) * 100) : Math.round((a.score || 0) * 100);
+                  const isPassedFlag = a.passed === 1 || a.passed === true || a.passed === "1";
+                  const scoreNum = a.score != null ? Number(a.score) : null;
+                  const maxScoreNum = a.max_score != null ? Number(a.max_score) : null;
+                  const percent = maxScoreNum && maxScoreNum > 0 && scoreNum != null ? Math.round((scoreNum / maxScoreNum) * 100) : 0;
                   const isPassed = a.pass_marks != null ? percent >= Number(a.pass_marks) : isPassedFlag;
                   return (
                     <tr key={a.assignment_id} className="hover:bg-white/[0.02] transition-colors">
@@ -145,11 +149,13 @@ function ViewAssignmentsModal({
                         </span>
                       </td>
                       <td className="px-4 py-4 text-center">
-                        {isSubmitted ? (
+                        {isSubmitted && scoreNum != null && maxScoreNum && maxScoreNum > 0 ? (
                           <div className="flex flex-col items-center">
                             <p className={`text-xs font-bold ${isPassed ? "text-green-400" : "text-red-400"}`}>{percent}%</p>
-                            <p className="text-[10px] text-gray-500 uppercase">{isPassed ? "Passed" : "Failed"}</p>
+                            <p className="text-[10px] text-gray-500">{isPassed ? "Passed" : "Failed"}</p>
                           </div>
+                        ) : isSubmitted ? (
+                          <span className="text-xs text-gray-500">—</span>
                         ) : "—"}
                       </td>
                       <td className="px-4 py-4 text-right">
@@ -177,15 +183,15 @@ export default function AuditFirmEvaluationPapersPage() {
   const [loading, setLoading] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
-  const [assignPaperId, setAssignPaperId] = useState<number | null>(null);
-  const [viewAssignmentsId, setViewAssignmentsId] = useState<number | null>(null);
+  const [assignPaperId, setAssignPaperId] = useState<string | null>(null);
+  const [viewAssignmentsId, setViewAssignmentsId] = useState<string | null>(null);
   const [viewAssignmentsOpen, setViewAssignmentsOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const selectedPaper = papers.find(p => p.id === viewAssignmentsId);
-  const filteredAssignments = assignments.filter(a => a.paper_id === viewAssignmentsId);
+  const selectedPaper = papers.find(p => p.evaluation_paper_id === viewAssignmentsId);
+  const filteredAssignments = assignments.filter(a => String(a.paper_id) === viewAssignmentsId);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -230,7 +236,7 @@ export default function AuditFirmEvaluationPapersPage() {
 
   if (isLoading || !admin) return null;
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!accessToken) return;
     const ok = await confirm({ title: "Delete Evaluation Paper", message: "Delete this evaluation paper?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
@@ -318,6 +324,7 @@ export default function AuditFirmEvaluationPapersPage() {
                 <THead>
                   <Th align="center" className="w-10">#</Th>
                   <Th>Paper Name</Th>
+                  <Th>Organization</Th>
                   <Th align="center" className="w-24">Questions</Th>
                   <Th align="center" className="w-24">Pass %</Th>
                   <Th align="center" className="w-24">Time</Th>
@@ -328,12 +335,23 @@ export default function AuditFirmEvaluationPapersPage() {
                   {paginated.map((p, index) => {
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
                     return (
-                      <tr key={p.id} className="hover:bg-white/[0.02] transition-colors group">
+                      <tr key={p.evaluation_paper_id} className="hover:bg-white/[0.02] transition-colors group">
                         <td className="px-4 py-4 text-gray-500 text-center">{itemIndex}</td>
 
                         {/* Paper Name — no wrapper div */}
                         <td className="px-4 py-4">
                           <p className="text-white font-medium">{p.title}</p>
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {p.entity_name ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                              <Building2 size={12} className="text-gray-500 shrink-0" />
+                              <span className="truncate max-w-[120px]">{p.entity_name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-600">—</span>
+                          )}
                         </td>
 
                         <td className="px-4 py-4 text-center text-gray-400">{p.question_count ?? 0}</td>
@@ -353,11 +371,11 @@ export default function AuditFirmEvaluationPapersPage() {
                         </td>
                         <td className="px-4 py-4 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => { setViewAssignmentsId(p.id); setViewAssignmentsOpen(true); }}
+                            <button onClick={() => { setViewAssignmentsId(p.evaluation_paper_id); setViewAssignmentsOpen(true); }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Submissions">
                               <Trophy size={15} />
                             </button>
-                            <button onClick={() => { setAssignPaperId(p.id); setAssignOpen(true); }}
+                            <button onClick={() => { setAssignPaperId(p.evaluation_paper_id); setAssignOpen(true); }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all" title="Assign">
                               <Plus size={15} />
                             </button>
@@ -369,7 +387,7 @@ export default function AuditFirmEvaluationPapersPage() {
                                 <LockIcon size={15} />
                               </button>
                             ) : (
-                              <button onClick={() => handleDelete(p.id)}
+                              <button onClick={() => handleDelete(p.evaluation_paper_id)}
                                 className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
                                 <Trash2 size={15} />
                               </button>
@@ -388,7 +406,7 @@ export default function AuditFirmEvaluationPapersPage() {
             {paginated.map((p, index) => {
               const itemIndex = (currentPage - 1) * pageSize + index + 1;
               return (
-                <div key={p.id} className="glass rounded-xl border border-white/10 p-4">
+                <div key={p.evaluation_paper_id} className="glass rounded-xl border border-white/10 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-xs text-gray-500">#{itemIndex}</p>
@@ -411,12 +429,12 @@ export default function AuditFirmEvaluationPapersPage() {
                     </div>
                   </div>
                   <div className="mt-3 flex items-center justify-end gap-1 pt-3 border-t border-white/5">
-                    <button onClick={() => { setViewAssignmentsId(p.id); setViewAssignmentsOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-blue-400"><Trophy size={15} /></button>
-                    <button onClick={() => { setAssignPaperId(p.id); setAssignOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-green-400"><Plus size={15} /></button>
+                    <button onClick={() => { setViewAssignmentsId(p.evaluation_paper_id); setViewAssignmentsOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-blue-400"><Trophy size={15} /></button>
+                    <button onClick={() => { setAssignPaperId(p.evaluation_paper_id); setAssignOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-green-400"><Plus size={15} /></button>
                     {(p.assigned_count ?? 0) > 0 ? (
                       <button onClick={() => toast(`This evaluation paper is assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")} className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title={`Assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"}. Tap for details.`}><LockIcon size={15} /></button>
                     ) : (
-                      <button onClick={() => handleDelete(p.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                      <button onClick={() => handleDelete(p.evaluation_paper_id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
                     )}
                   </div>
                 </div>

@@ -10,11 +10,11 @@ import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Table, THead, Th } from "@/components/ui";
 
 interface MyTraining {
-  assignment_id: number;
+  assignment_id: string;
   status: "assigned" | "completed";
   assigned_at: string;
   completed_at?: string | null;
-  training_id: number;
+  training_id: string;
   title: string;
   platform?: string | null;
   video_url: string;
@@ -28,7 +28,7 @@ export default function MyTrainingsPage() {
 
   const [items, setItems] = useState<MyTraining[]>([]);
   const [loading, setLoading] = useState(true);
-  const [completing, setCompleting] = useState<Record<number, boolean>>({});
+  const [completing, setCompleting] = useState<Record<string, boolean>>({});
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);

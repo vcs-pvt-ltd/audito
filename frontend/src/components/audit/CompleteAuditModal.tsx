@@ -8,7 +8,8 @@ import { Button, IconButton } from "@/components/ui";
 import { auditExecutionApi } from "@/lib/api";
 
 export interface EntityProgress {
-  audit_id: number;
+  audit_entity_progress_id?: string;
+  audit_id: string;
   entity_code: string;
   total_questions: number;
   answered_questions: number;
@@ -28,19 +29,21 @@ interface TreeNode {
 }
 
 interface QuestionOption {
-  id: number;
+  id: string;
   option_text: string;
   marks: number;
   order_index: number;
 }
 
 interface ChecklistQuestion {
-  id: number;
+  id: string;
+  checklist_question_id: string;
   question_text: string;
   answer_type: "free_text" | "single_option" | "multiple_options" | "dropdown";
   total_marks: number;
   order_index: number;
   entity_code: string;
+  org_tree_id?: string | null;
   options: QuestionOption[];
 }
 
@@ -50,8 +53,8 @@ interface EntityQuestion {
 }
 
 interface AuditResponse {
-  id: number;
-  question_id: number;
+  audit_response_id: string;
+  checklist_question_id: string;
   entity_code: string;
   answer_text: string | null;
   selected_option_ids: string | null;
@@ -59,7 +62,7 @@ interface AuditResponse {
   remarks: string | null;
   cap_required: number;
   status: string;
-  evidence?: { id: number; file_path: string; file_name: string; file_type: string }[];
+  evidence?: { id: string; file_path: string; file_name: string; file_type: string }[];
 }
 
 interface AuditEntity {
@@ -69,53 +72,49 @@ interface AuditEntity {
 }
 
 interface AuditDetail {
-  id: number;
+  id: string;
   audit_code: string;
   title: string;
   audit_type: string;
   status: string;
   start_date: string;
   end_date: string;
-  checklist_id: number | null;
+  checklist_id: string | null;
   checklist_name: string | null;
   entities: AuditEntity[];
   entity_questions: EntityQuestion[];
 }
 
-function normalizeSelectedOptionIds(selected_option_ids: unknown): number[] {
+function normalizeSelectedOptionIds(selected_option_ids: unknown): string[] {
   if (selected_option_ids == null) return [];
   if (Array.isArray(selected_option_ids)) {
     return selected_option_ids
-      .map((v) => (typeof v === "number" ? v : parseInt(String(v), 10)))
-      .filter((n) => Number.isFinite(n));
+      .map((v) => (typeof v === "string" ? v.trim() : String(v)))
+      .filter((s) => s.length > 0);
   }
-  if (typeof selected_option_ids === "number") return [selected_option_ids];
-  if (typeof selected_option_ids !== "string") return [];
-  const raw = selected_option_ids.trim();
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map((v) => (typeof v === "number" ? v : parseInt(String(v), 10)))
-        .filter((n) => Number.isFinite(n));
+  if (typeof selected_option_ids === "string") {
+    const raw = selected_option_ids.trim();
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((v) => (typeof v === "string" ? v.trim() : String(v)))
+          .filter((s) => s.length > 0);
+      }
+      if (typeof parsed === "string") {
+        return parsed.trim() ? [parsed.trim()] : [];
+      }
+      if (parsed != null) return [String(parsed)];
+    } catch {
+      // fallthrough
     }
-    if (typeof parsed === "number") return [parsed];
-    if (typeof parsed === "string") {
-      const n = parseInt(parsed, 10);
-      return Number.isFinite(n) ? [n] : [];
+    if (raw.includes(",")) {
+      return raw.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
     }
-  } catch {
-    // fallthrough
+    return [raw];
   }
-  if (raw.includes(",")) {
-    return raw
-      .split(",")
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => Number.isFinite(n));
-  }
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) ? [n] : [];
+  return [String(selected_option_ids)];
 }
 
 function getPathToNode(node: TreeNode, code: string, trail: TreeNode[] = []): TreeNode[] | null {
@@ -182,9 +181,9 @@ export default function CompleteAuditModal({
 
     try {
       const [detailRes, respRes, treeRes] = await Promise.all([
-        auditExecutionApi.getDetail(accessToken, auditId),
-        auditExecutionApi.getResponses(accessToken, auditId),
-        auditExecutionApi.getEntityTree(accessToken, auditId),
+        auditExecutionApi.getDetail(accessToken, String(auditId)),
+        auditExecutionApi.getResponses(accessToken, String(auditId)),
+        auditExecutionApi.getEntityTree(accessToken, String(auditId)),
       ]);
 
       if (detailRes.success && detailRes.data) {
@@ -386,7 +385,7 @@ export default function CompleteAuditModal({
                 .slice()
                 .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
                 .map((q, idx) => {
-                  const r = entityResponses.find((x) => x.question_id === q.id);
+                  const r = entityResponses.find((x) => x.checklist_question_id === q.checklist_question_id);
                   return (
                     <div key={q.id} className="px-4 py-3">
                       <p className="text-xs text-gray-500 mb-1">Q{idx + 1}</p>

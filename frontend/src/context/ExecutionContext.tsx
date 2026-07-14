@@ -10,7 +10,7 @@ interface ExecutionContextType {
     title: string;
     description: string;
     statusField: "status";
-    codeField: "audit_code" | "cap_plan_code";
+    codeField: "audit_code" | "cap_id";
     idField: "id";
   };
   apiConfig: {
@@ -37,7 +37,7 @@ export function ExecutionProvider({ children, workflowType }: ExecutionProviderP
           ? "Your assigned audit tasks and progress overview"
           : "Your corrective action plans and progress overview",
       statusField: "status",
-      codeField: workflowType === "audit" ? "audit_code" : "cap_plan_code",
+      codeField: workflowType === "audit" ? "audit_code" : "cap_id",
       idField: "id",
     },
     apiConfig: {

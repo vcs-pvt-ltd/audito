@@ -201,7 +201,7 @@ const sendAuditAssignedEmail = async (toEmail, auditorName, audit) => {
 /**
  * Send contact form submission to team/admin and thank you to the user
  */
-const sendContactEmail = async ({ name, email, company, phone, message }) => {
+const sendContactEmail = async ({ name, email, company, phone, country, message }) => {
   // 1. Email to the team (Audito Admin)
   const teamEmailHtml = getEmailTemplate({
     title: 'New Contact Request',
@@ -225,6 +225,10 @@ const sendContactEmail = async ({ name, email, company, phone, message }) => {
           <tr>
             <td style="color: #999; padding: 5px 0;">Phone:</td>
             <td style="color: #00374B; font-weight: 700;">${phone || 'N/A'}</td>
+          </tr>
+          <tr>
+            <td style="color: #999; padding: 5px 0;">Country:</td>
+            <td style="color: #00374B; font-weight: 700;">${country || 'N/A'}</td>
           </tr>
         </table>
         <h3 style="color: #00374B; margin-top: 20px; margin-bottom: 10px;">Message:</h3>
@@ -252,9 +256,6 @@ const sendContactEmail = async ({ name, email, company, phone, message }) => {
       <p style="color: #555; font-size: 14px; line-height: 1.6;">
         Thank you for contacting Audito. We have received your inquiry and our team will get back to you within 24 hours.
       </p>
-      <p style="color: #555; font-size: 14px; line-height: 1.6;">
-        In the meantime, feel free to check out our <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}" style="color: #12B572; font-weight: 600;">latest updates</a> or follow us on our social media channels.
-      </p>
     `,
   });
 
@@ -273,11 +274,43 @@ const sendContactEmail = async ({ name, email, company, phone, message }) => {
   ]);
 };
 
+/**
+ * Send reply to contact form submission
+ */
+const sendContactReplyEmail = async (toEmail, userName, originalMessage, replyContent) => {
+  const { html, attachments } = getEmailTemplate({
+    title: 'Audito Support Reply',
+    subtitle: 'Reply to your inquiry',
+    content: `
+      <p style="color: #333; font-size: 16px;">Hi ${userName},</p>
+      <p style="color: #555; font-size: 14px; line-height: 1.6; white-space: pre-line;">
+        ${replyContent}
+      </p>
+      <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0 20px 0;" />
+      <p style="color: #999; font-size: 12px;"><strong>Original Message:</strong></p>
+      <blockquote style="color: #777; border-left: 3px solid #ccc; padding-left: 10px; margin-left: 0; font-style: italic;">
+        ${originalMessage}
+      </blockquote>
+    `,
+  });
+
+  const mailOptions = {
+    from: `"Audito Support" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: 'Re: Thank you for contacting Audito',
+    html,
+    attachments,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
 module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendLinkRequestEmail,
   sendOtpEmail,
   sendAuditAssignedEmail,
-  sendContactEmail
+  sendContactEmail,
+  sendContactReplyEmail
 };

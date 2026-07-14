@@ -35,7 +35,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────
 
 interface ChecklistType {
-  id: number;
+  checklist_type_id: string;
   name: string;
 }
 
@@ -43,7 +43,7 @@ interface TreeNode {
   entity_type: string;
   code: string;
   name: string;
-  edge_id?: number;
+  edge_id?: string;
   children: TreeNode[];
   [key: string]: unknown;
 }
@@ -51,7 +51,7 @@ interface TreeNode {
 interface QuestionForm {
   id: string;
   entity_code: string;
-  org_tree_id: number | null;
+  org_tree_id: string | null;
   entity_type: string;
   entity_name: string;
   question_text: string;
@@ -111,16 +111,16 @@ function flattenTree(node: TreeNode, result: TreeNode[] = []): TreeNode[] {
   return result;
 }
 
-function nodeKey(code: string, edgeId?: number | null): string {
-  return `${code}__${edgeId ?? "null"}`;
+function nodeKey(code: string, edgeId?: string | null): string {
+  return `${code}__${edgeId || "null"}`;
 }
 
 function questionKey(q: Pick<QuestionForm, "entity_code" | "org_tree_id">): string {
-  return `${q.entity_code}__${q.org_tree_id ?? "null"}`;
+  return `${q.entity_code}__${q.org_tree_id || "null"}`;
 }
 
 function questionMatchesNode(q: QuestionForm, node: TreeNode): boolean {
-  return q.entity_code === node.code && (q.org_tree_id ?? null) === (node.edge_id ?? null);
+  return q.entity_code === node.code && (q.org_tree_id || null) === (node.edge_id || null);
 }
 
 function validateQuestions(questions: QuestionForm[]): string | null {
@@ -392,7 +392,7 @@ function TreeEntityNode({
   node: TreeNode;
   questions: QuestionForm[];
   allEntities: TreeNode[];
-  onAddQuestion: (code: string, orgTreeId: number | null, type: string, name: string) => void;
+  onAddQuestion: (code: string, orgTreeId: string | null, type: string, name: string) => void;
   onChangeQuestion: (id: string, updated: QuestionForm) => void;
   onDeleteQuestion: (id: string) => void;
   excludedEntities: Set<string>;
@@ -545,6 +545,7 @@ function ExcelConfirmModal({ open, questions, uploadResult, treeRoot, onConfirm,
   onDiscard: () => void;
 }) {
   const entityCodesWithQs = new Set(questions.map(q => questionKey(q)));
+  questions.forEach(q => entityCodesWithQs.add(q.entity_code));
   const prunedRoot = treeRoot ? pruneTreeByEntityCodes(treeRoot, entityCodesWithQs) : null;
   const totalEntityCount = prunedRoot ? countPrunedEntities(prunedRoot) : entityCodesWithQs.size;
 
@@ -764,12 +765,12 @@ export default function CreateChecklistPage() {
             ? flattenTree((treeRes.data as { tree: TreeNode }).tree)
             : [];
           const entityGroups = (cl.entity_questions as Array<{
-            entity_code: string; org_tree_id?: number | null; entity_type: string; entity_name: string;
+          entity_code: string; org_tree_id?: string | null; entity_type: string; entity_name: string;
             questions: Array<{ id: number; question_text: string; answer_type: string; options: Array<{ option_text: string; marks: number }> }>;
           }>) || [];
           const loadedQs: QuestionForm[] = [];
           for (const eg of entityGroups) {
-            const egTreeId = (eg.org_tree_id ?? null) as number | null;
+            const egTreeId = (eg.org_tree_id ?? null) as string | null;
             const entityDisplayName = flatForLookup.find(n => nodeKey(n.code, n.edge_id ?? null) === nodeKey(eg.entity_code, egTreeId))?.name || eg.entity_code;
             for (const q of eg.questions) {
               loadedQs.push({
@@ -797,7 +798,7 @@ export default function CreateChecklistPage() {
   const setForm = (field: keyof ChecklistFormData, value: string) =>
     setFormData(p => ({ ...p, [field]: value }));
 
-  const addQuestion = (entityCode: string, orgTreeId: number | null, entityType: string, entityName: string) => {
+  const addQuestion = (entityCode: string, orgTreeId: string | null, entityType: string, entityName: string) => {
     setQuestions(prev => [...prev, { id: newLocalId(), entity_code: entityCode, org_tree_id: orgTreeId, entity_type: entityType, entity_name: entityName, question_text: "", answer_type: "free_text", options: [] }]);
   };
   const updateQuestion = (id: string, updated: QuestionForm) =>
@@ -814,7 +815,7 @@ export default function CreateChecklistPage() {
       if (res.success && res.data) {
         const d = res.data as { type: ChecklistType };
         setChecklistTypes(prev => [...prev, d.type]);
-        setForm("checklist_type_id", String(d.type.id));
+        setForm("checklist_type_id", String(d.type.checklist_type_id));
         setShowTypeModal(false);
         setNewTypeName(""); setNewTypeDesc("");
       } else {
@@ -831,7 +832,7 @@ export default function CreateChecklistPage() {
     name: formData.name.trim(),
     description: formData.description.trim() || undefined,
     media_path: formData.media_path || undefined,
-    checklist_type_id: formData.checklist_type_id ? parseInt(formData.checklist_type_id, 10) : undefined,
+    checklist_type_id: formData.checklist_type_id || undefined,
     time_period_value: formData.time_period_value ? parseInt(formData.time_period_value, 10) : undefined,
     time_period_unit: formData.time_period_unit || undefined,
     repeat_duration_value: formData.repeat_duration_value ? parseInt(formData.repeat_duration_value, 10) : undefined,
@@ -873,8 +874,8 @@ export default function CreateChecklistPage() {
       } else {
         const res = await checklistApi.create(accessToken, payload);
         if (!res.success) throw new Error(res.message || "Failed to create.");
-        const created = (res.data as { checklist: { id: number } }).checklist;
-        checklistId = String(created.id);
+        const created = (res.data as { checklist: { id: number; checklist_id?: string } }).checklist;
+        checklistId = String(created.checklist_id ?? created.id);
         if (questions.length > 0 && checklistId) {
           const qPayloads: QuestionPayload[] = questions.map(q => ({
             entity_code: q.entity_code, org_tree_id: q.org_tree_id, entity_type: q.entity_type, entity_name: q.entity_name,
@@ -909,7 +910,7 @@ export default function CreateChecklistPage() {
       }
       const payload = res.data as {
         created_count: number; errors: string[]; items: Array<{
-          entity_code: string; org_tree_id?: number | null; entity_type: string; entity_name: string;
+          entity_code: string; org_tree_id?: string | null; entity_type: string; entity_name: string;
           question_text: string; answer_type: QuestionForm["answer_type"]; options: Array<{ option_text: string; marks: number }>;
         }>
       } | null;
@@ -1049,7 +1050,7 @@ export default function CreateChecklistPage() {
                 <div className="mt-auto flex gap-2">
                   <select value={formData.checklist_type_id} onChange={e => setForm("checklist_type_id", e.target.value)} className={`${inputCls} flex-1`}>
                     <option value="">Select type...</option>
-                    {checklistTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    {checklistTypes.map(t => <option key={t.checklist_type_id} value={t.checklist_type_id}>{t.name}</option>)}
                   </select>
                   <button onClick={() => setShowTypeModal(true)} className="p-2.5 rounded-lg bg-secondary-500/10 text-secondary-400 border border-secondary-500/20 hover:bg-secondary-500/20 transition-all" title="Create New Type">
                     <Plus size={16} />
@@ -1196,11 +1197,39 @@ export default function CreateChecklistPage() {
 
             {/* ── Org tree question builder ── */}
             {treeEntities.length === 0 ? (
-              <div className="glass rounded-xl border border-white/[0.08] py-10 text-center">
-                <Building2 size={28} className="text-gray-600 mx-auto mb-3" />
-                <p className="text-gray-400 text-sm mb-1">No org tree entities found</p>
-                <p className="text-gray-600 text-xs">Build your organization tree first to assign questions to entities.</p>
-              </div>
+              questions.length > 0 ? (
+                <div className="glass rounded-xl border border-white/[0.08] overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                    <div className="flex items-center gap-2">
+                      <FileText size={14} className="text-gray-500" />
+                      <span className="text-sm font-semibold text-white">Imported Questions</span>
+                      <span className="text-[11px] text-secondary-400 bg-secondary-500/10 border border-secondary-500/20 px-2 py-0.5 rounded-full">
+                        {questions.length} question{questions.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-3 space-y-1.5">
+                    {questions.map((q, i) => (
+                      <div key={q.id} className="flex items-start gap-2 py-2 px-3 rounded-lg bg-white/[0.015] border border-white/[0.05]">
+                        <span className="w-5 h-5 rounded-full bg-secondary-500/15 border border-secondary-500/20 flex items-center justify-center text-secondary-400 text-[10px] font-bold shrink-0 mt-0.5">{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-200">{q.question_text || <span className="text-gray-500 italic">No question text</span>}</p>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span className="text-[11px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">{q.entity_code}</span>
+                            <span className="text-[11px] text-gray-500">{q.entity_name}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="glass rounded-xl border border-white/[0.08] py-10 text-center">
+                  <Building2 size={28} className="text-gray-600 mx-auto mb-3" />
+                  <p className="text-gray-400 text-sm mb-1">No org tree entities found</p>
+                  <p className="text-gray-600 text-xs">Build your organization tree first to assign questions to entities.</p>
+                </div>
+              )
             ) : (
               <div className="glass rounded-xl border border-white/[0.08] overflow-hidden">
                 {/* Tree header */}
@@ -1305,7 +1334,7 @@ export default function CreateChecklistPage() {
           questions={uploadedQuestions}
           uploadResult={uploadResult}
           treeRoot={treeRoot}
-          onConfirm={(qs) => { setQuestions(qs); setShowUploadConfirmModal(false); setUploadedQuestions([]); setShowOnlyWithQuestions(true); setStep(3); }}
+          onConfirm={(qs) => { setQuestions(qs); setShowUploadConfirmModal(false); setUploadedQuestions([]); setShowOnlyWithQuestions(false); setStep(3); }}
           onDiscard={() => { setShowUploadConfirmModal(false); setUploadedQuestions([]); setUploadResult(null); }}
         />
 

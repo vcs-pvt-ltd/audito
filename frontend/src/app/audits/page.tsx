@@ -34,7 +34,7 @@ import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Table, THead, Th } from "@/components/ui";
 
 interface AuditAssignment {
-  id: number;
+  audit_id: string;
   audit_code: string;
   title: string;
   checklist_name: string | null;
@@ -57,7 +57,7 @@ interface AuditAssignment {
     phone_number?: string | null;
     entity_type?: string | null;
   } | null;
-  assigned_auditor_code: string | null;
+  assigned_auditor_id: string | null;
   assigned_firm_code: string | null;
 }
 
@@ -102,8 +102,8 @@ export default function AuditsPage() {
   const [audits, setAudits] = useState<AuditAssignment[]>([]);
   const [auditCount, setAuditCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState<number | null>(null);
-  const [toggling, setToggling] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [filter, setFilter] = useState<string>("all");
 
@@ -189,9 +189,9 @@ export default function AuditsPage() {
 
   const isLimitExceeded = admin?.plan_limits && auditCount >= admin.plan_limits.audits;
 
-  const handleCancel = async (id: number, title: string) => {
+  const handleCancel = async (id: string, title: string) => {
     if (!accessToken) return;
-    const currentAudit = audits.find(a => a.id === id);
+    const currentAudit = audits.find(a => a.audit_id === id);
     if (currentAudit?.status === "completed") {
       toast("Completed audits cannot be cancelled.", "warning");
       return;
@@ -215,9 +215,9 @@ export default function AuditsPage() {
     setDeleting(null);
   };
 
-  const handlePermanentDelete = async (id: number, title: string) => {
+  const handlePermanentDelete = async (id: string, title: string) => {
     if (!accessToken) return;
-    const currentAudit = audits.find(a => a.id === id);
+    const currentAudit = audits.find(a => a.audit_id === id);
     if (currentAudit?.status !== "plan") {
       toast(`Audits in "${STATUS_LABEL[currentAudit?.status || '']}" status cannot be deleted. You can only cancel them.`, "warning");
       return;
@@ -241,12 +241,12 @@ export default function AuditsPage() {
     setDeleting(null);
   };
 
-  const handleToggleAudit = async (id: number, isEnabled: boolean) => {
+  const handleToggleAudit = async (id: string, isEnabled: boolean) => {
     if (!accessToken) return;
     try {
       setToggling(id);
 
-      const currentAudit = audits.find(a => a.id === id);
+      const currentAudit = audits.find(a => a.audit_id === id);
 
       let newStatus: "plan" | "in_progress" | "completed";
       if (!isEnabled) {
@@ -415,14 +415,13 @@ export default function AuditsPage() {
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
                     return (
                       <tr
-                        key={a.id}
+                        key={a.audit_id}
                         className="hover:bg-white/[0.02] transition-colors group"
-
                       >
                         <td className="px-4 py-3 text-gray-400 text-sm">{itemIndex}</td>
                         <td className="px-4 py-3">
                           <button
-                            onClick={(e) => { e.stopPropagation(); router.push(`/audits/details?id=${a.id}`); }}
+                            onClick={(e) => { e.stopPropagation(); router.push(`/audits/details?id=${a.audit_id}`); }}
                             className="text-secondary-400 hover:text-secondary-300 font-medium hover:underline underline-offset-2 transition-colors text-left"
                           >
                             {a.title}
@@ -468,12 +467,12 @@ export default function AuditsPage() {
 
                             {isFirmAdmin && (
                               <button
-                                onClick={() => router.push(`/audits/assign?id=${a.id}`)}
-                                className={`p-1.5 rounded-lg border transition-all ${a.assigned_auditor_code
+                                onClick={() => router.push(`/audits/assign?id=${a.audit_id}`)}
+                                className={`p-1.5 rounded-lg border transition-all ${a.assigned_auditor_id
                                   ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20"
                                   : "text-amber-400 bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20"
                                   }`}
-                                title={a.assigned_auditor_code ? "Change Auditor" : "Assign Auditor"}
+                                title={a.assigned_auditor_id ? "Change Auditor" : "Assign Auditor"}
                               >
                                 <UserPlus size={16} />
                               </button>
@@ -483,12 +482,12 @@ export default function AuditsPage() {
                               <div className="flex items-center gap-3">
                                 {a.status === 'plan' && (
                                   <button
-                                    onClick={() => handlePermanentDelete(a.id, a.title)}
-                                    disabled={deleting === a.id}
+                                    onClick={() => handlePermanentDelete(a.audit_id, a.title)}
+                                    disabled={deleting === a.audit_id}
                                     className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 transition-all disabled:opacity-50"
                                     title="Delete audit permanently"
                                   >
-                                    {deleting === a.id ? (
+                                    {deleting === a.audit_id ? (
                                       <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
                                     ) : (
                                       <Trash2 size={14} />
@@ -498,18 +497,18 @@ export default function AuditsPage() {
                                 <label className="inline-flex items-center cursor-pointer" title={a.status === 'cancelled' ? "Re-enable audit" : "Cancel audit"}>
                                   <input
                                     type="checkbox"
-                                    disabled={toggling === a.id || deleting === a.id}
+                                    disabled={toggling === a.audit_id || deleting === a.audit_id}
                                     className="sr-only peer"
                                     checked={a.status !== 'cancelled'}
                                     onChange={(e) => {
                                       if (!e.target.checked) {
-                                        handleCancel(a.id, a.title);
+                                        handleCancel(a.audit_id, a.title);
                                       } else {
-                                        handleToggleAudit(a.id, true);
+                                        handleToggleAudit(a.audit_id, true);
                                       }
                                     }}
                                   />
-                                  <div className={`relative w-11 h-6 rounded-full transition-colors ${toggling === a.id
+                                  <div className={`relative w-11 h-6 rounded-full transition-colors ${toggling === a.audit_id
                                     ? "bg-gray-600 opacity-50"
                                     : a.status === 'cancelled' ? "bg-gray-700" : "bg-secondary-500"
                                     } peer-checked:bg-secondary-500 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed`}>
@@ -534,12 +533,12 @@ export default function AuditsPage() {
                 const pct = a.progress_pct || 0;
                 const itemIndex = (currentPage - 1) * pageSize + index + 1;
                 return (
-                  <div key={a.id} className="glass rounded-xl border border-white/10 p-4 cursor-pointer" onClick={() => router.push(`/audits/details?id=${a.id}`)}>
+                  <div key={a.audit_id} className="glass rounded-xl border border-white/10 p-4 cursor-pointer" onClick={() => router.push(`/audits/details?id=${a.audit_id}`)}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-xs text-gray-500">#{itemIndex}</p>
                         <button
-                          onClick={(e) => { e.stopPropagation(); router.push(`/audits/details?id=${a.id}`); }}
+                          onClick={(e) => { e.stopPropagation(); router.push(`/audits/details?id=${a.audit_id}`); }}
                           className="text-sm font-semibold text-secondary-400 hover:text-secondary-300 text-left truncate block"
                         >
                           {a.title}
@@ -581,7 +580,7 @@ export default function AuditsPage() {
 
                     <div className="mt-3 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => router.push(`/audits/details?id=${a.id}`)}
+                        onClick={() => router.push(`/audits/details?id=${a.audit_id}`)}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 border border-white/10"
                         title="View Preview"
                       >
@@ -590,8 +589,8 @@ export default function AuditsPage() {
 
                       {isFirmAdmin && (
                         <button
-                          onClick={() => router.push(`/audits/assign?id=${a.id}`)}
-                          className={`p-1.5 rounded-lg border ${a.assigned_auditor_code
+                          onClick={() => router.push(`/audits/assign?id=${a.audit_id}`)}
+                          className={`p-1.5 rounded-lg border ${a.assigned_auditor_id
                             ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
                             : "text-amber-400 bg-amber-500/10 border-amber-500/20"
                             }`}
@@ -604,12 +603,12 @@ export default function AuditsPage() {
                         <>
                           {a.status === 'plan' ? (
                             <button
-                              onClick={(e) => { e.stopPropagation(); handlePermanentDelete(a.id, a.title); }}
-                              disabled={deleting === a.id}
+                              onClick={(e) => { e.stopPropagation(); handlePermanentDelete(a.audit_id, a.title); }}
+                              disabled={deleting === a.audit_id}
                               className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 transition-all disabled:opacity-50"
                               title="Delete audit permanently"
                             >
-                              {deleting === a.id ? (
+                              {deleting === a.audit_id ? (
                                 <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
                               ) : (
                                 <Trash2 size={14} />
@@ -617,8 +616,8 @@ export default function AuditsPage() {
                             </button>
                           ) : (
                             <button
-                              onClick={(e) => { e.stopPropagation(); handleCancel(a.id, a.title); }}
-                              disabled={deleting === a.id || a.status === 'cancelled'}
+                              onClick={(e) => { e.stopPropagation(); handleCancel(a.audit_id, a.title); }}
+                              disabled={deleting === a.audit_id || a.status === 'cancelled'}
                               className={`p-1.5 rounded-lg transition-all border border-white/10 disabled:opacity-50 ${a.status === 'cancelled'
                                 ? 'text-gray-700 bg-white/5 cursor-not-allowed'
                                 : 'text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20'

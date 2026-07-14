@@ -26,6 +26,7 @@ const AuditExecutionModel = require('../models/AuditExecutionModel');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
 const { sendAuditAssignedEmail } = require('../services/emailService');
 const NotificationModel = require('../models/NotificationModel');
+const { findDuplicateName } = require('../utils/nameNormalizer');
 
 // Generate a unique audit_code like AUD-20260316-0001
 async function generateAuditCode() {
@@ -33,12 +34,12 @@ async function generateAuditCode() {
   const ymd = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
   const prefix = `AUD-${ymd}-`;
   const [rows] = await db.query(
-    `SELECT audit_code FROM audit_assignments WHERE audit_code LIKE ? ORDER BY id DESC LIMIT 1`,
+    `SELECT audit_id FROM audit_assignments WHERE audit_id LIKE ? ORDER BY audit_id DESC LIMIT 1`,
     [`${prefix}%`]
   );
   let seq = 1;
   if (rows.length) {
-    const last = rows[0].audit_code.split('-').pop();
+    const last = rows[0].audit_id.split('-').pop();
     seq = parseInt(last, 10) + 1;
   }
   return `${prefix}${String(seq).padStart(4, '0')}`;
@@ -115,8 +116,8 @@ async function resolveCreatorOrganizations(audits) {
 // Returns distinct entity codes/types/names that have at least one question in the checklist
 const getChecklistEntities = async (req, res) => {
   try {
-    const { id } = req.params;
-    const checklist = await ChecklistModel.findById(id);
+    const { checklist_id } = req.params;
+    const checklist = await ChecklistModel.findById(checklist_id);
     if (!checklist) {
       return errorResponse(res, 'Checklist not found.', 404);
     }
@@ -127,23 +128,23 @@ const getChecklistEntities = async (req, res) => {
       return errorResponse(res, 'Checklist not found.', 404);
     }
 
-    const questions = await ChecklistModel.listQuestions(id);
+    const questions = await ChecklistModel.listQuestions(checklist_id);
 
     // Collect distinct entity instances (entity_code + org_tree_id)
     const seen = new Set();
     const entities = [];
     for (const q of questions) {
-      const k = `${q.entity_code}__${q.org_tree_id ?? 'null'}`;
+      const k = `${q.entity_code}__${q.org_tree_id || 'null'}`;
       if (!seen.has(k)) {
         seen.add(k);
         entities.push({
           entity_code: q.entity_code,
-          org_tree_id: q.org_tree_id ?? null,
+          org_tree_id: q.org_tree_id || null,
           entity_type: q.entity_type,
           question_count: 0,
         });
       }
-      const ent = entities.find(e => e.entity_code === q.entity_code && (e.org_tree_id ?? null) === (q.org_tree_id ?? null));
+      const ent = entities.find(e => e.entity_code === q.entity_code && (e.org_tree_id ?? null) === (q.org_tree_id || null));
       if (ent) ent.question_count++;
     }
 
@@ -165,9 +166,9 @@ const createAudit = async (req, res) => {
   try {
     const {
       checklist_id, title, audit_type,
-      assigned_auditor_code, assigned_firm_code,
+      assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
       budget, currency, num_workers, start_date, end_date, notes,
-      entities  // array of { entity_code, entity_type, entity_name }
+      entities  // array of { entity_code, entity_type, entity_name, org_tree_id }
     } = req.body;
 
     if (!checklist_id || !title || !audit_type || !start_date || !end_date) {
@@ -194,11 +195,28 @@ const createAudit = async (req, res) => {
     const limitError = await LimitsEnforcer.checkAuditLimit(req.user.entityCode);
     if (limitError) return errorResponse(res, limitError, 403);
 
+    // Uniqueness: audit title must be unique per creating organization.
+    // Titles differing only by capitalization, spacing, or leading zeros
+    // (e.g. "Audit 01" vs "audit1") are treated as duplicates.
+    try {
+      const dup = await findDuplicateName({
+        db,
+        table: 'audit_assignments',
+        nameColumn: 'title',
+        name: title,
+        whereClauses: ['created_by = ?', 'is_active = TRUE', "status != 'cancelled'"],
+        whereParams: [req.user.entityCode]
+      });
+      if (dup) return errorResponse(res, `An audit titled "${dup.name}" already exists for your organization.`, 409);
+    } catch (err) {
+      console.error('Audit title uniqueness check failed:', err);
+    }
+
     const audit_code = await generateAuditCode();
 
     const id = await AuditModel.create({
-      audit_code, checklist_id, title, audit_type,
-      assigned_auditor_code, assigned_firm_code,
+      audit_id: audit_code, checklist_id, title, audit_type,
+      assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
       budget: budget ?? checklist.budget,
       currency: currency ?? checklist.currency ?? '$',
       num_workers: num_workers ?? checklist.num_workers,
@@ -209,7 +227,7 @@ const createAudit = async (req, res) => {
 
     // Store only codes+types (+ org_tree_id if provided) — names are always resolved fresh on read
     const entitiesToStore = entities.map(({ org_tree_id, entity_code, entity_type }) => ({
-      org_tree_id: org_tree_id ? parseInt(org_tree_id) : null,
+      org_tree_id: org_tree_id || null,
       entity_code,
       entity_type,
     }));
@@ -221,33 +239,33 @@ const createAudit = async (req, res) => {
       for (const e of created.entities) e.entity_name = nameMap[e.entity_code] || e.entity_code;
     }
 
-    if (assigned_auditor_code) {
+    if (assigned_auditor_id) {
       try {
-        const auditor = await AuditorModel.findByCode(assigned_auditor_code);
+        const auditor = await AuditorModel.findByCode(assigned_auditor_id);
         if (auditor && auditor.email) {
           const auditorName = `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim();
           await sendAuditAssignedEmail(auditor.email, auditorName, created || { title, audit_type, start_date, end_date });
         }
 
         await NotificationModel.createIfNotExists({
-          auditor_code: assigned_auditor_code,
+          auditor_id: assigned_auditor_id,
           created_by_entity_code: req.user.entityCode,
           type: 'audit_assigned',
           title: 'New Audit Assigned',
           message: `${audit_code} assigned${title ? `: ${title}` : ''}. Start: ${start_date}`,
           audit_id: id,
           notify_date: null,
-          notification_key: `audit_assigned:${id}:${assigned_auditor_code}`,
+          notification_key: `audit_assigned:${id}:${assigned_auditor_id}`,
         });
         await NotificationModel.createIfNotExists({
-          auditor_code: assigned_auditor_code,
+          auditor_id: assigned_auditor_id,
           created_by_entity_code: req.user.entityCode,
           type: 'audit_start',
           title: 'Audit Start Reminder',
           message: `${audit_code} starts today${title ? `: ${title}` : ''}.`,
           audit_id: id,
           notify_date: start_date,
-          notification_key: `audit_start:${id}:${assigned_auditor_code}:${start_date}`,
+          notification_key: `audit_start:${id}:${assigned_auditor_id}:${start_date}`,
         });
       } catch (e) {
         console.error('sendAuditAssignedEmail error:', e);
@@ -270,13 +288,13 @@ const listAudits = async (req, res) => {
     } else if (req.user.role === 'entity_head') {
       audits = await AuditModel.listForEntityHead(req.user.assignedOrgTreeId);
       const scopeIds = await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId);
-      const scopeSet = new Set(scopeIds.map(Number));
+      const scopeSet = new Set(scopeIds);
       for (const a of audits) {
-        const ents = await AuditModel.getEntities(a.id);
-        const scopedEnts = ents.filter((e) => scopeSet.has(Number(e.org_tree_id)));
+        const ents = await AuditModel.getEntities(a.audit_id);
+        const scopedEnts = ents.filter((e) => scopeSet.has(e.org_tree_id));
         a.entity_count = scopedEnts.length;
-        const progress = await AuditExecutionModel.getProgress(a.id);
-        const scopedProgress = progress.filter((p) => p.org_tree_id != null && scopeSet.has(Number(p.org_tree_id)));
+        const progress = await AuditExecutionModel.getProgress(a.audit_id);
+        const scopedProgress = progress.filter((p) => p.org_tree_id != null && scopeSet.has(p.org_tree_id));
         const totalQuestions = scopedProgress.reduce((s, p) => s + (p.total_questions || 0), 0);
         const answeredQuestions = scopedProgress.reduce((s, p) => s + (p.answered_questions || 0), 0);
         a.total_questions = totalQuestions;
@@ -296,7 +314,7 @@ const listAudits = async (req, res) => {
     for (const a of audits) {
       if (req.user.role === 'entity_head') continue;
 
-      const ents = await AuditModel.getEntities(a.id);
+      const ents = await AuditModel.getEntities(a.audit_id);
       a.entity_count = ents.length;
 
       // Calculate total questions and answered questions across all entities for this audit
@@ -304,7 +322,7 @@ const listAudits = async (req, res) => {
         `SELECT SUM(total_questions) as total_questions, SUM(answered_questions) as answered_questions
          FROM audit_entity_progress
          WHERE audit_id = ?`,
-        [a.id]
+        [a.audit_id]
       );
 
       const totalQuestions = progress[0]?.total_questions || 0;
@@ -347,7 +365,7 @@ const getAudit = async (req, res) => {
 
     const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
     const isCreator = req.user.role === 'admin' && accessibleCodes.includes(audit.created_by);
-    const isAuditor = req.user.role === 'auditor' && audit.assigned_auditor_code === (req.user.userCode || '');
+    const isAuditor = req.user.role === 'auditor' && audit.assigned_auditor_id === (req.user.userCode || '');
     const isFirmAdmin =
       req.user.role === 'admin' &&
       (req.user.accountType === 'Audit Firm' || req.user.accountType === 'Audit Firm Company') &&
@@ -375,8 +393,8 @@ const getAudit = async (req, res) => {
         const orgMap = await resolveCreatorOrganizations([audit]);
         audit.assigned_company = orgMap[audit.created_by] || null;
       }
-      if (audit.assigned_auditor_code) {
-        const auditor = await AuditorModel.findByCode(audit.assigned_auditor_code);
+      if (audit.assigned_auditor_id) {
+        const auditor = await AuditorModel.findByCode(audit.assigned_auditor_id);
         if (auditor) {
           const fullName = `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim();
           audit.auditor_name = fullName || null;
@@ -428,21 +446,21 @@ const updateAudit = async (req, res) => {
       return errorResponse(res, 'Audit not found.', 404);
     }
 
-    // Firm admin is only allowed to assign/update the assigned_auditor_code (handover internal assignment).
+    // Firm admin is only allowed to assign/update the assigned_auditor_id (handover internal assignment).
     if (isFirmAdmin && !isCreatorAdmin) {
-      const { assigned_auditor_code, assigned_org_tree_id } = req.body;
+      const { assigned_auditor_id, assigned_org_tree_id } = req.body;
 
-      if (!assigned_auditor_code) {
-        return errorResponse(res, 'assigned_auditor_code is required.', 400);
+      if (!assigned_auditor_id) {
+        return errorResponse(res, 'assigned_auditor_id is required.', 400);
       }
 
       // Ensure auditor belongs to this firm
-      const auditor = await AuditorModel.findByCode(assigned_auditor_code);
+      const auditor = await AuditorModel.findByCode(assigned_auditor_id);
       if (!auditor || auditor.created_by_entity_code !== req.user.entityCode) {
         return errorResponse(res, 'Invalid auditor for this audit firm.', 400);
       }
 
-      await AuditModel.updateAssignedAuditor(id, { assigned_auditor_code, assigned_org_tree_id: assigned_org_tree_id || null });
+      await AuditModel.updateAssignedAuditor(id, { assigned_auditor_id, assigned_org_tree_id: assigned_org_tree_id || null });
       const updated = await AuditModel.getWithEntities(id);
       if (updated && updated.entities && updated.entities.length > 0) {
         const nameMap = await resolveEntityNames(updated.entities);
@@ -456,26 +474,26 @@ const updateAudit = async (req, res) => {
         }
 
         await NotificationModel.createIfNotExists({
-          auditor_code: assigned_auditor_code,
+          auditor_id: assigned_auditor_id,
           created_by_entity_code: audit.created_by,
           type: 'audit_assigned',
           title: 'New Audit Assigned',
           message: `${(updated && updated.audit_code) || audit.audit_code || `AUD-${id}`} assigned${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''}. Start: ${(updated && updated.start_date) || audit.start_date}`,
-          audit_id: Number(id),
+          audit_id: id,
           notify_date: null,
-          notification_key: `audit_assigned:${id}:${assigned_auditor_code}`,
+          notification_key: `audit_assigned:${id}:${assigned_auditor_id}`,
         });
         await NotificationModel.createIfNotExists({
-          auditor_code: assigned_auditor_code,
+          auditor_id: assigned_auditor_id,
           created_by_entity_code: audit.created_by,
           type: 'audit_start',
           title: 'Audit Start Reminder',
           message: `${(updated && updated.audit_code) || audit.audit_code || `AUD-${id}`} starts today${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''}.`,
-          audit_id: Number(id),
+          audit_id: id,
           notify_date: (updated && updated.start_date) || audit.start_date || null,
-          notification_key: `audit_start:${id}:${assigned_auditor_code}:${(updated && updated.start_date) || audit.start_date || ''}`,
+          notification_key: `audit_start:${id}:${assigned_auditor_id}:${(updated && updated.start_date) || audit.start_date || ''}`,
         });
-        await NotificationModel.deleteByAuditForOtherAuditors(Number(id), assigned_auditor_code);
+        await NotificationModel.deleteByAuditForOtherAuditors(id, assigned_auditor_id);
       } catch (e) {
         console.error('sendAuditAssignedEmail error:', e);
       }
@@ -484,18 +502,18 @@ const updateAudit = async (req, res) => {
     }
 
     const {
-      title, audit_type, assigned_auditor_code, assigned_firm_code, assigned_org_tree_id,
+      title, audit_type, assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
       budget, currency, num_workers, start_date, end_date, notes, status,
       entities
     } = req.body;
 
-    const previousAssignedAuditor = audit.assigned_auditor_code || null;
+    const previousAssignedAuditor = audit.assigned_auditor_id || null;
 
     // Allow status-only updates without requiring other fields
     if (status && !title && !audit_type) {
       // Update only the status field
       await db.query(
-        `UPDATE audit_assignments SET status = ? WHERE id = ?`,
+        `UPDATE audit_assignments SET status = ? WHERE audit_id = ?`,
         [status, id]
       );
       const updated = await AuditModel.getWithEntities(id);
@@ -511,14 +529,31 @@ const updateAudit = async (req, res) => {
       return errorResponse(res, 'title, audit_type, start_date, end_date are required.', 400);
     }
 
+    // Ensure new title is unique within this organization
+    // (case/space/leading-zero insensitive — same rule as create)
+    try {
+      const dup = await findDuplicateName({
+        db,
+        table: 'audit_assignments',
+        nameColumn: 'title',
+        name: title,
+        whereClauses: ['created_by = ?', 'is_active = TRUE', "status != 'cancelled'"],
+        whereParams: [audit.created_by],
+        excludeId: id
+      });
+      if (dup) return errorResponse(res, `An audit titled "${dup.name}" already exists for your organization.`, 409);
+    } catch (err) {
+      console.error('Audit title update uniqueness check failed:', err);
+    }
+
     await AuditModel.update(id, {
-      title, audit_type, assigned_auditor_code, assigned_firm_code, assigned_org_tree_id,
+      title, audit_type, assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
       budget, currency: currency || '$', num_workers, start_date, end_date, notes, status,
     });
 
     if (Array.isArray(entities) && entities.length > 0) {
       const entitiesToStore = entities.map(({ org_tree_id, entity_code, entity_type }) => ({
-        org_tree_id: org_tree_id ? parseInt(org_tree_id) : null,
+        org_tree_id: org_tree_id || null,
         entity_code,
         entity_type,
       }));
@@ -531,7 +566,7 @@ const updateAudit = async (req, res) => {
       for (const e of updated.entities) e.entity_name = nameMap[e.entity_code] || e.entity_code;
     }
 
-    const nextAssignedAuditor = updated ? (updated.assigned_auditor_code || null) : (assigned_auditor_code || null);
+    const nextAssignedAuditor = updated ? (updated.assigned_auditor_id || null) : (assigned_auditor_id || null);
     if (nextAssignedAuditor && nextAssignedAuditor !== previousAssignedAuditor) {
       try {
         const auditor = await AuditorModel.findByCode(nextAssignedAuditor);
@@ -541,26 +576,26 @@ const updateAudit = async (req, res) => {
         }
 
         await NotificationModel.createIfNotExists({
-          auditor_code: nextAssignedAuditor,
+          auditor_id: nextAssignedAuditor,
           created_by_entity_code: audit.created_by,
           type: 'audit_assigned',
           title: 'New Audit Assigned',
           message: `${(updated && updated.audit_code) || audit.audit_code || `AUD-${id}`} assigned${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''}. Start: ${(updated && updated.start_date) || audit.start_date}`,
-          audit_id: Number(id),
+          audit_id: id,
           notify_date: null,
           notification_key: `audit_assigned:${id}:${nextAssignedAuditor}`,
         });
         await NotificationModel.createIfNotExists({
-          auditor_code: nextAssignedAuditor,
+          auditor_id: nextAssignedAuditor,
           created_by_entity_code: audit.created_by,
           type: 'audit_start',
           title: 'Audit Start Reminder',
           message: `${(updated && updated.audit_code) || audit.audit_code || `AUD-${id}`} starts today${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''}.`,
-          audit_id: Number(id),
+          audit_id: id,
           notify_date: (updated && updated.start_date) || audit.start_date || null,
           notification_key: `audit_start:${id}:${nextAssignedAuditor}:${(updated && updated.start_date) || audit.start_date || ''}`,
         });
-        await NotificationModel.deleteByAuditForOtherAuditors(Number(id), nextAssignedAuditor);
+        await NotificationModel.deleteByAuditForOtherAuditors(id, nextAssignedAuditor);
       } catch (e) {
         console.error('sendAuditAssignedEmail error:', e);
       }
@@ -591,7 +626,7 @@ const cancelAudit = async (req, res) => {
     if (audit.status === 'completed') {
       return errorResponse(res, 'Completed audits cannot be cancelled.', 400);
     }
-    await db.query('UPDATE audit_assignments SET status = ? WHERE id = ?', ['cancelled', id]);
+    await db.query('UPDATE audit_assignments SET status = ? WHERE audit_id = ?', ['cancelled', id]);
     return successResponse(res, null, 'Audit cancelled.');
   } catch (err) {
     console.error('cancelAudit error:', err);

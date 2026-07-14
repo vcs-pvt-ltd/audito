@@ -30,8 +30,7 @@ import {
 } from "lucide-react";
 
 interface Cap {
-  id: number;
-  cap_plan_code: string;
+  cap_id: string;
   title: string;
   status: string;
   description?: string | null;
@@ -63,9 +62,9 @@ interface CapQuestionOption {
 }
 
 interface CapQuestion {
-  id: number;
+  cap_question_id: string;
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   question_text: string;
   answer_type: string;
   total_marks: string | number;
@@ -76,7 +75,7 @@ interface CapQuestion {
 }
 
 interface CapResponse {
-  cap_question_id: number;
+  cap_question_id: string;
   response_text: string | null;
   selected_option_ids: string | null | number[];
   marks_obtained?: number;
@@ -89,7 +88,7 @@ interface TreeNode {
   entity_type: string;
   code: string;
   name: string;
-  edge_id?: number | null;
+  edge_id?: string | null;
   children?: TreeNode[];
 }
 
@@ -120,7 +119,7 @@ function formatAnswer(q: CapQuestion, r?: CapResponse): string {
   return "";
 }
 
-function progressKey(entityCode: string, orgTreeId: number | null | undefined) {
+function progressKey(entityCode: string, orgTreeId: string | null | undefined) {
   return `${entityCode}__${orgTreeId ?? "null"}`;
 }
 
@@ -128,9 +127,7 @@ function getQuestionsForNode(
   node: Pick<TreeNode, "code" | "edge_id">,
   questionsByKey: Record<string, CapQuestion[]>
 ) {
-  const direct = questionsByKey[progressKey(node.code, node.edge_id ?? null)] || [];
-  if (direct.length > 0) return direct;
-  return questionsByKey[progressKey(node.code, null)] || [];
+  return questionsByKey[progressKey(node.code, node.edge_id ?? null)] || [];
 }
 
 function subtreeHasQuestions(node: TreeNode | null, questionsByKey: Record<string, CapQuestion[]>): boolean {
@@ -139,8 +136,8 @@ function subtreeHasQuestions(node: TreeNode | null, questionsByKey: Record<strin
   return (node.children || []).some((c) => subtreeHasQuestions(c, questionsByKey));
 }
 
-function findNodeByEdgeId(node: TreeNode, edgeId: number): TreeNode | null {
-  if (node.edge_id === edgeId) return node;
+function findNodeByEdgeId(node: TreeNode, edgeId: string | null): TreeNode | null {
+  if (String(node.edge_id ?? "") === String(edgeId ?? "")) return node;
   for (const c of node.children || []) {
     const f = findNodeByEdgeId(c, edgeId);
     if (f) return f;
@@ -245,21 +242,21 @@ function EntityCard({
   node: TreeNode;
   index: number;
   questionsByKey: Record<string, CapQuestion[]>;
-  responsesByQuestion: Record<number, CapResponse>;
+  responsesByQuestion: Record<string, CapResponse>;
   onClick: () => void;
 }) {
   const getSubtreeProgress = (n: TreeNode) => {
     let t = 0;
     let a = 0;
+    const seen = new Set<string>();
     const walk = (nd: TreeNode) => {
-      const k = progressKey(nd.code, nd.edge_id ?? null);
       const qs = getQuestionsForNode(nd, questionsByKey);
-      const ans = qs.reduce((s, q) => {
-        const hasAns = !!formatAnswer(q, responsesByQuestion[q.id]);
-        return s + (hasAns ? 1 : 0);
-      }, 0);
-      t += qs.length;
-      a += ans;
+      for (const q of qs) {
+        if (seen.has(q.cap_question_id)) continue;
+        seen.add(q.cap_question_id);
+        t++;
+        if (formatAnswer(q, responsesByQuestion[q.cap_question_id])) a++;
+      }
       (nd.children || []).forEach(walk);
     };
     walk(n);
@@ -471,13 +468,13 @@ export default function ClientPage() {
   }, [questions]);
 
   const responsesByQuestion = useMemo(() => {
-    const m: Record<number, CapResponse> = {};
+    const m: Record<string, CapResponse> = {};
     for (const r of responses) m[r.cap_question_id] = r;
     return m;
   }, [responses]);
 
   const [stepHistory, setStepHistory] = useState<
-    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: number | null })[]
+    ({ mode: "cards"; parentCode: string | null; parentEdgeId?: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
   >([{ mode: "cards", parentCode: null }]);
 
   if (isLoading) {
@@ -598,6 +595,18 @@ export default function ClientPage() {
                 return tree ? walk(tree) : null;
               };
 
+              const findInTreeExact = (code: string, edgeId: string | null): TreeNode | null => {
+                const walk = (n: TreeNode): TreeNode | null => {
+                  if (n.code === code && String(n.edge_id ?? "") === String(edgeId ?? "")) return n;
+                  for (const c of n.children || []) {
+                    const f = walk(c);
+                    if (f) return f;
+                  }
+                  return null;
+                };
+                return tree ? walk(tree) : null;
+              };
+
               const breadcrumbNodes: { label: string; goTo: () => void }[] = [];
               if (!isRoot) {
                 const seen = new Set<string>();
@@ -614,15 +623,19 @@ export default function ClientPage() {
               }
 
               const navigateNode = (nd: TreeNode) => {
-                const hasQ = getQuestionsForNode(nd, questionsByKey).length > 0;
-                const hasKids = (nd.children || []).some((c) => subtreeHasQuestions(c, questionsByKey));
-                if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: nd.code }]);
-                else setStepHistory((h) => [...h, { mode: "questions", entityCode: nd.code, orgTreeId: nd.edge_id ?? null }]);
+                const code = nd.code;
+                const edgeId = nd.edge_id != null ? String(nd.edge_id) : null;
+                const hasQ = (questionsByKey[progressKey(code, edgeId)]?.length || 0) > 0;
+                const hasKids = (nd.children ?? []).some((c) => subtreeHasQuestions(c, questionsByKey));
+                if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: code, parentEdgeId: edgeId }]);
+                else setStepHistory((h) => [...h, { mode: "questions", entityCode: code, orgTreeId: edgeId }]);
               };
 
               if (step.mode === "cards") {
-                const parent = step.parentCode ? findInTree(step.parentCode) : tree;
-                const cards = parent
+                const parent = step.parentCode
+                  ? (step.parentEdgeId != null ? findInTreeExact(step.parentCode, step.parentEdgeId) : findInTree(step.parentCode))
+                  : tree;
+                const rawCards = parent
                   ? (step.parentCode === null
                     ? ([parent].filter((n) => subtreeHasQuestions(n, questionsByKey))
                       .length
@@ -630,6 +643,14 @@ export default function ClientPage() {
                       : (parent.children || []).filter((c) => subtreeHasQuestions(c, questionsByKey)))
                     : (parent.children || []).filter((c) => subtreeHasQuestions(c, questionsByKey)))
                   : [];
+                const cards = (() => {
+                  const seen = new Set<string>();
+                  return rawCards.filter((c) => {
+                    if (seen.has(c.code)) return false;
+                    seen.add(c.code);
+                    return true;
+                  });
+                })();
 
                 return (
                   <div className="space-y-5">
@@ -667,12 +688,13 @@ export default function ClientPage() {
               }
 
               const node = step.orgTreeId != null
-                ? findNodeByEdgeId(tree, Number(step.orgTreeId))
-                : findInTree(step.entityCode);
+                ? findNodeByEdgeId(tree, step.orgTreeId)
+                : findInTreeExact(step.entityCode, null) || findInTree(step.entityCode);
               const entityCode = step.entityCode;
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
-              const key = progressKey(entityCode, edgeId);
-              const qs = (questionsByKey[key] || []).slice().sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+              const qs = getQuestionsForNode({ code: entityCode, edge_id: edgeId }, questionsByKey)
+                .slice()
+                .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
               const nodeChildren = node ? (node.children || []) : [];
               const hasChildrenWithQuestions = nodeChildren.some(c => subtreeHasQuestions(c, questionsByKey));
 
@@ -704,7 +726,7 @@ export default function ClientPage() {
 
                   <div className="space-y-3">
                     {qs.map((q, idx) => (
-                      <QuestionPreviewCard key={q.id} question={q} response={responsesByQuestion[q.id]} index={idx + 1} />
+                      <QuestionPreviewCard key={q.cap_question_id} question={q} response={responsesByQuestion[q.cap_question_id]} index={idx + 1} />
                     ))}
                   </div>
 
@@ -717,7 +739,7 @@ export default function ClientPage() {
                     </button>
                     {hasChildrenWithQuestions && (
                       <button
-                        onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode }])}
+                        onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode, parentEdgeId: edgeId }])}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
                       >
                         Next <ChevronRight size={14} />

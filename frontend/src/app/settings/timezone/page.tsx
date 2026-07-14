@@ -13,24 +13,44 @@ export default function TimeZoneSettingsPage() {
   const [selectedTz, setSelectedTz] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
+  const [entityTzError, setEntityTzError] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  const fetchTimezones = async () => {
+    setLoading(true);
+    setFetchError(false);
+    try {
+      const data = await timezonesApi.getAll();
+      setTimezones(data);
+      if (data.length === 0) setFetchError(true);
+    } catch {
+      setTimezones([]);
+      setFetchError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    timezonesApi.getAll()
-      .then(setTimezones)
-      .catch(() => setTimezones([]))
-      .finally(() => setLoading(false));
+    fetchTimezones();
 
     if (accessToken) {
       settingsApi.getTimezone(accessToken)
         .then(res => {
-          if (res.success && res.data?.timezone) setSelectedTz(res.data.timezone);
+          if (res.success && res.data?.timezone) {
+            setSelectedTz(res.data.timezone);
+            setEntityTzError(null);
+          }
         })
-        .catch(() => {});
+        .catch((err) => {
+          console.error("Failed to fetch entity timezone:", err);
+          setEntityTzError("Could not load your organization's current timezone. The timezone column may be missing from the database.");
+        });
     }
   }, [accessToken]);
 
@@ -56,7 +76,7 @@ export default function TimeZoneSettingsPage() {
 
     const ok = await confirm({
       title: "Update Organization Timezone",
-      message: `From this point on, all new records will be saved using ${selected?.timezone_label ?? selectedTz} (${selected?.timezone_offset ?? ""}). Existing timestamps will not be changed.`,
+      message: `From this point on, all new records will be saved using ${selected?.timezone_label ?? selectedTz}${selected?.timezone_offset ? ` (${selected.timezone_offset})` : ""}. Existing timestamps will not be changed.`,
       confirmText: "Confirm Change",
       cancelText: "Cancel",
       variant: "warning",
@@ -119,11 +139,18 @@ export default function TimeZoneSettingsPage() {
             <Loader2 size={16} className="animate-spin" />
             <span className="text-sm">Loading timezones...</span>
           </div>
+        ) : fetchError ? (
+          <div className="flex flex-col items-start gap-3 py-2">
+            <p className="text-sm text-red-400">Failed to load timezones. Please check your connection and try again.</p>
+            <Button variant="secondary" size="sm" onClick={fetchTimezones}>
+              Retry
+            </Button>
+          </div>
         ) : (
           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
 
             {/* Searchable dropdown */}
-            <div className="flex-1 w-full" ref={dropdownRef}>
+            <div className="flex-1 w-full relative" ref={dropdownRef}>
               <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
                 Select Timezone
               </label>
@@ -150,7 +177,7 @@ export default function TimeZoneSettingsPage() {
 
               {/* Dropdown */}
               {open && (
-                <div className="absolute z-50 mt-1 w-full max-w-xl bg-primary-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+                <div className="absolute z-50 mt-1 w-full bg-primary-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden">
                   {/* Search input */}
                   <div className="p-2.5 border-b border-white/[0.06] flex items-center gap-2">
                     <Search size={14} className="text-gray-500 shrink-0 ml-1" />
@@ -216,6 +243,12 @@ export default function TimeZoneSettingsPage() {
             >
               {saving ? "Saving..." : "Save"}
             </Button>
+          </div>
+        )}
+
+        {entityTzError && (
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mt-3">
+            <p className="text-xs text-yellow-400">{entityTzError}</p>
           </div>
         )}
 

@@ -103,11 +103,17 @@ function MyAuditDetailsContent() {
   const searchParams = useSearchParams();
   const auditId = searchParams.get("id");
 
+  useEffect(() => {
+    if (!auditId) {
+      router.replace("/my-audits");
+    }
+  }, [auditId, router]);
+
   const [audit, setAudit] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   
+  const [starting, setStarting] = useState(false);
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState("");
@@ -116,25 +122,31 @@ function MyAuditDetailsContent() {
     if (!accessToken || !auditId) return;
     setLoading(true);
     try {
-      const res = await auditApi.get(accessToken, auditId);
+      const res = await auditExecutionApi.getDetail(accessToken, auditId);
       if (res.success && res.data) {
-        let auditData = (res.data as any).audit;
+        const data = res.data as { audit: any };
+        let auditData = data.audit;
 
-        // Fetch progress & responses to calculate real metrics
-        const [pr, respRes] = await Promise.all([
-          auditExecutionApi.getProgress(accessToken, auditId),
-          auditExecutionApi.getResponses(accessToken, auditId)
-        ]);
+        // Fetch responses to calculate marks
+        const respRes = await auditExecutionApi.getResponses(accessToken, auditId);
 
         let total = 0;
         let answered = 0;
         let totalMarks = 0;
         let obtainedMarks = 0;
 
-        if (pr.success && pr.data) {
-          const pd = pr.data as { progress: any[] };
-          total = pd.progress.reduce((s, p) => s + (p.total_questions || 0), 0);
-          answered = pd.progress.reduce((s, p) => s + (p.answered_questions || 0), 0);
+        // Use progress from getDetail when available
+        const progress = auditData.entity_progress || [];
+        if (progress.length > 0) {
+          total = progress.reduce((s: number, p: any) => s + (p.total_questions || 0), 0);
+          answered = progress.reduce((s: number, p: any) => s + (p.answered_questions || 0), 0);
+        } else {
+          // Fallback: count questions from entity_questions
+          const eqs = auditData.entity_questions || [];
+          for (const eq of eqs) {
+            const qs = eq.questions || [];
+            total += qs.length;
+          }
         }
 
         if (respRes.success && respRes.data) {
@@ -169,7 +181,7 @@ function MyAuditDetailsContent() {
 
   if (error || !audit) {
     return (
-      <div className="min-h-screen bg-[#00151E] flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4">
         <div className="glass rounded-2xl p-8 max-w-md w-full text-center border border-white/10">
           <AlertTriangle className="text-red-500 w-16 h-16 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-white mb-2">Error</h2>
@@ -265,7 +277,7 @@ function MyAuditDetailsContent() {
               {isInProgress && (
                 <>
                   <button
-                    onClick={() => router.push(`/my-audits/execute?id=${audit.id}`)}
+                    onClick={() => router.push(`/my-audits/execute?id=${audit.audit_id}`)}
                     className="w-full bg-blue-500 hover:bg-blue-400 text-white font-black py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/15"
                   >
                     <Zap size={18} /> Continue
@@ -289,7 +301,7 @@ function MyAuditDetailsContent() {
                     <Zap size={18} /> Completed
                   </button>
                   <button
-                    onClick={() => router.push(`/my-audits/report?id=${audit.id}`)}
+                    onClick={() => router.push(`/my-audits/report?id=${audit.audit_id}`)}
                     className="w-full bg-emerald-500 text-primary-950 font-black py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/15"
                   >
                     <BarChart3 size={18} /> Report
@@ -298,7 +310,7 @@ function MyAuditDetailsContent() {
               )}
 
               <button
-                onClick={() => router.push(`/my-audits/preview?id=${audit.id}`)}
+                onClick={() => router.push(`/my-audits/preview?id=${audit.audit_id}`)}
                 className="w-full glass hover:bg-white/5 text-gray-300 font-bold py-3 rounded-xl text-sm border border-white/10 transition-all flex items-center justify-center gap-2"
               >
                 <Building2 size={17} /> Preview
@@ -316,7 +328,7 @@ function MyAuditDetailsContent() {
             </div>
 
             <button
-              onClick={() => isCompleted && router.push(`/my-audits/corrective-actions?id=${audit.id}`)}
+              onClick={() => isCompleted && router.push(`/my-audits/corrective-actions?id=${audit.audit_id}`)}
               className={`w-full glass rounded-3xl p-6 border transition-all flex flex-col items-center justify-center text-center group border-white/10 hover:border-secondary-500/30 cursor-pointer`}
             >
               <ClipboardList size={32} className={`${isCompleted ? "text-gray-500 group-hover:text-secondary-400" : "text-gray-700"} mb-2 transition-colors`} />
@@ -346,7 +358,7 @@ function MyAuditDetailsContent() {
           loading={completing}
           error={completeError}
           accessToken={accessToken!}
-          auditId={audit.id}
+          auditId={audit.audit_id}
           progress={audit.entity_progress as any}
         />
       )}

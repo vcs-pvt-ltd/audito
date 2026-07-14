@@ -12,6 +12,11 @@ async function apiRequest<T = unknown>(
 ): Promise<{ success: boolean; data?: T; message?: string }> {
   const { method = "GET", body, token } = options;
 
+  if (endpoint.includes("undefined")) {
+    console.error(`apiRequest: endpoint contains "undefined": ${method} ${endpoint}`);
+    return { success: false, message: "Invalid request: missing identifier." };
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -85,7 +90,6 @@ export interface RegisterPayload {
   company_type?: string;
   first_name: string;
   last_name: string;
-  nic?: string;
   email: string;
   phone_number?: string;
   password: string;
@@ -159,6 +163,12 @@ export const authApi = {
       body: { email, reset_token, new_password },
     }),
 
+  setAdminPassword: (token: string, password: string) =>
+    apiRequest("/auth/set-admin-password", {
+      method: "POST",
+      body: { token, password },
+    }),
+
   switchAccount: (token: string, target_role: string, password: string) =>
     apiRequest("/auth/switch-account", {
       method: "POST",
@@ -168,7 +178,7 @@ export const authApi = {
 
   updateProfile: (
     token: string,
-    data: { first_name: string; last_name: string; phone_number?: string; nic?: string; country?: string; profile_image?: string | null }
+    data: { first_name: string; last_name: string; phone_number?: string; country?: string; profile_image?: string | null }
   ) =>
     apiRequest("/auth/profile", {
       method: "PUT",
@@ -194,6 +204,12 @@ export const authApi = {
       method: "PUT",
       body: { action },
       token,
+    }),
+
+  validatePromoCode: (code: string) =>
+    apiRequest<{ code: string; discount_percentage: number }>("/auth/validate-promo-code", {
+      method: "POST",
+      body: { code },
     }),
 };
 
@@ -241,7 +257,7 @@ export const orgTreeApi = {
       token,
     }),
 
-  removeNode: (token: string, id: number) =>
+  removeNode: (token: string, id: string) =>
     apiRequest(`/org-tree/${id}`, { method: "DELETE", token }),
 
   listEntities: (token: string, entityType: string) =>
@@ -250,8 +266,8 @@ export const orgTreeApi = {
   syncTree: (
     token: string,
     data: {
-      adds: { parent_code: string; parent_edge_id?: number | null; child_type: string; child_code: string }[];
-      removes: number[];
+      adds: { parent_code: string; parent_edge_id?: string | null; child_type: string; child_code: string }[];
+      removes: string[];
     }
   ) =>
     apiRequest("/org-tree/sync", {
@@ -308,12 +324,11 @@ export interface CreateUserPayload {
   last_name: string;
   email: string;
   phone_number?: string;
-  nic?: string;
   country?: string;
   user_type: string;
   assigned_entity_code?: string;
   assigned_entity_type?: string;
-  assigned_org_tree_id?: number;
+  assigned_org_tree_id?: string;
 }
 
 export const usersApi = {
@@ -349,7 +364,7 @@ export const usersApi = {
       token,
     }),
 
-  createFromAdmin: (token: string, data: { email: string; user_type: string; assigned_entity_code?: string; assigned_entity_type?: string; assigned_org_tree_id?: number }) =>
+  createFromAdmin: (token: string, data: { email: string; user_type: string; assigned_entity_code?: string; assigned_entity_type?: string; assigned_org_tree_id?: string }) =>
     apiRequest("/users/create-from-admin", {
       method: "POST",
       body: data as unknown as Record<string, unknown>,
@@ -398,7 +413,7 @@ export interface QuestionOption {
 
 export interface QuestionPayload {
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   entity_type: string;
   entity_name?: string;
   question_text: string;
@@ -414,9 +429,9 @@ export const checklistApi = {
     apiRequest("/checklists/types", { token }),
   createType: (token: string, data: ChecklistTypePayload) =>
     apiRequest("/checklists/types", { method: "POST", body: data as unknown as Record<string, unknown>, token }),
-  updateType: (token: string, id: number | string, data: ChecklistTypePayload) =>
+  updateType: (token: string, id: string, data: ChecklistTypePayload) =>
     apiRequest(`/checklists/types/${id}`, { method: "PUT", body: data as unknown as Record<string, unknown>, token }),
-  deactivateType: (token: string, id: number | string) =>
+  deactivateType: (token: string, id: string) =>
     apiRequest(`/checklists/types/${id}`, { method: "DELETE", token }),
 
   // Checklists
@@ -424,27 +439,27 @@ export const checklistApi = {
     apiRequest("/checklists", { token }),
   create: (token: string, data: ChecklistPayload) =>
     apiRequest("/checklists", { method: "POST", body: data as unknown as Record<string, unknown>, token }),
-  get: (token: string, id: number | string) =>
+  get: (token: string, id: string) =>
     apiRequest(`/checklists/${id}`, { token }),
-  update: (token: string, id: number | string, data: ChecklistPayload) =>
+  update: (token: string, id: string, data: ChecklistPayload) =>
     apiRequest(`/checklists/${id}`, { method: "PUT", body: data as unknown as Record<string, unknown>, token }),
-  deactivate: (token: string, id: number | string) =>
+  deactivate: (token: string, id: string) =>
     apiRequest(`/checklists/${id}`, { method: "DELETE", token }),
 
   // Questions
-  addQuestions: (token: string, checklistId: number | string, questions: QuestionPayload[]) =>
+  addQuestions: (token: string, checklistId: string, questions: QuestionPayload[]) =>
     apiRequest(`/checklists/${checklistId}/questions`, {
       method: "POST",
       body: { questions } as unknown as Record<string, unknown>,
       token,
     }),
-  updateQuestion: (token: string, qid: number | string, data: Partial<QuestionPayload>) =>
+  updateQuestion: (token: string, qid: string, data: Partial<QuestionPayload>) =>
     apiRequest(`/checklists/questions/${qid}`, {
       method: "PUT",
       body: data as unknown as Record<string, unknown>,
       token,
     }),
-  deleteQuestion: (token: string, qid: number | string) =>
+  deleteQuestion: (token: string, qid: string) =>
     apiRequest(`/checklists/questions/${qid}`, { method: "DELETE", token }),
 
   // Media upload
@@ -480,7 +495,7 @@ export const checklistApi = {
   },
 
   // Excel upload
-  uploadQuestionsExcel: async (token: string, checklistId: number | string, file: File) => {
+  uploadQuestionsExcel: async (token: string, checklistId: string, file: File) => {
     const formData = new FormData();
     formData.append("questions_file", file);
     const res = await fetch(`${API_BASE_URL}/checklists/${checklistId}/questions/upload`, {
@@ -506,12 +521,12 @@ export const checklistApi = {
 
 
 export interface AuditPayload {
-  checklist_id: number | string;
+  checklist_id: string;
   title: string;
   audit_type: "internal" | "external";
-  assigned_auditor_code?: string;
+    assigned_auditor_id?: string;
   assigned_firm_code?: string;
-  assigned_org_tree_id?: number | null;
+  assigned_org_tree_id?: string | null;
   budget?: number | string;
   currency?: string;
   num_workers?: number | string;
@@ -519,11 +534,11 @@ export interface AuditPayload {
   end_date: string;
   notes?: string;
   status?: "plan" | "in_progress" | "completed";
-  entities: Array<{ org_tree_id?: number | null; entity_code: string; entity_type: string; entity_name: string }>;
+  entities: Array<{ org_tree_id?: string | null; entity_code: string; entity_type: string; entity_name: string }>;
 }
 
 export const auditApi = {
-  getChecklistEntities: (token: string, checklistId: number | string) =>
+  getChecklistEntities: (token: string, checklistId: string) =>
     apiRequest(`/audits/checklist/${checklistId}/entities`, { token }),
 
   create: (token: string, data: AuditPayload) =>
@@ -532,16 +547,16 @@ export const auditApi = {
   list: (token: string) =>
     apiRequest("/audits", { token }),
 
-  get: (token: string, id: number | string) =>
+  get: (token: string, id: string) =>
     apiRequest(`/audits/${id}`, { token }),
 
-  update: (token: string, id: number | string, data: Partial<AuditPayload>) =>
+  update: (token: string, id: string, data: Partial<AuditPayload>) =>
     apiRequest(`/audits/${id}`, { method: "PUT", body: data as unknown as Record<string, unknown>, token }),
 
-  delete: (token: string, id: number | string) =>
+  delete: (token: string, id: string) =>
     apiRequest(`/audits/${id}`, { method: "DELETE", token }),
 
-  cancel: (token: string, id: number | string) =>
+  cancel: (token: string, id: string) =>
     apiRequest(`/audits/${id}/cancel`, { method: "POST", token }),
 
   count: (token: string) =>
@@ -574,20 +589,20 @@ export const auditExecutionApi = {
   myAudits: (token: string) =>
     apiRequest("/audit-execution/my-audits", { token }),
 
-  getDetail: (token: string, id: number | string) =>
+  getDetail: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}`, { token }),
 
-  getEntityTree: (token: string, id: number | string) =>
+  getEntityTree: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}/entity-tree`, { token }),
 
-  getCorrectiveActions: (token: string, id: number | string) =>
+  getCorrectiveActions: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}/corrective-actions`, { token }),
 
-  saveCorrectiveActions: (token: string, id: number | string, actions: Array<{
-    response_id: number;
+  saveCorrectiveActions: (token: string, id: string, actions: Array<{
+    response_id: string;
     entity_code: string;
-    question_id: number;
-    assigned_org_tree_id?: number | null;
+    question_id: string;
+    assigned_org_tree_id?: string | null;
     due_date?: string | null;
   }>) =>
     apiRequest(`/audit-execution/${id}/corrective-actions`, {
@@ -596,15 +611,15 @@ export const auditExecutionApi = {
       token,
     }),
 
-  start: (token: string, id: number | string) =>
+  start: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}/start`, { method: "POST", token }),
 
-  respond: (token: string, id: number | string, data: {
-    org_tree_id: number | null;
+  respond: (token: string, id: string, data: {
+    org_tree_id: string | null;
     entity_code: string;
-    question_id: number;
+    question_id: string;
     answer_text?: string;
-    selected_option_ids?: number[];
+    selected_option_ids?: string[];
     marks_obtained: number;
     remarks?: string;
     cap_required?: boolean;
@@ -615,16 +630,16 @@ export const auditExecutionApi = {
       token,
     }),
 
-  getResponses: (token: string, id: number | string) =>
+  getResponses: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}/responses`, { token }),
 
-  getEntityResponses: (token: string, id: number | string, entityCode: string, orgTreeId: number) =>
-    apiRequest(`/audit-execution/${id}/responses/${entityCode}?org_tree_id=${encodeURIComponent(String(orgTreeId))}`, { token }),
+  getEntityResponses: (token: string, id: string, entityCode: string, orgTreeId: string) =>
+    apiRequest(`/audit-execution/${id}/responses/${entityCode}?org_tree_id=${encodeURIComponent(orgTreeId)}`, { token }),
 
-  uploadEvidence: async (token: string, id: number | string, responseId: number, file: File, fileType: string) => {
+  uploadEvidence: async (token: string, id: string, responseId: string, file: File, fileType: string) => {
     const formData = new FormData();
     formData.append("evidence_file", file);
-    formData.append("response_id", String(responseId));
+    formData.append("response_id", responseId);
     formData.append("file_type", fileType);
     const res = await fetch(`${API_BASE_URL}/audit-execution/${id}/evidence`, {
       method: "POST",
@@ -634,20 +649,20 @@ export const auditExecutionApi = {
     return res.json();
   },
 
-  deleteEvidence: (token: string, evidenceId: number) =>
+  deleteEvidence: (token: string, evidenceId: string) =>
     apiRequest(`/audit-execution/evidence/${evidenceId}`, { method: "DELETE", token }),
 
-  getProgress: (token: string, id: number | string) =>
+  getProgress: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}/progress`, { token }),
 
-  complete: (token: string, id: number | string) =>
+  complete: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}/complete`, { method: "POST", token }),
 
-  getReport: (token: string, id: number | string) =>
+  getReport: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}/report`, { token }),
 
-  submitFollowUp: (token: string, id: number | string, data: {
-    cap_id: number;
+  submitFollowUp: (token: string, id: string, data: {
+    cap_id: string;
     verification: "pending" | "verified" | "rejected";
     notes?: string;
   }) =>
@@ -657,7 +672,7 @@ export const auditExecutionApi = {
       token,
     }),
 
-  getFollowUpResponses: (token: string, id: number | string) =>
+  getFollowUpResponses: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}/follow-up-responses`, { token }),
 };
 
@@ -666,8 +681,8 @@ export const auditExecutionApi = {
 export const capApi = {
   // Create a CAP plan from corrective actions of a completed audit
   create: (token: string, data: {
-    audit_id: number | string;
-    parent_cap_id?: number | string;
+    audit_id: string;
+    parent_cap_id?: string;
     title?: string;
     description?: string;
   }) =>
@@ -682,19 +697,19 @@ export const capApi = {
     return apiRequest(`/caps${qs}`, { token });
   },
 
-  listByAudit: (token: string, auditId: number | string) =>
+  listByAudit: (token: string, auditId: string) =>
     apiRequest(`/caps/audit/${auditId}`, { token }),
 
-  get: (token: string, id: number | string) =>
+  get: (token: string, id: string) =>
     apiRequest(`/caps/${id}`, { token }),
 
   // Get CAP questions for execution view
-  getItems: (token: string, id: number | string) =>
+  getItems: (token: string, id: string) =>
     apiRequest(`/caps/${id}/items`, { token }),
 
   // Submit a response to a CAP question
-  respond: (token: string, id: number | string, data: {
-    cap_question_id: number;
+  respond: (token: string, id: string, data: {
+    cap_question_id: string;
     response_text?: string;
   }) =>
     apiRequest(`/caps/${id}/respond`, {
@@ -704,18 +719,18 @@ export const capApi = {
     }),
 
   // Get all responses for a CAP
-  getResponses: (token: string, id: number | string) =>
+  getResponses: (token: string, id: string) =>
     apiRequest(`/caps/${id}/responses`, { token }),
 
   // Get entity-level progress for a CAP
-  getProgress: (token: string, id: number | string) =>
+  getProgress: (token: string, id: string) =>
     apiRequest(`/caps/${id}/progress`, { token }),
 
   // Mark CAP as completed
-  complete: (token: string, id: number | string) =>
+  complete: (token: string, id: string) =>
     apiRequest(`/caps/${id}/complete`, { method: "POST", token }),
 
-  assign: (token: string, id: number | string, data: {
+  assign: (token: string, id: string, data: {
     responsible_person_code: string;
     responsible_person_name?: string;
     due_date: string;
@@ -726,7 +741,7 @@ export const capApi = {
       token,
     }),
 
-  updateStatus: (token: string, id: number | string, data: {
+  updateStatus: (token: string, id: string, data: {
     status: string;
     resolution_notes?: string;
   }) =>
@@ -736,17 +751,17 @@ export const capApi = {
       token,
     }),
 
-  resolve: (token: string, id: number | string, resolution_notes?: string) =>
+  resolve: (token: string, id: string, resolution_notes?: string) =>
     apiRequest(`/caps/${id}/resolve`, {
       method: "PUT",
       body: { resolution_notes } as unknown as Record<string, unknown>,
       token,
     }),
 
-  uploadEvidence: async (token: string, capId: number | string, responseId: number, file: File, fileType: string) => {
+  uploadEvidence: async (token: string, capId: string, responseId: string, file: File, fileType: string) => {
     const formData = new FormData();
     formData.append("evidence_file", file);
-    formData.append("response_id", String(responseId));
+    formData.append("response_id", responseId);
     formData.append("file_type", fileType);
     const res = await fetch(`${API_BASE_URL}/caps/${capId}/evidence`, {
       method: "POST",
@@ -756,13 +771,13 @@ export const capApi = {
     return res.json();
   },
 
-  deleteEvidence: (token: string, evidenceId: number) =>
+  deleteEvidence: (token: string, evidenceId: string) =>
     apiRequest(`/caps/evidence/${evidenceId}`, { method: "DELETE", token }),
 
   createFollowUp: (token: string, data: {
-    parent_audit_id: number;
+    parent_audit_id: string;
     title: string;
-    assigned_auditor_code?: string;
+  assigned_auditor_id?: string;
     start_date: string;
     end_date: string;
     notes?: string;
@@ -773,14 +788,14 @@ export const capApi = {
       token,
     }),
 
-  getCorrectiveActions: (token: string, id: number | string) =>
+  getCorrectiveActions: (token: string, id: string) =>
     apiRequest(`/caps/${id}/corrective-actions`, { token }),
 
-  saveCorrectiveActions: (token: string, id: number | string, actions: Array<{
-    response_id: number;
+  saveCorrectiveActions: (token: string, id: string, actions: Array<{
+    response_id: string;
     entity_code: string;
-    question_id: number;
-    assigned_org_tree_id?: number | null;
+    question_id: string;
+    assigned_org_tree_id?: string | null;
     due_date?: string | null;
   }>) =>
     apiRequest(`/caps/${id}/corrective-actions`, {
@@ -893,10 +908,10 @@ export const settingsApi = {
   createNotice: (token: string, payload: Record<string, unknown>) =>
     apiRequest('/settings/notices', { method: 'POST', body: payload, token }),
 
-  updateNotice: (token: string, id: number, payload: Record<string, unknown>) =>
+  updateNotice: (token: string, id: string, payload: Record<string, unknown>) =>
     apiRequest(`/settings/notices/${id}`, { method: 'PUT', body: payload, token }),
 
-  deleteNotice: (token: string, id: number) =>
+  deleteNotice: (token: string, id: string) =>
     apiRequest(`/settings/notices/${id}`, { method: 'DELETE', token }),
 };
 
@@ -904,11 +919,11 @@ export const settingsApi = {
 
 export const noticeApi = {
   getMyNotices: (token: string) => apiRequest<{ notices: unknown[] }>('/notices', { token }),
-  markRead: (token: string, id: number) =>
+  markRead: (token: string, id: string) =>
     apiRequest(`/notices/${id}/read`, { method: 'PATCH', token }),
-  markUnread: (token: string, id: number) =>
+  markUnread: (token: string, id: string) =>
     apiRequest(`/notices/${id}/unread`, { method: 'PATCH', token }),
-  deleteMine: (token: string, id: number) =>
+  deleteMine: (token: string, id: string) =>
     apiRequest(`/notices/${id}`, { method: 'DELETE', token }),
 };
 
@@ -938,10 +953,10 @@ export const auditorProfileApi = {
   addExperience: (token: string, data: Record<string, any>) =>
     apiRequest("/auditor-profile/experiences", { method: "POST", body: data, token }),
 
-  updateExperience: (token: string, id: number, data: Record<string, any>) =>
+  updateExperience: (token: string, id: string, data: Record<string, any>) =>
     apiRequest(`/auditor-profile/experiences/${id}`, { method: "PUT", body: data, token }),
 
-  deleteExperience: (token: string, id: number) =>
+  deleteExperience: (token: string, id: string) =>
     apiRequest(`/auditor-profile/experiences/${id}`, { method: "DELETE", token }),
 
   addQualification: async (token: string, data: Record<string, any>, file?: File) => {
@@ -959,7 +974,7 @@ export const auditorProfileApi = {
     return res.json();
   },
 
-  updateQualification: async (token: string, id: number, data: Record<string, any>, file?: File) => {
+  updateQualification: async (token: string, id: string, data: Record<string, any>, file?: File) => {
     const formData = new FormData();
     Object.entries(data).forEach(([key, val]) => {
       if (val !== undefined && val !== null) formData.append(key, String(val));
@@ -974,7 +989,7 @@ export const auditorProfileApi = {
     return res.json();
   },
 
-  deleteQualification: (token: string, id: number) =>
+  deleteQualification: (token: string, id: string) =>
     apiRequest(`/auditor-profile/qualifications/${id}`, { method: "DELETE", token }),
 
   addTraining: async (token: string, data: Record<string, any>, file?: File) => {
@@ -992,7 +1007,7 @@ export const auditorProfileApi = {
     return res.json();
   },
 
-  updateTraining: async (token: string, id: number, data: Record<string, any>, file?: File) => {
+  updateTraining: async (token: string, id: string, data: Record<string, any>, file?: File) => {
     const formData = new FormData();
     Object.entries(data).forEach(([key, val]) => {
       if (val !== undefined && val !== null) formData.append(key, String(val));
@@ -1007,7 +1022,7 @@ export const auditorProfileApi = {
     return res.json();
   },
 
-  deleteTraining: (token: string, id: number) =>
+  deleteTraining: (token: string, id: string) =>
     apiRequest(`/auditor-profile/trainings/${id}`, { method: "DELETE", token }),
 };
 
@@ -1015,23 +1030,23 @@ export const learningApi = {
   // Trainings
   listTrainings: (token: string) => apiRequest('/learning/trainings', { token }),
   createTraining: (token: string, body: Record<string, any>) => apiRequest('/learning/trainings', { method: 'POST', body, token }),
-  updateTraining: (token: string, id: number, body: Record<string, any>) => apiRequest(`/learning/trainings/${id}`, { method: 'PUT', body, token }),
-  deleteTraining: (token: string, id: number) => apiRequest(`/learning/trainings/${id}`, { method: 'DELETE', token }),
-  assignTraining: (token: string, id: number, auditor_codes: string[]) => apiRequest(`/learning/trainings/${id}/assign`, { method: 'POST', body: { auditor_codes }, token }),
+  updateTraining: (token: string, id: string, body: Record<string, any>) => apiRequest(`/learning/trainings/${id}`, { method: 'PUT', body, token }),
+  deleteTraining: (token: string, id: string) => apiRequest(`/learning/trainings/${id}`, { method: 'DELETE', token }),
+  assignTraining: (token: string, id: string, auditor_codes: string[]) => apiRequest(`/learning/trainings/${id}/assign`, { method: 'POST', body: { auditor_codes }, token }),
 
   // Field visits
   listFieldVisits: (token: string) => apiRequest('/learning/field-visits', { token }),
   createFieldVisit: (token: string, body: Record<string, any>) => apiRequest('/learning/field-visits', { method: 'POST', body, token }),
-  updateFieldVisit: (token: string, id: number, body: Record<string, any>) => apiRequest(`/learning/field-visits/${id}`, { method: 'PUT', body, token }),
-  deleteFieldVisit: (token: string, id: number) => apiRequest(`/learning/field-visits/${id}`, { method: 'DELETE', token }),
-  assignFieldVisit: (token: string, id: number, auditor_codes: string[]) => apiRequest(`/learning/field-visits/${id}/assign`, { method: 'POST', body: { auditor_codes }, token }),
+  updateFieldVisit: (token: string, id: string, body: Record<string, any>) => apiRequest(`/learning/field-visits/${id}`, { method: 'PUT', body, token }),
+  deleteFieldVisit: (token: string, id: string) => apiRequest(`/learning/field-visits/${id}`, { method: 'DELETE', token }),
+  assignFieldVisit: (token: string, id: string, auditor_codes: string[]) => apiRequest(`/learning/field-visits/${id}/assign`, { method: 'POST', body: { auditor_codes }, token }),
 
   // Evaluation papers
   listEvaluationPapers: (token: string) => apiRequest('/learning/evaluation-papers', { token }),
   createEvaluationPaper: (token: string, body: Record<string, any>) => apiRequest('/learning/evaluation-papers', { method: 'POST', body, token }),
-  updateEvaluationPaper: (token: string, id: number, body: Record<string, any>) => apiRequest(`/learning/evaluation-papers/${id}`, { method: 'PUT', body, token }),
-  deleteEvaluationPaper: (token: string, id: number) => apiRequest(`/learning/evaluation-papers/${id}`, { method: 'DELETE', token }),
-  setEvaluationQuestions: (token: string, id: number, questions: any[]) => apiRequest(`/learning/evaluation-papers/${id}/questions`, { method: 'POST', body: { questions }, token }),
+  updateEvaluationPaper: (token: string, id: string, body: Record<string, any>) => apiRequest(`/learning/evaluation-papers/${id}`, { method: 'PUT', body, token }),
+  deleteEvaluationPaper: (token: string, id: string) => apiRequest(`/learning/evaluation-papers/${id}`, { method: 'DELETE', token }),
+  setEvaluationQuestions: (token: string, id: string, questions: any[]) => apiRequest(`/learning/evaluation-papers/${id}/questions`, { method: 'POST', body: { questions }, token }),
   evaluationExcelTemplateUrl: () => `${API_BASE_URL}/learning/evaluation-papers/excel-template`,
 
   downloadEvaluationExcelTemplate: async (token: string) => {
@@ -1064,7 +1079,7 @@ export const learningApi = {
     return res.json();
   },
 
-  uploadEvaluationQuestionsExcel: async (token: string, paperId: number, file: File) => {
+  uploadEvaluationQuestionsExcel: async (token: string, paperId: string, file: File) => {
     const formData = new FormData();
     formData.append('questions_file', file);
     const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/${paperId}/questions/upload`, {
@@ -1074,7 +1089,7 @@ export const learningApi = {
     });
     return res.json();
   },
-  assignEvaluationPaper: (token: string, id: number, auditor_codes: string[], due_date?: string) => apiRequest(`/learning/evaluation-papers/${id}/assign`, { method: 'POST', body: { auditor_codes, due_date }, token }),
+  assignEvaluationPaper: (token: string, id: string, auditor_codes: string[], due_date?: string) => apiRequest(`/learning/evaluation-papers/${id}/assign`, { method: 'POST', body: { auditor_codes, due_date }, token }),
 };
 
 // Backward-compatible alias for existing imports; can be removed after UI refactor.
@@ -1083,29 +1098,29 @@ export const auditFirmLearningApi = learningApi;
 export const myLearningApi = {
   // Trainings
   myTrainings: (token: string) => apiRequest('/my-learning/trainings', { token }),
-  completeTraining: (token: string, assignmentId: number) => apiRequest(`/my-learning/trainings/${assignmentId}/complete`, { method: 'POST', token }),
+  completeTraining: (token: string, assignmentId: string) => apiRequest(`/my-learning/trainings/${assignmentId}/complete`, { method: 'POST', token }),
 
   // Field visits
   myFieldVisits: (token: string) => apiRequest('/my-learning/field-visits', { token }),
-  completeFieldVisit: (token: string, assignmentId: number) => apiRequest(`/my-learning/field-visits/${assignmentId}/complete`, { method: 'POST', token }),
+  completeFieldVisit: (token: string, assignmentId: string) => apiRequest(`/my-learning/field-visits/${assignmentId}/complete`, { method: 'POST', token }),
 
   // Evaluation papers
   myEvaluationPapers: (token: string) => apiRequest('/my-learning/evaluation-papers', { token }),
-  getEvaluationPaper: (token: string, paperId: number) => apiRequest(`/my-learning/evaluation-papers/${paperId}`, { token }),
+  getEvaluationPaper: (token: string, paperId: string) => apiRequest(`/my-learning/evaluation-papers/${paperId}`, { token }),
   submitEvaluationPaper: (
     token: string,
-    paperId: number,
+    paperId: string,
     answers: Array<
-      | { question_id: number; answer_text: string }
-      | { question_id: number; selected_option_id: number | null }
-      | { question_id: number; selected_option_ids: number[] }
+      | { question_id: string; answer_text: string }
+      | { question_id: string; selected_option_id: string | null }
+      | { question_id: string; selected_option_ids: string[] }
     >
   ) =>
     apiRequest(`/my-learning/evaluation-papers/${paperId}/submit`, { method: 'POST', body: { answers }, token }),
 };
 
 export const landingApi = {
-  submitContact: (data: { name: string; email: string; company?: string; phone?: string; message: string }) =>
+  submitContact: (data: { name: string; email: string; company?: string; phone?: string; country?: string; message: string }) =>
     apiRequest("/landing/contact", { method: "POST", body: data as unknown as Record<string, unknown> }),
 };
 
@@ -1133,7 +1148,7 @@ export const paymentApi = {
   // Public — payment page lookup & confirmation (temporary; gateway webhook later)
   get: (code: string) => apiRequest<{ payment: PaymentDetails }>(`/payments/${code}`),
   confirm: (code: string) =>
-    apiRequest<{ payment: PaymentDetails }>(`/payments/${code}/confirm`, { method: "POST" }),
+    apiRequest<{ payment: PaymentDetails; credit_applied?: number; credit_applications?: { application_id: string; credit_id: string; applied_amount: number }[]; net_amount?: number }>(`/payments/${code}/confirm`, { method: "POST" }),
 
   // Authenticated (admin)
   checkout: (token: string, body: { plan_name: string; billing_cycle: string; purpose: "upgrade" | "renewal" }) =>
@@ -1143,4 +1158,130 @@ export const paymentApi = {
       token,
     }),
   list: (token: string) => apiRequest<{ payments: PaymentDetails[] }>("/payments", { token }),
+};
+
+// ─── Link Billing Credits API ────────────────────────────────────
+
+export interface LinkBillingCredit {
+  credit_id: string;
+  organization_link_id: string;
+  credit_for_entity_code: string;
+  credit_from_entity_code: string;
+  source_plan_name: string;
+  source_billing_cycle: string;
+  source_yearly_billed: number;
+  remaining_months: number;
+  credit_amount: number;
+  applied_amount: number;
+  status: "active" | "fully_applied" | "reversed";
+  created_at: string;
+  reversed_at: string | null;
+}
+
+export const billingCreditsApi = {
+  list: (token: string) =>
+    apiRequest<{ credits: LinkBillingCredit[]; available_amount: number }>("/billing/credits", { token }),
+
+  preview: (token: string, linkCode: string) =>
+    apiRequest<{ credit: LinkBillingCredit | null }>(`/billing/credits/preview/${linkCode}`, { token }),
+};
+
+// ─── Admin API ────────────────────────────────────────────────────
+export interface ContactMessage {
+  contact_message_id: string;
+  id?: number;
+  name: string;
+  email: string;
+  company: string | null;
+  phone: string | null;
+  message: string;
+  status: 'unread' | 'read' | 'replied';
+  reply_content: string | null;
+  replied_at: string | null;
+  created_at: string;
+}
+
+export interface PromoCode {
+  promo_code_id: string;
+  id?: number;
+  code: string;
+  discount_percentage: number;
+  is_active: boolean;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface AdminUser {
+  admin_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone_number: string | null;
+  role: 'admin' | 'audito_admin';
+  is_active: boolean;
+  is_verified: boolean;
+  created_at: string;
+}
+
+export const adminApi = {
+  listMessages: (token: string) =>
+    apiRequest<ContactMessage[]>("/admin/messages", { token }),
+  
+  replyMessage: (token: string, id: string, reply_content: string) =>
+    apiRequest(`/admin/messages/${id}/reply`, {
+      method: "POST",
+      body: { reply_content },
+      token,
+    }),
+  
+  listPromoCodes: (token: string) =>
+    apiRequest<PromoCode[]>("/admin/promo-codes", { token }),
+  
+  createPromoCode: (token: string, data: { code: string; discount_percentage: number; expires_at?: string }) =>
+    apiRequest("/admin/promo-codes", {
+      method: "POST",
+      body: data as unknown as Record<string, unknown>,
+      token,
+    }),
+  
+  deactivatePromoCode: (token: string, id: string) =>
+    apiRequest(`/admin/promo-codes/${id}/deactivate`, {
+      method: "POST",
+      token,
+    }),
+
+  deletePromoCode: (token: string, id: string) =>
+    apiRequest(`/admin/promo-codes/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+
+  // Admin user management
+  listAdmins: (token: string, params?: { role?: string; is_active?: string; search?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.role) qs.set('role', params.role);
+    if (params?.is_active) qs.set('is_active', params.is_active);
+    if (params?.search) qs.set('search', params.search);
+    const query = qs.toString();
+    return apiRequest<AdminUser[]>(`/admin/admins${query ? `?${query}` : ""}`, { token });
+  },
+
+  createAdmin: (token: string, data: { first_name: string; last_name: string; email: string }) =>
+    apiRequest("/admin/admins", {
+      method: "POST",
+      body: data as unknown as Record<string, unknown>,
+      token,
+    }),
+
+  toggleAdminStatus: (token: string, adminId: string) =>
+    apiRequest(`/admin/admins/${adminId}/toggle-status`, {
+      method: "POST",
+      token,
+    }),
+
+  deleteAdmin: (token: string, adminId: string) =>
+    apiRequest(`/admin/admins/${adminId}`, {
+      method: "DELETE",
+      token,
+    }),
 };

@@ -10,21 +10,23 @@
  */
 
 const { db } = require('../config/db');
+const { generateOrgTreeId } = require('../utils/codeGenerator');
 
 const OrganizationTreeModel = {
 
-  async addNode({ parent_type, parent_code, child_type, child_code, created_by, root_entity_code, parent_edge_id = null }) {
-  const [result] = await db.query(
-    `INSERT INTO organization_tree 
-     (parent_type, parent_code, child_type, child_code, created_by, root_entity_code, parent_edge_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [parent_type, parent_code, child_type, child_code, created_by, root_entity_code || null, parent_edge_id || null]
-  );
-  return result.insertId;
-},
+  async addNode({ org_tree_id, parent_type, parent_code, child_type, child_code, created_by, root_entity_code, parent_edge_id = null }) {
+    const id = org_tree_id || await generateOrgTreeId();
+    await db.query(
+      `INSERT INTO organization_tree 
+       (org_tree_id, parent_type, parent_code, child_type, child_code, created_by, root_entity_code, parent_edge_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, parent_type, parent_code, child_type, child_code, created_by, root_entity_code || null, parent_edge_id || null]
+    );
+    return id;
+  },
 
-  async removeNode(id) {
-    await db.query('DELETE FROM organization_tree WHERE id = ?', [id]);
+  async removeNode(org_tree_id) {
+    await db.query('DELETE FROM organization_tree WHERE org_tree_id = ?', [org_tree_id]);
   },
 
   /**
@@ -36,34 +38,34 @@ const OrganizationTreeModel = {
    * by parent_code/child_code (entity codes), because the same entity can appear
    * multiple times under different parents.
    */
-  async removeSubtree(edgeId, childCode, rootEntityCode) {
+  async removeSubtree(org_tree_id, childCode, rootEntityCode) {
     // childCode is intentionally unused (kept for backward compatibility with call sites)
     await db.query(
       `WITH RECURSIVE subtree AS (
-        SELECT id
+        SELECT org_tree_id
         FROM organization_tree
-        WHERE id = ?
+        WHERE org_tree_id = ?
           AND root_entity_code = ?
 
         UNION ALL
 
-        SELECT ot.id
+        SELECT ot.org_tree_id
         FROM organization_tree ot
-        INNER JOIN subtree s ON ot.parent_edge_id = s.id
+        INNER JOIN subtree s ON ot.parent_edge_id = s.org_tree_id
         WHERE ot.root_entity_code = ?
           AND ot.is_active = TRUE
       )
       DELETE FROM organization_tree
       WHERE root_entity_code = ?
-        AND id IN (SELECT id FROM subtree)`,
-      [edgeId, rootEntityCode, rootEntityCode, rootEntityCode]
+        AND org_tree_id IN (SELECT org_tree_id FROM subtree)`,
+      [org_tree_id, rootEntityCode, rootEntityCode, rootEntityCode]
     );
   },
 
-  async findById(id) {
+  async findById(org_tree_id) {
     const [rows] = await db.query(
-      'SELECT * FROM organization_tree WHERE id = ? AND is_active = TRUE',
-      [id]
+      'SELECT * FROM organization_tree WHERE org_tree_id = ? AND is_active = TRUE',
+      [org_tree_id]
     );
     return rows[0] || null;
   },
@@ -129,7 +131,7 @@ const OrganizationTreeModel = {
    * one organization leaking into another's tree view.
    * Used for the organization tree VIEW.
    */
-async getTreeDescendants(rootCode, allowedRootCodes = null) {
+  async getTreeDescendants(rootCode, allowedRootCodes = null) {
   const roots = (allowedRootCodes && allowedRootCodes.length) ? allowedRootCodes : [rootCode];
   const placeholders = roots.map(() => '?').join(',');
 
@@ -137,8 +139,8 @@ async getTreeDescendants(rootCode, allowedRootCodes = null) {
     `WITH RECURSIVE tree AS (
       -- Anchor: Start with direct children of our entity within authorized tree instances
       SELECT
-        id, parent_type, parent_code, child_type, child_code, root_entity_code, 1 AS depth,
-        CAST(id AS CHAR(2000)) AS edge_path
+        org_tree_id, parent_type, parent_code, child_type, child_code, root_entity_code, 1 AS depth,
+        CAST(org_tree_id AS CHAR(2000)) AS edge_path
       FROM organization_tree
       WHERE parent_code = ?
         AND root_entity_code IN (${placeholders})
@@ -150,18 +152,18 @@ async getTreeDescendants(rootCode, allowedRootCodes = null) {
       -- 1. Follow parent_edge_id for internal tree consistency
       -- 2. Follow parent_code for bridging across authorized tree roots (parent_edge_id IS NULL)
       SELECT
-        ot.id, ot.parent_type, ot.parent_code, ot.child_type, ot.child_code, ot.root_entity_code, t.depth + 1,
-        CONCAT(t.edge_path, ',', ot.id)
+        ot.org_tree_id, ot.parent_type, ot.parent_code, ot.child_type, ot.child_code, ot.root_entity_code, t.depth + 1,
+        CONCAT(t.edge_path, ',', ot.org_tree_id)
       FROM organization_tree ot
       INNER JOIN tree t ON (
-        ot.parent_edge_id = t.id OR 
+        ot.parent_edge_id = t.org_tree_id OR 
         (ot.parent_code = t.child_code AND ot.parent_edge_id IS NULL)
       )
       WHERE ot.root_entity_code IN (${placeholders})
         AND ot.is_active = TRUE
         AND t.depth < 20
     )
-    SELECT id, parent_type, parent_code, child_type, child_code,
+    SELECT org_tree_id, parent_type, parent_code, child_type, child_code,
            root_entity_code, depth, edge_path
     FROM tree
     ORDER BY depth`,
@@ -183,34 +185,31 @@ async getTreeDescendants(rootCode, allowedRootCodes = null) {
    * Return an edge id and all descendant edge ids reachable via parent_edge_id
    * within the same root_entity_code tree.
    */
-  async getDescendantEdgeIds(edgeId) {
-    const id = parseInt(edgeId, 10);
-    if (!Number.isFinite(id)) return [];
-
-    const edge = await this.findById(id);
-    if (!edge) return [id];
+  async getDescendantEdgeIds(org_tree_id) {
+    const edge = await this.findById(org_tree_id);
+    if (!edge) return [org_tree_id];
 
     const root = edge.root_entity_code;
     const [rows] = await db.query(
       `WITH RECURSIVE subtree AS (
-        SELECT id
+        SELECT org_tree_id
           FROM organization_tree
-         WHERE id = ?
+         WHERE org_tree_id = ?
            AND root_entity_code = ?
            AND is_active = TRUE
 
         UNION ALL
 
-        SELECT ot.id
+        SELECT ot.org_tree_id
           FROM organization_tree ot
-         INNER JOIN subtree s ON ot.parent_edge_id = s.id
+         INNER JOIN subtree s ON ot.parent_edge_id = s.org_tree_id
          WHERE ot.root_entity_code = ?
            AND ot.is_active = TRUE
       )
-      SELECT id FROM subtree`,
-      [id, root, root]
+      SELECT org_tree_id FROM subtree`,
+      [org_tree_id, root, root]
     );
-    return rows.map((r) => r.id);
+    return rows.map((r) => r.org_tree_id);
   },
 
   /**
@@ -221,19 +220,19 @@ async getTreeDescendants(rootCode, allowedRootCodes = null) {
     const [rows] = await db.query(
       `WITH RECURSIVE tree AS (
         -- Start with edges directly child of rootCode (regardless of tree instance)
-        SELECT id, parent_type, parent_code, child_type, child_code, 1 AS depth
+        SELECT org_tree_id, parent_type, parent_code, child_type, child_code, 1 AS depth
         FROM organization_tree
         WHERE parent_code = ? AND is_active = TRUE
         
         UNION DISTINCT
         
         -- Recursively find all children by matching child_code to parent_code
-        SELECT ot.id, ot.parent_type, ot.parent_code, ot.child_type, ot.child_code, t.depth + 1
+        SELECT ot.org_tree_id, ot.parent_type, ot.parent_code, ot.child_type, ot.child_code, t.depth + 1
         FROM organization_tree ot
         INNER JOIN tree t ON ot.parent_code = t.child_code
         WHERE ot.is_active = TRUE AND t.depth < 20
       )
-      SELECT DISTINCT id, parent_type, parent_code, child_type, child_code FROM tree`,
+      SELECT DISTINCT org_tree_id, parent_type, parent_code, child_type, child_code FROM tree`,
       [rootCode]
     );
     return rows;
@@ -290,7 +289,7 @@ async getTreeDescendants(rootCode, allowedRootCodes = null) {
     // Check Audits targeting this node via assignment entities
     const [auditEntityRows] = await db.query(
       `SELECT COUNT(*) as count FROM audit_assignment_entities aae
-       INNER JOIN audit_assignments aa ON aae.assignment_id = aa.id
+       INNER JOIN audit_assignments aa ON aae.audit_id = aa.audit_id
        WHERE aae.org_tree_id IN (${placeholders})
        AND aa.is_active = TRUE AND aa.status != 'cancelled'`,
       ids

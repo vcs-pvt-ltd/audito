@@ -20,7 +20,7 @@ import { useAuth } from "@/context/AuthContext";
 type AuditStatus = "plan" | "in_progress" | "completed";
 
 interface DashboardAudit {
-  id: number;
+  audit_id: string;
   audit_code: string;
   title: string;
   audit_type: string;
@@ -312,7 +312,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
       if (a.start_date) {
         const dateStr = a.start_date.substring(0, 10);
         if (!map[dateStr]) map[dateStr] = [];
-        if (!map[dateStr].some(exist => exist.id === a.id)) {
+        if (!map[dateStr].some(exist => exist.audit_id === a.audit_id)) {
           map[dateStr].push(a);
         }
       }
@@ -362,7 +362,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
           <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-0.5 pointer-events-none">
             {dayAudits.slice(0, 3).map((audit) => (
               <span
-                key={audit.id}
+                key={audit.audit_id}
                 className={`h-1.5 w-1.5 rounded-full ${audit.status === "completed"
                   ? "bg-emerald-400"
                   : audit.status === "in_progress"
@@ -444,9 +444,9 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
     return null;
   };
 
-  const findNodeByEdgeId = (node: OrgTreeNode | null, targetEdgeId: number): OrgTreeNode | null => {
+  const findNodeByEdgeId = (node: OrgTreeNode | null, targetEdgeId: string): OrgTreeNode | null => {
     if (!node) return null;
-    const edgeId = Number(node.edge_id ?? node.id ?? 0);
+    const edgeId = String(node.edge_id ?? node.id ?? "");
     if (edgeId === targetEdgeId) return node;
     for (const child of node.children || []) {
       const found = findNodeByEdgeId(child, targetEdgeId);
@@ -563,18 +563,18 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
     return list;
   };
 
-  const getDescendantEdgeIds = (node: OrgTreeNode | null): number[] => {
+  const getDescendantEdgeIds = (node: OrgTreeNode | null): string[] => {
     if (!node) return [];
-    const list: number[] = [];
-    const edgeId = Number(node.edge_id ?? node.id ?? 0);
-    if (edgeId > 0) list.push(edgeId);
+    const list: string[] = [];
+    const edgeId = String(node.edge_id ?? node.id ?? "");
+    if (edgeId) list.push(edgeId);
     for (const child of node.children || []) {
       list.push(...getDescendantEdgeIds(child));
     }
     return list;
   };
 
-  const aggregateScores = (codes: string[], rawPerf: any[], edgeIds: number[] = []) => {
+  const aggregateScores = (codes: string[], rawPerf: any[], edgeIds: string[] = []) => {
     let totalMarks = 0;
     let obtainedMarks = 0;
     let auditCount = 0;
@@ -582,8 +582,8 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
     const edgeSet = new Set(edgeIds);
 
     for (const item of rawPerf) {
-      const itemEdgeId = Number(item.org_tree_id || 0);
-      const matchesNode = edgeSet.size > 0 && itemEdgeId > 0
+      const itemEdgeId = String(item.org_tree_id || "");
+      const matchesNode = edgeSet.size > 0 && itemEdgeId
         ? edgeSet.has(itemEdgeId)
         : codes.includes(item.entity_code);
 
@@ -872,8 +872,8 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
                 <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 custom-scrollbar">
                   {selectedDateAudits.map((a) => (
                     <div
-                      key={a.id}
-                      onClick={() => router.push(`/entity-head/audits/preview?id=${a.id}`)}
+                      key={a.audit_id}
+                      onClick={() => router.push(`/entity-head/audits/preview?audit_id=${a.audit_id}`)}
                       className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all cursor-pointer flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0 flex-1">
@@ -976,7 +976,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
                     <h3 className="text-xs font-bold text-white/60 mb-3 px-1 uppercase tracking-widest">Node Audit Activity</h3>
                     <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                       {[...(initialOverview.lists.upcoming_audits || []), ...(initialOverview.lists.recent_audits || [])].slice(0, 10).map((a) => (
-                        <div key={a.id} className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:border-white/20 transition-all">
+                        <div key={a.audit_id} className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:border-white/20 transition-all">
                           <div className="min-w-0 flex-1">
                             <div className="text-sm font-bold text-white truncate">{a.title}</div>
                             <div className="flex items-center gap-3 mt-1">
@@ -985,7 +985,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
                             </div>
                           </div>
                           <button
-                            onClick={() => router.push(`/audits/assign?id=${a.id}`)}
+                            onClick={() => router.push(`/audits/assign?id=${a.audit_id}`)}
                             className="px-3 py-1.5 rounded-lg bg-secondary-500/10 text-secondary-400 text-[10px] font-bold border border-secondary-500/20 hover:bg-secondary-500 hover:text-primary-950 transition-all transition-all"
                           >
                             {a.status === 'plan' ? 'Assign' : 'Manage'}

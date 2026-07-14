@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, Trash2, Users, BookOpen, Clock, CheckCircle2, RefreshCw, MapPin, Calendar, Search, Lock as LockIcon } from "lucide-react";
+import { Plus, Trash2, Users, BookOpen, Clock, CheckCircle2, RefreshCw, MapPin, Calendar, Search, Lock as LockIcon, Building2 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Modal, Table, THead, Th } from "@/components/ui";
 
 interface FieldVisit {
   id: number;
+  field_visit_id: string;
   title: string;
   location_name?: string | null;
   address?: string | null;
@@ -21,6 +22,7 @@ interface FieldVisit {
   end_date?: string | null;
   notes?: string | null;
   assigned_count?: number;
+  entity_name?: string | null;
 }
 
 interface Auditor {
@@ -157,15 +159,15 @@ export default function AuditFirmFieldVisitsPage() {
   const [auditors, setAuditors] = useState<Auditor[]>([]);
   const [loading, setLoading] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
-  const [assignVisitId, setAssignVisitId] = useState<number | null>(null);
-  const [viewAssignmentsId, setViewAssignmentsId] = useState<number | null>(null);
+  const [assignVisitId, setAssignVisitId] = useState<string | null>(null);
+  const [viewAssignmentsId, setViewAssignmentsId] = useState<string | null>(null);
   const [viewAssignmentsOpen, setViewAssignmentsOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const selectedVisit = visits.find(v => v.id === viewAssignmentsId);
-  const filteredAssignments = assignments.filter(a => a.field_visit_id === viewAssignmentsId);
+  const selectedVisit = visits.find(v => v.field_visit_id === viewAssignmentsId);
+  const filteredAssignments = assignments.filter(a => String(a.field_visit_id) === viewAssignmentsId);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -214,7 +216,7 @@ export default function AuditFirmFieldVisitsPage() {
 
   if (isLoading || !admin) return null;
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!accessToken) return;
     const ok = await confirm({ title: "Delete Field Visit", message: "Delete this field visit?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
@@ -286,6 +288,7 @@ export default function AuditFirmFieldVisitsPage() {
                 <THead>
                   <Th align="center" className="w-10">#</Th>
                   <Th>Title</Th>
+                  <Th>Organization</Th>
                   <Th>Location</Th>
                   <Th align="center">Schedule</Th>
                   <Th align="center">Assigned</Th>
@@ -295,13 +298,24 @@ export default function AuditFirmFieldVisitsPage() {
                   {paginated.map((v, index) => {
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
                     return (
-                      <tr key={v.id} className="hover:bg-white/[0.02] transition-colors group">
+                      <tr key={v.field_visit_id} className="hover:bg-white/[0.02] transition-colors group">
                         <td className="px-4 py-4 text-gray-500 text-center text-sm">{itemIndex}</td>
 
                         {/* Title — no wrapper div */}
                         <td className="px-4 py-4">
                           <p className="text-white font-medium">{v.title}</p>
                           {v.notes && <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{v.notes}</p>}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {v.entity_name ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                              <Building2 size={12} className="text-gray-500 shrink-0" />
+                              <span className="truncate max-w-[120px]">{v.entity_name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-600">—</span>
+                          )}
                         </td>
 
                         {/* Location — no wrapper div with min-w */}
@@ -327,11 +341,11 @@ export default function AuditFirmFieldVisitsPage() {
 
                         <td className="px-4 py-4 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => { setViewAssignmentsId(v.id); setViewAssignmentsOpen(true); }}
+                            <button onClick={() => { setViewAssignmentsId(v.field_visit_id); setViewAssignmentsOpen(true); }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all" title="Reports">
                               <Users size={15} />
                             </button>
-                            <button onClick={() => { setAssignVisitId(v.id); setAssignOpen(true); }}
+                            <button onClick={() => { setAssignVisitId(v.field_visit_id); setAssignOpen(true); }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all" title="Assign">
                               <Plus size={15} />
                             </button>
@@ -343,7 +357,7 @@ export default function AuditFirmFieldVisitsPage() {
                                 <LockIcon size={15} />
                               </button>
                             ) : (
-                              <button onClick={() => handleDelete(v.id)}
+                              <button onClick={() => handleDelete(v.field_visit_id)}
                                 className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
                                 <Trash2 size={15} />
                               </button>
@@ -362,7 +376,7 @@ export default function AuditFirmFieldVisitsPage() {
             {paginated.map((v, index) => {
               const itemIndex = (currentPage - 1) * pageSize + index + 1;
               return (
-                <div key={v.id} className="glass rounded-xl border border-white/10 p-4">
+                <div key={v.field_visit_id} className="glass rounded-xl border border-white/10 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-xs text-gray-500">#{itemIndex}</p>
@@ -391,12 +405,12 @@ export default function AuditFirmFieldVisitsPage() {
                     </div>
                   </div>
                   <div className="mt-3 flex items-center justify-end gap-1 pt-3 border-t border-white/5">
-                    <button onClick={() => { setViewAssignmentsId(v.id); setViewAssignmentsOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-blue-400"><Users size={15} /></button>
-                    <button onClick={() => { setAssignVisitId(v.id); setAssignOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-green-400"><Plus size={15} /></button>
+                    <button onClick={() => { setViewAssignmentsId(v.field_visit_id); setViewAssignmentsOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-blue-400"><Users size={15} /></button>
+                    <button onClick={() => { setAssignVisitId(v.field_visit_id); setAssignOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-green-400"><Plus size={15} /></button>
                     {(v.assigned_count ?? 0) > 0 ? (
                       <button onClick={() => toast(`This field visit is assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")} className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title={`Assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"}. Tap for details.`}><LockIcon size={15} /></button>
                     ) : (
-                      <button onClick={() => handleDelete(v.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                      <button onClick={() => handleDelete(v.field_visit_id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
                     )}
                   </div>
                 </div>

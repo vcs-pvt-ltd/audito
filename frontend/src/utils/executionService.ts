@@ -62,16 +62,14 @@ export function inferEvidenceKind(
 /**
  * Normalize selected option IDs from various formats
  */
-export function normalizeSelectedOptionIds(selected_option_ids: unknown): number[] {
+export function normalizeSelectedOptionIds(selected_option_ids: unknown): string[] {
   if (selected_option_ids == null) return [];
 
   if (Array.isArray(selected_option_ids)) {
-    return selected_option_ids
-      .map((v) => (typeof v === "number" ? v : parseInt(String(v), 10)))
-      .filter((n) => Number.isFinite(n));
+    return selected_option_ids.map((v) => String(v).trim()).filter(Boolean);
   }
 
-  if (typeof selected_option_ids === "number") return [selected_option_ids];
+  if (typeof selected_option_ids === "number") return [String(selected_option_ids)];
 
   if (typeof selected_option_ids !== "string") return [];
 
@@ -82,15 +80,9 @@ export function normalizeSelectedOptionIds(selected_option_ids: unknown): number
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) {
-      return parsed
-        .map((v) => (typeof v === "number" ? v : parseInt(String(v), 10)))
-        .filter((n) => Number.isFinite(n));
+      return parsed.map((v) => String(v).trim()).filter(Boolean);
     }
-    if (typeof parsed === "number") return [parsed];
-    if (typeof parsed === "string") {
-      const n = parseInt(parsed, 10);
-      return Number.isFinite(n) ? [n] : [];
-    }
+    if (typeof parsed === "number" || typeof parsed === "string") return [String(parsed).trim()];
   } catch {
     // fallthrough
   }
@@ -99,12 +91,11 @@ export function normalizeSelectedOptionIds(selected_option_ids: unknown): number
   if (raw.includes(",")) {
     return raw
       .split(",")
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => Number.isFinite(n));
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
 
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) ? [n] : [];
+  return [raw.trim()];
 }
 
 /**
@@ -156,7 +147,7 @@ export interface BreadcrumbNode {
 /**
  * Create progress key from entity code and org tree id
  */
-export function progressKey(entityCode: string, orgTreeId: number | null | undefined): string {
+export function progressKey(entityCode: string, orgTreeId: string | null | undefined): string {
   return `${entityCode}__${orgTreeId ?? "null"}`;
 }
 

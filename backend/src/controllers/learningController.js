@@ -1,8 +1,15 @@
 const { db } = require('../config/db');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
+const { getAccessibleEntityCodes, resolveEntityNames } = require('../utils/accessHelper');
 const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
 const NotificationModel = require('../models/NotificationModel');
+const { findDuplicateName } = require('../utils/nameNormalizer');
+const {
+  generateTrainingId, generateFieldVisitId, generateEvaluationPaperId, generateEvaluationQuestionId,
+  generateTrainingAssignmentIds, generateFieldVisitAssignmentIds,
+  generateEvaluationQuestionOptionIds, generateEvaluationAssignmentIds
+} = require('../utils/codeGenerator');
 
 function ensureAdmin(req, res) {
   if (!req.user || req.user.role !== 'admin') {
@@ -20,27 +27,35 @@ const listTrainings = async (req, res) => {
   try {
     if (!ensureAdmin(req, res)) return;
 
+    const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+    const ph = accessibleCodes.map(() => '?').join(',');
+
     const [rows] = await db.query(
       `SELECT t.*, (
-          SELECT COUNT(*) FROM training_assignments a WHERE a.training_id = t.id
+          SELECT COUNT(*) FROM training_assignments a WHERE a.training_id = t.training_id
         ) AS assigned_count
        FROM trainings t
-       WHERE t.afc_code = ?
+       WHERE t.entity_code IN (${ph})
        ORDER BY t.created_at DESC`,
-      [req.user.entityCode]
+      accessibleCodes
     );
 
     const [assignments] = await db.query(
-      `SELECT a.id AS assignment_id, a.assigned_at, a.completed_at, a.status AS assignment_status,
-              t.id AS training_id, t.title AS training_title,
-              u.user_code AS auditor_user_code, u.first_name AS auditor_first_name, u.last_name AS auditor_last_name, u.email AS auditor_email
-       FROM training_assignments a
-       JOIN trainings t ON a.training_id = t.id
-       JOIN auditors u ON a.auditor_user_code = u.user_code
-       WHERE t.afc_code = ?
-       ORDER BY a.assigned_at DESC`,
-      [req.user.entityCode]
+      `SELECT a.training_assignment_id AS assignment_id, a.assigned_at, a.completed_at, a.status AS assignment_status,
+              t.training_id, t.title AS training_title,
+               u.auditor_id AS auditor_id, u.first_name AS auditor_first_name, u.last_name AS auditor_last_name, u.email AS auditor_email
+        FROM training_assignments a
+        JOIN trainings t ON a.training_id = t.training_id
+         JOIN auditors u ON a.auditor_id = u.auditor_id
+        WHERE t.entity_code IN (${ph})
+        ORDER BY a.assigned_at DESC`,
+      accessibleCodes
     );
+
+    const nameMap = await resolveEntityNames(accessibleCodes);
+    for (const t of rows) {
+      t.entity_name = t.entity_code !== req.user.entityCode ? (nameMap.get(t.entity_code)?.name || null) : null;
+    }
 
     return successResponse(res, { trainings: rows, assignments });
   } catch (err) {
@@ -58,13 +73,31 @@ const createTraining = async (req, res) => {
 
     const { title, platform, video_url, description, duration_minutes } = req.body;
 
-    const [result] = await db.query(
-      `INSERT INTO trainings (afc_code, title, platform, video_url, description, duration_minutes, created_by_admin_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [req.user.entityCode, title, platform || null, video_url, description || null, duration_minutes || null, req.user.id]
+    // Uniqueness: training title must be unique per organization.
+    // Titles differing only by capitalization, spacing, or leading zeros
+    // (e.g. "Training 01" vs "training1") are treated as duplicates.
+    try {
+      const dup = await findDuplicateName({
+        db,
+        table: 'trainings',
+        nameColumn: 'title',
+        name: title,
+        whereClauses: ['entity_code = ?'],
+        whereParams: [req.user.entityCode]
+      });
+      if (dup) return errorResponse(res, `A training titled "${dup.name}" already exists for your organization.`, 409);
+    } catch (err) {
+      console.error('Training title uniqueness check failed:', err);
+    }
+
+    const training_id = await generateTrainingId();
+    await db.query(
+      `INSERT INTO trainings (training_id, entity_code, title, platform, video_url, description, duration_minutes, created_by_admin_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [training_id, req.user.entityCode, title, platform || null, video_url, description || null, duration_minutes || null, req.user.userCode]
     );
 
-    return successResponse(res, { id: result.insertId }, 'Training created.', 201);
+    return successResponse(res, { id: training_id }, 'Training created.', 201);
   } catch (err) {
     console.error('createTraining error:', err);
     return errorResponse(res, 'Failed to create training.', 500);
@@ -78,6 +111,25 @@ const updateTraining = async (req, res) => {
     const { id } = req.params;
     const { title, platform, video_url, description, duration_minutes } = req.body;
 
+    // Ensure new title is unique within this organization
+    // (case/space/leading-zero insensitive — same rule as create)
+    if (title) {
+      try {
+        const dup = await findDuplicateName({
+          db,
+          table: 'trainings',
+          nameColumn: 'title',
+          name: title,
+          whereClauses: ['entity_code = ?'],
+          whereParams: [req.user.entityCode],
+          excludeId: id
+        });
+        if (dup) return errorResponse(res, `A training titled "${dup.name}" already exists for your organization.`, 409);
+      } catch (err) {
+        console.error('Training title update uniqueness check failed:', err);
+      }
+    }
+
     await db.query(
       `UPDATE trainings
        SET title = COALESCE(?, title),
@@ -85,7 +137,7 @@ const updateTraining = async (req, res) => {
            video_url = COALESCE(?, video_url),
            description = COALESCE(?, description),
            duration_minutes = COALESCE(?, duration_minutes)
-       WHERE id = ? AND afc_code = ?`,
+        WHERE training_id = ? AND entity_code = ?`,
       [title ?? null, platform ?? null, video_url ?? null, description ?? null, duration_minutes ?? null, id, req.user.entityCode]
     );
 
@@ -112,7 +164,7 @@ const deleteTraining = async (req, res) => {
     }
 
     await db.query(
-      'DELETE FROM trainings WHERE id = ? AND afc_code = ?',
+      'DELETE FROM trainings WHERE training_id = ? AND entity_code = ?',
       [id, req.user.entityCode]
     );
 
@@ -133,21 +185,22 @@ const assignTraining = async (req, res) => {
       return errorResponse(res, 'auditor_codes must be a non-empty array.', 400);
     }
 
-    const [tRows] = await db.query('SELECT id, title FROM trainings WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
+    const [tRows] = await db.query('SELECT training_id, title FROM trainings WHERE training_id = ? AND entity_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (tRows.length === 0) return errorResponse(res, 'Training not found.', 404);
     const trainingTitle = tRows[0].title || 'Training';
 
-    const values = auditor_codes.map((c) => [Number(id), String(c), req.user.id]);
-    await db.query(
-      `INSERT INTO training_assignments (training_id, auditor_user_code, assigned_by_admin_id)
-       VALUES ?
-       ON DUPLICATE KEY UPDATE assigned_by_admin_id = VALUES(assigned_by_admin_id), assigned_at = CURRENT_TIMESTAMP`,
-      [values]
-    );
+   const ids = await generateTrainingAssignmentIds(auditor_codes.length);
+const values = auditor_codes.map((c, i) => [ids[i], id, String(c), req.user.userCode]);
+await db.query(
+  `INSERT INTO training_assignments (training_assignment_id, training_id, auditor_id, assigned_by_admin_id)
+   VALUES ?
+   ON DUPLICATE KEY UPDATE assigned_by_admin_id = VALUES(assigned_by_admin_id), assigned_at = CURRENT_TIMESTAMP`,
+  [values]
+);
 
     await Promise.all(auditor_codes.map((code) =>
       NotificationModel.createIfNotExists({
-        auditor_code: String(code),
+        auditor_id: String(code),
         created_by_entity_code: req.user.entityCode,
         type: 'training_assigned',
         title: 'Training Assigned',
@@ -171,27 +224,35 @@ const listFieldVisits = async (req, res) => {
   try {
     if (!ensureAdmin(req, res)) return;
 
+    const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+    const ph = accessibleCodes.map(() => '?').join(',');
+
     const [rows] = await db.query(
       `SELECT v.*, (
-          SELECT COUNT(*) FROM field_visit_assignments a WHERE a.field_visit_id = v.id
+          SELECT COUNT(*) FROM field_visit_assignments a WHERE a.field_visit_id = v.field_visit_id
         ) AS assigned_count
        FROM field_visits v
-       WHERE v.afc_code = ?
+       WHERE v.entity_code IN (${ph})
        ORDER BY v.created_at DESC`,
-      [req.user.entityCode]
+      accessibleCodes
     );
 
     const [assignments] = await db.query(
-      `SELECT a.id AS assignment_id, a.assigned_at, a.check_in_time, a.check_out_time, a.status AS assignment_status,
-              v.id AS field_visit_id, v.title AS field_visit_title, v.location_name, v.start_date, v.end_date,
-              u.user_code AS auditor_user_code, u.first_name AS auditor_first_name, u.last_name AS auditor_last_name, u.email AS auditor_email
-       FROM field_visit_assignments a
-       JOIN field_visits v ON a.field_visit_id = v.id
-       JOIN auditors u ON a.auditor_user_code = u.user_code
-       WHERE v.afc_code = ?
+      `SELECT a.field_visit_assignment_id AS assignment_id, a.assigned_at, a.check_in_time, a.check_out_time, a.status AS assignment_status,
+              v.field_visit_id, v.title AS field_visit_title, v.location_name, v.start_date, v.end_date,
+               u.auditor_id AS auditor_id, u.first_name AS auditor_first_name, u.last_name AS auditor_last_name, u.email AS auditor_email
+        FROM field_visit_assignments a
+        JOIN field_visits v ON a.field_visit_id = v.field_visit_id
+        JOIN auditors u ON a.auditor_id = u.auditor_id
+       WHERE v.entity_code IN (${ph})
        ORDER BY a.assigned_at DESC`,
-      [req.user.entityCode]
+      accessibleCodes
     );
+
+    const nameMap = await resolveEntityNames(accessibleCodes);
+    for (const v of rows) {
+      v.entity_name = v.entity_code !== req.user.entityCode ? (nameMap.get(v.entity_code)?.name || null) : null;
+    }
 
     return successResponse(res, { field_visits: rows, assignments });
   } catch (err) {
@@ -218,10 +279,29 @@ const createFieldVisit = async (req, res) => {
       notes,
     } = req.body;
 
-    const [result] = await db.query(
-      `INSERT INTO field_visits (afc_code, title, location_name, address, latitude, longitude, start_date, end_date, notes, created_by_admin_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    // Uniqueness: field visit title must be unique per organization.
+    // Titles differing only by capitalization, spacing, or leading zeros
+    // (e.g. "Visit 01" vs "visit1") are treated as duplicates.
+    try {
+      const dup = await findDuplicateName({
+        db,
+        table: 'field_visits',
+        nameColumn: 'title',
+        name: title,
+        whereClauses: ['entity_code = ?'],
+        whereParams: [req.user.entityCode]
+      });
+      if (dup) return errorResponse(res, `A field visit titled "${dup.name}" already exists for your organization.`, 409);
+    } catch (err) {
+      console.error('Field visit title uniqueness check failed:', err);
+    }
+
+    const field_visit_id = await generateFieldVisitId();
+    await db.query(
+      `INSERT INTO field_visits (field_visit_id, entity_code, title, location_name, address, latitude, longitude, start_date, end_date, notes, created_by_admin_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        field_visit_id,
         req.user.entityCode,
         title,
         location_name || null,
@@ -231,11 +311,11 @@ const createFieldVisit = async (req, res) => {
         start_date || null,
         end_date || null,
         notes || null,
-        req.user.id,
+        req.user.userCode,
       ]
     );
 
-    return successResponse(res, { id: result.insertId }, 'Field visit created.', 201);
+    return successResponse(res, { id: field_visit_id }, 'Field visit created.', 201);
   } catch (err) {
     console.error('createFieldVisit error:', err);
     return errorResponse(res, 'Failed to create field visit.', 500);
@@ -258,6 +338,25 @@ const updateFieldVisit = async (req, res) => {
       notes,
     } = req.body;
 
+    // Ensure new title is unique within this organization
+    // (case/space/leading-zero insensitive — same rule as create)
+    if (title) {
+      try {
+        const dup = await findDuplicateName({
+          db,
+          table: 'field_visits',
+          nameColumn: 'title',
+          name: title,
+          whereClauses: ['entity_code = ?'],
+          whereParams: [req.user.entityCode],
+          excludeId: id
+        });
+        if (dup) return errorResponse(res, `A field visit titled "${dup.name}" already exists for your organization.`, 409);
+      } catch (err) {
+        console.error('Field visit title update uniqueness check failed:', err);
+      }
+    }
+
     await db.query(
       `UPDATE field_visits
        SET title = COALESCE(?, title),
@@ -268,7 +367,7 @@ const updateFieldVisit = async (req, res) => {
            start_date = COALESCE(?, start_date),
            end_date = COALESCE(?, end_date),
            notes = COALESCE(?, notes)
-       WHERE id = ? AND afc_code = ?`,
+        WHERE field_visit_id = ? AND entity_code = ?`,
       [
         title ?? null,
         location_name ?? null,
@@ -305,7 +404,7 @@ const deleteFieldVisit = async (req, res) => {
       return errorResponse(res, 'This field visit is assigned to one or more auditors and cannot be deleted. Remove those assignments first.', 409);
     }
 
-    await db.query('DELETE FROM field_visits WHERE id = ? AND afc_code = ?', [id, req.user.entityCode]);
+    await db.query('DELETE FROM field_visits WHERE field_visit_id = ? AND entity_code = ?', [id, req.user.entityCode]);
 
     return successResponse(res, null, 'Field visit deleted.');
   } catch (err) {
@@ -324,21 +423,22 @@ const assignFieldVisit = async (req, res) => {
       return errorResponse(res, 'auditor_codes must be a non-empty array.', 400);
     }
 
-    const [vRows] = await db.query('SELECT id, title FROM field_visits WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
+    const [vRows] = await db.query('SELECT field_visit_id, title FROM field_visits WHERE field_visit_id = ? AND entity_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (vRows.length === 0) return errorResponse(res, 'Field visit not found.', 404);
     const visitTitle = vRows[0].title || 'Field Visit';
 
-    const values = auditor_codes.map((c) => [Number(id), String(c), req.user.id]);
-    await db.query(
-      `INSERT INTO field_visit_assignments (field_visit_id, auditor_user_code, assigned_by_admin_id)
-       VALUES ?
-       ON DUPLICATE KEY UPDATE assigned_by_admin_id = VALUES(assigned_by_admin_id), assigned_at = CURRENT_TIMESTAMP`,
-      [values]
-    );
+    const ids = await generateFieldVisitAssignmentIds(auditor_codes.length);
+const values = auditor_codes.map((c, i) => [ids[i], id, String(c), req.user.userCode]);
+await db.query(
+  `INSERT INTO field_visit_assignments (field_visit_assignment_id, field_visit_id, auditor_id, assigned_by_admin_id)
+   VALUES ?
+   ON DUPLICATE KEY UPDATE assigned_by_admin_id = VALUES(assigned_by_admin_id), assigned_at = CURRENT_TIMESTAMP`,
+  [values]
+);
 
     await Promise.all(auditor_codes.map((code) =>
       NotificationModel.createIfNotExists({
-        auditor_code: String(code),
+        auditor_id: String(code),
         created_by_entity_code: req.user.entityCode,
         type: 'field_visit_assigned',
         title: 'Field Visit Assigned',
@@ -362,37 +462,44 @@ const listEvaluationPapers = async (req, res) => {
   try {
     if (!ensureAdmin(req, res)) return;
 
+    const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+    const ph = accessibleCodes.map(() => '?').join(',');
+
     const [rows] = await db.query(
       `SELECT p.*, (
-          SELECT COUNT(*) FROM evaluation_questions q WHERE q.paper_id = p.id
-        ) AS question_count,
-        (
-          SELECT COUNT(*) FROM evaluation_assignments a WHERE a.paper_id = p.id
+          SELECT COUNT(*) FROM evaluation_questions q WHERE q.paper_id = p.evaluation_paper_id
+        ) AS question_count, (
+          SELECT COUNT(*) FROM evaluation_assignments a WHERE a.paper_id = p.evaluation_paper_id
         ) AS assigned_count
        FROM evaluation_papers p
-       WHERE p.afc_code = ?
+       WHERE p.entity_code IN (${ph})
        ORDER BY p.created_at DESC`,
-      [req.user.entityCode]
+      accessibleCodes
     );
 
     const [assignments] = await db.query(
-      `SELECT a.id AS assignment_id, a.assigned_at, a.due_date, a.status AS assignment_status,
-              p.id AS paper_id, p.title AS paper_title, p.pass_marks,
-              u.user_code AS auditor_user_code, u.first_name AS auditor_first_name, u.last_name AS auditor_last_name, u.email AS auditor_email,
-              att.score, att.max_score, att.passed, att.submitted_at
-       FROM evaluation_assignments a
-       JOIN evaluation_papers p ON a.paper_id = p.id
-       JOIN auditors u ON a.auditor_user_code = u.user_code
-       LEFT JOIN (
-         SELECT paper_id, auditor_user_code, MAX(id) AS max_attempt_id
-         FROM evaluation_attempts
-         GROUP BY paper_id, auditor_user_code
-       ) latest_attempt ON p.id = latest_attempt.paper_id AND u.user_code = latest_attempt.auditor_user_code
-       LEFT JOIN evaluation_attempts att ON latest_attempt.max_attempt_id = att.id
-       WHERE p.afc_code = ?
+      `SELECT a.evaluation_assignment_id AS assignment_id, a.assigned_at, a.due_date, a.status AS assignment_status,
+              p.evaluation_paper_id AS paper_id, p.title AS paper_title, p.pass_marks,
+               u.auditor_id AS auditor_user_code, u.first_name AS auditor_first_name, u.last_name AS auditor_last_name, u.email AS auditor_email,
+               att.score, att.max_score, att.passed, att.submitted_at
+        FROM evaluation_assignments a
+        JOIN evaluation_papers p ON a.paper_id = p.evaluation_paper_id
+        JOIN auditors u ON a.auditor_id = u.auditor_id
+        LEFT JOIN (
+           SELECT paper_id, auditor_id, MAX(evaluation_attempt_id) AS max_attempt_id
+          FROM evaluation_attempts
+          GROUP BY paper_id, auditor_id
+         ) latest_attempt ON p.evaluation_paper_id = latest_attempt.paper_id AND u.auditor_id = latest_attempt.auditor_id
+       LEFT JOIN evaluation_attempts att ON latest_attempt.max_attempt_id = att.evaluation_attempt_id
+       WHERE p.entity_code IN (${ph})
        ORDER BY a.assigned_at DESC`,
-      [req.user.entityCode]
+      accessibleCodes
     );
+
+    const nameMap = await resolveEntityNames(accessibleCodes);
+    for (const p of rows) {
+      p.entity_name = p.entity_code !== req.user.entityCode ? (nameMap.get(p.entity_code)?.name || null) : null;
+    }
 
     return successResponse(res, { papers: rows, assignments });
   } catch (err) {
@@ -419,10 +526,29 @@ const createEvaluationPaper = async (req, res) => {
       }
     }
 
-    const [result] = await db.query(
-      `INSERT INTO evaluation_papers (afc_code, title, description, time_limit_minutes, pass_marks, available_from, available_to, is_active, created_by_admin_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    // Uniqueness: evaluation paper title must be unique per organization.
+    // Titles differing only by capitalization, spacing, or leading zeros
+    // (e.g. "Paper 01" vs "paper1") are treated as duplicates.
+    try {
+      const dup = await findDuplicateName({
+        db,
+        table: 'evaluation_papers',
+        nameColumn: 'title',
+        name: title,
+        whereClauses: ['entity_code = ?'],
+        whereParams: [req.user.entityCode]
+      });
+      if (dup) return errorResponse(res, `An evaluation paper titled "${dup.name}" already exists for your organization.`, 409);
+    } catch (err) {
+      console.error('Evaluation paper title uniqueness check failed:', err);
+    }
+
+    const evaluation_paper_id = await generateEvaluationPaperId();
+    await db.query(
+      `INSERT INTO evaluation_papers (evaluation_paper_id, entity_code, title, description, time_limit_minutes, pass_marks, available_from, available_to, is_active, created_by_admin_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        evaluation_paper_id,
         req.user.entityCode,
         title,
         description || null,
@@ -431,11 +557,11 @@ const createEvaluationPaper = async (req, res) => {
         available_from || null,
         available_to || null,
         is_active === undefined ? 1 : (is_active ? 1 : 0),
-        req.user.id,
+        req.user.userCode,
       ]
     );
 
-    return successResponse(res, { id: result.insertId }, 'Evaluation paper created.', 201);
+    return successResponse(res, { id: evaluation_paper_id }, 'Evaluation paper created.', 201);
   } catch (err) {
     console.error('createEvaluationPaper error:', err);
     return errorResponse(res, 'Failed to create evaluation paper.', 500);
@@ -457,6 +583,25 @@ const updateEvaluationPaper = async (req, res) => {
       }
     }
 
+    // Ensure new title is unique within this organization
+    // (case/space/leading-zero insensitive — same rule as create)
+    if (title) {
+      try {
+        const dup = await findDuplicateName({
+          db,
+          table: 'evaluation_papers',
+          nameColumn: 'title',
+          name: title,
+          whereClauses: ['entity_code = ?'],
+          whereParams: [req.user.entityCode],
+          excludeId: id
+        });
+        if (dup) return errorResponse(res, `An evaluation paper titled "${dup.name}" already exists for your organization.`, 409);
+      } catch (err) {
+        console.error('Evaluation paper title update uniqueness check failed:', err);
+      }
+    }
+
     await db.query(
       `UPDATE evaluation_papers
        SET title = COALESCE(?, title),
@@ -466,7 +611,7 @@ const updateEvaluationPaper = async (req, res) => {
            available_from = COALESCE(?, available_from),
            available_to = COALESCE(?, available_to),
            is_active = COALESCE(?, is_active)
-       WHERE id = ? AND afc_code = ?`,
+         WHERE evaluation_paper_id = ? AND entity_code = ?`,
       [
         title ?? null,
         description ?? null,
@@ -504,7 +649,7 @@ const deleteEvaluationPaper = async (req, res) => {
     }
 
     // No assignments → safe to cascade-delete the paper's own questions/options.
-    const [qRows] = await db.query('SELECT id FROM evaluation_questions WHERE paper_id = ?', [id]);
+    const [qRows] = await db.query('SELECT evaluation_question_id AS id FROM evaluation_questions WHERE paper_id = ?', [id]);
     const qIds = qRows.map((r) => r.id);
     if (qIds.length > 0) {
       const placeholders = qIds.map(() => '?').join(',');
@@ -512,7 +657,7 @@ const deleteEvaluationPaper = async (req, res) => {
     }
 
     await db.query('DELETE FROM evaluation_questions WHERE paper_id = ?', [id]);
-    await db.query('DELETE FROM evaluation_papers WHERE id = ? AND afc_code = ?', [id, req.user.entityCode]);
+    await db.query('DELETE FROM evaluation_papers WHERE evaluation_paper_id = ? AND entity_code = ?', [id, req.user.entityCode]);
 
     return successResponse(res, null, 'Evaluation paper deleted.');
   } catch (err) {
@@ -532,7 +677,7 @@ const setEvaluationQuestions = async (req, res) => {
       return errorResponse(res, 'questions must be a non-empty array.', 400);
     }
 
-    const [pRows] = await db.query('SELECT id FROM evaluation_papers WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
+    const [pRows] = await db.query('SELECT evaluation_paper_id FROM evaluation_papers WHERE evaluation_paper_id = ? AND entity_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (pRows.length === 0) return errorResponse(res, 'Evaluation paper not found.', 404);
 
     const [existingCountRows] = await db.query(
@@ -545,7 +690,7 @@ const setEvaluationQuestions = async (req, res) => {
     }
 
     // Replace all questions/options for simplicity
-    const [oldQRows] = await db.query('SELECT id FROM evaluation_questions WHERE paper_id = ?', [id]);
+    const [oldQRows] = await db.query('SELECT evaluation_question_id AS id FROM evaluation_questions WHERE paper_id = ?', [id]);
     const oldQIds = oldQRows.map((r) => r.id);
     if (oldQIds.length > 0) {
       const placeholders = oldQIds.map(() => '?').join(',');
@@ -587,26 +732,28 @@ const setEvaluationQuestions = async (req, res) => {
         }
       }
 
-      const [qRes] = await db.query(
-        `INSERT INTO evaluation_questions (paper_id, question_text, answer_type, marks, question_type, sort_order)
-         VALUES (?, ?, ?, ?, 'mcq_single', ?)`,
-        [id, qText, answer_type, marks, sortOrder]
+      const questionId = await generateEvaluationQuestionId();
+      await db.query(
+        `INSERT INTO evaluation_questions (evaluation_question_id, paper_id, question_text, answer_type, marks, question_type, sort_order)
+         VALUES (?, ?, ?, ?, ?, 'mcq_single', ?)`,
+        [questionId, id, qText, answer_type, marks, sortOrder]
       );
-      const questionId = qRes.insertId;
 
       if (answer_type !== 'free_text') {
-        const optValues = opts.map((o, idx) => [
-          questionId,
-          String(o.option_text || ''),
-          Number(o.marks) || 0,
-          idx,
-        ]);
-        await db.query(
-          `INSERT INTO evaluation_question_options (question_id, option_text, marks, order_index)
-           VALUES ?`,
-          [optValues]
-        );
-      }
+  const optionIds = await generateEvaluationQuestionOptionIds(opts.length);
+  const optValues = opts.map((o, idx) => [
+    optionIds[idx],
+    questionId,
+    String(o.option_text || ''),
+    Number(o.marks) || 0,
+    idx,
+  ]);
+  await db.query(
+    `INSERT INTO evaluation_question_options (evaluation_question_option_id, question_id, option_text, marks, order_index)
+     VALUES ?`,
+    [optValues]
+  );
+}
     }
 
     return successResponse(res, null, 'Questions updated.');
@@ -755,7 +902,7 @@ const uploadEvaluationQuestionsExcel = async (req, res) => {
     if (!ensureAdmin(req, res)) return;
     const { id } = req.params;
 
-    const [pRows] = await db.query('SELECT id FROM evaluation_papers WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
+    const [pRows] = await db.query('SELECT evaluation_paper_id FROM evaluation_papers WHERE evaluation_paper_id = ? AND entity_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (pRows.length === 0) return errorResponse(res, 'Evaluation paper not found.', 404);
 
     const [existingCountRows] = await db.query(
@@ -842,7 +989,7 @@ const uploadEvaluationQuestionsExcel = async (req, res) => {
     }
 
     // Replace existing questions/options and insert new ones
-    const [oldQRows] = await db.query('SELECT id FROM evaluation_questions WHERE paper_id = ?', [id]);
+    const [oldQRows] = await db.query('SELECT evaluation_question_id AS id FROM evaluation_questions WHERE paper_id = ?', [id]);
     const oldQIds = oldQRows.map((r) => r.id);
     if (oldQIds.length > 0) {
       const placeholders = oldQIds.map(() => '?').join(',');
@@ -857,17 +1004,24 @@ const uploadEvaluationQuestionsExcel = async (req, res) => {
 
       for (let i = 0; i < parsedRows.length; i++) {
         const row = parsedRows[i];
-        const [qRes] = await connection.query(
-          `INSERT INTO evaluation_questions (paper_id, question_text, answer_type, marks, question_type, sort_order)
-           VALUES (?, ?, ?, ?, 'mcq_single', ?)`,
-          [id, row.question_text, row.answer_type, row.marks, i]
+        const questionId = await generateEvaluationQuestionId();
+        await connection.query(
+          `INSERT INTO evaluation_questions (evaluation_question_id, paper_id, question_text, answer_type, marks, question_type, sort_order)
+           VALUES (?, ?, ?, ?, ?, 'mcq_single', ?)`,
+          [questionId, id, row.question_text, row.answer_type, row.marks, i]
         );
-        const questionId = qRes.insertId;
 
         if (row.answer_type !== 'free_text') {
-          const optValues = row.options.map((o, idx) => [questionId, String(o.option_text || ''), Number(o.marks) || 0, idx]);
-          await connection.query(
-            `INSERT INTO evaluation_question_options (question_id, option_text, marks, order_index)
+          const optionIds = await generateEvaluationQuestionOptionIds(row.options.length);
+          const optValues = row.options.map((o, idx) => [
+            optionIds[idx],
+            questionId,
+            String(o.option_text || ''),
+            Number(o.marks) || 0,
+            idx,
+          ]);
+          await db.query(
+            `INSERT INTO evaluation_question_options (evaluation_question_option_id, question_id, option_text, marks, order_index)
              VALUES ?`,
             [optValues]
           );
@@ -901,21 +1055,22 @@ const assignEvaluationPaper = async (req, res) => {
       return errorResponse(res, 'auditor_codes must be a non-empty array.', 400);
     }
 
-    const [pRows] = await db.query('SELECT id, title FROM evaluation_papers WHERE id = ? AND afc_code = ? LIMIT 1', [id, req.user.entityCode]);
+    const [pRows] = await db.query('SELECT evaluation_paper_id, title FROM evaluation_papers WHERE evaluation_paper_id = ? AND entity_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (pRows.length === 0) return errorResponse(res, 'Evaluation paper not found.', 404);
     const paperTitle = pRows[0].title || 'Evaluation Paper';
 
-    const values = auditor_codes.map((c) => [Number(id), String(c), req.user.id, due_date || null]);
-    await db.query(
-      `INSERT INTO evaluation_assignments (paper_id, auditor_user_code, assigned_by_admin_id, due_date)
-       VALUES ?
-       ON DUPLICATE KEY UPDATE assigned_by_admin_id = VALUES(assigned_by_admin_id), assigned_at = CURRENT_TIMESTAMP, due_date = VALUES(due_date)`,
-      [values]
-    );
+    const ids = await generateEvaluationAssignmentIds(auditor_codes.length);
+const values = auditor_codes.map((c, i) => [ids[i], id, String(c), req.user.userCode, due_date || null]);
+await db.query(
+  `INSERT INTO evaluation_assignments (evaluation_assignment_id, paper_id, auditor_id, assigned_by_admin_id, due_date)
+   VALUES ?
+   ON DUPLICATE KEY UPDATE assigned_by_admin_id = VALUES(assigned_by_admin_id), assigned_at = CURRENT_TIMESTAMP, due_date = VALUES(due_date)`,
+  [values]
+);
 
     await Promise.all(auditor_codes.map((code) =>
       NotificationModel.createIfNotExists({
-        auditor_code: String(code),
+        auditor_id: String(code),
         created_by_entity_code: req.user.entityCode,
         type: 'evaluation_assigned',
         title: 'Evaluation Paper Assigned',
@@ -952,4 +1107,3 @@ module.exports = {
   previewEvaluationQuestionsExcel,
   uploadEvaluationQuestionsExcel,
 };
-

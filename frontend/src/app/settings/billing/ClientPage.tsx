@@ -16,9 +16,10 @@ import {
   Zap,
   ShieldCheck,
   Receipt,
+  BadgePercent,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { auditApi, checklistApi, usersApi, structureApi, orgTreeApi, paymentApi, type PaymentDetails } from "@/lib/api";
+import { auditApi, checklistApi, usersApi, structureApi, orgTreeApi, paymentApi, billingCreditsApi, type PaymentDetails, type LinkBillingCredit } from "@/lib/api";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui";
 
@@ -70,6 +71,8 @@ export default function BillingPage() {
   const [stats, setStats] = useState({ audits: 0, checklists: 0, auditors: 0, departments: 0, levels: 0 });
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const [payments, setPayments] = useState<PaymentDetails[]>([]);
+  const [linkCredits, setLinkCredits] = useState<LinkBillingCredit[]>([]);
+  const [creditAvailable, setCreditAvailable] = useState(0);
 
   const handleUpgrade = async (planName: string) => {
     if (!accessToken) return;
@@ -121,6 +124,12 @@ export default function BillingPage() {
     if (accessToken && admin?.role === "admin") {
       paymentApi.list(accessToken).then((res) => {
         if (res.success && res.data?.payments) setPayments(res.data.payments);
+      });
+      billingCreditsApi.list(accessToken).then((res) => {
+        if (res.success && res.data) {
+          setLinkCredits(res.data.credits || []);
+          setCreditAvailable(res.data.available_amount || 0);
+        }
       });
     }
   }, [accessToken, admin]);
@@ -495,6 +504,73 @@ export default function BillingPage() {
                       </span>
                       <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold border capitalize ${statusStyle}`}>
                         {p.status}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Link Billing Credits ── */}
+        {linkCredits.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <BadgePercent size={15} className="text-secondary-400" />
+              Link Billing Credits
+            </h2>
+
+            {/* Available balance card */}
+            <div className="glass border border-white/10 rounded-xl p-5 sm:p-6 mb-4 relative overflow-hidden">
+              <div className="absolute -top-12 -right-12 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Available Credit Balance</p>
+                  <p className="text-2xl font-bold text-emerald-400 tabular-nums mt-1">
+                    {(() => { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(creditAvailable); } catch { return `$${creditAvailable.toFixed(2)}`; } })()}
+                  </p>
+                </div>
+                <p className="text-xs text-gray-500 max-w-xs">
+                  Credits are generated automatically when an Elite organization accepts your link request. They are applied to your next subscription payment.
+                </p>
+              </div>
+            </div>
+
+            {/* Credit list */}
+            <div className="glass rounded-xl border border-white/10 overflow-hidden">
+              <div className="divide-y divide-white/[0.05]">
+                {linkCredits.map((c) => {
+                  const dateStr = new Date(c.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+                  const statusStyle =
+                    c.status === "active"
+                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/20"
+                      : c.status === "fully_applied"
+                      ? "bg-blue-500/15 text-blue-400 border-blue-500/20"
+                      : "bg-white/5 text-gray-400 border-white/10";
+                  return (
+                    <div key={c.credit_id} className="flex items-center gap-4 px-4 sm:px-5 py-3.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-white truncate">
+                          From {c.credit_from_entity_code}
+                          <span className="ml-2 text-xs text-gray-500">{c.source_plan_name} ({c.source_billing_cycle})</span>
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {c.remaining_months} months remaining · Generated {dateStr}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold text-white tabular-nums">
+                          {(() => { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(c.credit_amount); } catch { return `$${c.credit_amount}`; } })()}
+                        </p>
+                        {c.applied_amount > 0 && (
+                          <p className="text-[10px] text-gray-500 mt-0.5">
+                            {(() => { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(c.applied_amount); } catch { return `$${c.applied_amount}`; } })()} applied
+                          </p>
+                        )}
+                      </div>
+                      <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyle}`}>
+                        {c.status === "fully_applied" ? "Used" : c.status === "reversed" ? "Reversed" : "Available"}
                       </span>
                     </div>
                   );

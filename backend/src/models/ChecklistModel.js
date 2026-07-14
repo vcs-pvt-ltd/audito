@@ -14,19 +14,19 @@ const ChecklistModel = {
 
   // ── CHECKLIST TYPES ──────────────────────────────────────────────
 
-  async createType({ name, description, created_by }) {
-    const [res] = await db.query(
-      `INSERT INTO checklist_types (name, description, created_by)
-       VALUES (?, ?, ?)`,
-      [name, description || null, created_by]
+  async createType({ checklist_type_id, name, description, created_by }) {
+    await db.query(
+      `INSERT INTO checklist_types (checklist_type_id, name, description, created_by)
+       VALUES (?, ?, ?, ?)`,
+      [checklist_type_id, name, description || null, created_by]
     );
-    return res.insertId;
+    return checklist_type_id;
   },
 
-  async findTypeById(id) {
+  async findTypeById(checklist_type_id) {
     const [rows] = await db.query(
-      'SELECT * FROM checklist_types WHERE id = ?',
-      [id]
+      'SELECT * FROM checklist_types WHERE checklist_type_id = ?',
+      [checklist_type_id]
     );
     return rows[0] || null;
   },
@@ -37,7 +37,7 @@ const ChecklistModel = {
     const [rows] = await db.query(
       `SELECT ct.*,
               (SELECT COUNT(*) FROM checklists c
-                WHERE c.checklist_type_id = ct.id AND c.is_active = TRUE) AS checklist_count
+                WHERE c.checklist_type_id = ct.checklist_type_id AND c.is_active = TRUE) AS checklist_count
        FROM checklist_types ct
        WHERE ct.created_by IN (${ph}) AND ct.is_active = TRUE
        ORDER BY ct.created_at DESC`,
@@ -46,50 +46,50 @@ const ChecklistModel = {
     return rows;
   },
 
-  async updateType(id, { name, description }) {
+  async updateType(checklist_type_id, { name, description }) {
     const [res] = await db.query(
-      'UPDATE checklist_types SET name = ?, description = ? WHERE id = ?',
-      [name, description || null, id]
+      'UPDATE checklist_types SET name = ?, description = ? WHERE checklist_type_id = ?',
+      [name, description || null, checklist_type_id]
     );
     return res.affectedRows > 0;
   },
 
-  async deactivateType(id) {
+  async deactivateType(checklist_type_id) {
     await db.query(
-      'UPDATE checklist_types SET is_active = FALSE WHERE id = ?',
-      [id]
+      'UPDATE checklist_types SET is_active = FALSE WHERE checklist_type_id = ?',
+      [checklist_type_id]
     );
   },
 
   // ── CHECKLISTS ───────────────────────────────────────────────────
 
-  async create({ name, description, media_path, checklist_type_id,
+  async create({ checklist_id, name, description, media_path, checklist_type_id,
                  time_period_value, time_period_unit,
                  repeat_duration_value, repeat_duration_unit,
                  budget, currency, num_workers, created_by }) {
-    const [res] = await db.query(
+    await db.query(
       `INSERT INTO checklists
-         (name, description, media_path, checklist_type_id,
+         (checklist_id, name, description, media_path, checklist_type_id,
           time_period_value, time_period_unit,
           repeat_duration_value, repeat_duration_unit,
           budget, currency, num_workers, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name, description || null, media_path || null,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [checklist_id, name, description || null, media_path || null,
        checklist_type_id || null,
        time_period_value || null, time_period_unit || null,
        repeat_duration_value || null, repeat_duration_unit || null,
        budget || null, currency || '$', num_workers || null, created_by]
     );
-    return res.insertId;
+    return checklist_id;
   },
 
-  async findById(id) {
+  async findById(checklist_id) {
     const [rows] = await db.query(
       `SELECT c.*, ct.name AS checklist_type_name
        FROM checklists c
-       LEFT JOIN checklist_types ct ON c.checklist_type_id = ct.id
-       WHERE c.id = ?`,
-      [id]
+       LEFT JOIN checklist_types ct ON c.checklist_type_id = ct.checklist_type_id
+       WHERE c.checklist_id = ?`,
+      [checklist_id]
     );
     return rows[0] || null;
   },
@@ -99,23 +99,23 @@ const ChecklistModel = {
     const ph = codes.map(() => '?').join(',');
     const [rows] = await db.query(
       `SELECT c.*, ct.name AS checklist_type_name,
-              (
-                SELECT COUNT(*)
-                FROM audit_assignments aa
-                WHERE aa.checklist_id = c.id
-                  AND aa.is_active = TRUE
-                  AND aa.status != 'cancelled'
-              ) AS assigned_audit_count
-       FROM checklists c
-       LEFT JOIN checklist_types ct ON c.checklist_type_id = ct.id
-       WHERE c.created_by IN (${ph}) AND c.is_active = TRUE
-       ORDER BY c.created_at DESC`,
+               (
+                 SELECT COUNT(*)
+                 FROM audit_assignments aa
+                 WHERE aa.checklist_id = c.checklist_id
+                   AND aa.is_active = TRUE
+                   AND aa.status != 'cancelled'
+               ) AS assigned_audit_count
+        FROM checklists c
+        LEFT JOIN checklist_types ct ON c.checklist_type_id = ct.checklist_type_id
+        WHERE c.created_by IN (${ph}) AND c.is_active = TRUE
+        ORDER BY c.created_at DESC`,
       codes
     );
     return rows;
   },
 
-  async update(id, { name, description, media_path, checklist_type_id,
+  async update(checklist_id, { name, description, media_path, checklist_type_id,
                      time_period_value, time_period_unit,
                      repeat_duration_value, repeat_duration_unit,
                      budget, currency, num_workers }) {
@@ -125,21 +125,21 @@ const ChecklistModel = {
            time_period_value = ?, time_period_unit = ?,
            repeat_duration_value = ?, repeat_duration_unit = ?,
            budget = ?, currency = ?, num_workers = ?
-       WHERE id = ?`,
+       WHERE checklist_id = ?`,
       [name, description || null, media_path || null, checklist_type_id || null,
        time_period_value || null, time_period_unit || null,
        repeat_duration_value || null, repeat_duration_unit || null,
        budget || null, currency || '$', num_workers || null,
-       id]
+       checklist_id]
     );
     return res.affectedRows > 0;
   },
 
-  async deactivate(id) {
-    await db.query('UPDATE checklists SET is_active = FALSE WHERE id = ?', [id]);
+  async deactivate(checklist_id) {
+    await db.query('UPDATE checklists SET is_active = FALSE WHERE checklist_id = ?', [checklist_id]);
   },
 
-  async deleteChecklistCascade(id) {
+  async deleteChecklistCascade(checklist_id) {
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
@@ -147,19 +147,19 @@ const ChecklistModel = {
       await conn.query(
         `DELETE qo
          FROM checklist_question_options qo
-         INNER JOIN checklist_questions qq ON qq.id = qo.question_id
+         INNER JOIN checklist_questions qq ON qq.checklist_question_id = qo.checklist_question_id
          WHERE qq.checklist_id = ?`,
-        [id]
+        [checklist_id]
       );
 
       await conn.query(
         'DELETE FROM checklist_questions WHERE checklist_id = ?',
-        [id]
+        [checklist_id]
       );
 
       await conn.query(
-        'DELETE FROM checklists WHERE id = ?',
-        [id]
+        'DELETE FROM checklists WHERE checklist_id = ?',
+        [checklist_id]
       );
 
       await conn.commit();
@@ -173,14 +173,15 @@ const ChecklistModel = {
 
   // ── QUESTIONS ────────────────────────────────────────────────────
 
-  async createQuestion({ checklist_id, entity_code, org_tree_id, entity_type,
+  async createQuestion({ checklist_question_id, checklist_id, entity_code, org_tree_id, entity_type,
                           entity_name, question_text, answer_type, total_marks, order_index }, executor = db) {
-    const [res] = await executor.query(
+    await executor.query(
       `INSERT INTO checklist_questions
-         (checklist_id, entity_code, org_tree_id, entity_type, entity_name,
+         (checklist_question_id, checklist_id, entity_code, org_tree_id, entity_type, entity_name,
           question_text, answer_type, total_marks, order_index)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        checklist_question_id,
         checklist_id,
         entity_code,
         org_tree_id ?? null,
@@ -192,13 +193,13 @@ const ChecklistModel = {
         order_index || 0,
       ]
     );
-    return res.insertId;
+    return checklist_question_id;
   },
 
-  async findQuestionById(id) {
+  async findQuestionById(checklist_question_id) {
     const [rows] = await db.query(
-      'SELECT * FROM checklist_questions WHERE id = ?',
-      [id]
+      'SELECT * FROM checklist_questions WHERE checklist_question_id = ?',
+      [checklist_question_id]
     );
     return rows[0] || null;
   },
@@ -213,8 +214,8 @@ const ChecklistModel = {
     return rows;
   },
 
-  async deleteQuestion(id) {
-    await db.query('DELETE FROM checklist_questions WHERE id = ?', [id]);
+  async deleteQuestion(checklist_question_id) {
+    await db.query('DELETE FROM checklist_questions WHERE checklist_question_id = ?', [checklist_question_id]);
   },
 
   async deleteQuestionsByChecklist(checklist_id) {
@@ -223,33 +224,33 @@ const ChecklistModel = {
 
   // ── QUESTION OPTIONS ─────────────────────────────────────────────
 
-  async createOption({ question_id, option_text, marks, order_index }, executor = db) {
-    const [res] = await executor.query(
-      `INSERT INTO checklist_question_options (question_id, option_text, marks, order_index)
-       VALUES (?, ?, ?, ?)`,
-      [question_id, option_text, marks || 0, order_index || 0]
+  async createOption({ checklist_question_option_id, checklist_question_id, option_text, marks, order_index }, executor = db) {
+    await executor.query(
+      `INSERT INTO checklist_question_options (checklist_question_option_id, checklist_question_id, option_text, marks, order_index)
+       VALUES (?, ?, ?, ?, ?)`,
+      [checklist_question_option_id, checklist_question_id, option_text, marks || 0, order_index || 0]
     );
-    return res.insertId;
+    return checklist_question_option_id;
   },
 
-  async listOptions(question_id) {
+  async listOptions(checklist_question_id) {
     const [rows] = await db.query(
-      'SELECT * FROM checklist_question_options WHERE question_id = ? ORDER BY order_index',
-      [question_id]
+      'SELECT * FROM checklist_question_options WHERE checklist_question_id = ? ORDER BY order_index',
+      [checklist_question_id]
     );
     return rows;
   },
 
-  async deleteOptions(question_id) {
-    await db.query('DELETE FROM checklist_question_options WHERE question_id = ?', [question_id]);
+  async deleteOptions(checklist_question_id) {
+    await db.query('DELETE FROM checklist_question_options WHERE checklist_question_id = ?', [checklist_question_id]);
   },
 
-  async updateQuestion(id, { question_text, answer_type, entity_code, org_tree_id, entity_type, entity_name, total_marks, order_index }) {
+  async updateQuestion(checklist_question_id, { question_text, answer_type, entity_code, org_tree_id, entity_type, entity_name, total_marks, order_index }) {
     const [res] = await db.query(
       `UPDATE checklist_questions 
        SET question_text = ?, answer_type = ?, entity_code = ?, org_tree_id = ?, entity_type = ?, 
            entity_name = ?, total_marks = ?, order_index = ?
-       WHERE id = ?`,
+       WHERE checklist_question_id = ?`,
       [
         question_text,
         answer_type,
@@ -259,7 +260,7 @@ const ChecklistModel = {
         entity_name || null,
         total_marks || 10,
         order_index || 0,
-        id,
+        checklist_question_id,
       ]
     );
     return res.affectedRows > 0;
@@ -274,7 +275,7 @@ const ChecklistModel = {
     const questions = await this.listQuestions(checklist_id);
 
     for (const q of questions) {
-      q.options = await this.listOptions(q.id);
+      q.options = await this.listOptions(q.checklist_question_id);
     }
 
     const entitiesMap = {};

@@ -21,9 +21,8 @@ import EmptyState from "@/components/shared/EmptyState";
 import { Table, THead, Th } from "@/components/ui";
 
 interface CapSummary {
-  id: number;
-  cap_plan_code: string;
-  audit_id: number;
+  cap_id: string;
+  audit_id: string;
   audit_code: string;
   audit_title: string;
   title: string;
@@ -34,6 +33,7 @@ interface CapSummary {
   updated_at: string;
   total_questions: number;
   completed_questions: number;
+  entity_name?: string | null;
 }
 
 interface AssignedUserMini {
@@ -43,9 +43,9 @@ interface AssignedUserMini {
 }
 
 interface AuditMini {
-  id: number;
+  audit_id: string;
   audit_type: "internal" | "external";
-  assigned_auditor_code: string | null;
+  assigned_auditor_id: string | null;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -82,7 +82,7 @@ export default function CapsPage() {
   const router = useRouter();
 
   const [caps, setCaps] = useState<CapSummary[]>([]);
-  const [auditorByCapId, setAuditorByCapId] = useState<Record<number, string>>({});
+  const [auditorByCapId, setAuditorByCapId] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<string>("all");
@@ -119,16 +119,16 @@ export default function CapsPage() {
           })
         );
 
-        const auditById: Record<number, AuditMini> = {};
+        const auditById: Record<string, AuditMini> = {};
         for (const r of auditResults) {
-          if (r.status === "fulfilled" && r.value) auditById[r.value.id] = r.value;
+          if (r.status === "fulfilled" && r.value) auditById[r.value.audit_id] = r.value;
         }
 
         const auditorCodes = Array.from(
           new Set(
             Object.values(auditById)
               .filter((a) => a.audit_type === "internal")
-              .map((a) => a.assigned_auditor_code)
+              .map((a) => a.assigned_auditor_id)
               .filter((c): c is string => Boolean(c))
           )
         );
@@ -150,20 +150,20 @@ export default function CapsPage() {
           }
         }
 
-        const map: Record<number, string> = {};
+        const map: Record<string, string> = {};
         for (const c of list) {
           const a = auditById[c.audit_id];
           if (!a) continue;
           if (a.audit_type !== "internal") {
-            map[c.id] = "—";
+            map[c.cap_id] = "—";
             continue;
           }
-          if (!a.assigned_auditor_code) {
-            map[c.id] = "—";
+          if (!a.assigned_auditor_id) {
+            map[c.cap_id] = "—";
             continue;
           }
-          const u = userByCode[String(a.assigned_auditor_code)];
-          map[c.id] = u ? `${u.first_name} ${u.last_name}` : "—";
+          const u = userByCode[String(a.assigned_auditor_id)];
+          map[c.cap_id] = u ? `${u.first_name} ${u.last_name}` : "—";
         }
         setAuditorByCapId(map);
       }
@@ -308,6 +308,7 @@ export default function CapsPage() {
                 <THead>
                   <Th className="w-10">#</Th>
                   <Th>CAP</Th>
+                  <Th>Organization</Th>
                   <Th>Auditor</Th>
                   <Th>Status</Th>
                   <Th>Progress</Th>
@@ -329,8 +330,8 @@ export default function CapsPage() {
 
                     return (
                       <tr
-                        key={cap.id}
-                        onClick={() => router.push(`/caps/details?id=${cap.id}`)}
+                        key={cap.cap_id}
+                        onClick={() => router.push(`/caps/details?id=${cap.cap_id}`)}
                         className="hover:bg-white/[0.02] transition-colors cursor-pointer group"
                       >
                         <td className="px-4 py-3 text-gray-400">{itemIndex}</td>
@@ -340,8 +341,18 @@ export default function CapsPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
+                          {cap.entity_name ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                              <Building2 size={12} className="text-gray-500 shrink-0" />
+                              <span className="truncate max-w-[150px]">{cap.entity_name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-600">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
                           <span className="text-sm text-gray-300">
-                            {auditorByCapId[cap.id] ?? "—"}
+                            {auditorByCapId[cap.cap_id] ?? "—"}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -369,7 +380,7 @@ export default function CapsPage() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                router.push(`/caps/details?id=${cap.id}`);
+                                router.push(`/caps/details?id=${cap.cap_id}`);
                               }}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border bg-secondary-500/10 text-secondary-400 border-secondary-500/20 hover:bg-secondary-500/20 hover:border-secondary-500/40 whitespace-nowrap"
                             >
@@ -394,8 +405,8 @@ export default function CapsPage() {
                 const itemIndex = (currentPage - 1) * pageSize + index + 1;
                 return (
                   <div
-                    key={cap.id}
-                    onClick={() => router.push(`/caps/details?id=${cap.id}`)}
+                    key={cap.cap_id}
+                    onClick={() => router.push(`/caps/details?id=${cap.cap_id}`)}
                     className="glass rounded-xl border border-white/10 p-4 cursor-pointer"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -413,7 +424,7 @@ export default function CapsPage() {
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
                         <p className="text-gray-500">Auditor</p>
-                        <p className="text-gray-300 mt-0.5 truncate">{auditorByCapId[cap.id] ?? "-"}</p>
+                        <p className="text-gray-300 mt-0.5 truncate">{auditorByCapId[cap.cap_id] ?? "-"}</p>
                       </div>
                       <div className="rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
                         <p className="text-gray-500">Created</p>

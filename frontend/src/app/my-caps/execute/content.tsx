@@ -45,23 +45,22 @@ import {
 import { Button, IconButton, Modal } from "@/components/ui";
 
 interface Cap {
-  id: number;
-  cap_plan_code: string;
+  cap_id: string;
   title: string;
   status: string;
 }
 
 interface CapQuestionOption {
-  id: number;
+  checklist_question_option_id: string;
   option_text: string;
   marks: number;
   order_index: number;
 }
 
 interface CapQuestion {
-  id: number;
+  cap_question_id: string;
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   question_text: string;
   order_index: number;
   status: string;
@@ -72,7 +71,7 @@ interface CapQuestion {
 }
 
 interface Evidence {
-  id: number;
+  id: string;
   file_type: string;
   file_path: string;
   file_name: string;
@@ -80,8 +79,8 @@ interface Evidence {
 }
 
 interface CapResponse {
-  id: number;
-  cap_question_id: number;
+  cap_response_id: string;
+  cap_question_id: string;
   response_text: string | null;
   answer_text?: string | null;
   selected_option_ids: string | null;
@@ -94,7 +93,7 @@ interface CapResponse {
 
 interface CapProgress {
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   total_questions: number;
   answered_questions: number;
   total_marks: number;
@@ -110,15 +109,17 @@ function EntityCard({
   index,
   progressMap,
   targetCodes,
+  questionsMap,
   onClick,
 }: {
   node: TreeNode;
   index: number;
   progressMap: Record<string, CapProgress>;
   targetCodes: Set<string>;
+  questionsMap: Record<string, CapQuestion[]>;
   onClick: () => void;
 }) {
-  const { tQ: t, aQ: a } = getAggProgress(node, targetCodes, progressMap, (code, n) => progressKey(code, n.edge_id ?? null));
+  const { tQ: t, aQ: a } = getAggProgress(node, targetCodes, progressMap, (code, n) => progressKey(code, n.edge_id ?? null), questionsMap);
   const pct = t > 0 ? Math.round((a / t) * 100) : 0;
   const subsections = (node.children ?? []).length;
   const status = pct >= 100 ? "Completed" : a > 0 ? "In Progress" : "Not Started";
@@ -174,9 +175,9 @@ interface CapQuestionCardProps {
   entityCode: string;
   accessToken: string;
   onSaved: () => Promise<void>;
-  onDirtyChange?: (questionId: number, dirty: boolean) => void;
+  onDirtyChange?: (questionId: string, dirty: boolean) => void;
   isOpen?: boolean;
-  onToggle?: (id: number) => void;
+  onToggle?: (id: string) => void;
 }
 
 // CAP Question Card - full audit-style design
@@ -205,7 +206,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
   }, [response?.answer_text, response?.response_text, response?.selected_option_ids, response?.marks_obtained, response?.remarks, response?.cap_required]);
 
   const [answerText, setAnswerText] = useState(baseline.answerText);
-  const [selectedOptions, setSelectedOptions] = useState<number[]>(baseline.selectedOptions);
+  const [selectedOptions, setSelectedOptions] = useState<string[]>(baseline.selectedOptions);
   const [freeTextMarks, setFreeTextMarks] = useState(baseline.freeTextMarks);
   const [remarks, setRemarks] = useState(baseline.remarks);
   const [capRequired, setCapRequired] = useState(baseline.capRequired);
@@ -233,12 +234,12 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
   const computeMarks = useCallback((): number => {
     if (question.answer_type === "free_text") return freeTextMarks;
     if (question.answer_type === "single_option" || question.answer_type === "dropdown") {
-      const opt = question.options.find(o => o.id === selectedOptions[0]);
+      const opt = question.options.find(o => o.checklist_question_option_id === selectedOptions[0]);
       return opt ? Number(opt.marks) || 0 : 0;
     }
     // multiple_options — sum all selected
     return question.options
-      .filter(o => selectedOptions.includes(o.id))
+      .filter(o => selectedOptions.includes(o.checklist_question_option_id))
       .reduce((s, o) => s + (Number(o.marks) || 0), 0);
   }, [question, selectedOptions, freeTextMarks]);
 
@@ -246,8 +247,8 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
   const canToggleCap = marksObtained < maxMarks;
 
   const dirty = useMemo(() => {
-    const selA = (selectedOptions || []).slice().sort((a, b) => a - b);
-    const selB = (baseline.selectedOptions || []).slice().sort((a, b) => a - b);
+    const selA = (selectedOptions || []).slice().sort();
+    const selB = (baseline.selectedOptions || []).slice().sort();
     const sameSel = selA.length === selB.length && selA.every((v, i) => v === selB[i]);
     return (
       (answerText || "") !== (baseline.answerText || "") ||
@@ -259,8 +260,8 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
   }, [answerText, selectedOptions, freeTextMarks, remarks, capRequired, baseline]);
 
   useEffect(() => {
-    onDirtyChange?.(question.id, dirty);
-  }, [dirty, onDirtyChange, question.id]);
+    onDirtyChange?.(question.cap_question_id, dirty);
+  }, [dirty, onDirtyChange, question.cap_question_id]);
 
   useEffect(() => {
     setAnswerText(baseline.answerText);
@@ -281,7 +282,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
     setSaveErr("");
     setSaving(true);
     const res = await capApi.respond(accessToken, capId, {
-      cap_question_id: question.id,
+      cap_question_id: question.cap_question_id,
       response_text: question.answer_type === "free_text" ? answerText : undefined,
       answer_text: question.answer_type === "free_text" ? answerText : undefined,
       selected_option_ids: selectedOptions.length > 0 ? selectedOptions : undefined,
@@ -299,7 +300,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
     setSaveErr("");
     setSaving(true);
     const res = await capApi.respond(accessToken, capId, {
-      cap_question_id: question.id,
+      cap_question_id: question.cap_question_id,
       response_text: question.answer_type === "free_text" ? answerText : undefined,
       answer_text: question.answer_type === "free_text" ? answerText : undefined,
       selected_option_ids: selectedOptions.length > 0 ? selectedOptions : undefined,
@@ -332,11 +333,11 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
       setEvidenceErr(`File size must be 2MB or less. Selected: ${fmtFileSize(file.size)}`);
       return false;
     }
-    let localResponseId: number | null = null;
-    if (!response?.id) {
+    let localResponseId: string | null = null;
+    if (!response?.cap_response_id) {
       // Try to auto-save the CAP response so the evidence can be attached
       const saveRes = await capApi.respond(accessToken, capId, {
-        cap_question_id: question.id,
+        cap_question_id: question.cap_question_id,
         response_text: question.answer_type === "free_text" ? answerText : undefined,
       });
       if (!saveRes.success) {
@@ -344,7 +345,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
         return false;
       }
       // attempt to extract response id
-      const newRespId = (saveRes.data && ((saveRes.data as any).id ?? (saveRes.data as any).response_id ?? (saveRes.data as any).response?.id)) || null;
+      const newRespId = (saveRes.data && ((saveRes.data as any).cap_response_id ?? (saveRes.data as any).response_id ?? (saveRes.data as any).response?.cap_response_id)) || null;
       // set local responseId for immediate upload
       localResponseId = newRespId;
       await onSaved();
@@ -354,7 +355,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
       }
     }
     // find the response id to use for upload (may have been created above)
-    const responseId = localResponseId ?? response?.id ?? null;
+    const responseId = localResponseId ?? response?.cap_response_id ?? null;
 
     setUploading(true);
     setEvidenceToast("");
@@ -367,7 +368,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
       processedFile = await compressImage(file);
     }
 
-    const res = await capApi.uploadEvidence?.(accessToken, capId, Number(responseId), processedFile, fileType);
+    const res = await capApi.uploadEvidence?.(accessToken, capId, String(responseId), processedFile, fileType);
     if (res?.success && res?.data) {
       setEvidence(prev => [...prev, res.data as Evidence]);
       setEvidenceToast("Evidence uploaded");
@@ -380,12 +381,12 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
     return false;
   };
 
-  const handleDeleteEvidence = async (evidenceId: number) => {
-    await capApi.deleteEvidence?.(accessToken, evidenceId);
+  const handleDeleteEvidence = async (evidenceId: string) => {
+    await capApi.deleteEvidence?.(accessToken, String(evidenceId));
     setEvidence(prev => prev.filter(e => e.id !== evidenceId));
   };
 
-  const toggleOption = (optId: number) => {
+  const toggleOption = (optId: string) => {
     if (question.answer_type === "single_option" || question.answer_type === "dropdown") {
       setSelectedOptions([optId]);
     } else {
@@ -411,7 +412,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
       }`}>
       {/* Accordion header */}
       <button
-        onClick={() => onToggle?.(question.id)}
+        onClick={() => onToggle?.(question.cap_question_id)}
         className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-white/[0.03] transition-colors"
       >
         <span className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold transition-colors ${
@@ -491,12 +492,12 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
           ) : question.answer_type === "dropdown" ? (
             <select
               value={selectedOptions[0] || ""}
-              onChange={(e) => setSelectedOptions(e.target.value ? [parseInt(e.target.value)] : [])}
+              onChange={(e) => setSelectedOptions(e.target.value ? [e.target.value] : [])}
               className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-secondary-500/40 transition-colors cursor-pointer"
             >
               <option value="">Select an option...</option>
               {question.options.map(opt => (
-                <option key={opt.id} value={opt.id} className="bg-primary-900 text-white">
+                <option key={opt.checklist_question_option_id} value={opt.checklist_question_option_id} className="bg-primary-900 text-white">
                   {opt.option_text} ({opt.marks} pts)
                 </option>
               ))}
@@ -504,11 +505,11 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {question.options.map(opt => {
-                const isSelected = selectedOptions.includes(opt.id);
+                const isSelected = selectedOptions.includes(opt.checklist_question_option_id);
                 return (
                   <button
-                    key={opt.id}
-                    onClick={() => toggleOption(opt.id)}
+                    key={opt.checklist_question_option_id}
+                    onClick={() => toggleOption(opt.checklist_question_option_id)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${isSelected
                       ? "bg-secondary-500/15 border-secondary-500/40 text-white"
                       : "bg-white/[0.02] border-white/10 text-gray-400 hover:border-white/20 hover:text-white"
@@ -721,17 +722,17 @@ export default function MyCapExecutePage() {
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [prunedTree, setPrunedTree] = useState<TreeNode | null>(null);
   const [responses, setResponses] = useState<Record<string, CapResponse[]>>({});
-  const [stepHistory, setStepHistory] = useState<Array<{ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: number | null }>>([{ mode: "cards", parentCode: null }]);
+  const [stepHistory, setStepHistory] = useState<Array<{ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null }>>([{ mode: "cards", parentCode: null }]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const contentRef = useRef<HTMLDivElement>(null);
-  const questionCardRefs = useRef<Record<number, CapQuestionCardHandle | null>>({});
-  const dirtyMapRef = useRef<Record<number, boolean>>({});
+  const questionCardRefs = useRef<Record<string, CapQuestionCardHandle | null>>({});
+  const dirtyMapRef = useRef<Record<string, boolean>>({});
   const [hasUnsaved, setHasUnsaved] = useState(false);
   const [navModalOpen, setNavModalOpen] = useState(false);
   const pendingNavRef = useRef<null | (() => void)>(null);
-  const [openQuestionId, setOpenQuestionId] = useState<number | null>(null);
+  const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -752,83 +753,98 @@ export default function MyCapExecutePage() {
     if (!accessToken) return;
     setLoading(true);
     setError("");
-    const [itemsRes, progressRes, detailRes] = await Promise.all([
-      capApi.getItems(accessToken, capId),
-      capApi.getProgress(accessToken, capId),
-      capApi.get(accessToken, capId),
-    ]);
-    setLoading(false);
-    if (!itemsRes.success || !itemsRes.data) {
-      setError(itemsRes.message || "Failed to load CAP items.");
-      return;
-    }
-    const items = itemsRes.data as { questions: CapQuestion[]; responses: CapResponse[]; tree: TreeNode | null };
-    setQuestions(items.questions || []);
-    // Resolve tree: prefer items.tree -> audit entity tree fallback -> minimal flat tree from questions
-    let resolvedTree = items.tree || null;
-    if ((!items.tree || items.tree == null) && detailRes && detailRes.success && detailRes.data) {
-      const capData = (detailRes.data as any).cap;
-      const auditIdFromCap = capData?.audit_id ?? capData?.audit?.id ?? null;
-      if (auditIdFromCap) {
-        try {
-          const treeRes = await auditExecutionApi.getEntityTree(accessToken, String(auditIdFromCap));
-          if (treeRes.success && treeRes.data) {
-            resolvedTree = (treeRes.data as any).tree || null;
+    try {
+      const [itemsRes, progressRes, detailRes] = await Promise.all([
+        capApi.getItems(accessToken, capId),
+        capApi.getProgress(accessToken, capId),
+        capApi.get(accessToken, capId),
+      ]);
+
+      if (!itemsRes.success || !itemsRes.data) {
+        setError(itemsRes.message || "Failed to load CAP items.");
+        setLoading(false);
+        return;
+      }
+
+      const items = itemsRes.data as { questions: CapQuestion[]; responses: CapResponse[]; tree: TreeNode | null };
+      const mappedQuestions = (items.questions || []).map((q) => ({ ...q })) as CapQuestion[];
+      setQuestions(mappedQuestions);
+
+      // Resolve tree: prefer audit entity tree (best hierarchy) -> CAP tree -> flat tree from questions
+      let resolvedTree = null;
+
+      // 1. Try audit entity tree first (same approach as audit execute)
+      if (detailRes?.success && detailRes.data) {
+        const capData = (detailRes.data as any).cap;
+        const auditIdFromCap = capData?.audit_id ?? capData?.audit?.id ?? null;
+        if (auditIdFromCap) {
+          try {
+            const treeRes = await auditExecutionApi.getEntityTree(accessToken, String(auditIdFromCap));
+            if (treeRes.success && treeRes.data) {
+              resolvedTree = (treeRes.data as any).tree || null;
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      // 2. Fallback to CAP's own tree (from getCapEntityTree)
+      if (!resolvedTree) {
+        resolvedTree = items.tree || null;
+      }
+
+      // 3. Last resort: build a minimal flat tree from questions
+      if (!resolvedTree) {
+        const instances: Record<string, { code: string; name: string; entity_type: string; edge_id: string | null }> = {};
+        for (const q of mappedQuestions) {
+          const code = q.entity_code || (q as any).entityCode || "";
+          const otid = q.org_tree_id ?? null;
+          const key = progressKey(code, otid);
+          if (!instances[key]) {
+            instances[key] = {
+              code,
+              name: (q as any).question_entity_name || (q as any).entity_name || code,
+              entity_type: (q as any).question_entity_type || "",
+              edge_id: otid,
+            };
           }
-        } catch {
-          // ignore
         }
+        const children = Object.values(instances).map((inst) => ({
+          code: inst.code,
+          name: inst.name,
+          entity_type: inst.entity_type,
+          edge_id: inst.edge_id,
+          children: [],
+        }));
+        resolvedTree = {
+          code: "__root__",
+          name: "All Entities",
+          entity_type: "",
+          edge_id: null,
+          children,
+        };
       }
-    }
 
-    // If we still don't have a tree, build a minimal flat tree from the questions so UI remains usable
-    if (!resolvedTree) {
-      const instances: Record<string, { code: string; name: string; entity_type: string; edge_id: number | null }> = {};
-      for (const q of items.questions || []) {
-        const code = q.entity_code || (q as any).entityCode || "";
-        const otid = q.org_tree_id ?? null;
-        const key = progressKey(code, otid);
-        if (!instances[key]) {
-          instances[key] = {
-            code,
-            name: (q as any).question_entity_name || (q as any).entity_name || code,
-            entity_type: (q as any).question_entity_type || "",
-            edge_id: otid,
-          };
-        }
+      setTree(resolvedTree);
+
+      const grouped: Record<string, CapResponse[]> = {};
+      for (const r of items.responses || []) {
+        if (!grouped[r.cap_question_id]) grouped[r.cap_question_id] = [];
+        grouped[r.cap_question_id].push(r);
       }
-      const children = Object.values(instances).map((inst) => ({
-        code: inst.code,
-        name: inst.name,
-        entity_type: inst.entity_type,
-        edge_id: inst.edge_id,
-        children: [],
-      }));
-      resolvedTree = {
-        code: "__root__",
-        name: "All Entities",
-        entity_type: "",
-        edge_id: null,
-        children,
-      };
+      setResponses(grouped);
+      if (progressRes?.success && progressRes.data) setProgress((progressRes.data as { progress: CapProgress[] }).progress || []);
+      if (detailRes?.success && detailRes.data) setCap((detailRes.data as { cap: Cap }).cap);
+      setHasUnsaved(false);
+    } catch {
+      setError("Network error.");
     }
-
-    setTree(resolvedTree);
-    const grouped: Record<string, CapResponse[]> = {};
-    for (const r of items.responses || []) {
-      if (!grouped[r.cap_question_id]) grouped[r.cap_question_id] = [];
-      grouped[r.cap_question_id].push(r);
-    }
-    setResponses(grouped);
-    if (progressRes.success && progressRes.data) setProgress((progressRes.data as { progress: CapProgress[] }).progress || []);
-    if (detailRes.success && detailRes.data) setCap((detailRes.data as { cap: Cap }).cap);
-    setHasUnsaved(false);
+    setLoading(false);
   }, [accessToken, capId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { contentRef.current?.scrollTo(0, 0); }, [stepHistory]);
 
-  const handleDirtyChange = useCallback((questionId: number, dirty: boolean) => {
+  const handleDirtyChange = useCallback((questionId: string, dirty: boolean) => {
     dirtyMapRef.current[questionId] = dirty;
     const anyDirty = Object.values(dirtyMapRef.current).some(d => d);
     setHasUnsaved(anyDirty);
@@ -874,49 +890,12 @@ export default function MyCapExecutePage() {
   }
   const questionInstanceKeys = new Set<string>(Object.keys(qMap));
 
-  const hasQuestionsForNode = useCallback(
-    (n: TreeNode): boolean => {
-      const k = progressKey(n.code, n.edge_id ?? null);
-      if (questionInstanceKeys.has(k)) return true;
-      return false;
-    },
-    [questionInstanceKeys]
-  );
-
-  const hasQuestionsInSubtree = useCallback(
-    (n: TreeNode): boolean => {
-      if (hasQuestionsForNode(n)) return true;
-      return (n.children || []).some((c) => hasQuestionsInSubtree(c as any));
-    },
-    [hasQuestionsForNode]
-  );
-
-  const pruneTreeByQuestions = useCallback((n: TreeNode | null): TreeNode | null => {
-    if (!n) return null;
-    const prunedChildren = (n.children || [])
-      .map((c) => pruneTreeByQuestions(c as any))
-      .filter(Boolean) as TreeNode[];
-    if (hasQuestionsForNode(n) || prunedChildren.length > 0) {
-      return { ...n, children: prunedChildren };
-    }
-    return null;
-  }, [hasQuestionsForNode]);
-
-  const getQuestionRelevantChildren = useCallback((n: TreeNode): TreeNode[] => {
-    return (n.children || []).filter((c) => hasQuestionsInSubtree(c as any)) as TreeNode[];
-  }, [hasQuestionsInSubtree]);
-
   useEffect(() => {
-    if (!tree) {
-      setPrunedTree(null);
-      return;
-    }
-    const pruned = pruneTreeByQuestions(tree as any);
-    setPrunedTree(pruned as any);
-  }, [tree, questions]);
+    setPrunedTree(tree);
+  }, [tree]);
 
   const totalQ = questions.length;
-  const answeredQ = questions.filter((q) => q.status === "completed" || (responses[q.id]?.some(r => r.response_text?.trim()) ?? false)).length;
+  const answeredQ = questions.filter((q) => q.status === "completed" || (responses[q.cap_question_id]?.some(r => r.response_text?.trim()) ?? false)).length;
   const overallPct = totalQ > 0 ? Math.round((answeredQ / totalQ) * 100) : 0;
   const activeStep = stepHistory[stepHistory.length - 1];
   let activeEntityProgress: CapProgress | null = null;
@@ -995,14 +974,27 @@ export default function MyCapExecutePage() {
 
               // === CARDS VIEW ===
               if (step.mode === "cards") {
-                const parent = step.parentCode ? findNode(prunedTree, step.parentCode) : prunedTree;
-                const baseCards = parent
-                  ? (step.parentCode
-                    ? getQuestionRelevantChildren(parent as any)
-                    : (ENTITY_TYPE_COLORS[parent.entity_type] ? [parent] : getQuestionRelevantChildren(parent as any)))
-                  : [];
+                let cards: TreeNode[] = [];
+                if (step.parentCode === null) {
+                  if (prunedTree) {
+                    cards = ENTITY_TYPE_COLORS[prunedTree.entity_type] ? [prunedTree] : (prunedTree.children ?? []);
+                  }
+                } else {
+                  const parentNode = prunedTree ? findNode(prunedTree, step.parentCode) : null;
+                  cards = parentNode ? (parentNode.children ?? []) : [];
+                }
 
-                const cards = baseCards;
+                cards = cards.filter((node) => {
+                  const { tQ } = getAggProgress(
+                    node as any,
+                    questionInstanceKeys,
+                    pMap,
+                    (code, n) => progressKey(code, (n as any).edge_id ?? null),
+                    qMap
+                  );
+                  return tQ > 0;
+                }) as any;
+
                 return (
                   <div className="max-w-4xl mx-auto">
                     {/* Breadcrumb */}
@@ -1032,28 +1024,43 @@ export default function MyCapExecutePage() {
                     <div className="flex items-center gap-2 text-sm text-gray-400 mb-6">
                       <div className="flex items-center gap-1.5">
                         <Building2 size={16} className="text-secondary-400" />
-                        <span className="font-semibold text-white">{parent?.name || "Root"}</span>
+                        <span className="font-semibold text-white">{prunedTree?.name || "Root"}</span>
                       </div>
                       <span className="text-gray-600 px-1">—</span>
                       <span>Select an entity to respond to CAP</span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {cards.map((n: any, i) => (
+                      {cards.map((n: any, idx) => (
                         <EntityCard
-                          key={`${n.code}-${i}`}
+                          key={`${n.code}__${n.edge_id ?? "null"}`}
                           node={n}
-                          index={i + 1}
+                          index={idx + 1}
                           progressMap={pMap}
                           targetCodes={questionInstanceKeys}
+                          questionsMap={qMap}
                           onClick={() => {
-                            const instKey = progressKey(n.code, n.edge_id ?? null);
-                            const hasQ = (qMap[instKey] || []).length > 0;
-                            const hasKids = getQuestionRelevantChildren(n as any).length > 0;
-                            if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: n.code }]);
-                            else {
+                            const code = n.code;
+                            const edgeId = n.edge_id != null ? String(n.edge_id) : null;
+                            const k = progressKey(code, edgeId);
+                            let hasQ = (qMap[k]?.length || 0) > 0;
+                            let resolvedTreeId = edgeId;
+                            if (!resolvedTreeId) {
+                              const matchKey = Object.keys(qMap)
+                                .filter((mk) => mk.includes("__"))
+                                .find((mk) => mk.split("__")[0] === code && (qMap[mk]?.length || 0) > 0);
+                              if (matchKey) {
+                                hasQ = true;
+                                const idPart = matchKey.split("__")[1];
+                                if (idPart && idPart !== "null") resolvedTreeId = idPart;
+                              }
+                            }
+                            const hasKids = (n.children ?? []).length > 0;
+                            if (!hasQ && hasKids) {
+                              setStepHistory((h) => [...h, { mode: "cards", parentCode: code }]);
+                            } else {
                               setOpenQuestionId(null);
-                              setStepHistory((h) => [...h, { mode: "questions", entityCode: n.code, orgTreeId: n.edge_id ?? null }]);
+                              setStepHistory((h) => [...h, { mode: "questions", entityCode: code, orgTreeId: resolvedTreeId }]);
                             }
                           }}
                         />
@@ -1069,8 +1076,11 @@ export default function MyCapExecutePage() {
               const entityNode = orgTreeId ? findNodeByEdgeId(prunedTree, orgTreeId) : findNode(prunedTree, entityCode);
               const currentKey = progressKey(entityCode, orgTreeId);
               const questionsForEntity = qMap[currentKey] || [];
-              const childrenWithQuestions = entityNode ? getQuestionRelevantChildren(entityNode as any) : [];
-              const hasNextQuestionEntities = childrenWithQuestions.length > 0;
+              const children = entityNode ? (entityNode.children ?? []) : [];
+              const hasNextQuestionEntities = children.some((child) => {
+                const { tQ } = getAggProgress(child as any, questionInstanceKeys, pMap, (code, n) => progressKey(code, (n as any).edge_id ?? null), qMap);
+                return tQ > 0;
+              });
 
               return (
                 <div className="max-w-4xl mx-auto pb-24">
@@ -1115,11 +1125,11 @@ export default function MyCapExecutePage() {
 
                   <div className="space-y-3">
                     {questionsForEntity.map((q) => {
-                      const resp = responses[q.id]?.[0];
+                      const resp = responses[q.cap_question_id]?.[0];
                       return (
                         <CapQuestionCard
-                          key={q.id}
-                          ref={(r) => { questionCardRefs.current[q.id] = r; }}
+                          key={q.cap_question_id}
+                          ref={(r) => { questionCardRefs.current[q.cap_question_id] = r; }}
                           question={q}
                           response={resp}
                           capId={capId}
@@ -1127,7 +1137,7 @@ export default function MyCapExecutePage() {
                           accessToken={accessToken!}
                           onSaved={load}
                           onDirtyChange={handleDirtyChange}
-                          isOpen={openQuestionId === q.id}
+                          isOpen={openQuestionId === q.cap_question_id}
                           onToggle={(id) => setOpenQuestionId(openQuestionId === id ? null : id)}
                         />
                       );

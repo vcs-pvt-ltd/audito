@@ -12,10 +12,11 @@ const AuditorModel = require('../models/AuditorModel');
 const EntityHeadModel = require('../models/EntityHeadModel');
 const OrganizationTreeModel = require('../models/OrganizationTreeModel');
 const crypto = require('crypto');
-const { generateLinkCode } = require('../utils/codeGenerator');
+const { generateLinkCode, generateOrganizationLinkId } = require('../utils/codeGenerator');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
 const { sendLinkRequestEmail } = require('../services/emailService');
 const { db } = require('../config/db');
+const LinkBillingCreditModel = require('../models/LinkBillingCreditModel');
 const {
   ORG_LEVELS,
   canCreateLink,
@@ -75,13 +76,13 @@ async function syncLinkTreeEdges(link, createdBy, action) {
       const companyTreeEdge = await OrganizationTreeModel.findEdgeForRoot(
         companyCode, supplierCode, companyCode
       );
-      if (companyTreeEdge) await OrganizationTreeModel.removeNode(companyTreeEdge.id);
+      if (companyTreeEdge) await OrganizationTreeModel.removeNode(companyTreeEdge.org_tree_id);
     } else if (action === 'remove') {
       const supplierTreeEdge = await OrganizationTreeModel.findEdgeForRoot(supplierCode, companyCode, supplierCode);
-      if (supplierTreeEdge) await OrganizationTreeModel.removeNode(supplierTreeEdge.id);
+      if (supplierTreeEdge) await OrganizationTreeModel.removeNode(supplierTreeEdge.org_tree_id);
 
       const companyTreeEdge = await OrganizationTreeModel.findEdgeForRoot(companyCode, supplierCode, companyCode);
-      if (companyTreeEdge) await OrganizationTreeModel.removeNode(companyTreeEdge.id);
+      if (companyTreeEdge) await OrganizationTreeModel.removeNode(companyTreeEdge.org_tree_id);
     }
     return;
   }
@@ -123,13 +124,13 @@ async function syncLinkTreeEdges(link, createdBy, action) {
     const edge = await OrganizationTreeModel.findEdgeForRoot(
       link.target_code, link.requester_code, link.target_code
     );
-    if (edge) await OrganizationTreeModel.removeNode(edge.id);
+    if (edge) await OrganizationTreeModel.removeNode(edge.org_tree_id);
 
     if (peerLink) {
       const reverseEdge = await OrganizationTreeModel.findEdgeForRoot(
         link.requester_code, link.target_code, link.requester_code
       );
-      if (reverseEdge) await OrganizationTreeModel.removeNode(reverseEdge.id);
+      if (reverseEdge) await OrganizationTreeModel.removeNode(reverseEdge.org_tree_id);
     }
   }
 }
@@ -162,10 +163,12 @@ const createLink = async (req, res) => {
     const target_level = ORG_LEVELS[target_type] || 0;
 
     const linkCode = await generateLinkCode();
+    const organizationLinkId = await generateOrganizationLinkId();
     const verificationKey = generateVerificationKey();
     const verificationKeyHash = hashVerificationKey(verificationKey);
 
     await LinkModel.create({
+      organization_link_id: organizationLinkId,
       link_code: linkCode,
       requester_type,
       requester_code,
@@ -419,6 +422,16 @@ const respondToLink = async (req, res) => {
       } catch (treeErr) {
         console.error('Failed to merge tree on link accept:', treeErr.message);
       }
+
+      // Generate billing credit for Elite-to-Elite links
+      try {
+        const credit = await LinkBillingCreditModel.generateCreditOnAccept(link);
+        if (credit) {
+          console.log(`Generated billing credit ${credit.link_billing_credit_id} for ${credit.credit_for_entity_code}: $${credit.credit_amount}`);
+        }
+      } catch (creditErr) {
+        console.error('Failed to generate link billing credit:', creditErr.message);
+      }
     }
 
     return successResponse(res, { link_code: linkCode, status }, `Link ${status}.`);
@@ -459,6 +472,14 @@ const removeLink = async (req, res) => {
         await syncLinkTreeEdges(link, entityCode, 'remove');
       } catch (treeErr) {
         console.error('Failed to remove tree edge on link remove:', treeErr.message);
+      }
+
+      // Reverse any billing credits associated with this link
+      try {
+        const reversed = await LinkBillingCreditModel.reverseCreditsForLink(link.link_code, link.organization_link_id);
+        if (reversed) console.log(`Reversed ${reversed} billing credit(s) for link ${link.link_code}`);
+      } catch (creditErr) {
+        console.error('Failed to reverse link billing credits:', creditErr.message);
       }
     }
 

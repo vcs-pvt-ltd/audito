@@ -22,7 +22,7 @@ const AuditFirmModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, afc_code]
     );
-    return result.insertId;
+    return afc_code;
   },
 
   async findFirmByCode(afc_code) {
@@ -61,7 +61,7 @@ const AuditFirmModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, afc_code || null, afc_branch_code]
     );
-    return result.insertId;
+    return afc_branch_code;
   },
 
   async findBranchByCode(afc_branch_code) {
@@ -88,7 +88,7 @@ const AuditFirmModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, afc_code || null, afc_branch_code || null, afc_dept_code]
     );
-    return result.insertId;
+    return afc_dept_code;
   },
 
   async findDepartmentByCode(afc_dept_code) {
