@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, Trash2, Users, BookOpen, Clock, CheckCircle2, RefreshCw, Play, Search, Pencil, Lock as LockIcon } from "lucide-react";
+import { Plus, Trash2, Users, BookOpen, Clock, CheckCircle2, RefreshCw, Play, Search, Pencil, Lock as LockIcon, Building2 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Modal, Table, THead, Th } from "@/components/ui";
 
 interface Training {
   id: number;
+  training_id: string;
   title: string;
   platform?: string | null;
   video_url: string;
@@ -19,6 +20,7 @@ interface Training {
   duration_minutes?: number | null;
   assigned_count?: number;
   created_at?: string;
+  entity_name?: string | null;
 }
 
 interface Auditor {
@@ -195,9 +197,9 @@ export default function AuditFirmTrainingsPage() {
   const [loading, setLoading] = useState(true);
 
   const [assignOpen, setAssignOpen] = useState(false);
-  const [assignTrainingId, setAssignTrainingId] = useState<number | null>(null);
+  const [assignTrainingId, setAssignTrainingId] = useState<string | null>(null);
 
-  const [viewAssignmentsId, setViewAssignmentsId] = useState<number | null>(null);
+  const [viewAssignmentsId, setViewAssignmentsId] = useState<string | null>(null);
   const [viewAssignmentsOpen, setViewAssignmentsOpen] = useState(false);
 
   // Pagination state
@@ -205,8 +207,8 @@ export default function AuditFirmTrainingsPage() {
   const [pageSize, setPageSize] = useState(10);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const selectedTraining = trainings.find(t => t.id === viewAssignmentsId);
-  const filteredAssignments = assignments.filter(a => a.training_id === viewAssignmentsId);
+  const selectedTraining = trainings.find(t => t.training_id === viewAssignmentsId);
+  const filteredAssignments = assignments.filter(a => String(a.training_id) === viewAssignmentsId);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -267,7 +269,7 @@ export default function AuditFirmTrainingsPage() {
 
   if (isLoading || !admin) return null;
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!accessToken) return;
     const ok = await confirm({
       title: "Delete Training",
@@ -357,7 +359,8 @@ export default function AuditFirmTrainingsPage() {
             <Table className="table-fixed">
                 <THead>
                   <Th align="center" className="w-12">#</Th>
-                  <Th className="w-[50%]">Title</Th>
+                  <Th className="w-[40%]">Title</Th>
+                  <Th className="w-[15%]">Organization</Th>
                   <Th className="w-28">Platform</Th>
                   <Th align="center" className="w-24">Duration</Th>
                   <Th align="center" className="w-20">Assigned</Th>
@@ -367,7 +370,7 @@ export default function AuditFirmTrainingsPage() {
                   {paginated.map((t, index) => {
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
                     return (
-                      <tr key={t.id} className="hover:bg-white/[0.02] transition-colors group">
+                      <tr key={t.training_id} className="hover:bg-white/[0.02] transition-colors group">
                         <td className="px-4 py-4 text-gray-400 text-center">{itemIndex}</td>
                         <td className="px-4 py-4">
                           <div className="min-w-[200px]">
@@ -376,6 +379,16 @@ export default function AuditFirmTrainingsPage() {
                               <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{t.description}</p>
                             )}
                           </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          {t.entity_name ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                              <Building2 size={12} className="text-gray-500 shrink-0" />
+                              <span className="truncate max-w-[120px]">{t.entity_name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-600">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-4">
                           <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] text-gray-300">
@@ -406,7 +419,7 @@ export default function AuditFirmTrainingsPage() {
                             </a>
                             <button
                               onClick={() => {
-                                setViewAssignmentsId(t.id);
+                                setViewAssignmentsId(t.training_id);
                                 setViewAssignmentsOpen(true);
                               }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all"
@@ -416,7 +429,7 @@ export default function AuditFirmTrainingsPage() {
                             </button>
                             <button
                               onClick={() => {
-                                setAssignTrainingId(t.id);
+                                setAssignTrainingId(t.training_id);
                                 setAssignOpen(true);
                               }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all"
@@ -434,7 +447,7 @@ export default function AuditFirmTrainingsPage() {
                               </button>
                             ) : (
                               <button
-                                onClick={() => handleDelete(t.id)}
+                                onClick={() => handleDelete(t.training_id)}
                                 className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
                                 title="Delete"
                               >
@@ -455,7 +468,7 @@ export default function AuditFirmTrainingsPage() {
             {paginated.map((t, index) => {
               const itemIndex = (currentPage - 1) * pageSize + index + 1;
               return (
-                <div key={t.id} className="glass rounded-xl border border-white/10 p-4">
+                <div key={t.training_id} className="glass rounded-xl border border-white/10 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-xs text-gray-500">#{itemIndex}</p>
@@ -488,7 +501,7 @@ export default function AuditFirmTrainingsPage() {
                       </a>
                       <button
                         onClick={() => {
-                          setViewAssignmentsId(t.id);
+                          setViewAssignmentsId(t.training_id);
                           setViewAssignmentsOpen(true);
                         }}
                         className="p-2 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10"
@@ -497,7 +510,7 @@ export default function AuditFirmTrainingsPage() {
                       </button>
                       <button
                         onClick={() => {
-                          setAssignTrainingId(t.id);
+                          setAssignTrainingId(t.training_id);
                           setAssignOpen(true);
                         }}
                          className="p-2 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10"
@@ -514,7 +527,7 @@ export default function AuditFirmTrainingsPage() {
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleDelete(t.id)}
+                          onClick={() => handleDelete(t.training_id)}
                           className="p-2 rounded-lg text-gray-400 hover:text-red-400"
                         >
                           <Trash2 size={15} />

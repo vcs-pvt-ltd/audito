@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense,useMemo } from "react";
+import { useState, useEffect, Suspense, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -17,6 +17,8 @@ import {
   ShieldCheck,
   Globe,
   BarChart3,
+  Tag,
+  X,
 } from "lucide-react";
 import Image from "next/image";
 import logo from "@/assets/logo/audito_logo.png";
@@ -462,7 +464,13 @@ function RegisterForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [formData, setFormData] = useState<RegisterPayload>({
+  // Promo code state
+  const [promoCode, setPromoCode] = useState("");
+  const [promoDiscount, setPromoDiscount] = useState<number | null>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError] = useState("");
+
+  const [formData, setFormData] = useState<RegisterPayload & { promo_code?: string }>({
     entity_type: "Customer",
     org_name: "",
     registration_number: "",
@@ -475,13 +483,13 @@ function RegisterForm() {
     company_type: "",
     first_name: "",
     last_name: "",
-    nic: "",
     email: "",
     phone_number: "",
     password: "",
     plan_name: "Free",
     billing_cycle: "Monthly",
     timezone: "",
+    promo_code: "",
   });
 
   const [countries, setCountries] = useState<Country[]>([]);
@@ -505,6 +513,11 @@ function RegisterForm() {
       setFormData((prev) => ({ ...prev, entity_type: defaultEntity }));
     }
   }, [searchParams]);
+
+  // Auto-sync org_email to admin email
+  useEffect(() => {
+    setFormData((prev) => ({ ...prev, email: prev.org_email || "" }));
+  }, [formData.org_email]);
 
   const updateField = (field: keyof RegisterPayload, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -569,7 +582,6 @@ function RegisterForm() {
   const validateStep4 = () => {
     if (!formData.first_name.trim()) return "First name is required.";
     if (!formData.last_name.trim()) return "Last name is required.";
-    if (!formData.nic?.trim()) return "NIC is required.";
     if (!formData.email.trim()) return "Email is required.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
       return "Invalid email address.";
@@ -584,6 +596,37 @@ function RegisterForm() {
     if (!formData.password) return "Password is required.";
     if (formData.password !== confirmPassword) return "Passwords do not match.";
     return null;
+  };
+
+  const handleValidatePromo = async () => {
+    if (!promoCode.trim()) {
+      setPromoError("Enter a promo code.");
+      return;
+    }
+    setPromoLoading(true);
+    setPromoError("");
+    setPromoDiscount(null);
+    try {
+      const res = await authApi.validatePromoCode(promoCode.trim());
+      if (res.success && res.data) {
+        setPromoDiscount(res.data.discount_percentage);
+        setFormData((prev) => ({ ...prev, promo_code: promoCode.trim().toUpperCase() }));
+      } else {
+        setPromoError((res as any).message || "Invalid or expired promo code.");
+        setFormData((prev) => ({ ...prev, promo_code: "" }));
+      }
+    } catch {
+      setPromoError("Failed to validate promo code.");
+    } finally {
+      setPromoLoading(false);
+    }
+  };
+
+  const handleRemovePromo = () => {
+    setPromoCode("");
+    setPromoDiscount(null);
+    setPromoError("");
+    setFormData((prev) => ({ ...prev, promo_code: "" }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -800,6 +843,47 @@ function RegisterForm() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Promo Code Section ── */}
+              {formData.plan_name !== "Basic" && !isYearly && (
+                <div className="mb-4">
+                  {promoDiscount ? (
+                    <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-secondary-500/40 bg-secondary-500/10">
+                      <div className="flex items-center gap-2">
+                        <Tag size={14} className="text-secondary-400" />
+                        <span className="text-sm text-secondary-400 font-semibold">{formData.promo_code}</span>
+                        <span className="text-xs text-secondary-300">— {promoDiscount}% off applied!</span>
+                      </div>
+                      <button type="button" onClick={handleRemovePromo} className="text-gray-400 hover:text-red-400 transition-colors">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-2 uppercase tracking-wider">Have a Promo Code?</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={promoCode}
+                          onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoError(""); }}
+                          placeholder="ENTER CODE"
+                          className="flex-1 px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-secondary-500/50 transition-colors tracking-widest uppercase"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleValidatePromo}
+                          disabled={promoLoading || !promoCode.trim()}
+                          className="px-4 py-2.5 rounded-lg bg-secondary-500 hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed text-primary-950 text-sm font-semibold transition-colors flex items-center gap-2"
+                        >
+                          {promoLoading ? <Loader2 size={14} className="animate-spin" /> : <Tag size={14} />}
+                          Apply
+                        </button>
+                      </div>
+                      {promoError && <p className="text-xs text-red-400 mt-1.5">{promoError}</p>}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 type="button"
@@ -1068,23 +1152,21 @@ function RegisterForm() {
                   placeholder="Last name"
                 />
               </div>
-              <Input
-                label="NIC"
-                required
-                value={formData.nic || ""}
-                onChange={(v) => updateField("nic", v)}
-                placeholder="National ID number"
-              />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                <Input
-                  label="Email"
-                  required
-                  type="email"
-                  value={formData.email}
-                  onChange={(v) => updateField("email", v)}
-                  placeholder="admin@email.com"
-                />
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">
+                    Email <span className="text-red-400">*</span>
+                    <span className="ml-1.5 text-[10px] text-secondary-500 font-normal">(same as organization email)</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    readOnly
+                    className="w-full px-4 py-3 rounded-lg bg-white/[0.03] border border-white/10 text-white/50 placeholder-gray-500 cursor-not-allowed transition-colors"
+                    placeholder="auto-filled from organization email"
+                  />
+                </div>
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Phone Number <span className="text-red-400">*</span></label>
                   <div className="flex">

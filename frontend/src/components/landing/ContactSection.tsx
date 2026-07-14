@@ -1,7 +1,7 @@
 "use client";
 
 import Image, { type StaticImageData } from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Send,
@@ -16,7 +16,7 @@ import whatsappIcon from "@/assets/landing/icons/whatsapp.png";
 import xIcon from "@/assets/landing/icons/x.png";
 import Footer from "@/components/layout/Footer";
 import Reveal from "./Reveal";
-import { landingApi } from "@/lib/api";
+import { landingApi, countriesApi, type Country } from "@/lib/api";
 
 export default function ContactSection() {
   const [form, setForm] = useState({
@@ -24,11 +24,21 @@ export default function ContactSection() {
     email: "",
     company: "",
     phone: "",
+    country: "",
     message: "",
   });
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [countrySearch, setCountrySearch] = useState("");
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+
+  useEffect(() => { countriesApi.getAll().then(setCountries); }, []);
+
+  const selectedCountry = countries.find((c) => c.country === form.country);
+  const dialCode = selectedCountry?.international_dialing || "";
 
   const handleSubmit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
@@ -39,7 +49,7 @@ export default function ContactSection() {
 
     if (res.success) {
       setSubmitted(true);
-      setForm({ name: "", email: "", company: "", phone: "", message: "" });
+      setForm({ name: "", email: "", company: "", phone: "", country: "", message: "" });
       setTimeout(() => { setSubmitted(false); }, 3000);
     } else {
       setError(res.message || "Failed to send message. Please try again.");
@@ -108,19 +118,6 @@ export default function ContactSection() {
           position: relative;
           overflow: hidden;
           transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
-        }
-        .send-btn::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.25) 50%, transparent 100%);
-          background-size: 200% auto;
-          opacity: 0;
-          transition: opacity 0.25s ease;
-        }
-        .send-btn:hover::before {
-          opacity: 1;
-          animation: sendShimmer 0.7s linear infinite;
         }
         .send-btn:hover:not(:disabled) {
           transform: translateY(-1px);
@@ -209,10 +206,6 @@ export default function ContactSection() {
                   <h2 className="text-2xl sm:text-3xl font-bold text-white">
                     Let&apos;s Connect
                   </h2>
-                  <p className="text-xs text-gray-300">
-                    Not sure what you need? The team at ValueCraftMind will be happy to
-                    listen to you and suggest ideas you haven&apos;t considered.
-                  </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
@@ -237,25 +230,98 @@ export default function ContactSection() {
                         placeholder="Email"
                       />
                     </div>
-                    <div>
-                      <FieldLabel>Company Name</FieldLabel>
-                      <input
-                        type="text"
-                        value={form.company}
-                        onChange={(e) => setForm((s) => ({ ...s, company: e.target.value }))}
-                        className="contact-input w-full px-3 py-2 rounded-md bg-transparent border border-white/25 text-white placeholder-gray-500 text-sm"
-                        placeholder="Company name"
-                      />
+                  </div>
+
+                  {/* Company Name – full width */}
+                  <div>
+                    <FieldLabel>Company Name</FieldLabel>
+                    <input
+                      type="text"
+                      value={form.company}
+                      onChange={(e) => setForm((s) => ({ ...s, company: e.target.value }))}
+                      className="contact-input w-full px-3 py-2 rounded-md bg-transparent border border-white/25 text-white placeholder-gray-500 text-sm"
+                      placeholder="Company name"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    {/* Country Dropdown */}
+                    <div className="relative">
+                      <FieldLabel>Country</FieldLabel>
+                      <div
+                        className="contact-input w-full px-3 py-2 rounded-md bg-transparent border border-white/25 text-sm cursor-pointer flex items-center gap-2 min-h-[38px]"
+                        onClick={() => setShowCountryDropdown((v) => !v)}
+                      >
+                        {form.country ? (
+                          <>
+                            <span>{selectedCountry?.flag}</span>
+                            <span className="text-white truncate">{form.country}</span>
+                            {dialCode && (
+                              <span className="text-gray-500 ml-auto text-xs">{dialCode}</span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-gray-500">Select your country</span>
+                        )}
+                      </div>
+                      {showCountryDropdown && (
+                        <div className="absolute z-50 mt-1 w-full bg-primary-900 border border-white/15 rounded-lg shadow-2xl max-h-52 overflow-hidden">
+                          <div className="p-2 border-b border-white/10">
+                            <input
+                              type="text"
+                              value={countrySearch}
+                              onChange={(e) => setCountrySearch(e.target.value)}
+                              placeholder="Search countries"
+                              className="w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-white text-sm placeholder-gray-500 focus:outline-none"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="overflow-y-auto max-h-40">
+                            {countries
+                              .filter((c) => c.country.toLowerCase().includes(countrySearch.toLowerCase()))
+                              .map((c) => (
+                                <div
+                                  key={c.id}
+                                  className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-white/10 ${form.country === c.country ? "bg-secondary-500/15 text-secondary-400" : "text-white"
+                                    }`}
+                                  onClick={() => {
+                                    setForm((s) => ({ ...s, country: c.country }));
+                                    setShowCountryDropdown(false);
+                                    setCountrySearch("");
+                                  }}
+                                >
+                                  <span>{c.flag}</span>
+                                  <span className="truncate">{c.country}</span>
+                                  {c.international_dialing && (
+                                    <span className="text-gray-500 ml-auto text-xs">
+                                      {c.international_dialing}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Phone Number – dial code prefix follows the selected country */}
                     <div>
                       <FieldLabel>Phone Number</FieldLabel>
-                      <input
-                        type="text"
-                        value={form.phone}
-                        onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
-                        className="contact-input w-full px-3 py-2 rounded-md bg-transparent border border-white/25 text-white placeholder-gray-500 text-sm"
-                        placeholder="Phone number"
-                      />
+                      <div className="flex">
+                        {dialCode && (
+                          <span className="inline-flex items-center px-2.5 rounded-l-md bg-white/5 border border-white/25 border-r-0 text-gray-400 text-sm shrink-0">
+                            {dialCode}
+                          </span>
+                        )}
+                        <input
+                          type="text"
+                          value={form.phone}
+                          onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
+                          className={`contact-input w-full px-3 py-2 bg-transparent border border-white/25 text-white placeholder-gray-500 text-sm ${dialCode ? "rounded-r-md" : "rounded-md"
+                            }`}
+                          placeholder="Phone number"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -293,7 +359,7 @@ export default function ContactSection() {
                   </button>
 
                   <p className="text-[11px] text-center text-gray-400">
-                    Prefer to email directly? Reach us at info@valuecraftminds.com
+                    Prefer to email directly? Reach us at info@audito.cloud
                   </p>
                 </form>
               )}
@@ -411,11 +477,10 @@ function TestimonialCard({
 }) {
   return (
     <div
-      className={`testimonial-card relative rounded-2xl p-5 sm:p-6 h-full ${
-        featured
-          ? "testimonial-card-featured bg-gradient-to-br from-[#F1FDF9]/20 to-[#B7DAD0]/30 border border-secondary-500/40 shadow-xl shadow-secondary-500/10"
-          : "glass border border-white/10"
-      }`}
+      className={`testimonial-card relative rounded-2xl p-5 sm:p-6 h-full ${featured
+        ? "testimonial-card-featured bg-gradient-to-br from-[#F1FDF9]/20 to-[#B7DAD0]/30 border border-secondary-500/40 shadow-xl shadow-secondary-500/10"
+        : "glass border border-white/10"
+        }`}
     >
       {featured && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">

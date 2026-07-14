@@ -21,7 +21,7 @@ const CompanyModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, comp_code, cust_code || null, company_type || null]
     );
-    return result.insertId;
+    return comp_code;
   },
 
   async findCompanyByCode(comp_code) {
@@ -72,7 +72,7 @@ const CompanyModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, comp_code || null, cust_code || null, comp_clus_code]
     );
-    return result.insertId;
+    return comp_clus_code;
   },
 
   async findClusterByCode(comp_clus_code) {
@@ -131,7 +131,7 @@ const CompanyModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, comp_code || null, cust_code || null, comp_clus_code || null, comp_fact_code]
     );
-    return result.insertId;
+    return comp_fact_code;
   },
 
   async findFactoryByCode(comp_fact_code) {
@@ -198,7 +198,7 @@ const CompanyModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, comp_code || null, cust_code || null, comp_clus_code || null, comp_fact_code || null, comp_unit_code]
     );
-    return result.insertId;
+    return comp_unit_code;
   },
 
   async findUnitByCode(comp_unit_code) {
@@ -265,7 +265,7 @@ const CompanyModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, comp_code || null, cust_code || null, comp_clus_code || null, comp_fact_code || null, comp_unit_code || null, comp_dept_code]
     );
-    return result.insertId;
+    return comp_dept_code;
   },
 
   async findDepartmentByCode(comp_dept_code) {
@@ -332,7 +332,7 @@ const CompanyModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, comp_code || null, cust_code || null, comp_dept_code || null, comp_section_code]
     );
-    return result.insertId;
+    return comp_section_code;
   },
 
   async findSectionByCode(comp_section_code) {

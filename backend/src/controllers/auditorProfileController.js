@@ -3,7 +3,7 @@ const { successResponse, errorResponse } = require('../utils/helpers');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
+const { generateAuditorExperienceId, generateAuditorQualificationId, generateAuditorTrainingId, generateAuditorProfileId } = require('../utils/codeGenerator');
 // File upload setup
 const uploadDir = path.join(__dirname, '../public/uploads/auditor-profiles');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -23,12 +23,12 @@ const getProfile = async (req, res) => {
   try {
     const userCode = req.user.userCode;
 
-    const [profiles] = await db.query('SELECT * FROM auditor_profiles WHERE user_code = ? LIMIT 1', [userCode]);
-    const profile = profiles[0] || { user_code: userCode };
+        const [profiles] = await db.query('SELECT * FROM auditor_profiles WHERE auditor_id = ? LIMIT 1', [userCode]);
+    const profile = profiles[0] || { auditor_id: userCode };
 
-    const [experiences] = await db.query('SELECT * FROM auditor_experiences WHERE user_code = ?', [userCode]);
-    const [qualifications] = await db.query('SELECT * FROM auditor_qualifications WHERE user_code = ?', [userCode]);
-    const [trainings] = await db.query('SELECT * FROM auditor_trainings WHERE user_code = ?', [userCode]);
+    const [experiences] = await db.query('SELECT * FROM auditor_experiences WHERE auditor_id = ?', [userCode]);
+    const [qualifications] = await db.query('SELECT * FROM auditor_qualifications WHERE auditor_id = ?', [userCode]);
+    const [trainings] = await db.query('SELECT * FROM auditor_trainings WHERE auditor_id = ?', [userCode]);
 
     return successResponse(res, { profile, experiences, qualifications, trainings });
   } catch (err) {
@@ -65,24 +65,25 @@ const updateProfile = async (req, res) => {
     if (data.signature_path) allowedUpdates.signature_path = data.signature_path;
     if (data.cv_path) allowedUpdates.cv_path = data.cv_path;
 
-    const [existing] = await db.query('SELECT id FROM auditor_profiles WHERE user_code = ?', [userCode]);
+    const [existing] = await db.query('SELECT id FROM auditor_profiles WHERE auditor_id = ?', [userCode]);
 
     if (existing.length > 0) {
       if (Object.keys(allowedUpdates).length > 0) {
         const setClause = Object.keys(allowedUpdates).map(k => `${k} = ?`).join(', ');
         const values = Object.values(allowedUpdates);
-        await db.query(`UPDATE auditor_profiles SET ${setClause} WHERE user_code = ?`, [...values, userCode]);
+        await db.query(`UPDATE auditor_profiles SET ${setClause} WHERE auditor_id = ?`, [...values, userCode]);
       }
     } else {
-      allowedUpdates.user_code = userCode;
-      const keys = Object.keys(allowedUpdates);
+allowedUpdates.auditor_id = userCode;
+  allowedUpdates.auditor_profile_id = await generateAuditorProfileId();     
+   const keys = Object.keys(allowedUpdates);
       const marks = keys.map(() => '?').join(', ');
       const values = Object.values(allowedUpdates);
       await db.query(`INSERT INTO auditor_profiles (${keys.join(', ')}) VALUES (${marks})`, values);
     }
 
     // Refresh and send updated profile
-    const [updated] = await db.query('SELECT * FROM auditor_profiles WHERE user_code = ? LIMIT 1', [userCode]);
+    const [updated] = await db.query('SELECT * FROM auditor_profiles WHERE auditor_id = ? LIMIT 1', [userCode]);
     return successResponse(res, { profile: updated[0] }, 'Profile updated successfully.');
   } catch (err) {
     console.error('updateProfile error:', err);
@@ -95,11 +96,12 @@ const addExperience = async (req, res) => {
   try {
     const userCode = req.user.userCode;
     const { industry_sector, experience_type, company_name, years } = req.body;
-    const [result] = await db.query(
-      `INSERT INTO auditor_experiences (user_code, industry_sector, experience_type, company_name, years) VALUES (?, ?, ?, ?, ?)`,
-      [userCode, industry_sector, experience_type, company_name, years || 0]
+    const auditor_experience_id = await generateAuditorExperienceId();
+    await db.query(
+      `INSERT INTO auditor_experiences (auditor_experience_id, auditor_id, industry_sector, experience_type, company_name, years) VALUES (?, ?, ?, ?, ?, ?)`,
+      [auditor_experience_id, userCode, industry_sector, experience_type, company_name, years || 0]
     );
-    return successResponse(res, { id: result.insertId }, 'Experience added.');
+    return successResponse(res, { id: auditor_experience_id }, 'Experience added.');
   } catch (err) {
     console.error('addExperience error:', err);
     return errorResponse(res, 'Failed to add experience.', 500);
@@ -111,7 +113,7 @@ const updateExperience = async (req, res) => {
     const { id } = req.params;
     const { industry_sector, experience_type, company_name, years } = req.body;
     await db.query(
-      `UPDATE auditor_experiences SET industry_sector = ?, experience_type = ?, company_name = ?, years = ? WHERE id = ? AND user_code = ?`,
+      `UPDATE auditor_experiences SET industry_sector = ?, experience_type = ?, company_name = ?, years = ? WHERE auditor_experience_id = ? AND auditor_id = ?`,
       [industry_sector, experience_type, company_name, years || 0, id, req.user.userCode]
     );
     return successResponse(res, null, 'Experience updated.');
@@ -124,7 +126,7 @@ const updateExperience = async (req, res) => {
 const deleteExperience = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.query(`DELETE FROM auditor_experiences WHERE id = ? AND user_code = ?`, [id, req.user.userCode]);
+    await db.query(`DELETE FROM auditor_experiences WHERE auditor_experience_id = ? AND auditor_id = ?`, [id, req.user.userCode]);
     return successResponse(res, null, 'Experience deleted.');
   } catch (err) {
     console.error('deleteExperience error:', err);
@@ -140,11 +142,12 @@ const addQualification = async (req, res) => {
     let certificate_path = null;
     if (req.file) certificate_path = `/uploads/auditor-profiles/${req.file.filename}`;
 
-    const [result] = await db.query(
-      `INSERT INTO auditor_qualifications (user_code, qualification_name, university_name, degree, year, certificate_path) VALUES (?, ?, ?, ?, ?, ?)`,
-      [userCode, qualification_name, university_name, degree, year, certificate_path]
+    const auditor_qualification_id = await generateAuditorQualificationId();
+    await db.query(
+      `INSERT INTO auditor_qualifications (auditor_qualification_id, auditor_id, qualification_name, university_name, degree, year, certificate_path) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [auditor_qualification_id, userCode, qualification_name, university_name, degree, year, certificate_path]
     );
-    return successResponse(res, { id: result.insertId }, 'Qualification added.');
+    return successResponse(res, { id: auditor_qualification_id }, 'Qualification added.');
   } catch (err) {
     console.error('addQualification error:', err);
     return errorResponse(res, 'Failed to add qualification.', 500);
@@ -162,7 +165,7 @@ const updateQualification = async (req, res) => {
     const setClause = keys.map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(updates), id, req.user.userCode];
 
-    await db.query(`UPDATE auditor_qualifications SET ${setClause} WHERE id = ? AND user_code = ?`, values);
+    await db.query(`UPDATE auditor_qualifications SET ${setClause} WHERE auditor_qualification_id = ? AND auditor_id = ?`, values);
     return successResponse(res, null, 'Qualification updated.');
   } catch (err) {
     console.error('updateQualification error:', err);
@@ -173,7 +176,7 @@ const updateQualification = async (req, res) => {
 const deleteQualification = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.query(`DELETE FROM auditor_qualifications WHERE id = ? AND user_code = ?`, [id, req.user.userCode]);
+    await db.query(`DELETE FROM auditor_qualifications WHERE auditor_qualification_id = ? AND auditor_id = ?`, [id, req.user.userCode]);
     return successResponse(res, null, 'Qualification deleted.');
   } catch (err) {
     console.error('deleteQualification error:', err);
@@ -189,11 +192,12 @@ const addTraining = async (req, res) => {
     let certificate_path = null;
     if (req.file) certificate_path = `/uploads/auditor-profiles/${req.file.filename}`;
 
-    const [result] = await db.query(
-      `INSERT INTO auditor_trainings (user_code, training_type, course_name, organization, duration, year, certificate_path) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userCode, training_type, course_name, organization, duration, year, certificate_path]
+    const auditor_training_id = await generateAuditorTrainingId();
+    await db.query(
+      `INSERT INTO auditor_trainings (auditor_training_id, auditor_id, training_type, course_name, organization, duration, year, certificate_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [auditor_training_id, userCode, training_type, course_name, organization, duration, year, certificate_path]
     );
-    return successResponse(res, { id: result.insertId }, 'Training added.');
+    return successResponse(res, { id: auditor_training_id }, 'Training added.');
   } catch (err) {
     console.error('addTraining error:', err);
     return errorResponse(res, 'Failed to add training.', 500);
@@ -211,7 +215,7 @@ const updateTraining = async (req, res) => {
     const setClause = keys.map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(updates), id, req.user.userCode];
 
-    await db.query(`UPDATE auditor_trainings SET ${setClause} WHERE id = ? AND user_code = ?`, values);
+    await db.query(`UPDATE auditor_trainings SET ${setClause} WHERE auditor_training_id = ? AND auditor_id = ?`, values);
     return successResponse(res, null, 'Training updated.');
   } catch (err) {
     console.error('updateTraining error:', err);
@@ -222,7 +226,7 @@ const updateTraining = async (req, res) => {
 const deleteTraining = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.query(`DELETE FROM auditor_trainings WHERE id = ? AND user_code = ?`, [id, req.user.userCode]);
+    await db.query(`DELETE FROM auditor_trainings WHERE auditor_training_id = ? AND auditor_id = ?`, [id, req.user.userCode]);
     return successResponse(res, null, 'Training deleted.');
   } catch (err) {
     console.error('deleteTraining error:', err);

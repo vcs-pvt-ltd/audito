@@ -21,15 +21,15 @@ const ENTITY_TYPE_COLORS: Record<string, string> = {
   "Branch": "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
 };
 
-interface TreeNode { code: string; name: string; entity_type: string; edge_id?: number | null; children?: TreeNode[]; [key: string]: unknown; }
-interface ChecklistEntity { entity_code: string; entity_type: string; entity_name: string; org_tree_id: number | null; question_count: number; }
+interface TreeNode { code: string; name: string; entity_type: string; edge_id?: string | null; children?: TreeNode[]; [key: string]: unknown; }
+interface ChecklistEntity { entity_code: string; entity_type: string; entity_name: string; org_tree_id: string | null; question_count: number; }
 interface AuditorUser { user_code: string; first_name: string; last_name: string; email: string; role?: string; }
 interface AuditFirmItem { code: string; name: string; email?: string; country?: string; }
-interface ChecklistBase { id: number; name: string; time_period_value: number | null; time_period_unit: string | null; budget: string | number | null; currency: string | null; num_workers: number | null; }
+interface ChecklistBase { checklist_id: string; name: string; time_period_value: number | null; time_period_unit: string | null; budget: string | number | null; currency: string | null; num_workers: number | null; }
 
 function getSubtreeQuestionKeys(node: TreeNode, entityKeysSet: Set<string>): string[] {
   const keys: string[] = [];
-  const k = `${node.code}__${node.edge_id ?? 'null'}`;
+  const k = `${node.code}__${node.edge_id || 'null'}`;
   if (entityKeysSet.has(k)) keys.push(k);
   for (const c of node.children || []) keys.push(...getSubtreeQuestionKeys(c, entityKeysSet));
   return keys;
@@ -102,7 +102,7 @@ export default function AssignAuditPage() {
       if (entRes.success && entRes.data) {
         const ents = ((entRes.data as any).entities || []);
         setEntities(ents);
-        setSelectedKeys(new Set(ents.map((e: ChecklistEntity) => `${e.entity_code}__${e.org_tree_id ?? 'null'}`)));
+        setSelectedKeys(new Set(ents.map((e: ChecklistEntity) => `${e.entity_code}__${e.org_tree_id || 'null'}`)));
       } else setDataError("Failed to load checklist entities.");
       if (treeRes.success && treeRes.data) { const t = (treeRes.data as any).tree; if (t) setTreeRoot(t); }
     } catch { setDataError("Network error. Please try again."); }
@@ -127,7 +127,7 @@ export default function AssignAuditPage() {
     }
   }, [startDate, checklist]);
 
-  const getEntKey = (e: ChecklistEntity) => `${e.entity_code}__${e.org_tree_id ?? 'null'}`;
+  const getEntKey = (e: ChecklistEntity) => `${e.entity_code}__${e.org_tree_id || 'null'}`;
   const toggleEntity = (key: string) => setSelectedKeys(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const selectAll = () => setSelectedKeys(new Set(entities.map(getEntKey)));
   const clearAll = () => setSelectedKeys(new Set());
@@ -148,8 +148,8 @@ export default function AssignAuditPage() {
 
     setSubmitting(true); setSubmitError("");
     const res = await auditApi.create(accessToken, {
-      checklist_id: checklist.id, title: title.trim(), audit_type: auditType,
-      assigned_auditor_code: auditType === "internal" ? selectedAuditorCode : undefined,
+      checklist_id: checklist.checklist_id, title: title.trim(), audit_type: auditType,
+      assigned_auditor_id: auditType === "internal" ? selectedAuditorCode : undefined,
       assigned_firm_code: auditType === "external" ? selectedFirmCode : undefined,
       budget: budget || undefined, currency: currency || "$", num_workers: numWorkers || undefined,
       start_date: startDate, end_date: endDate, notes: notes.trim() || undefined,
@@ -358,8 +358,9 @@ export default function AssignAuditPage() {
                     ) : (() => {
                       const entityMap = new Map(entities.map(e => [getEntKey(e), e]));
                       const entityKeysSet = new Set(entityMap.keys());
-                      return treeRoot ? (
-                        <OrgTreeEntitySelector node={treeRoot} entityKeysSet={entityKeysSet} entityMap={entityMap} selectedKeys={selectedKeys} onToggle={toggleEntity} onBulkToggle={bulkToggleEntities} />
+                      const treeHasMatch = treeRoot && getSubtreeQuestionKeys(treeRoot, entityKeysSet).length > 0;
+                      return treeHasMatch ? (
+                        <OrgTreeEntitySelector node={treeRoot!} entityKeysSet={entityKeysSet} entityMap={entityMap} selectedKeys={selectedKeys} onToggle={toggleEntity} onBulkToggle={bulkToggleEntities} />
                       ) : (
                         <div className="space-y-1.5">
                           {entities.map(e => {
@@ -420,7 +421,7 @@ function OrgTreeEntitySelector({ node, entityKeysSet, entityMap, selectedKeys, o
   if (subtreeKeys.length === 0) return null;
   const relevantChildren = (node.children || []).filter(c => getSubtreeQuestionKeys(c, entityKeysSet).length > 0);
   const [expanded, setExpanded] = useState(depth < 4);
-  const nodeKey = `${node.code}__${node.edge_id ?? 'null'}`;
+  const nodeKey = `${node.code}__${node.edge_id || 'null'}`;
   const hasOwnQuestions = entityKeysSet.has(nodeKey);
   const entity = entityMap.get(nodeKey);
   const cc = ENTITY_TYPE_COLORS[node.entity_type] || "bg-gray-500/20 text-gray-300 border-gray-500/30";
@@ -449,7 +450,7 @@ function OrgTreeEntitySelector({ node, entityKeysSet, entityMap, selectedKeys, o
       {expanded && relevantChildren.length > 0 && (
         <div className="ml-[18px] border-l border-white/[0.08] pl-3 mt-0.5 space-y-0.5 pb-1">
           {relevantChildren.map(child => (
-            <OrgTreeEntitySelector key={`${child.code}__${child.edge_id ?? 'null'}`} node={child}
+            <OrgTreeEntitySelector key={`${child.code}__${child.edge_id || 'null'}`} node={child}
               entityKeysSet={entityKeysSet} entityMap={entityMap} selectedKeys={selectedKeys}
               onToggle={onToggle} onBulkToggle={onBulkToggle} depth={depth + 1} />
           ))}

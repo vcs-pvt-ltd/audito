@@ -18,6 +18,7 @@ const { successResponse, errorResponse, validateRequiredFields } = require('../u
 const { getAccessibleEntityCodes, getEntityHeadOrgTreeScope, extractEntityHeadSubtree } = require('../utils/accessHelper');
 const { isCompanySupplierLink } = require('../utils/linkRules');
 
+
 // ─── Entity table config (type → table + code field) ─────────────
 
 const ENTITY_TABLE_MAP = {
@@ -136,7 +137,7 @@ async function ensureCompanySupplierLinkEdges(entityType, entityCode, createdBy)
       companyCode, supplierCode, companyCode
     );
     if (companyTreeEdge) {
-      await OrganizationTreeModel.removeNode(companyTreeEdge.id);
+      await OrganizationTreeModel.removeNode(companyTreeEdge.org_tree_id);
     }
   }
 }
@@ -229,7 +230,7 @@ const getTree = async (req, res) => {
           const newPath = new Set(pathCodes);
           newPath.add(edge.child_code);
           return {
-            edge_id: edge.id,
+            edge_id: edge.org_tree_id,
             ...entity,
             is_partner_root: partnerSet.has(edge.child_code),
             children: buildChildren(edge.edge_path, newPath) // recurse using THIS edge's path
@@ -317,7 +318,7 @@ const addNode = async (req, res) => {
     let parent_edge_id = null;
     if (adminCode !== parent_code) {
       const parentEdge = descendants.find(d => d.child_code === parent_code);
-      parent_edge_id = parentEdge ? parentEdge.id : null;
+      parent_edge_id = parentEdge ? parentEdge.org_tree_id : null;
     }
     // ─────────────────────────────────────────────────────────────────
 
@@ -567,7 +568,7 @@ const syncTree = async (req, res) => {
       // the parent was just inserted earlier in this loop
       if (parent_edge_id === null && adminCode !== parent_code) {
         const parentEdgeRow = descendants.find(d => d.child_code === parent_code);
-        parent_edge_id = parentEdgeRow ? parentEdgeRow.id : null;
+        parent_edge_id = parentEdgeRow ? parentEdgeRow.org_tree_id : null;
       }
 
       // Validate parent_edge_id if resolved

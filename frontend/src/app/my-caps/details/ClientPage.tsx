@@ -31,8 +31,7 @@ import { Button, IconButton } from "@/components/ui";
 // ─── Types ───────────────────────────────────────────────────────
 
 interface Cap {
-  id: number;
-  cap_plan_code: string;
+  cap_id: string;
   audit_id: number;
   audit_code: string;
   audit_title: string;
@@ -45,11 +44,11 @@ interface Cap {
 }
 
 interface CapQuestion {
-  id: number;
-  cap_id: number;
+  id: string;
+  cap_id: string;
   corrective_action_id: number;
   entity_code: string;
-  org_tree_id: number | null;
+  org_tree_id: string | null;
   question_id: number;
   status: string;
   question_text: string;
@@ -61,21 +60,21 @@ interface CapQuestion {
   responsible_person_name: string | null;
   due_date: string | null;
   severity: string;
-  options: { id: number; option_text: string; marks: number }[];
+  options: { id: string; option_text: string; marks: number }[];
 }
 
 interface CapEntity {
-  id: number;
-  cap_id: number;
+  id: string;
+  cap_id: string;
   entity_code: string;
   entity_type: string;
 }
 
 interface CapProgress {
-  id: number;
-  cap_id: number;
+  id: string;
+  cap_id: string;
   entity_code: string;
-  org_tree_id: number | null;
+  org_tree_id: string | null;
   total_questions: number;
   answered_questions: number;
   status: string;
@@ -243,12 +242,19 @@ export default function MyCapDetailPage() {
   // Determine back route based on role
   const backPath = admin?.role === "admin" ? "/caps" : "/my-caps";
 
+  useEffect(() => {
+    if (!capId) {
+      router.replace(backPath);
+    }
+  }, [capId, backPath, router]);
+
   const [cap, setCap] = useState<Cap | null>(null);
   const [questions, setQuestions] = useState<CapQuestion[]>([]);
   const [progress, setProgress] = useState<CapProgress[]>([]);
   const [tree, setTree] = useState<TreeNode | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState("");
   const [showCompleteModal, setShowCompleteModal] = useState(false);
@@ -286,6 +292,16 @@ export default function MyCapDetailPage() {
   }, [accessToken, capId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleStart = async () => {
+    if (!accessToken || !cap) return;
+    setStarting(true);
+    const res = await capApi.updateStatus(accessToken, capId, { status: "in_progress" });
+    setStarting(false);
+    if (res.success) {
+      router.push(`/my-caps/execute?id=${capId}`);
+    }
+  };
 
   const handleOpenComplete = async () => {
     setShowCompleteModal(true);
@@ -391,11 +407,12 @@ export default function MyCapDetailPage() {
               {isPending && (
                 <Button
                   fullWidth
-                  onClick={() => router.push(`/my-caps/execute?id=${capId}`)}
-                  leftIcon={<Zap size={18} />}
+                  onClick={handleStart}
+                  leftIcon={starting ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
                   className="py-3 rounded-xl font-black shadow-lg shadow-secondary-500/15"
+                  disabled={starting}
                 >
-                  Start CAP
+                  {starting ? "Starting…" : "Start CAP"}
                 </Button>
               )}
               {isInProgress && (

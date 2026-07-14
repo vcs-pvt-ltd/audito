@@ -35,7 +35,7 @@ interface AuditEntity {
 }
 
 interface AuditDetail {
-  id: number;
+  audit_id: string;
   audit_code: string;
   title: string;
   audit_type: "internal" | "external";
@@ -47,17 +47,17 @@ interface AuditDetail {
 }
 
 interface CapRequiredItem {
-  response_id: number;
+  response_id: string;
   audit_id: number;
   entity_code: string;
-  assigned_org_tree_id?: number | null;
+  assigned_org_tree_id?: string | null;
   responsible_entity_head?: {
     user_code: string;
     first_name: string;
     last_name: string;
     email: string;
   } | null;
-  question_id: number;
+  question_id: string;
   answer_text: string | null;
   selected_option_ids: string | null;
   marks_obtained: string | number | null;
@@ -74,19 +74,18 @@ interface CapRequiredItem {
 }
 
 interface CorrectiveActionRow {
-  id: number;
-  audit_id: number;
-  response_id: number;
+  id: string;
+  audit_id: string;
+  audit_response_id: string;
   entity_code: string;
-  question_id: number;
-  responsible_person_code: string | null;
+  checklist_question_id: string;
+  responsible_entity_head_id: string | null;
   responsible_person_name: string | null;
   due_date: string | null;
 }
 
 interface CapSummary {
-  id: number;
-  cap_plan_code: string;
+  cap_id: string;
   title: string;
   status: string;
   total_questions: number;
@@ -136,8 +135,8 @@ function EntityNode({
 }: {
   node: TreeNode; depth: number;
   itemsByEntity: Record<string, CapRequiredItem[]>;
-  assignments: Record<number, { due_date: string }>;
-  onChange: (responseId: number, patch: Partial<{ due_date: string }>) => void;
+  assignments: Record<string, { due_date: string }>;
+  onChange: (responseId: string, patch: Partial<{ due_date: string }>) => void;
 }) {
   const entityKey = `${node.code}__${(node as any).edge_id ?? "null"}`;
   const entityItems = itemsByEntity[entityKey] || [];
@@ -216,15 +215,16 @@ function EntityNode({
                         {idx + 1}
                       </span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500/70 flex items-center gap-1">
-                        <AlertCircle size={10} /> Q{it.order_index}
+                       
                       </span>
+                                            <p className="text-sm text-gray-200 leading-relaxed">{it.question_text}</p>
+
                       <span className="ml-auto text-[9px] font-bold text-amber-500/50 uppercase tracking-widest px-1.5 py-0.5 rounded bg-amber-500/5 border border-amber-500/10">
                         CAP Required
                       </span>
                     </div>
 
                     <div className="p-3 sm:p-4 space-y-3">
-                      <p className="text-sm text-gray-200 leading-relaxed">{it.question_text}</p>
 
                       {it.remarks && (
                         <div className="px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
@@ -298,7 +298,7 @@ export default function CorrectiveActionsPage() {
   const [audit, setAudit] = useState<AuditDetail | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [items, setItems] = useState<CapRequiredItem[]>([]);
-  const [assignments, setAssignments] = useState<Record<number, { due_date: string }>>({});
+  const [assignments, setAssignments] = useState<Record<string, { due_date: string }>>({});
   const [existingCap, setExistingCap] = useState<CapSummary | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -358,9 +358,9 @@ export default function CorrectiveActionsPage() {
       const its = data.items || [];
       setItems(its);
 
-      const byResponse: Record<number, { due_date: string }> = {};
+      const byResponse: Record<string, { due_date: string }> = {};
       for (const row of data.corrective_actions || []) {
-        byResponse[row.response_id] = { due_date: row.due_date ? String(row.due_date).slice(0, 10) : "" };
+        byResponse[row.audit_response_id] = { due_date: row.due_date ? String(row.due_date).slice(0, 10) : "" };
       }
       for (const it of its) {
         if (!byResponse[it.response_id]) byResponse[it.response_id] = { due_date: "" };
@@ -382,7 +382,7 @@ export default function CorrectiveActionsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const onChange = (responseId: number, patch: Partial<{ due_date: string }>) => {
+  const onChange = (responseId: string, patch: Partial<{ due_date: string }>) => {
     setAssignments(prev => ({ ...prev, [responseId]: { due_date: prev[responseId]?.due_date || "", ...patch } }));
   };
 
@@ -392,10 +392,10 @@ export default function CorrectiveActionsPage() {
     setError("");
     setToast("");
     const actions = items.map(it => ({
-      response_id: it.response_id,
+      response_id: String(it.response_id),
       entity_code: it.entity_code,
-      question_id: it.question_id,
-      assigned_org_tree_id: it.assigned_org_tree_id || null,
+      question_id: String(it.question_id),
+      assigned_org_tree_id: it.assigned_org_tree_id ? String(it.assigned_org_tree_id) : null,
       due_date: assignments[it.response_id]?.due_date || null,
     }));
     const res = await auditExecutionApi.saveCorrectiveActions(accessToken, auditId, actions);
@@ -415,7 +415,7 @@ export default function CorrectiveActionsPage() {
     if (!capTitle.trim()) { setError("Please enter a CAP title."); return; }
     setCreatingCap(true);
     setError("");
-    const res = await capApi.create(accessToken, { audit_id: audit.id, title: capTitle.trim() });
+    const res = await capApi.create(accessToken, { audit_id: audit.audit_id, title: capTitle.trim() });
     setCreatingCap(false);
     if (res.success && res.data) {
       setShowCreateCapModal(false);
@@ -501,7 +501,7 @@ export default function CorrectiveActionsPage() {
                     <span className="text-sm font-semibold text-white">CAP Created</span>
                    
                   </div>
-                  <Button size="sm" leftIcon={<ExternalLink size={11}/>} onClick={() => router.push(`/my-caps/details?id=${existingCap.id}`)}>View CAP</Button>
+                  <Button size="sm" leftIcon={<ExternalLink size={11}/>} onClick={() => router.push(`/my-caps/details?id=${existingCap.cap_id}`)}>View CAP</Button>
                 </div>
               )}
 

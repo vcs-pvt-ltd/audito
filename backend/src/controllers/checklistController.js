@@ -37,6 +37,8 @@ const path = require('path');
 const fs = require('fs');
 const { getAccessibleEntityCodes } = require('../utils/accessHelper');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
+const { findDuplicateName } = require('../utils/nameNormalizer');
+const { generateChecklistTypeId, generateChecklistId, generateChecklistQuestionId, generateChecklistQuestionOptionId } = require('../utils/codeGenerator');
 
 const VALID_ANSWER_TYPES = ['free_text', 'single_option', 'multiple_options', 'dropdown'];
 
@@ -78,8 +80,11 @@ async function saveOptions(question_id, options, answer_type, executor = db) {
     if (!opt.option_text || !String(opt.option_text).trim()) {
       throw new Error(`Option ${i + 1} is missing text.`);
     }
+    const checklist_question_option_id = await generateChecklistQuestionOptionId();
+
     await ChecklistModel.createOption({
-      question_id,
+      checklist_question_option_id,
+      checklist_question_id: question_id,
       option_text: String(opt.option_text).trim(),
       marks: parseFloat(opt.marks) || 0,
       order_index: i
@@ -97,18 +102,26 @@ const createChecklistType = async (req, res) => {
     const missing = validateRequiredFields(req.body, ['name']);
     if (missing) return errorResponse(res, missing, 400);
 
-    // Uniqueness: checklist type name must be unique per organization
+    // Uniqueness: checklist type name must be unique per organization.
+    // Names differing only by capitalization, spacing, or leading zeros
+    // (e.g. "Type 01" vs "type1") are treated as duplicates.
     try {
-      const [rows] = await db.query(
-        'SELECT id FROM checklist_types WHERE name = ? AND created_by = ? AND is_active = TRUE LIMIT 1',
-        [name, req.user.entityCode]
-      );
-      if (rows.length > 0) return errorResponse(res, 'A checklist type with this name already exists for your organization.', 409);
+      const dup = await findDuplicateName({
+        db,
+        table: 'checklist_types',
+        nameColumn: 'name',
+        name,
+        whereClauses: ['created_by = ?', 'is_active = TRUE'],
+        whereParams: [req.user.entityCode]
+      });
+      if (dup) return errorResponse(res, `A checklist type named "${dup.name}" already exists for your organization.`, 409);
     } catch (err) {
       console.error('Checklist type uniqueness check failed:', err);
     }
 
+    const checklist_type_id = await generateChecklistTypeId();
     const id = await ChecklistModel.createType({
+      checklist_type_id,
       name,
       description,
       created_by: req.user.entityCode
@@ -145,12 +158,19 @@ const updateChecklistType = async (req, res) => {
     }
 
     // Ensure uniqueness of name within this organization on update
+    // (case/space/leading-zero insensitive — same rule as create)
     try {
-      const [conflict] = await db.query(
-        'SELECT id FROM checklist_types WHERE name = ? AND created_by = ? AND is_active = TRUE AND id != ? LIMIT 1',
-        [name, req.user.entityCode, id]
-      );
-      if (conflict.length > 0) return errorResponse(res, 'A checklist type with this name already exists for your organization.', 409);
+      const dup = await findDuplicateName({
+        db,
+        table: 'checklist_types',
+        nameColumn: 'name',
+        name,
+        whereClauses: ['created_by = ?', 'is_active = TRUE'],
+        whereParams: [req.user.entityCode],
+        idColumn: 'checklist_type_id',
+        excludeId: id
+      });
+      if (dup) return errorResponse(res, `A checklist type named "${dup.name}" already exists for your organization.`, 409);
     } catch (err) {
       console.error('Checklist type update uniqueness check failed:', err);
     }
@@ -239,13 +259,19 @@ const createChecklist = async (req, res) => {
       }
     }
 
-    // Uniqueness: checklist name must be unique per creating organization
+    // Uniqueness: checklist name must be unique per creating organization.
+    // Names differing only by capitalization, spacing, or leading zeros
+    // (e.g. "Checklist 01" vs "checklist1") are treated as duplicates.
     try {
-      const [existing] = await db.query(
-        'SELECT id FROM checklists WHERE name = ? AND created_by = ? AND is_active = TRUE LIMIT 1',
-        [name, req.user.entityCode]
-      );
-      if (existing.length > 0) return errorResponse(res, 'A checklist with this name already exists for your organization.', 409);
+      const dup = await findDuplicateName({
+        db,
+        table: 'checklists',
+        nameColumn: 'name',
+        name,
+        whereClauses: ['created_by = ?', 'is_active = TRUE'],
+        whereParams: [req.user.entityCode]
+      });
+      if (dup) return errorResponse(res, `A checklist named "${dup.name}" already exists for your organization.`, 409);
     } catch (err) {
       console.error('Checklist uniqueness check failed:', err);
     }
@@ -253,7 +279,10 @@ const createChecklist = async (req, res) => {
     const limitError = await LimitsEnforcer.checkChecklistLimit(req.user.entityCode);
     if (limitError) return errorResponse(res, limitError, 403);
 
+    const checklist_id = await generateChecklistId();
+
     const id = await ChecklistModel.create({
+      checklist_id,
       name,
       description,
       media_path,
@@ -329,12 +358,19 @@ const updateChecklist = async (req, res) => {
     if (!name) return errorResponse(res, 'Name is required.', 400);
 
     // Ensure new name is unique within this organization
+    // (case/space/leading-zero insensitive — same rule as create)
     try {
-      const [conflict] = await db.query(
-        'SELECT id FROM checklists WHERE name = ? AND created_by = ? AND is_active = TRUE AND id != ? LIMIT 1',
-        [name, req.user.entityCode, id]
-      );
-      if (conflict.length > 0) return errorResponse(res, 'A checklist with this name already exists for your organization.', 409);
+      const dup = await findDuplicateName({
+        db,
+        table: 'checklists',
+        nameColumn: 'name',
+        name,
+        whereClauses: ['created_by = ?', 'is_active = TRUE'],
+        whereParams: [req.user.entityCode],
+        idColumn: 'checklist_id',
+        excludeId: id
+      });
+      if (dup) return errorResponse(res, `A checklist named "${dup.name}" already exists for your organization.`, 409);
     } catch (err) {
       console.error('Checklist update uniqueness check failed:', err);
     }
@@ -427,10 +463,7 @@ const addQuestions = async (req, res) => {
 
       let orgTreeId = null;
       if (q.org_tree_id !== undefined && q.org_tree_id !== null && q.org_tree_id !== '') {
-        orgTreeId = parseInt(q.org_tree_id, 10);
-        if (Number.isNaN(orgTreeId)) {
-          return errorResponse(res, 'Invalid org_tree_id.', 400);
-        }
+        orgTreeId = q.org_tree_id;
         const edge = await OrganizationTreeModel.findById(orgTreeId);
         if (!edge || edge.root_entity_code !== req.user.entityCode || edge.child_code !== q.entity_code) {
           return errorResponse(res, 'Invalid org_tree_id for selected entity.', 400);
@@ -440,7 +473,10 @@ const addQuestions = async (req, res) => {
       const key = `${q.entity_code}__${orgTreeId ?? 'null'}`;
       const orderIndex = entityOrderMap[key] || 0;
 
+      const checklist_question_id = await generateChecklistQuestionId();
+
       const questionId = await ChecklistModel.createQuestion({
+        checklist_question_id,
         checklist_id: id,
         entity_code: q.entity_code,
         org_tree_id: orgTreeId,
@@ -490,10 +526,7 @@ const updateQuestion = async (req, res) => {
       if (org_tree_id === null || org_tree_id === '') {
         orgTreeId = null;
       } else {
-        orgTreeId = parseInt(org_tree_id, 10);
-        if (Number.isNaN(orgTreeId)) {
-          return errorResponse(res, 'Invalid org_tree_id.', 400);
-        }
+        orgTreeId = org_tree_id;
         const selectedEntityCode = entity_code || question.entity_code;
         const edge = await OrganizationTreeModel.findById(orgTreeId);
         if (!edge || edge.root_entity_code !== req.user.entityCode || edge.child_code !== selectedEntityCode) {
@@ -592,7 +625,7 @@ async function buildOrgEntityMaps(adminCode, entityType) {
 
   // Deduplicate edges by ID to avoid redundant processing
   const edgeMap = new Map();
-  allEdges.forEach(e => edgeMap.set(e.id, e));
+  allEdges.forEach(e => edgeMap.set(e.org_tree_id, e));
   const edges = Array.from(edgeMap.values());
 
   const entityTypeMap = {};
@@ -653,7 +686,7 @@ async function buildOrgEntityMaps(adminCode, entityType) {
 
     if (!childrenEdgeMap[e.parent_code]) childrenEdgeMap[e.parent_code] = [];
     if (!childrenEdgeMap[e.parent_code].some(x => x.child_code === e.child_code)) {
-      childrenEdgeMap[e.parent_code].push({ child_code: e.child_code, edge_id: e.id });
+      childrenEdgeMap[e.parent_code].push({ child_code: e.child_code, edge_id: e.org_tree_id });
     }
   }
 
@@ -1266,4 +1299,3 @@ module.exports = {
   uploadQuestionsExcel,
   previewQuestionsExcel
 };
-

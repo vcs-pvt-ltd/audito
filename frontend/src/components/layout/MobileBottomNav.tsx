@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import {
-  BookOpen,
+  Mail,
   ClipboardCheck,
   FileCheck,
   LayoutDashboard,
@@ -46,6 +46,15 @@ function getNavItems(role: string): NavItem[] {
     ];
   }
 
+  if (role === "audito_admin") {
+    return [
+      { label: "Dashboard", path: "/admin-panel/dashboard", icon: LayoutDashboard },
+      { label: "Messages", path: "/admin-panel/messages", icon: Mail, matchPrefix: true },
+      { label: "Promos", path: "/admin-panel/promo-codes", icon: ClipboardCheck, matchPrefix: true },
+      { label: "Profile", path: "/profile", icon: UserCircle2 },
+    ];
+  }
+
   return [
     { label: "Home", path: "/dashboard", icon: LayoutDashboard },
     { label: "Profile", path: "/profile", icon: UserCircle2 },
@@ -75,11 +84,10 @@ export default function MobileBottomNav() {
             <li key={item.path || item.label}>
               <Link
                 href={path || "/dashboard"}
-                className={`flex flex-col items-center justify-center rounded-lg px-1 py-2 transition-all ${
-                  isActive
+                className={`flex flex-col items-center justify-center rounded-lg px-1 py-2 transition-all ${isActive
                     ? "bg-secondary-500/20 text-secondary-300"
                     : "text-gray-300 hover:text-white hover:bg-white/8"
-                }`}
+                  }`}
               >
                 <Icon size={18} />
                 <span className={`mt-1 text-[11px] leading-none font-medium ${isActive ? "text-secondary-300" : "text-gray-400"}`}>

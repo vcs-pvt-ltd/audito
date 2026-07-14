@@ -11,6 +11,7 @@
 const PaymentModel = require('../models/PaymentModel');
 const SubscriptionModel = require('../models/SubscriptionModel');
 const AdminModel = require('../models/AdminModel');
+const LinkBillingCreditModel = require('../models/LinkBillingCreditModel');
 const { getOrgName } = require('../utils/orgLookup');
 const { successResponse, errorResponse } = require('../utils/helpers');
 
@@ -64,7 +65,7 @@ const createCheckout = async (req, res) => {
       return errorResponse(res, 'The selected plan does not require a payment.', 400);
     }
 
-    const admin = await AdminModel.findById(req.user.id);
+    const admin = await AdminModel.findById(req.user.userCode);
     const payerName = admin ? `${admin.first_name} ${admin.last_name}` : null;
     const orgName = await getOrgName(req.user.entityType, rootCode);
 
@@ -125,7 +126,26 @@ const confirmPayment = async (req, res) => {
       payment.billing_cycle
     );
 
-    await PaymentModel.markPaid(payment.id, {
+    // Apply any available link billing credits
+    let creditApplied = 0;
+    let creditApplications = [];
+    try {
+      const available = await LinkBillingCreditModel.getAvailableCreditAmount(payment.root_entity_code);
+      if (available > 0 && payment.amount > 0) {
+        const applyAmount = Math.min(available, payment.amount);
+        const result = await LinkBillingCreditModel.applyCredits(
+          payment.root_entity_code,
+          payment.payment_transaction_id,
+          applyAmount
+        );
+        creditApplied = result.total_applied;
+        creditApplications = result.applications;
+      }
+    } catch (creditErr) {
+      console.error('Failed to apply link billing credits:', creditErr.message);
+    }
+
+    await PaymentModel.markPaid(payment.payment_transaction_id, {
       periodStart: start,
       periodEnd: end,
       gateway: (req.body && req.body.gateway) || 'manual',
@@ -133,7 +153,12 @@ const confirmPayment = async (req, res) => {
     });
 
     const updated = await PaymentModel.findByCode(req.params.code);
-    return successResponse(res, { payment: publicPayment(updated) }, 'Payment successful. Subscription activated.');
+    return successResponse(res, {
+      payment: publicPayment(updated),
+      credit_applied: creditApplied,
+      credit_applications: creditApplications,
+      net_amount: Math.round((payment.amount - creditApplied) * 100) / 100,
+    }, 'Payment successful. Subscription activated.');
   } catch (error) {
     console.error('confirmPayment error:', error);
     return errorResponse(res, 'Failed to confirm payment.', 500);

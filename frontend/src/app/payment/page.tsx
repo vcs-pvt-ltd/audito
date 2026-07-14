@@ -32,6 +32,8 @@ function PaymentContent() {
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
   const [error, setError] = useState("");
+  const [creditApplied, setCreditApplied] = useState(0);
+  const [netAmount, setNetAmount] = useState<number | null>(null);
 
   useEffect(() => {
     if (!code) { setNotFound(true); setLoading(false); return; }
@@ -59,6 +61,8 @@ function PaymentContent() {
       if (res.success && res.data?.payment) {
         setPayment(res.data.payment);
         setPaid(true);
+        if (res.data.credit_applied) setCreditApplied(res.data.credit_applied);
+        if (res.data.net_amount != null) setNetAmount(res.data.net_amount);
         // Refresh the in-app session so new plan limits take effect immediately.
         if (accessToken) await refreshMe();
       } else {
@@ -114,6 +118,27 @@ function PaymentContent() {
             <p className="mt-3 text-xs text-gray-500">
               Invoice <span className="text-gray-300 font-medium">{payment.invoice_number}</span>
             </p>
+          )}
+
+          {/* Credit application breakdown */}
+          {creditApplied > 0 && (
+            <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-left space-y-1.5">
+              <p className="text-xs font-semibold text-emerald-400">Link Credit Applied</p>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-400">Original amount</span>
+                <span className="text-xs text-gray-300 tabular-nums">{formatMoney(payment.amount, payment.currency)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-emerald-400">Credit discount</span>
+                <span className="text-xs text-emerald-400 tabular-nums">-{formatMoney(creditApplied, payment.currency)}</span>
+              </div>
+              {netAmount != null && (
+                <div className="flex items-center justify-between border-t border-emerald-500/20 pt-1.5">
+                  <span className="text-xs font-semibold text-white">You paid</span>
+                  <span className="text-xs font-semibold text-white tabular-nums">{formatMoney(netAmount, payment.currency)}</span>
+                </div>
+              )}
+            </div>
           )}
 
           {isRegistration ? (

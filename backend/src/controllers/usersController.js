@@ -36,7 +36,7 @@ const LimitsEnforcer = require('../utils/limitsEnforcer');
 
 const generateAuditorCode = async () => {
   const [rows] = await db.query(
-    "SELECT MAX(CAST(SUBSTRING(user_code, 5) AS UNSIGNED)) AS max_num FROM auditors WHERE user_code LIKE 'ADT-%'"
+    "SELECT MAX(CAST(SUBSTRING(auditor_id, 5) AS UNSIGNED)) AS max_num FROM auditors WHERE auditor_id LIKE 'ADT-%'"
   );
   const next = (rows[0].max_num || 0) + 1;
   return `ADT-${String(next).padStart(6, '0')}`;
@@ -44,7 +44,7 @@ const generateAuditorCode = async () => {
 
 const generateHeadCode = async () => {
   const [rows] = await db.query(
-    "SELECT MAX(CAST(SUBSTRING(user_code, 4) AS UNSIGNED)) AS max_num FROM entity_heads WHERE user_code LIKE 'EH-%'"
+    "SELECT MAX(CAST(SUBSTRING(entity_head_id, 4) AS UNSIGNED)) AS max_num FROM entity_heads WHERE entity_head_id LIKE 'EH-%'"
   );
   const next = (rows[0].max_num || 0) + 1;
   return `EH-${String(next).padStart(6, '0')}`;
@@ -85,9 +85,9 @@ async function validateAuditFirmAuditorAssignment(createdByFirmCode, assigned_en
 /** Find a user by code across both tables */
 async function findByCodeAny(userCode) {
   const auditor = await AuditorModel.findByCode(userCode);
-  if (auditor) return { ...auditor, _table: 'auditor' };
+  if (auditor) return { ...auditor, user_code: auditor.auditor_id, _table: 'auditor' };
   const head = await EntityHeadModel.findByCode(userCode);
-  if (head) return { ...head, _table: 'entity_head' };
+  if (head) return { ...head, user_code: head.entity_head_id, _table: 'entity_head' };
 
   // Check audit firms
   const firm = await AuditFirmModel.findFirmByCode(userCode);
@@ -167,7 +167,7 @@ const HEAD_TO_ENTITY = {
 
 const createUser = async (req, res) => {
   try {
-    const { first_name, last_name, email, phone_number, nic, country, user_type, assigned_entity_code, assigned_entity_type, assigned_org_tree_id } = req.body;
+    const { first_name, last_name, email, phone_number, country, user_type, assigned_entity_code, assigned_entity_type, assigned_org_tree_id } = req.body;
 
     const missing = validateRequiredFields(req.body, ['first_name', 'last_name', 'email', 'user_type']);
     if (missing) return errorResponse(res, missing, 400);
@@ -180,17 +180,6 @@ const createUser = async (req, res) => {
 
     if (!allowed.includes(user_type)) {
       return errorResponse(res, `You cannot create "${user_type}" users for this account type.`, 403);
-    }
-
-    // NIC uniqueness: check only within the target table (same person can be admin + auditor + entity head)
-    if (nic) {
-      try {
-        const table = isAuditor(user_type) ? 'auditors' : 'entity_heads';
-        const [dupRows] = await db.query(`SELECT id FROM ${table} WHERE nic = ? AND is_active = TRUE LIMIT 1`, [nic]);
-        if (dupRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
-      } catch (nicErr) {
-        console.error('NIC uniqueness check failed:', nicErr);
-      }
     }
 
     if (isAuditor(user_type)) {
@@ -223,12 +212,11 @@ const createUser = async (req, res) => {
 
       userCode = await generateAuditorCode();
       id = await AuditorModel.create({
-        user_code: userCode,
+        auditor_id: userCode,
         first_name,
         last_name,
         email,
         phone_number: phone_number || null,
-        nic: nic || null,
         country: country || null,
         role,
         user_type: user_type,
@@ -236,7 +224,7 @@ const createUser = async (req, res) => {
         assigned_entity_type: assigned_entity_code ? (assigned_entity_type || 'Branch') : null,
         assigned_entity_code: assigned_entity_code || null,
         assigned_org_tree_id: assigned_org_tree_id || null,
-        created_by_admin_id: req.user.id,
+        created_by_admin_id: req.user.userCode,
         created_by_entity_code: req.user.entityCode,
         email_token: emailToken,
         email_token_expires: emailTokenExpires,
@@ -246,19 +234,18 @@ const createUser = async (req, res) => {
       const assignedEntityType = HEAD_TO_ENTITY[user_type] || null;
       userCode = await generateHeadCode();
       id = await EntityHeadModel.create({
-        user_code: userCode,
+        entity_head_id: userCode,
         first_name,
         last_name,
         email,
         phone_number: phone_number || null,
-        nic: nic || null,
         country: country || null,
         role,
         user_type,
         assigned_entity_type: assignedEntityType,
         assigned_entity_code: assigned_entity_code || null,
         assigned_org_tree_id: assigned_org_tree_id || null,
-        created_by_admin_id: req.user.id,
+        created_by_admin_id: req.user.userCode,
         created_by_entity_code: req.user.entityCode,
         email_token: emailToken,
         email_token_expires: emailTokenExpires,
@@ -299,19 +286,18 @@ async function getLinkedCompanyHeads(accessibleCodes) {
   if (!accessibleCodes || accessibleCodes.length === 0) return [];
   const ph = accessibleCodes.map(() => '?').join(',');
   const [rows] = await db.query(
-    `SELECT id, user_id, first_name, last_name, email, phone_number, nic, country, entity_code, created_at
+    `SELECT admin_id AS id, admin_id, first_name, last_name, email, phone_number, country, entity_code, created_at
        FROM admins
       WHERE entity_type = 'Company' AND entity_code IN (${ph}) AND is_active = TRUE`,
     accessibleCodes
   );
   return rows.map((a) => ({
     id: a.id,
-    user_code: a.user_id,
+    user_code: a.admin_id,
     first_name: a.first_name,
     last_name: a.last_name,
     email: a.email,
     phone_number: a.phone_number || null,
-    nic: a.nic || null,
     country: a.country || null,
     role: 'admin',
     user_type: 'Company Head',
@@ -336,11 +322,11 @@ async function annotateInUse(users) {
   const ph = codes.map(() => '?').join(',');
 
   const queries = [
-    `SELECT assigned_auditor_code AS c FROM audit_assignments WHERE assigned_auditor_code IN (${ph})`,
-    `SELECT auditor_user_code AS c FROM evaluation_assignments WHERE auditor_user_code IN (${ph})`,
-    `SELECT auditor_user_code AS c FROM field_visit_assignments WHERE auditor_user_code IN (${ph})`,
-    `SELECT auditor_user_code AS c FROM training_assignments WHERE auditor_user_code IN (${ph})`,
-    `SELECT responsible_person_code AS c FROM corrective_actions WHERE responsible_person_code IN (${ph})`,
+    `SELECT assigned_auditor_id AS c FROM audit_assignments WHERE assigned_auditor_id IN (${ph})`,
+    `SELECT auditor_id AS c FROM evaluation_assignments WHERE auditor_id IN (${ph})`,
+    `SELECT auditor_id AS c FROM field_visit_assignments WHERE auditor_id IN (${ph})`,
+    `SELECT auditor_id AS c FROM training_assignments WHERE auditor_id IN (${ph})`,
+    `SELECT responsible_entity_head_id AS c FROM corrective_actions WHERE responsible_entity_head_id IN (${ph})`,
     `SELECT verified_by AS c FROM corrective_actions WHERE verified_by IN (${ph})`,
     `SELECT answered_by AS c FROM audit_responses WHERE answered_by IN (${ph})`,
     `SELECT responded_by AS c FROM cap_responses WHERE responded_by IN (${ph})`,
@@ -428,17 +414,6 @@ const updateUser = async (req, res) => {
     }
 
     const Model = user._table === 'auditor' ? AuditorModel : EntityHeadModel;
-    // NIC uniqueness on update: check only within the same table, excluding self
-    if (req.body.nic) {
-      try {
-        const nic = req.body.nic;
-        const table = user._table === 'auditor' ? 'auditors' : 'entity_heads';
-        const [dupRows] = await db.query(`SELECT id FROM ${table} WHERE nic = ? AND is_active = TRUE AND id != ? LIMIT 1`, [nic, user.id]);
-        if (dupRows.length > 0) return errorResponse(res, 'NIC is already in use by another user.', 409);
-      } catch (nicErr) {
-        console.error('NIC uniqueness check failed (update):', nicErr);
-      }
-    }
     // Audit Firm auditor reassignment validation
     if (
       user._table === 'auditor' &&
@@ -453,7 +428,7 @@ const updateUser = async (req, res) => {
       );
       if (!v.ok) return errorResponse(res, v.message, 400);
     }
-    await Model.update(user.id, req.body);
+    await Model.update(user.auditor_id || user.entity_head_id, req.body);
 
     const updated = await findByCodeAny(req.params.userCode);
     return successResponse(res, { user: updated }, 'User updated.');
@@ -478,15 +453,15 @@ async function getUserInUseReason(user) {
   // columns and vice-versa, so this is safe and avoids depending on _table
   // detection). The auditor↔audit link is the first/primary check.
   const checks = [
-    ['SELECT 1 FROM audit_assignments WHERE assigned_auditor_code = ? LIMIT 1',
+    ['SELECT 1 FROM audit_assignments WHERE assigned_auditor_id = ? LIMIT 1',
       'assigned to one or more audits'],
-    ['SELECT 1 FROM evaluation_assignments WHERE auditor_user_code = ? LIMIT 1',
+    ['SELECT 1 FROM evaluation_assignments WHERE auditor_id = ? LIMIT 1',
       'assigned to one or more evaluation papers'],
-    ['SELECT 1 FROM field_visit_assignments WHERE auditor_user_code = ? LIMIT 1',
+    ['SELECT 1 FROM field_visit_assignments WHERE auditor_id = ? LIMIT 1',
       'assigned to one or more field visits'],
-    ['SELECT 1 FROM training_assignments WHERE auditor_user_code = ? LIMIT 1',
+    ['SELECT 1 FROM training_assignments WHERE auditor_id = ? LIMIT 1',
       'assigned to one or more trainings'],
-    ['SELECT 1 FROM corrective_actions WHERE responsible_person_code = ? LIMIT 1',
+    ['SELECT 1 FROM corrective_actions WHERE responsible_entity_head_id = ? LIMIT 1',
       'assigned as the responsible person on one or more corrective actions'],
     ['SELECT 1 FROM corrective_actions WHERE verified_by = ? LIMIT 1',
       'the verifier on one or more corrective actions'],
@@ -531,7 +506,7 @@ const deleteUser = async (req, res) => {
     }
 
     const Model = user._table === 'auditor' ? AuditorModel : EntityHeadModel;
-    await Model.deleteById(user.id);
+    await Model.deleteById(user.auditor_id || user.entity_head_id);
     return successResponse(res, null, 'User deleted.');
   } catch (error) {
     console.error('Delete user error:', error);
@@ -556,7 +531,7 @@ const resendVerification = async (req, res) => {
     const newToken = generateEmailToken();
     const newExpires = tokenExpiry();
     const Model = user._table === 'auditor' ? AuditorModel : EntityHeadModel;
-    await Model.regenerateToken(user.id, newToken, newExpires);
+    await Model.regenerateToken(user.auditor_id || user.entity_head_id, newToken, newExpires);
 
     try {
       await sendVerificationEmail(user.email, `${user.first_name} ${user.last_name}`, newToken);
@@ -588,10 +563,10 @@ const verifyEmail = async (req, res) => {
     }
     if (!user) return errorResponse(res, 'Invalid or expired verification link.', 400);
 
-    await Model.verifyEmail(user.id);
+    await Model.verifyEmail(user.auditor_id || user.entity_head_id);
 
     return successResponse(res, {
-      user_code: user.user_code,
+      user_code: user.auditor_id || user.entity_head_id,
       email: user.email,
       first_name: user.first_name,
       needs_password: !user.password,
@@ -643,7 +618,7 @@ const setPassword = async (req, res) => {
 
     const salt = await bcrypt.genSalt(12);
     const hashed = await bcrypt.hash(password, salt);
-    await Model.setPassword(user.id, hashed);
+    await Model.setPassword(user.auditor_id || user.entity_head_id, hashed);
 
     return successResponse(res, null, 'Password set successfully. You can now log in.');
   } catch (error) {
@@ -669,7 +644,6 @@ const checkAdminEmail = async (req, res) => {
         last_name: admin.last_name,
         email: admin.email,
         phone_number: admin.phone_number || null,
-        nic: admin.nic || null,
         country: admin.country || null,
       },
     });
@@ -715,11 +689,10 @@ const createUserFromAdmin = async (req, res) => {
       last_name: admin.last_name,
       email: admin.email,
       phone_number: admin.phone_number || null,
-      nic: admin.nic || null,
       country: admin.country || null,
       role,
       user_type,
-      created_by_admin_id: req.user.id,
+      created_by_admin_id: req.user.userCode,
       created_by_entity_code: req.user.entityCode,
       password: admin.password,
     };
@@ -733,7 +706,7 @@ const createUserFromAdmin = async (req, res) => {
         : 'internal';
       id = await AuditorModel.createVerified({
         ...baseData,
-        user_code: userCode,
+        auditor_id: userCode,
         user_type: user_type,
         auditor_type: effectiveAuditorType,
         assigned_entity_type: assigned_entity_code ? (req.body.assigned_entity_type || 'Branch') : null,
@@ -745,7 +718,7 @@ const createUserFromAdmin = async (req, res) => {
       userCode = await generateHeadCode();
       id = await EntityHeadModel.createVerified({
         ...baseData,
-        user_code: userCode,
+        entity_head_id: userCode,
         assigned_entity_type: assignedEntityType,
         assigned_entity_code: assigned_entity_code || null,
         assigned_org_tree_id: assigned_org_tree_id || null,

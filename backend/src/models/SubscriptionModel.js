@@ -1,5 +1,19 @@
 const { db } = require('../config/db');
 
+let subIdCounter = null;
+
+async function genSubscriptionId() {
+  if (subIdCounter === null) {
+    const [rows] = await db.query(
+      "SELECT MAX(CAST(SUBSTRING(subscription_id, 5) AS UNSIGNED)) AS max_num FROM subscriptions WHERE subscription_id LIKE 'SUB-%'"
+    );
+    subIdCounter = (rows[0].max_num || 0) + 1;
+  }
+  const id = `SUB-${String(subIdCounter).padStart(6, '0')}`;
+  subIdCounter++;
+  return id;
+}
+
 const PLAN_LIMITS = {
   Basic: {
     company_level: 1,
@@ -80,14 +94,15 @@ const SubscriptionModel = {
     const effectivePlanName = normalizePlanName(planName);
     const limits = PLAN_LIMITS[effectivePlanName] || PLAN_LIMITS['Basic'];
 
+    const subscription_id = await genSubscriptionId();
     await connection.query(
       `INSERT INTO subscriptions (
-        root_entity_code, plan_name, billing_cycle, start_date, end_date, is_active,
+        subscription_id, root_entity_code, plan_name, billing_cycle, start_date, end_date, is_active,
         max_company_levels, max_departments, max_audits, max_checklists, max_auditors,
         allow_auditor_eval, allow_company_to_company
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        rootEntityCode, effectivePlanName, billingCycle, start, end, isActive,
+        subscription_id, rootEntityCode, effectivePlanName, billingCycle, start, end, isActive,
         limits.company_level, limits.department, limits.audits, limits.checklists, limits.auditors,
         limits.auditor_eval, limits.company_to_company
       ]
@@ -115,12 +130,13 @@ const SubscriptionModel = {
     const effectivePlanName = normalizePlanName(planName);
     const limits = PLAN_LIMITS[effectivePlanName] || PLAN_LIMITS['Basic'];
 
+    const subscription_id = await genSubscriptionId();
     await db.query(
       `INSERT INTO subscriptions (
-        root_entity_code, plan_name, billing_cycle, start_date, end_date, is_active,
+        subscription_id, root_entity_code, plan_name, billing_cycle, start_date, end_date, is_active,
         max_company_levels, max_departments, max_audits, max_checklists, max_auditors,
         allow_auditor_eval, allow_company_to_company
-      ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?,?, 1, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         plan_name = VALUES(plan_name),
         billing_cycle = VALUES(billing_cycle),
@@ -135,7 +151,7 @@ const SubscriptionModel = {
         allow_auditor_eval = VALUES(allow_auditor_eval),
         allow_company_to_company = VALUES(allow_company_to_company)`,
       [
-        rootEntityCode, effectivePlanName, billingCycle, start, end,
+        subscription_id, rootEntityCode, effectivePlanName, billingCycle, start, end,
         limits.company_level, limits.department, limits.audits, limits.checklists, limits.auditors,
         limits.auditor_eval, limits.company_to_company
       ]
@@ -150,7 +166,7 @@ const SubscriptionModel = {
        FROM subscriptions 
        WHERE root_entity_code = ? AND is_active = 1
          AND end_date > NOW()
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY subscription_id DESC LIMIT 1`,
       [rootEntityCode]
     );
 
@@ -171,7 +187,7 @@ const SubscriptionModel = {
        FROM subscriptions
        WHERE root_entity_code = ? AND is_active = 1
          AND end_date > NOW()
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY subscription_id DESC LIMIT 1`,
       [rootEntityCode]
     );
 
@@ -214,7 +230,7 @@ const SubscriptionModel = {
               (end_date <= NOW()) AS is_expired
        FROM subscriptions
        WHERE root_entity_code = ?
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY subscription_id DESC LIMIT 1`,
       [rootEntityCode]
     );
 

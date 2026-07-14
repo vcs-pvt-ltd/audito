@@ -37,7 +37,7 @@ function getAuditScope(user, orgTreeScopeIds = null, entityHeadScopeCodes = [], 
 
   if (user.role === 'auditor') {
     return {
-      where: 'aa.assigned_auditor_code = ?',
+      where: 'aa.assigned_auditor_id = ?',
       params: [user.userCode],
       scopeLabel: 'My assigned audits',
     };
@@ -55,7 +55,7 @@ function getAuditScope(user, orgTreeScopeIds = null, entityHeadScopeCodes = [], 
         where: `EXISTS (
           SELECT 1
             FROM audit_assignment_entities aae
-           WHERE aae.assignment_id = aa.id
+           WHERE aae.audit_id = aa.audit_id
              AND aae.is_active = TRUE
              AND aae.entity_code IN (${ph})
         )`,
@@ -68,9 +68,9 @@ function getAuditScope(user, orgTreeScopeIds = null, entityHeadScopeCodes = [], 
       where: `EXISTS (
         SELECT 1
           FROM audit_assignment_entities aae
-         WHERE aae.assignment_id = aa.id
-           AND aae.is_active = TRUE
-           AND aae.org_tree_id IN (${ph})
+          WHERE aae.audit_id = aa.audit_id
+            AND aae.is_active = TRUE
+            AND aae.org_tree_id IN (${ph})
       )`,
       params: orgTreeScopeIds,
       scopeLabel: 'Audits for my organization tree',
@@ -116,14 +116,14 @@ function applyFilters(baseWhere, baseParams, filters, descendantCodes = []) {
     params.push(filters.audit_type);
   }
   if (filters.audit_code && filters.audit_code !== 'all') {
-    where.push('aa.audit_code = ?');
+    where.push('aa.audit_id = ?');
     params.push(filters.audit_code);
   }
   if (descendantCodes.length > 0) {
     const ph = descendantCodes.map(() => '?').join(',');
     where.push(`EXISTS (
       SELECT 1 FROM audit_assignment_entities aae
-      WHERE aae.assignment_id = aa.id AND aae.is_active = TRUE AND aae.entity_code IN (${ph})
+      WHERE aae.audit_id = aa.audit_id AND aae.is_active = TRUE AND aae.entity_code IN (${ph})
     )`);
     params.push(...descendantCodes);
   }
@@ -154,9 +154,9 @@ async function resolveEntityNames(codes) {
 
 async function getAuditRows(whereSql, params) {
   const [rows] = await db.query(
-    `SELECT aa.id, aa.audit_code, aa.title, aa.audit_type, aa.status,
+    `SELECT aa.audit_id, aa.audit_id AS audit_code, aa.title, aa.audit_type, aa.status,
             aa.start_date, aa.end_date, aa.created_at, aa.completed_at,
-            aa.created_by, aa.assigned_auditor_code, aa.assigned_firm_code,
+            aa.created_by, aa.assigned_auditor_id, aa.assigned_firm_code,
             c.name AS checklist_name,
             COALESCE(ent.entity_count, 0) AS entity_count,
             COALESCE(progress.total_questions, 0) AS total_questions,
@@ -164,13 +164,13 @@ async function getAuditRows(whereSql, params) {
             COALESCE(progress.total_marks, 0) AS total_marks,
             COALESCE(progress.obtained_marks, 0) AS obtained_marks
        FROM audit_assignments aa
-       LEFT JOIN checklists c ON c.id = aa.checklist_id
+       LEFT JOIN checklists c ON c.checklist_id = aa.checklist_id
        LEFT JOIN (
-         SELECT assignment_id, COUNT(*) AS entity_count
+         SELECT audit_id, COUNT(*) AS entity_count
            FROM audit_assignment_entities
           WHERE is_active = TRUE
-          GROUP BY assignment_id
-       ) ent ON ent.assignment_id = aa.id
+          GROUP BY audit_id
+       ) ent ON ent.audit_id = aa.audit_id
        LEFT JOIN (
          SELECT audit_id,
                 SUM(total_questions) AS total_questions,
@@ -179,7 +179,7 @@ async function getAuditRows(whereSql, params) {
                 SUM(obtained_marks) AS obtained_marks
            FROM audit_entity_progress
           GROUP BY audit_id
-       ) progress ON progress.audit_id = aa.id
+       ) progress ON progress.audit_id = aa.audit_id
       WHERE ${whereSql}
       ORDER BY aa.start_date DESC, aa.created_at DESC`,
     params
@@ -209,7 +209,7 @@ async function getCapsSummary(user, filters, descendantCodes = [], orgTreeScopeI
   const params = [];
 
   if (user.role === 'auditor') {
-    where.push('(c.created_by = ? OR aa.assigned_auditor_code = ?)');
+    where.push('(c.created_by = ? OR aa.assigned_auditor_id = ?)');
     params.push(user.userCode, user.userCode);
   } else if (user.role === 'entity_head') {
     if (!orgTreeScopeIds.length) {
@@ -219,7 +219,7 @@ async function getCapsSummary(user, filters, descendantCodes = [], orgTreeScopeI
       where.push(`EXISTS (
         SELECT 1
           FROM cap_assignment_entities cae
-         WHERE cae.cap_id = c.id
+          WHERE cae.cap_id = c.cap_id
            AND cae.is_active = TRUE
            AND cae.org_tree_id IN (${ph})
       )`);
@@ -248,7 +248,7 @@ async function getCapsSummary(user, filters, descendantCodes = [], orgTreeScopeI
     const ph = descendantCodes.map(() => '?').join(',');
     where.push(`EXISTS (
       SELECT 1 FROM audit_assignment_entities aae
-      WHERE aae.assignment_id = aa.id AND aae.is_active = TRUE AND aae.entity_code IN (${ph})
+      WHERE aae.audit_id = aa.audit_id AND aae.is_active = TRUE AND aae.entity_code IN (${ph})
     )`);
     params.push(...descendantCodes);
   }
@@ -256,7 +256,7 @@ async function getCapsSummary(user, filters, descendantCodes = [], orgTreeScopeI
   const [rows] = await db.query(
     `SELECT LOWER(c.status) AS status, COUNT(*) AS count
        FROM caps c
-       JOIN audit_assignments aa ON aa.id = c.audit_id
+       JOIN audit_assignments aa ON aa.audit_id = c.audit_id
       WHERE ${where.join(' AND ')}
       GROUP BY LOWER(c.status)`,
     params
@@ -380,7 +380,7 @@ function buildProgressBuckets(audits) {
 }
 
 async function getEntityPerformance(audits, scopeCodes = [], scopeIds = []) {
-  const auditIds = audits.map((a) => a.id);
+  const auditIds = audits.map((a) => a.audit_id);
   if (!auditIds.length) return [];
 
   const ph = auditIds.map(() => '?').join(',');
@@ -405,7 +405,7 @@ async function getEntityPerformance(audits, scopeCodes = [], scopeIds = []) {
   const [rows] = await db.query(
     `SELECT src.entity_code,
             src.org_tree_id,
-            aa.audit_code,
+            aa.audit_id AS audit_code,
             aa.title AS audit_title,
             COUNT(DISTINCT src.audit_id) AS audit_count,
             SUM(src.total_questions) AS total_questions,
@@ -414,7 +414,7 @@ async function getEntityPerformance(audits, scopeCodes = [], scopeIds = []) {
             SUM(src.obtained_marks) AS obtained_marks
        FROM (
             SELECT
-              aae.assignment_id AS audit_id,
+              aae.audit_id,
               aae.entity_code,
               aae.org_tree_id,
               0 AS total_questions,
@@ -422,7 +422,7 @@ async function getEntityPerformance(audits, scopeCodes = [], scopeIds = []) {
               0 AS total_marks,
               0 AS obtained_marks
             FROM audit_assignment_entities aae
-            WHERE aae.assignment_id IN (${ph})
+            WHERE aae.audit_id IN (${ph})
               AND aae.is_active = TRUE
 
             UNION ALL
@@ -438,9 +438,9 @@ async function getEntityPerformance(audits, scopeCodes = [], scopeIds = []) {
             FROM audit_entity_progress aep
             WHERE aep.audit_id IN (${ph})
        ) src
-       JOIN audit_assignments aa ON aa.id = src.audit_id
+       JOIN audit_assignments aa ON aa.audit_id = src.audit_id
       WHERE 1=1 ${scopeWhere}
-      GROUP BY src.entity_code, src.org_tree_id, aa.audit_code, aa.title
+      GROUP BY src.entity_code, src.org_tree_id, aa.audit_id, aa.title
       ORDER BY audit_count DESC, src.entity_code`,
     [...auditIds, ...auditIds, ...scopeParams]
   );
@@ -562,9 +562,9 @@ const DashboardModel = {
       getEntityPerformance(chartAudits.filter(a => a.status === 'completed'), entityHeadScopeCodes, orgTreeScopeIds),
       user.role === 'auditor' ? NoticeModel.getNoticesForAuditor(user.createdByEntityCode, user.userCode) : Promise.resolve([]),
       db.query(
-        `SELECT aa.audit_code, aae.entity_code, aae.org_tree_id
+        `SELECT aa.audit_id AS audit_code, aae.entity_code, aae.org_tree_id
            FROM audit_assignment_entities aae
-           JOIN audit_assignments aa ON aa.id = aae.assignment_id
+           JOIN audit_assignments aa ON aa.audit_id = aae.audit_id
           WHERE aae.is_active = TRUE AND aa.is_active = TRUE AND ${scope.where} AND ${entScopeWhere}`,
         [...scope.params, ...entScopeParams]
       ),

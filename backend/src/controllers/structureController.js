@@ -43,6 +43,7 @@ const {
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
 const { getAccessibleEntityCodes } = require('../utils/accessHelper');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
+const { findDuplicateName } = require('../utils/nameNormalizer');
 
 // Sub-entity types allowed per account type
 const ALLOWED_TYPES = {
@@ -105,6 +106,16 @@ const ENTITY_TYPE_OWNER_FIELDS = {
   'audit-firm-department': ['afc_code']
 };
 
+// Resolve which owner column to scope a name-uniqueness check by, given the
+// admin's account type and the entity-type slug (e.g. 'section', 'cluster').
+function resolveOwnerField(accountType, slug) {
+  const validOwnerFields = ENTITY_TYPE_OWNER_FIELDS[slug] || [];
+  if (accountType === 'Company' && validOwnerFields.includes('comp_code')) return 'comp_code';
+  if (accountType === 'Customer' && validOwnerFields.includes('cust_code')) return 'cust_code';
+  if (validOwnerFields.length > 0) return validOwnerFields[0];
+  return null;
+}
+
 // --- CREATE SUB-ENTITY ---
 
 /**
@@ -154,24 +165,26 @@ const createSubEntity = async (req, res) => {
     }
 
     // --- Uniqueness check: prevent duplicate names within the same owner (company/customer/firm)
+    // Names are compared case-, space-, and leading-zero-insensitively, so
+    // "Section 01", "section01", "Section 1", "section1" etc. are all treated
+    // as the same name and blocked as duplicates.
     try {
       const slug = DISPLAY_TO_SLUG[entity_type];
       const typeConfig = slug ? ENTITY_TYPE_TABLE_MAP[slug] : null;
       if (typeConfig) {
-        // choose owner field by account type preference
-        const validOwnerFields = ENTITY_TYPE_OWNER_FIELDS[slug] || [];
-        let ownerField = null;
-        if (accountType === 'Company' && validOwnerFields.includes('comp_code')) ownerField = 'comp_code';
-        else if (accountType === 'Customer' && validOwnerFields.includes('cust_code')) ownerField = 'cust_code';
-        else if (validOwnerFields.length > 0) ownerField = validOwnerFields[0];
+        const ownerField = resolveOwnerField(accountType, slug);
 
         if (ownerField) {
-          const [rows] = await db.query(
-            `SELECT id FROM \`${typeConfig.table}\` WHERE name = ? AND \`${ownerField}\` = ? AND is_active = TRUE LIMIT 1`,
-            [name, adminCode]
-          );
-          if (rows.length > 0) {
-            return errorResponse(res, `An entity with the name "${name}" already exists in your organization.`, 409);
+          const dup = await findDuplicateName({
+            db,
+            table: typeConfig.table,
+            nameColumn: 'name',
+            name,
+            whereClauses: [`\`${ownerField}\` = ?`, 'is_active = TRUE'],
+            whereParams: [adminCode]
+          });
+          if (dup) {
+            return errorResponse(res, `An entity named "${dup.name}" already exists in your organization. Names that only differ by capitalization, spacing, or leading zeros are considered duplicates.`, 409);
           }
         }
       }
@@ -273,6 +286,32 @@ const updateSubEntity = async (req, res) => {
 
     if (Object.prototype.hasOwnProperty.call(req.body, 'email') && !String(req.body.email || '').trim()) {
       return errorResponse(res, 'Email is required.', 400);
+    }
+
+    // --- Uniqueness check: block renaming to a duplicate name within the same owner ---
+    // Same normalized-match rule as create: case, spacing, and leading zeros are ignored.
+    if (Object.prototype.hasOwnProperty.call(req.body, 'name') && String(req.body.name || '').trim()) {
+      try {
+        const typeConfig = ENTITY_TYPE_TABLE_MAP[entityType];
+        const ownerField = resolveOwnerField(accountType, entityType);
+        if (typeConfig && ownerField) {
+          const dup = await findDuplicateName({
+            db,
+            table: typeConfig.table,
+            nameColumn: 'name',
+            name: req.body.name,
+            whereClauses: [`\`${ownerField}\` = ?`, 'is_active = TRUE'],
+            whereParams: [adminCode],
+            idColumn: typeConfig.codeField,
+            excludeId: code
+          });
+          if (dup) {
+            return errorResponse(res, `An entity named "${dup.name}" already exists in your organization. Names that only differ by capitalization, spacing, or leading zeros are considered duplicates.`, 409);
+          }
+        }
+      } catch (uniqErr) {
+        console.error('Structure update uniqueness check failed:', uniqErr);
+      }
     }
 
     if (accountType === 'Customer') {

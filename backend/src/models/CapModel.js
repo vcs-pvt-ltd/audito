@@ -35,7 +35,7 @@ async function getCompatibleCapResponseStatus(desiredStatus) {
 }
 
 async function getParentCapIdByCapId(capId) {
-  const [rows] = await db.query(`SELECT parent_cap_id FROM caps WHERE id = ? LIMIT 1`, [capId]);
+  const [rows] = await db.query(`SELECT parent_cap_id FROM caps WHERE cap_id = ? LIMIT 1`, [capId]);
   return rows[0]?.parent_cap_id ?? null;
 }
 
@@ -43,7 +43,7 @@ async function getParentCapIdByCapQuestionId(capQuestionId) {
   const [rows] = await db.query(
     `SELECT cq.parent_cap_id, cq.cap_id
        FROM cap_questions cq
-      WHERE cq.id = ?
+      WHERE cq.cap_question_id = ?
       LIMIT 1`,
     [capQuestionId]
   );
@@ -59,22 +59,20 @@ const CapModel = {
 
   // ── CAPS ─────────────────────────────────────────────────────────
 
-  async createCap({ audit_id, title, description, created_by, parent_cap_id }) {
-    const now = Date.now();
-    const cap_plan_code = `CP-${audit_id}-${now}`;
-    const [res] = await db.query(
-      `INSERT INTO caps (cap_plan_code, audit_id, parent_cap_id, title, description, status, created_by)
+  async createCap({ cap_id, audit_id, title, description, created_by, parent_cap_id }) {
+    await db.query(
+      `INSERT INTO caps (cap_id, audit_id, parent_cap_id, title, description, status, created_by)
        VALUES (?, ?, ?, ?, ?, 'plan', ?)`,
-      [cap_plan_code, audit_id, parent_cap_id || null, title || null, description || null, created_by]
+      [cap_id, audit_id, parent_cap_id || null, title || null, description || null, created_by]
     );
-    return { id: res.insertId, cap_plan_code };
+    return { cap_id };
   },
 
   async listCapsByAudit(audit_id) {
     const [rows] = await db.query(
       `SELECT c.*,
-              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.id) AS total_questions,
-              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.id AND cq.status = 'completed') AS completed_questions
+              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.cap_id) AS total_questions,
+              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.cap_id AND cq.status = 'completed') AS completed_questions
          FROM caps c
         WHERE c.audit_id = ?
         ORDER BY c.parent_cap_id IS NULL DESC, c.created_at DESC`,
@@ -86,8 +84,8 @@ const CapModel = {
   async listSubCapsByParent(parent_cap_id) {
     const [rows] = await db.query(
       `SELECT c.*,
-              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.id) AS total_questions,
-              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.id AND cq.status = 'completed') AS completed_questions
+              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.cap_id) AS total_questions,
+              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.cap_id AND cq.status = 'completed') AS completed_questions
          FROM caps c
         WHERE c.parent_cap_id = ?
         ORDER BY c.created_at DESC`,
@@ -100,12 +98,12 @@ const CapModel = {
     const rootFilter = rootOnly ? 'AND c.parent_cap_id IS NULL' : '';
     const [rows] = await db.query(
       `SELECT c.*,
-              aa.audit_code, aa.title AS audit_title,
-              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.id) AS total_questions,
-              (SELECT COUNT(*) FROM cap_responses cr JOIN cap_questions cq ON cq.id = cr.cap_question_id WHERE cq.cap_id = c.id AND cr.status = 'completed') AS completed_questions
-         FROM caps c
-         JOIN audit_assignments aa ON aa.id = c.audit_id
-        WHERE (c.created_by = ? OR aa.assigned_auditor_code = ?) 
+              aa.audit_id AS audit_code, aa.title AS audit_title,
+               (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.cap_id) AS total_questions,
+               (SELECT COUNT(*) FROM cap_responses cr JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id WHERE cq.cap_id = c.cap_id AND cr.status = 'completed') AS completed_questions
+          FROM caps c
+          JOIN audit_assignments aa ON aa.audit_id = c.audit_id
+         WHERE (c.created_by = ? OR aa.assigned_auditor_id = ?) 
           AND aa.is_active = TRUE ${rootFilter}
         ORDER BY c.created_at DESC`,
       [user_code, user_code]
@@ -121,41 +119,43 @@ const CapModel = {
     const rootFilter = rootOnly ? 'AND c.parent_cap_id IS NULL' : '';
     const [rows] = await db.query(
       `SELECT DISTINCT c.*,
-              aa.audit_code, aa.title AS audit_title,
-              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.id) AS total_questions,
-              (SELECT COUNT(*) FROM cap_responses cr JOIN cap_questions cq ON cq.id = cr.cap_question_id WHERE cq.cap_id = c.id AND cr.status = 'completed') AS completed_questions
-         FROM caps c
-         JOIN audit_assignments aa ON aa.id = c.audit_id
-         INNER JOIN cap_assignment_entities cae ON cae.cap_id = c.id
-         WHERE cae.org_tree_id IN (${ph}) AND aa.is_active = TRUE AND cae.is_active = TRUE ${rootFilter}
+              aa.audit_id AS audit_code, aa.title AS audit_title,
+               (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.cap_id) AS total_questions,
+               (SELECT COUNT(*) FROM cap_responses cr JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id WHERE cq.cap_id = c.cap_id AND cr.status = 'completed') AS completed_questions
+          FROM caps c
+          JOIN audit_assignments aa ON aa.audit_id = c.audit_id
+          INNER JOIN cap_assignment_entities cae ON cae.cap_id = c.cap_id
+          WHERE cae.org_tree_id IN (${ph}) AND aa.is_active = TRUE AND cae.is_active = TRUE ${rootFilter}
          ORDER BY c.created_at DESC`,
       scopeIds
     );
     return rows;
   },
 
-  async listCapsForAdmin(entityCode, { rootOnly = true } = {}) {
+  async listCapsForAdmin(entityCodes, { rootOnly = true } = {}) {
     const rootFilter = rootOnly ? 'AND c.parent_cap_id IS NULL' : '';
+    const codes = Array.isArray(entityCodes) ? entityCodes : [entityCodes];
+    const ph = codes.map(() => '?').join(',');
     const [rows] = await db.query(
       `SELECT c.*,
-              aa.audit_code, aa.title AS audit_title,
-              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.id) AS total_questions,
-              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.id AND cq.status = 'completed') AS completed_questions
+              aa.audit_id AS audit_code, aa.title AS audit_title, aa.created_by AS owner_entity_code,
+              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.cap_id) AS total_questions,
+              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.cap_id AND cq.status = 'completed') AS completed_questions
          FROM caps c
-         JOIN audit_assignments aa ON aa.id = c.audit_id
-         WHERE aa.is_active = TRUE AND aa.created_by = ? ${rootFilter}
+         JOIN audit_assignments aa ON aa.audit_id = c.audit_id
+         WHERE aa.is_active = TRUE AND aa.created_by IN (${ph}) ${rootFilter}
         ORDER BY c.created_at DESC`,
-      [entityCode]
+      codes
     );
     return rows;
   },
 
   async getCapById(cap_id) {
     const [rows] = await db.query(
-      `SELECT c.*, aa.audit_code, aa.title AS audit_title, aa.assigned_auditor_code
+      `SELECT c.*, aa.audit_id AS audit_code, aa.title AS audit_title, aa.assigned_auditor_id
          FROM caps c
-         JOIN audit_assignments aa ON aa.id = c.audit_id
-        WHERE c.id = ?`,
+         JOIN audit_assignments aa ON aa.audit_id = c.audit_id
+        WHERE c.cap_id = ?`,
       [cap_id]
     );
     return rows[0] || null;
@@ -163,7 +163,7 @@ const CapModel = {
 
   async updateCapStatus(cap_id, status) {
     await db.query(
-      `UPDATE caps SET status = ?, updated_at = NOW() WHERE id = ?`,
+      `UPDATE caps SET status = ?, updated_at = NOW() WHERE cap_id = ?`,
       [status, cap_id]
     );
   },
@@ -172,13 +172,16 @@ const CapModel = {
 
   async addCapEntities(cap_id, entities) {
     // entities: [{entity_code, org_tree_id, entity_type}]
+    const { generateCapAssignmentEntityIds } = require('../utils/codeGenerator');
     const parentCapId = await getParentCapIdByCapId(cap_id);
-    for (const e of entities) {
+    const ids = await generateCapAssignmentEntityIds(entities.length);
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
       await db.query(
-        `INSERT INTO cap_assignment_entities (cap_id, parent_cap_id, entity_code, org_tree_id, entity_type, is_active)
-         VALUES (?, ?, ?, ?, ?, 1)
+        `INSERT INTO cap_assignment_entities (cap_assignment_entity_id, cap_id, parent_cap_id, entity_code, org_tree_id, entity_type, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, 1)
          ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), entity_type = VALUES(entity_type), is_active = 1`,
-        [cap_id, parentCapId, e.entity_code, e.org_tree_id ?? null, e.entity_type || null]
+        [ids[i], cap_id, parentCapId, e.entity_code, e.org_tree_id ?? null, e.entity_type || null]
       );
     }
   },
@@ -202,7 +205,7 @@ const CapModel = {
       throw err;
     }
 
-    const [[subCap]] = await db.query('SELECT audit_id FROM caps WHERE id = ?', [sub_cap_id]);
+    const [[subCap]] = await db.query('SELECT audit_id FROM caps WHERE cap_id = ?', [sub_cap_id]);
     const audit_id = subCap?.audit_id;
     if (!audit_id) {
       const err = new Error('Sub-CAP not found.');
@@ -233,7 +236,7 @@ const CapModel = {
         if (!entity_type) {
           const [auditEntRows] = await db.query(
             `SELECT entity_type FROM audit_assignment_entities
-              WHERE assignment_id = ? AND entity_code = ? AND (org_tree_id <=> ?) AND is_active = 1 LIMIT 1`,
+              WHERE audit_id = ? AND entity_code = ? AND (org_tree_id <=> ?) AND is_active = 1 LIMIT 1`,
             [audit_id, it.entity_code, orgTreeId]
           );
           entity_type = auditEntRows[0]?.entity_type || '';
@@ -246,17 +249,17 @@ const CapModel = {
       }
 
       const saved = caByCapResponseId[it.response_id];
-      const cap_code = `CA-SUB-${sub_cap_id}-${it.response_id}`;
-
-      const [ins] = await db.query(
+      const corrective_action_id = `CA-SUB-${sub_cap_id}-${it.response_id}-${Date.now()}`;
+      await db.query(
         `INSERT INTO corrective_actions
-           (cap_code, audit_id, response_id, cap_response_id, entity_code, question_id, org_tree_id, due_date, created_by)
-         VALUES (?, ?, 0, 0, ?, ?, ?, ?, ?)`,
+           (corrective_action_id, audit_id, audit_response_id, cap_response_id, entity_code, checklist_question_id, org_tree_id, due_date, created_by)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
         [
-          cap_code,
+          corrective_action_id,
           audit_id,
+          it.response_id,
           it.entity_code,
-          it.question_id,
+          it.checklist_question_id,
           orgTreeId,
           saved?.due_date || null,
           created_by,
@@ -264,10 +267,10 @@ const CapModel = {
       );
 
       correctiveActionsForSub.push({
-        id: ins.insertId,
+        corrective_action_id,
         entity_code: it.entity_code,
         org_tree_id: orgTreeId,
-        question_id: it.question_id,
+        checklist_question_id: it.checklist_question_id,
       });
     }
 
@@ -284,9 +287,12 @@ const CapModel = {
     for (const row of counts) {
       countMap[`${row.entity_code}__${row.org_tree_id ?? 'null'}`] = row.count;
     }
-    for (const e of entities) {
+    const { generateCapEntityProgressIds } = require('../utils/codeGenerator');
+    const progressIds = await generateCapEntityProgressIds(entities.length);
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
       const k = `${e.entity_code}__${e.org_tree_id ?? 'null'}`;
-      await this.initCapEntityProgress(sub_cap_id, e.entity_code, e.org_tree_id ?? null, countMap[k] || 0);
+      await this.initCapEntityProgress(progressIds[i], sub_cap_id, e.entity_code, e.org_tree_id ?? null, countMap[k] || 0);
     }
 
     return { entities: entities.length, questions: correctiveActionsForSub.length };
@@ -303,14 +309,15 @@ const CapModel = {
     const ids = [];
     for (const ca of correctiveActions) {
       const caOrg = ca.org_tree_id ?? null;
+      const cap_question_id = `CQ-${cap_id}-${ca.corrective_action_id}`;
       if (caOrg !== null) {
-        const [res] = await db.query(
-          `INSERT INTO cap_questions (cap_id, parent_cap_id, corrective_action_id, entity_code, org_tree_id, question_id, status)
-           VALUES (?, ?, ?, ?, ?, ?, 'not_started')
-           ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), question_id = VALUES(question_id)`,
-          [cap_id, parentCapId, ca.id, ca.entity_code, caOrg, ca.question_id]
+        await db.query(
+          `INSERT INTO cap_questions (cap_question_id, cap_id, parent_cap_id, corrective_action_id, entity_code, org_tree_id, checklist_question_id, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'not_started')
+           ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), checklist_question_id = VALUES(checklist_question_id)`,
+          [cap_question_id, cap_id, parentCapId, ca.corrective_action_id, ca.entity_code, caOrg, ca.checklist_question_id]
         );
-        ids.push(res.insertId);
+        ids.push(cap_question_id);
         continue;
       }
 
@@ -322,23 +329,25 @@ const CapModel = {
       );
       if (entities.length) {
         for (const ent of entities) {
-          const [res] = await db.query(
-            `INSERT INTO cap_questions (cap_id, parent_cap_id, corrective_action_id, entity_code, org_tree_id, question_id, status)
-             VALUES (?, ?, ?, ?, ?, ?, 'not_started')
-             ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), question_id = VALUES(question_id)`,
-            [cap_id, parentCapId, ca.id, ca.entity_code, ent.org_tree_id ?? null, ca.question_id]
+          const cqid = `CQ-${cap_id}-${ca.corrective_action_id}${ent.org_tree_id ? '-' + ent.org_tree_id : ''}`;
+          await db.query(
+            `INSERT INTO cap_questions (cap_question_id, cap_id, parent_cap_id, corrective_action_id, entity_code, org_tree_id, checklist_question_id, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'not_started')
+             ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), checklist_question_id = VALUES(checklist_question_id)`,
+            [cqid, cap_id, parentCapId, ca.corrective_action_id, ca.entity_code, ent.org_tree_id ?? null, ca.checklist_question_id]
           );
-          ids.push(res.insertId);
+          ids.push(cqid);
         }
       } else {
         // No specific assignment found; create a single generic question row with null org_tree_id
-        const [res] = await db.query(
-          `INSERT INTO cap_questions (cap_id, parent_cap_id, corrective_action_id, entity_code, org_tree_id, question_id, status)
-           VALUES (?, ?, ?, ?, ?, ?, 'not_started')
-           ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), question_id = VALUES(question_id)`,
-          [cap_id, parentCapId, ca.id, ca.entity_code, null, ca.question_id]
+        const cqid = `CQ-${cap_id}-${ca.corrective_action_id}`;
+        await db.query(
+          `INSERT INTO cap_questions (cap_question_id, cap_id, parent_cap_id, corrective_action_id, entity_code, org_tree_id, checklist_question_id, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'not_started')
+           ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), checklist_question_id = VALUES(checklist_question_id)`,
+          [cqid, cap_id, parentCapId, ca.corrective_action_id, ca.entity_code, null, ca.checklist_question_id]
         );
-        ids.push(res.insertId);
+        ids.push(cqid);
       }
     }
     return ids;
@@ -348,11 +357,11 @@ const CapModel = {
     const [rows] = await db.query(
       `SELECT cq.*,
               q.question_text, q.answer_type, q.total_marks, q.order_index, q.entity_type AS question_entity_type,
-              ca.response_id, ca.responsible_person_code, ca.responsible_person_name, ca.due_date,
+              ca.audit_response_id, ca.responsible_entity_head_id, ca.responsible_person_name, ca.due_date,
               ca.description AS ca_description, ca.severity
          FROM cap_questions cq
-         JOIN checklist_questions q ON q.id = cq.question_id
-         JOIN corrective_actions ca ON ca.id = cq.corrective_action_id
+         JOIN checklist_questions q ON q.checklist_question_id = cq.checklist_question_id
+         JOIN corrective_actions ca ON ca.corrective_action_id = cq.corrective_action_id
         WHERE cq.cap_id = ?
         ORDER BY cq.entity_code, cq.org_tree_id, q.order_index`,
       [cap_id]
@@ -361,8 +370,8 @@ const CapModel = {
     // Attach options
     for (const row of rows) {
       const [opts] = await db.query(
-        `SELECT * FROM checklist_question_options WHERE question_id = ? ORDER BY order_index`,
-        [row.question_id]
+        `SELECT * FROM checklist_question_options WHERE checklist_question_id = ? ORDER BY order_index`,
+        [row.checklist_question_id]
       );
       row.options = opts;
     }
@@ -374,12 +383,12 @@ const CapModel = {
     const [rows] = await db.query(
       `SELECT cq.*,
               q.question_text, q.answer_type, q.total_marks, q.order_index,
-              ca.response_id, ca.responsible_person_code, ca.responsible_person_name, ca.due_date,
+              ca.audit_response_id, ca.responsible_entity_head_id, ca.responsible_person_name, ca.due_date,
               ca.org_tree_id AS org_tree_id
          FROM cap_questions cq
-         JOIN checklist_questions q ON q.id = cq.question_id
-         JOIN corrective_actions ca ON ca.id = cq.corrective_action_id
-        WHERE cq.id = ?`,
+         JOIN checklist_questions q ON q.checklist_question_id = cq.checklist_question_id
+         JOIN corrective_actions ca ON ca.corrective_action_id = cq.corrective_action_id
+        WHERE cq.cap_question_id = ?`,
       [cap_question_id]
     );
     return rows[0] || null;
@@ -387,20 +396,31 @@ const CapModel = {
 
   async updateCapQuestionStatus(cap_question_id, status) {
     await db.query(
-      `UPDATE cap_questions SET status = ? WHERE id = ?`,
+      `UPDATE cap_questions SET status = ? WHERE cap_question_id = ?`,
       [status, cap_question_id]
     );
   },
 
   // ── CAP ENTITY PROGRESS ───────────────────────────────────────────
 
-  async initCapEntityProgress(cap_id, entity_code, org_tree_id, total_questions) {
+  async initCapEntityProgress(cap_entity_progress_id, cap_id, entity_code, org_tree_id, total_questions) {
     const parentCapId = await getParentCapIdByCapId(cap_id);
+
+    // Compute initial total_marks from checklist_questions joined to cap_questions
+    const [[marksRow]] = await db.query(
+      `SELECT COALESCE(SUM(q.total_marks), 0) AS total_marks
+         FROM cap_questions cq
+         JOIN checklist_questions q ON q.checklist_question_id = cq.checklist_question_id
+        WHERE cq.cap_id = ? AND cq.entity_code = ? AND (cq.org_tree_id <=> ?)`,
+      [cap_id, entity_code, org_tree_id ?? null]
+    );
+    const total_marks = Number(marksRow?.total_marks || 0);
+
     await db.query(
-      `INSERT INTO cap_entity_progress (cap_id, parent_cap_id, entity_code, org_tree_id, total_questions, answered_questions, status)
-       VALUES (?, ?, ?, ?, ?, 0, 'not_started')
-       ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), total_questions = VALUES(total_questions), status = VALUES(status)`,
-      [cap_id, parentCapId, entity_code, org_tree_id ?? null, total_questions]
+      `INSERT INTO cap_entity_progress (cap_entity_progress_id, cap_id, parent_cap_id, entity_code, org_tree_id, total_questions, total_marks, obtained_marks, answered_questions, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'not_started')
+       ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), total_questions = VALUES(total_questions), total_marks = VALUES(total_marks), status = VALUES(status)`,
+      [cap_entity_progress_id, cap_id, parentCapId, entity_code, org_tree_id ?? null, total_questions, total_marks]
     );
   },
 
@@ -414,12 +434,35 @@ const CapModel = {
 
   async updateCapEntityProgress(cap_id, entity_code, org_tree_id, answered_questions, total_questions) {
     const status = answered_questions >= total_questions ? 'completed' : 'in_progress';
+
+    // Compute total_marks from checklist_questions joined to cap_questions
+    const [[marksRow]] = await db.query(
+      `SELECT COALESCE(SUM(q.total_marks), 0) AS total_marks
+         FROM cap_questions cq
+         JOIN checklist_questions q ON q.checklist_question_id = cq.checklist_question_id
+        WHERE cq.cap_id = ? AND cq.entity_code = ? AND (cq.org_tree_id <=> ?)`,
+      [cap_id, entity_code, org_tree_id ?? null]
+    );
+    const total_marks = Number(marksRow?.total_marks || 0);
+
+    // Compute obtained_marks from cap_responses joined to cap_questions
+    const [[obtRow]] = await db.query(
+      `SELECT COALESCE(SUM(cr.marks_obtained), 0) AS obtained_marks
+         FROM cap_responses cr
+         JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id
+        WHERE cq.cap_id = ? AND cq.entity_code = ? AND (cq.org_tree_id <=> ?)`,
+      [cap_id, entity_code, org_tree_id ?? null]
+    );
+    const obtained_marks = Number(obtRow?.obtained_marks || 0);
+
     await db.query(
       `UPDATE cap_entity_progress
-          SET answered_questions = ?, status = ?, completed_at = ?
+          SET answered_questions = ?, total_marks = ?, obtained_marks = ?, status = ?, completed_at = ?
         WHERE cap_id = ? AND entity_code = ? AND (org_tree_id <=> ?)`,
       [
         answered_questions,
+        total_marks,
+        obtained_marks,
         status,
         status === 'completed' ? new Date() : null,
         cap_id,
@@ -431,19 +474,20 @@ const CapModel = {
 
   // ── CAP RESPONSES ─────────────────────────────────────────────────
 
-  async upsertCapResponse({ cap_question_id, response_text, selected_option_ids, marks_obtained, remarks, cap_required, status, responded_by }) {
+  async upsertCapResponse({ cap_response_id, cap_question_id, response_text, selected_option_ids, marks_obtained, remarks, cap_required, status, responded_by }) {
     const statusValue = await getCompatibleCapResponseStatus(status || 'completed');
     const parentCapId = await getParentCapIdByCapQuestionId(cap_question_id);
     const [existing] = await db.query(
-      `SELECT id FROM cap_responses WHERE cap_question_id = ? LIMIT 1`,
+      `SELECT cap_response_id FROM cap_responses WHERE cap_question_id = ? LIMIT 1`,
       [cap_question_id]
     );
 
     if (!existing.length) {
-      const [res] = await db.query(
-        `INSERT INTO cap_responses (cap_question_id, parent_cap_id, response_text, selected_option_ids, marks_obtained, remarks, cap_required, status, responded_by, responded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      await db.query(
+        `INSERT INTO cap_responses (cap_response_id, cap_question_id, parent_cap_id, response_text, selected_option_ids, marks_obtained, remarks, cap_required, status, responded_by, responded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
+          cap_response_id,
           cap_question_id,
           parentCapId,
           response_text || null,
@@ -455,7 +499,7 @@ const CapModel = {
           responded_by
         ]
       );
-      return res.insertId;
+      return cap_response_id;
     }
 
     await db.query(
@@ -482,23 +526,22 @@ const CapModel = {
         cap_question_id
       ]
     );
-    return existing[0].id;
+    return existing[0].cap_response_id;
   },
 
   async getCapResponses(cap_id) {
     const [rows] = await db.query(
       `SELECT cr.*
          FROM cap_responses cr
-         JOIN cap_questions cq ON cq.id = cr.cap_question_id
+         JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id
         WHERE cq.cap_id = ?
         ORDER BY cr.cap_question_id`,
       [cap_id]
     );
     for (const row of rows) {
-      const { cleanText, evidence } = parseEvidenceFromResponseText(row.response_text);
-      row.response_text = cleanText || null;
-      row.answer_text = cleanText || null;
+      const evidence = await this.getEvidence(row.cap_response_id);
       row.evidence = evidence;
+      row.answer_text = row.response_text;
       try {
         row.selected_option_ids = row.selected_option_ids ? JSON.parse(row.selected_option_ids) : [];
       } catch {
@@ -512,33 +555,12 @@ const CapModel = {
     const [rows] = await db.query(
       `SELECT cr.*
          FROM cap_responses cr
-         JOIN cap_questions cq ON cq.id = cr.cap_question_id
+         JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id
         WHERE cq.cap_id = ? AND cq.entity_code = ? AND (cq.org_tree_id <=> ?)`,
       [cap_id, entity_code, org_tree_id ?? null]
     );
     for (const row of rows) {
-      const evidence = await this.getEvidence(row.id);
-      row.evidence = evidence;
-      row.answer_text = row.response_text;
-      try {
-        row.selected_option_ids = row.selected_option_ids ? JSON.parse(row.selected_option_ids) : [];
-      } catch {
-        row.selected_option_ids = [];
-      }
-    }
-    return rows;
-  },
-
-  async getCapResponses(cap_id) {
-    const [rows] = await db.query(
-      `SELECT cr.*
-         FROM cap_responses cr
-         JOIN cap_questions cq ON cq.id = cr.cap_question_id
-        WHERE cq.cap_id = ?`,
-      [cap_id]
-    );
-    for (const row of rows) {
-      const evidence = await this.getEvidence(row.id);
+      const evidence = await this.getEvidence(row.cap_response_id);
       row.evidence = evidence;
       row.answer_text = row.response_text;
       try {
@@ -552,18 +574,18 @@ const CapModel = {
 
   // ── CAP EVIDENCE ──────────────────────────────────────────────────
 
-  async addEvidence({ cap_response_id, file_type, file_path, file_name, file_size, uploaded_by }) {
+  async addEvidence({ cap_response_evidence_id, cap_response_id, file_type, file_path, file_name, file_size, uploaded_by }) {
     const [responseRows] = await db.query(
-      `SELECT parent_cap_id FROM cap_responses WHERE id = ? LIMIT 1`,
+      `SELECT parent_cap_id FROM cap_responses WHERE cap_response_id = ? LIMIT 1`,
       [cap_response_id]
     );
     const parentCapId = responseRows[0]?.parent_cap_id ?? null;
-    const [res] = await db.query(
-      `INSERT INTO cap_response_evidence (cap_response_id, parent_cap_id, file_type, file_path, file_name, file_size, uploaded_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [cap_response_id, parentCapId, file_type, file_path, file_name, file_size, uploaded_by]
+    await db.query(
+      `INSERT INTO cap_response_evidence (cap_response_evidence_id, cap_response_id, parent_cap_id, file_type, file_path, file_name, file_size, uploaded_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [cap_response_evidence_id, cap_response_id, parentCapId, file_type, file_path, file_name, file_size, uploaded_by]
     );
-    return res.insertId;
+    return cap_response_evidence_id;
   },
 
   async getEvidence(cap_response_id) {
@@ -574,29 +596,29 @@ const CapModel = {
     return rows;
   },
 
-  async deleteEvidence(id) {
+  async deleteEvidence(cap_response_evidence_id) {
     const [rows] = await db.query(
-      `SELECT * FROM cap_response_evidence WHERE id = ?`,
-      [id]
+      `SELECT * FROM cap_response_evidence WHERE cap_response_evidence_id = ?`,
+      [cap_response_evidence_id]
     );
     if (!rows.length) return null;
-    await db.query(`DELETE FROM cap_response_evidence WHERE id = ?`, [id]);
+    await db.query(`DELETE FROM cap_response_evidence WHERE cap_response_evidence_id = ?`, [cap_response_evidence_id]);
     return rows[0];
   },
 
   async getCapCorrectiveActionItems(cap_id) {
     const [rows] = await db.query(
-      `SELECT cr.id AS response_id, cr.cap_question_id, cr.response_text AS answer_text, 
+      `SELECT cr.cap_response_id AS response_id, cr.cap_question_id, cr.response_text AS answer_text, 
               cr.selected_option_ids, cr.remarks, cr.cap_required, cr.status, 
               cr.responded_by AS answered_by, cr.responded_at AS answered_at,
               cq.cap_id, cq.entity_code, cq.org_tree_id AS assigned_org_tree_id,
-              cq.question_id, q.question_text, q.order_index,
+              cq.checklist_question_id AS question_id, q.question_text, q.order_index,
               cae.entity_type
          FROM cap_responses cr
-         JOIN cap_questions cq ON cq.id = cr.cap_question_id
-         JOIN checklist_questions q ON q.id = cq.question_id
+         JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id
+         JOIN checklist_questions q ON q.checklist_question_id = cq.checklist_question_id
          LEFT JOIN cap_assignment_entities cae ON cae.cap_id = cq.cap_id AND cae.entity_code = cq.entity_code AND (cae.org_tree_id <=> cq.org_tree_id)
-         LEFT JOIN corrective_actions ca ON ca.id = cq.corrective_action_id
+         LEFT JOIN corrective_actions ca ON ca.corrective_action_id = cq.corrective_action_id
         WHERE cq.cap_id = ? AND cr.cap_required = 1`,
       [cap_id]
     );
@@ -612,7 +634,7 @@ const CapModel = {
       const head = it.assigned_org_tree_id ? headByOrgTreeId[it.assigned_org_tree_id] : null;
       it.responsible_entity_head = head
         ? {
-            user_code: head.user_code,
+            user_code: head.entity_head_id,
             first_name: head.first_name,
             last_name: head.last_name,
             email: head.email,
@@ -625,7 +647,7 @@ const CapModel = {
   async getCapCorrectiveActions(cap_id) {
     const [rows] = await db.query(
       `SELECT * FROM corrective_actions WHERE cap_response_id IN (
-         SELECT cr.id FROM cap_responses cr JOIN cap_questions cq ON cq.id = cr.cap_question_id WHERE cq.cap_id = ?
+         SELECT cr.cap_response_id FROM cap_responses cr JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id WHERE cq.cap_id = ?
        )`,
       [cap_id]
     );
@@ -633,24 +655,24 @@ const CapModel = {
   },
 
   async saveCapCorrectiveActions(cap_id, actions, created_by) {
-    const [[cap]] = await db.query(`SELECT audit_id FROM caps WHERE id = ?`, [cap_id]);
+    const [[cap]] = await db.query(`SELECT audit_id FROM caps WHERE cap_id = ?`, [cap_id]);
     const audit_id = cap.audit_id;
 
     for (const a of actions) {
-      const cap_code = `CA-CAP-${cap_id}-${a.response_id}`;
+      const corrective_action_id = `CA-CAP-${cap_id}-${a.response_id}`;
       await db.query(
-        `INSERT INTO corrective_actions 
-          (cap_code, audit_id, response_id, cap_response_id, entity_code, question_id, org_tree_id, due_date, created_by)
-         VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)
+         `INSERT INTO corrective_actions 
+           (corrective_action_id, audit_id, audit_response_id, cap_response_id, entity_code, checklist_question_id, org_tree_id, due_date, created_by)
+          VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE 
           due_date = VALUES(due_date),
           updated_at = NOW()`,
         [
-          cap_code, 
+          corrective_action_id,
           audit_id, 
           a.response_id, // cap_response_id
           a.entity_code, 
-          a.question_id, 
+          a.checklist_question_id || a.question_id, 
           a.assigned_org_tree_id || null, 
           a.due_date || null, 
           created_by
@@ -672,8 +694,8 @@ const CapModel = {
     const [[cap]] = await db.query(
       `SELECT aa.created_by
          FROM caps c
-         JOIN audit_assignments aa ON aa.id = c.audit_id
-        WHERE c.id = ?
+         JOIN audit_assignments aa ON aa.audit_id = c.audit_id
+        WHERE c.cap_id = ?
         LIMIT 1`,
       [cap_id]
     );
@@ -701,19 +723,19 @@ const CapModel = {
       const edgePH = assignedEdgeIds.map(() => '?').join(',');
       const [rows] = await db.query(
         `WITH RECURSIVE path AS (
-           SELECT id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
+           SELECT org_tree_id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
              FROM organization_tree
-            WHERE id IN (${edgePH})
+            WHERE org_tree_id IN (${edgePH})
               AND root_entity_code = ?
               AND is_active = TRUE
            UNION ALL
-           SELECT ot.id, ot.parent_code, ot.parent_type, ot.child_code, ot.child_type, ot.root_entity_code, ot.parent_edge_id
+           SELECT ot.org_tree_id, ot.parent_code, ot.parent_type, ot.child_code, ot.child_type, ot.root_entity_code, ot.parent_edge_id
              FROM organization_tree ot
-             INNER JOIN path p ON ot.id = p.parent_edge_id
+             INNER JOIN path p ON ot.org_tree_id = p.parent_edge_id
             WHERE ot.root_entity_code = ?
               AND ot.is_active = TRUE
          )
-         SELECT DISTINCT id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
+         SELECT DISTINCT org_tree_id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
            FROM path`,
         [...assignedEdgeIds, auditRootCode, auditRootCode]
       );
@@ -728,19 +750,19 @@ const CapModel = {
     if (pathEdges.length === 0 && auditRootCode) {
       const [rows] = await db.query(
         `WITH RECURSIVE path AS (
-           SELECT id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
+           SELECT org_tree_id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
              FROM organization_tree
             WHERE child_code IN (${codePlaceholders})
               AND root_entity_code = ?
               AND is_active = TRUE
            UNION ALL
-           SELECT ot.id, ot.parent_code, ot.parent_type, ot.child_code, ot.child_type, ot.root_entity_code, ot.parent_edge_id
+           SELECT ot.org_tree_id, ot.parent_code, ot.parent_type, ot.child_code, ot.child_type, ot.root_entity_code, ot.parent_edge_id
              FROM organization_tree ot
              INNER JOIN path p ON ot.child_code = p.parent_code
             WHERE ot.root_entity_code = ?
               AND ot.is_active = TRUE
          )
-         SELECT DISTINCT id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
+         SELECT DISTINCT org_tree_id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
            FROM path`,
         [...assignedCodes, auditRootCode, auditRootCode]
       );
@@ -753,7 +775,7 @@ const CapModel = {
 
     if (pathEdges.length === 0) {
       const [rows] = await db.query(
-        `SELECT id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
+        `SELECT org_tree_id, parent_code, parent_type, child_code, child_type, root_entity_code, parent_edge_id
            FROM organization_tree
           WHERE parent_code IN (${codePlaceholders})
             AND child_code IN (${codePlaceholders})
@@ -801,11 +823,11 @@ const CapModel = {
     const childrenByParentEdgeId = {};
     const topLevelEdges = [];
     for (const e of pathEdges) {
-      edgeById[e.id] = e;
+      edgeById[e.org_tree_id] = e;
       const parentEdgeId = e.parent_edge_id ?? null;
       if (!childrenByParentEdgeId[parentEdgeId]) childrenByParentEdgeId[parentEdgeId] = [];
-      childrenByParentEdgeId[parentEdgeId].push(e.id);
-      if (parentEdgeId === null) topLevelEdges.push(e.id);
+      childrenByParentEdgeId[parentEdgeId].push(e.org_tree_id);
+      if (parentEdgeId === null) topLevelEdges.push(e.org_tree_id);
     }
 
     // Keep stable order
@@ -829,7 +851,7 @@ const CapModel = {
         code: e.child_code,
         name: nameMap[e.child_code] || e.child_code,
         entity_type: typeMap[e.child_code] || e.child_type || '',
-        edge_id: e.id,
+        edge_id: e.org_tree_id,
         children,
       };
     };
@@ -838,6 +860,32 @@ const CapModel = {
     const rootEntityType = typeMap[rootCode] || pathEdges.find(e => (e.parent_edge_id ?? null) === null)?.parent_type || '';
     const rootName = nameMap[rootCode] || rootCode;
     const rootChildren = topLevelEdges.map(eid => buildFromEdge(eid)).filter(Boolean);
+
+    // Include any cap_assignment_entities that are not represented in the tree.
+    // This handles entities with NULL org_tree_id that were missed by the edge-based traversal.
+    // Keyed by entity_code+edge_id to allow same entity at different org positions.
+    const codesInTree = new Set();
+    (function walk(nodes) {
+      for (const n of nodes) {
+        codesInTree.add(`${n.code}__${n.edge_id ?? 'null'}`);
+        if (n.children) walk(n.children);
+      }
+    })(rootChildren);
+
+    for (const e of entities) {
+      const ek = `${e.entity_code}__${e.org_tree_id ?? 'null'}`;
+      if (!codesInTree.has(ek)) {
+        rootChildren.push({
+          code: e.entity_code,
+          name: nameMap[e.entity_code] || e.entity_code,
+          entity_type: typeMap[e.entity_code] || e.entity_type || '',
+          edge_id: e.org_tree_id ?? null,
+          children: [],
+        });
+        codesInTree.add(ek);
+      }
+    }
+
     return { code: rootCode, name: rootName, entity_type: rootEntityType, edge_id: null, children: rootChildren };
   },
 };

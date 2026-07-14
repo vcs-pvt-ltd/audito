@@ -35,7 +35,6 @@ interface AdminProfile {
   last_name: string;
   email: string;
   phone_number: string | null;
-  nic: string | null;
   country: string | null;
   role: string;
   account_type: string;
@@ -103,7 +102,7 @@ export default function ProfilePage() {
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
 
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ first_name: "", last_name: "", phone_prefix: "+94", phone_local: "", nic: "", country: "" });
+  const [editForm, setEditForm] = useState({ first_name: "", last_name: "", phone_prefix: "+94", phone_local: "", country: "" });
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -146,7 +145,7 @@ export default function ProfilePage() {
       setProfile(data.admin);
       setOrganization(data.organization);
       const { code, local } = extractPhone(data.admin.phone_number, data.admin.country);
-      setEditForm({ first_name: data.admin.first_name, last_name: data.admin.last_name, phone_prefix: code, phone_local: local, nic: data.admin.nic || "", country: data.admin.country || "" });
+      setEditForm({ first_name: data.admin.first_name, last_name: data.admin.last_name, phone_prefix: code, phone_local: local, country: data.admin.country || "" });
     }
     setLoading(false);
   }, [accessToken]);
@@ -157,7 +156,7 @@ export default function ProfilePage() {
   const handleEditStart = () => {
     if (!profile) return;
     const { code, local } = extractPhone(profile.phone_number, profile.country);
-    setEditForm({ first_name: profile.first_name, last_name: profile.last_name, phone_prefix: code, phone_local: local, nic: profile.nic || "", country: profile.country || "" });
+    setEditForm({ first_name: profile.first_name, last_name: profile.last_name, phone_prefix: code, phone_local: local, country: profile.country || "" });
     setShowCountryDropdown(false);
     setCountrySearch("");
     setEditing(true);
@@ -178,7 +177,6 @@ export default function ProfilePage() {
         first_name: editForm.first_name.trim(),
         last_name: editForm.last_name.trim(),
         phone_number: fullPhone || undefined,
-        nic: editForm.nic || undefined,
         country: editForm.country || undefined,
         profile_image: profile.profile_image,
       });
@@ -214,8 +212,7 @@ export default function ProfilePage() {
         const res = await authApi.updateProfile(accessToken, {
           first_name: profile.first_name,
           last_name: profile.last_name,
-          phone_number: profile.phone_number || undefined,
-          nic: profile.nic || undefined,
+           phone_number: profile.phone_number || undefined,
           country: profile.country || undefined,
           profile_image: base64Str,
         });
@@ -244,7 +241,6 @@ export default function ProfilePage() {
         first_name: profile.first_name,
         last_name: profile.last_name,
         phone_number: profile.phone_number || undefined,
-        nic: profile.nic || undefined,
         country: profile.country || undefined,
         profile_image: null,
       });
@@ -504,7 +500,12 @@ export default function ProfilePage() {
                         onChange={e => setEditForm(f => ({ ...f, last_name: e.target.value }))}
                         placeholder="Enter your last name" />
                     </div>
-
+  {/* Email — read-only */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-gray-400 mb-1.5">Email Address</label>
+                      <div className={`${inputCls} opacity-40 cursor-not-allowed select-none truncate`}>{profile.email}</div>
+                      <p className="text-[10px] text-gray-600 font-medium mt-1.5 uppercase tracking-wider">Email address cannot be changed</p>
+                    </div>
                     {/* Country dropdown — full width */}
                     <div className="sm:col-span-2 relative">
                       <label className="block text-xs font-medium text-gray-400 mb-1.5">Country</label>
@@ -566,26 +567,12 @@ export default function ProfilePage() {
                       </div>
                     </div>
 
-                    {/* NIC */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-400 mb-1.5">National ID (NIC)</label>
-                      <input className={inputCls} value={editForm.nic}
-                        onChange={e => setEditForm(f => ({ ...f, nic: e.target.value }))}
-                        placeholder="e.g. 987654321V" />
-                    </div>
-
-                    {/* Email — read-only */}
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-gray-400 mb-1.5">Email Address</label>
-                      <div className={`${inputCls} opacity-40 cursor-not-allowed select-none truncate`}>{profile.email}</div>
-                      <p className="text-[10px] text-gray-600 font-medium mt-1.5 uppercase tracking-wider">Email address cannot be changed</p>
-                    </div>
+                  
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
                     <DetailItem icon={Mail} label="Email Address" value={profile.email} copyable />
                     <DetailItem icon={Phone} label="Phone Number" value={profile.phone_number} />
-                    <DetailItem icon={CreditCard} label="National ID (NIC)" value={profile.nic} />
                     <DetailItem icon={MapPin} label="Country" value={profile.country} />
                   </div>
                 )}

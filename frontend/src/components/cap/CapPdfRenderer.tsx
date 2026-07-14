@@ -17,23 +17,24 @@ interface EntityProgress {
   total_marks: number;
   obtained_marks: number;
   status: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
 }
 
 interface Evidence {
-  id: number;
+  id: string;
   file_type: string;
   file_path: string;
   file_name: string;
   file_size: number;
 }
 
-interface AuditResponse {
-  id: number;
-  question_id: number;
+interface CapResponse {
+  cap_response_id: string;
+  cap_question_id: string;
   entity_code: string;
-  org_tree_id?: number | null;
-  answer_text: string | null;
+  org_tree_id?: string | null;
+  response_text: string | null;
+  answer_text?: string | null;
   selected_option_ids: string | null;
   marks_obtained: number;
   remarks: string | null;
@@ -43,13 +44,15 @@ interface AuditResponse {
 }
 
 interface QuestionOption {
-  id: number;
+  id: string;
+  checklist_question_option_id: string;
   option_text: string;
   marks: number;
 }
 
-interface Question {
-  id: number;
+interface CapQuestion {
+  id: string;
+  cap_question_id: string;
   question_text: string;
   answer_type: string;
   total_marks: number;
@@ -66,7 +69,7 @@ interface AuditEntity {
 
 interface ReportData {
   audit: {
-    id: number;
+    audit_id: string;
     audit_code: string;
     title: string;
     status: string;
@@ -78,9 +81,9 @@ interface ReportData {
     auditor_email?: string;
     auditor_phone?: string;
   };
-  responses: AuditResponse[];
+  responses: CapResponse[];
   progress: EntityProgress[];
-  questions: Question[];
+  questions: CapQuestion[];
   summary: {
     total_marks: number;
     obtained_marks: number;
@@ -109,7 +112,7 @@ interface EntityTreeNode {
   code: string;
   name?: string;
   entity_type?: string;
-  edge_id?: number | null;
+  edge_id?: string | null;
   children?: EntityTreeNode[];
 }
 
@@ -189,7 +192,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
 
 
   const fetchEntityTree = async (
-    auditId: number
+    auditId: string
   ): Promise<EntityTreeNode | null> => {
     try {
       const token = getAccessToken();
@@ -207,14 +210,14 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
 
     setDownloading(true);
     try {
-      const tree = entityTree || (await fetchEntityTree(report.audit.id));
+      const tree = entityTree || (await fetchEntityTree(report.audit.audit_id));
       const doc = new jsPDF({ unit: "pt", format: "a4" });
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 50;
 
       const title = report.audit.title || "Audit Report";
-      const auditCode = report.audit.audit_code || String(report.audit.id);
+      const auditCode = report.audit.audit_code || String(report.audit.audit_id);
 
       // ── Color Palette ──────────────────────────────────────────
       const PRIMARY: [number, number, number] = [16, 185, 129];
@@ -271,13 +274,13 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
       doc.setTextColor(...DARK);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(28);
-      doc.text("Audit Report", pageWidth / 2, 95, { align: "center" });
+      doc.text("CAP Report", pageWidth / 2, 95, { align: "center" });
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(13);
       doc.setTextColor(...TEXT_GRAY);
       doc.text(
-        "Comprehensive Audit Summary & Analysis",
+        "Corrective Action Plan Summary & Analysis",
         pageWidth / 2,
         118,
         { align: "center" }
@@ -566,8 +569,8 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
       };
 
       const renderQuestionRow = (
-        q: Question,
-        resp: AuditResponse | undefined,
+        q: CapQuestion,
+        resp: CapResponse | undefined,
         y: number,
         displayNumber: string
       ): number => {
@@ -591,8 +594,8 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
             const selectedTexts = q.options
               .filter(
                 (opt) =>
-                  parsedIds.includes(opt.id) ||
-                  parsedIds.includes(String(opt.id))
+                  parsedIds.includes(opt.checklist_question_option_id) ||
+                  parsedIds.includes(String(opt.checklist_question_option_id))
               )
               .map((opt) => opt.option_text);
             if (selectedTexts.length) {
@@ -727,7 +730,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
       };
 
       // ── Build question lookups ─────────────────────────────────
-      const questionsByEntity: Record<string, Question[]> = {};
+      const questionsByEntity: Record<string, CapQuestion[]> = {};
       for (const q of report.questions) {
         if (!questionsByEntity[q.entity_code])
           questionsByEntity[q.entity_code] = [];
@@ -739,10 +742,10 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
         );
       }
 
-      const responseByEntityQuestion = new Map<string, AuditResponse>();
+      const responseByEntityQuestion = new Map<string, CapResponse>();
       for (const r of report.responses) {
         // Use org_tree_id in the key to support reused entity codes
-        const key = `${r.entity_code}::${r.org_tree_id ?? "null"}::${r.question_id}`;
+        const key = `${r.entity_code}::${r.org_tree_id ?? "null"}::${r.cap_question_id}`;
         responseByEntityQuestion.set(key, r);
       }
 
@@ -799,18 +802,18 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
 
             if (instanceResponses.length > 0) {
               const qs = report.questions.filter(q =>
-                instanceResponses.some(r => r.question_id === q.id)
+                instanceResponses.some(r => r.cap_question_id === q.cap_question_id)
               ).sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
 
               if (qs.length) {
                 cy = drawFindingsTableHeader(cy);
                 qs.forEach((q, idx) => {
                   const resp = responseByEntityQuestion.get(
-                    `${nodeRespKeyBase}::${q.id}`
+                    `${nodeRespKeyBase}::${q.cap_question_id}`
                   );
                   const qNo = `${prefix}.${idx + 1}`;
                   questionNumberByEntityQuestion.set(
-                    `${nodeRespKeyBase}::${q.id}`,
+                    `${nodeRespKeyBase}::${q.cap_question_id}`,
                     qNo
                   );
                   cy = renderQuestionRow(q, resp, cy, qNo);
@@ -870,9 +873,9 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
           cy = drawFindingsTableHeader(cy);
 
           qs.forEach((q, index) => {
-            const resp = responseByEntityQuestion.get(`${code}::${q.id}`);
+            const resp = responseByEntityQuestion.get(`${code}::${q.cap_question_id}`);
             const qNo = String(q.order_index || index + 1);
-            questionNumberByEntityQuestion.set(`${code}::${q.id}`, qNo);
+            questionNumberByEntityQuestion.set(`${code}::${q.cap_question_id}`, qNo);
             cy = renderQuestionRow(q, resp, cy, qNo);
           });
         }
@@ -880,7 +883,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
 
       // ─── Evidence & Remarks Section ────────────────────────────
       const responsesWithDetails = report.responses.filter((r) => {
-        const q = report.questions.find((q) => q.id === r.question_id);
+        const q = report.questions.find((q) => q.cap_question_id === r.cap_question_id);
         return q && (r.remarks || (r.evidence && r.evidence.length > 0));
       });
 
@@ -921,8 +924,8 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
         cy += 35;
 
         const sorted = [...responsesWithDetails].sort((a, b) => {
-          const keyA = `${a.entity_code}::${a.org_tree_id ?? "null"}::${a.question_id}`;
-          const keyB = `${b.entity_code}::${b.org_tree_id ?? "null"}::${b.question_id}`;
+          const keyA = `${a.entity_code}::${a.org_tree_id ?? "null"}::${a.cap_question_id}`;
+          const keyB = `${b.entity_code}::${b.org_tree_id ?? "null"}::${b.cap_question_id}`;
           const qa = questionNumberByEntityQuestion.get(keyA) || "";
           const qb = questionNumberByEntityQuestion.get(keyB) || "";
           return qa.localeCompare(qb, undefined, {
@@ -932,10 +935,10 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
         });
 
         for (const resp of sorted) {
-          const q = report.questions.find((qq) => qq.id === resp.question_id);
+          const q = report.questions.find((qq) => qq.cap_question_id === resp.cap_question_id);
           if (!q) continue;
 
-          const respKey = `${resp.entity_code}::${resp.org_tree_id ?? "null"}::${resp.question_id}`;
+          const respKey = `${resp.entity_code}::${resp.org_tree_id ?? "null"}::${resp.cap_question_id}`;
           const qNo = questionNumberByEntityQuestion.get(respKey) || "—";
           const hasEvidence = resp.evidence && resp.evidence.length > 0;
           const hasRemark =

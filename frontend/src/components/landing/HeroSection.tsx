@@ -2,28 +2,13 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
-import {
-  Sparkles,
-  ArrowRight,
-  Users,
-  LayoutGrid,
-  User,
-} from "lucide-react";
+import { Sparkles, ArrowRight } from "lucide-react";
 import left1 from "@/assets/landing/hero-left1.png";
 import left2 from "@/assets/landing/hero-left2.png";
 import right1 from "@/assets/landing/hero-right1.png";
 import right2 from "@/assets/landing/hero-right2.png";
 
-const TABS = [
-  { id: "global", label: "Audito Global", icon: Users },
-  { id: "unit", label: "Audito Unit", icon: LayoutGrid },
-  { id: "partner", label: "Audito Partner", icon: User },
-];
-
 export default function HeroSection() {
-  const [activeTab, setActiveTab] = useState("global");
-
   return (
     <section className="relative flex flex-col justify-center bg-cover bg-center bg-no-repeat overflow-hidden">
       <style>{`
@@ -87,8 +72,7 @@ export default function HeroSection() {
         .hero-h1      { animation: fadeInUp 0.6s  cubic-bezier(0.16,1,0.3,1) 0.15s both; }
         .hero-p       { animation: fadeInUp 0.6s  cubic-bezier(0.16,1,0.3,1) 0.25s both; }
         .hero-cta     { animation: fadeInUp 0.6s  cubic-bezier(0.16,1,0.3,1) 0.35s both; }
-        .hero-tabs    { animation: fadeInUp 0.6s  cubic-bezier(0.16,1,0.3,1) 0.45s both; }
-        .hero-stats   { animation: statsPop 0.7s  cubic-bezier(0.16,1,0.3,1) 0.55s both; }
+        .hero-stats   { animation: statsPop 0.7s  cubic-bezier(0.16,1,0.3,1) 0.45s both; }
 
         .stat-item    { transition: transform 0.2s ease, opacity 0.2s ease; }
         .stat-item:hover { transform: translateY(-3px) scale(1.04); }
@@ -106,40 +90,17 @@ export default function HeroSection() {
         .cta-glow:hover { animation: none; box-shadow: 0 0 48px rgba(184,134,11,0.55), 0 4px 20px rgba(0,0,0,0.4); transform: translateY(-1px) scale(1.02); }
         .cta-glow { transition: transform 0.2s ease, box-shadow 0.2s ease; }
 
-        .tab-btn {
-          position: relative;
-          transition: color 0.2s ease, background 0.2s ease;
-          overflow: hidden;
-        }
-        .tab-btn::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: rgba(255,255,255,0.04);
-          opacity: 0;
-          transition: opacity 0.2s ease;
-          border-radius: inherit;
-        }
-        .tab-btn:hover::after { opacity: 1; }
-
         .hero-img-wrap {
           transition: filter 0.3s ease;
           filter: drop-shadow(0 20px 40px rgba(0,0,0,0.45));
         }
         .hero-img-wrap:hover { filter: drop-shadow(0 24px 50px rgba(0,0,0,0.55)) brightness(1.04); }
-
-        .tabs-scroll {
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-          scrollbar-width: none;
-        }
-        .tabs-scroll::-webkit-scrollbar { display: none; }
       `}</style>
 
-      {/* ─── MOBILE LAYOUT ─── */}
+      {/* ─── MOBILE / TABLET LAYOUT ─── */}
       <div className="lg:hidden flex flex-col w-full">
 
-        <div className="grid grid-cols-2 gap-2 px-3 pt-20">
+        <div className="grid grid-cols-2 gap-2 px-3 pt-16 sm:pt-20">
           <div className="float-a hero-img-wrap">
             <Image src={left1} alt="Audit dashboard" width={320} height={220}
               className="w-full h-auto object-contain rounded-xl" />
@@ -159,13 +120,13 @@ export default function HeroSection() {
             <span className="text-xs text-gray-300 font-medium tracking-wide">AI-Powered Audit Platform</span>
           </div>
 
-          <h1 className="hero-h1 text-3xl font-semibold leading-tight mb-3">
+          <h1 className="hero-h1 text-2xl sm:text-3xl font-semibold leading-tight mb-3">
             Simplify Audits.
             <br />
             <span className="gradient-text-shimmer">Strengthen Compliance</span>
           </h1>
 
-          <p className="hero-p text-gray-400 text-sm max-w-xs mx-auto mb-6 leading-relaxed">
+          <p className="hero-p text-gray-400 text-sm max-w-xs sm:max-w-sm mx-auto mb-6 leading-relaxed">
             Maintain <strong className="text-white">compliance</strong>,{" "}
             <strong className="text-white">reduce risks</strong>, and{" "}
             <strong className="text-white">improve efficiency</strong> with ease.
@@ -190,52 +151,31 @@ export default function HeroSection() {
           </div>
         </div>
 
-        <div className="hero-tabs w-full px-4 pb-4">
-          <div className="glass rounded-lg p-1 flex items-center gap-1 shadow-lg shadow-secondary-500/20 w-full border border-white/[0.07]">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                  className={`tab-btn flex flex-1 items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-medium ${
-                    isActive
-                      ? "bg-[#D9A346]/15 text-[#D9A346] border border-[#D9A346]/30 shadow-md shadow-[#D9A346]/20"
-                      : "border border-transparent text-gray-400 hover:text-white"
-                  }`}
-                >
-                  <Icon size={14} />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="hero-stats grid grid-cols-3 gap-3 px-4 pb-8">
+        <div className="hero-stats grid grid-cols-3 gap-2 sm:gap-3 px-4 pb-8">
           {[
             { value: "70%", label: "Time Saved" },
             { value: "500+", label: "Companies" },
             { value: "99.9%", label: "Accuracy" },
           ].map(({ value, label }) => (
-            <div key={label} className="stat-item glass rounded-xl py-3 px-2 text-center border border-white/[0.07] hover:border-secondary-500/30 transition-colors duration-300">
-              <p className="text-xl font-bold text-secondary-400">{value}</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
+            <div key={label} className="stat-item glass rounded-xl py-2.5 sm:py-3 px-2 text-center border border-white/[0.07] hover:border-secondary-500/30 transition-colors duration-300">
+              <p className="text-lg sm:text-xl font-bold text-secondary-400">{value}</p>
+              <p className="text-[9px] sm:text-[10px] text-gray-400 mt-0.5 leading-tight">{label}</p>
             </div>
           ))}
         </div>
       </div>
 
       {/* ─── DESKTOP LAYOUT ─── */}
-      <div className="hidden lg:block relative z-10 w-full max-w-7xl mx-auto px-8 py-14">
+      <div className="hidden lg:block relative z-10 w-full max-w-7xl mx-auto px-8 py-18 xl:py-20">
         <div className="flex items-center justify-between gap-4">
 
           {/* LEFT images */}
-          <div className="relative flex-shrink-0 w-72 h-[400px]">
-            <div className="float-b hero-img-wrap absolute top-70 left-0 w-72 z-0">
+          <div className="relative flex-shrink-0 w-56 xl:w-72 h-[340px] xl:h-[400px]">
+            <div className="float-b hero-img-wrap absolute top-70 left-0 w-56 xl:w-72 z-0">
               <Image src={left2} alt="Audit trend analysis" width={260} height={160}
                 className="w-full h-auto object-contain" />
             </div>
-            <div className="float-a hero-img-wrap absolute top-20 left-2 w-72 z-10">
+            <div className="float-a hero-img-wrap absolute top-20 left-2 w-56 xl:w-72 z-10">
               <Image src={left1} alt="Audit dashboard" width={320} height={220}
                 className="w-full h-auto object-contain" />
             </div>
@@ -251,7 +191,7 @@ export default function HeroSection() {
               <span className="text-sm text-gray-300 font-medium tracking-wide">AI-Powered Audit Platform</span>
             </div>
 
-            <h1 className="hero-h1 text-4xl font-semibold leading-tight mb-4">
+            <h1 className="hero-h1 text-3xl xl:text-4xl font-semibold leading-tight mb-4">
               Simplify Audits.
               <br />
               <span className="gradient-text-shimmer">Strengthen Compliance</span>
@@ -274,50 +214,28 @@ export default function HeroSection() {
           </div>
 
           {/* RIGHT images */}
-          <div className="relative flex-shrink-0 w-72 h-[400px]">
-            <div className="float-c hero-img-wrap absolute top-20 right-0 w-72">
+          <div className="relative flex-shrink-0 w-56 xl:w-72 h-[340px] xl:h-[400px]">
+            <div className="float-c hero-img-wrap absolute top-20 right-0 w-56 xl:w-72">
               <Image src={right1} alt="Risk analysis monitor" width={320} height={220}
                 className="w-full h-auto object-contain" />
             </div>
-            <div className="float-d hero-img-wrap absolute top-80 right-2 w-72">
+            <div className="float-d hero-img-wrap absolute top-80 right-2 w-56 xl:w-72">
               <Image src={right2} alt="Risk reduced card" width={260} height={160}
                 className="w-full h-auto object-contain" />
             </div>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="hero-tabs mt-12 flex justify-center">
-          <div className="glass rounded-lg p-1 flex items-center gap-1 shadow-lg shadow-secondary-500/20 border border-white/[0.07]">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                  className={`tab-btn flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${
-                    isActive
-                      ? "bg-[#D9A346]/15 text-[#D9A346] border border-[#D9A346]/30 shadow-md shadow-[#D9A346]/20"
-                      : "border border-transparent text-gray-400 hover:text-white"
-                  }`}
-                >
-                  <Icon size={14} />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         {/* Stats */}
-        <div className="hero-stats mt-12 grid grid-cols-3 gap-8 max-w-xl mx-auto text-center">
+        <div className="hero-stats mt-12 grid grid-cols-3 gap-6 xl:gap-8 max-w-md xl:max-w-xl mx-auto text-center">
           {[
             { value: "70%", label: "Time Saved" },
             { value: "500+", label: "Companies" },
             { value: "99.9%", label: "Accuracy" },
           ].map(({ value, label }) => (
             <div key={label} className="stat-item group cursor-default">
-              <p className="text-3xl font-bold text-secondary-400 group-hover:text-secondary-300 transition-colors duration-200">{value}</p>
-              <p className="text-xs text-gray-400 mt-1 group-hover:text-gray-300 transition-colors duration-200">{label}</p>
+              <p className="text-2xl xl:text-3xl font-bold text-secondary-400 group-hover:text-secondary-300 transition-colors duration-200">{value}</p>
+              <p className="text-xs mt-1 text-gray-400 group-hover:text-gray-300 transition-colors duration-200">{label}</p>
             </div>
           ))}
         </div>

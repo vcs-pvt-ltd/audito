@@ -27,12 +27,15 @@ const { db } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const {
   getEntityHeadOrgTreeScope,
+  getAccessibleEntityCodes,
+  resolveEntityNames,
   auditEntitiesInScope,
   extractEntityHeadSubtree,
 } = require('../utils/accessHelper');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { generateAuditId, generateCapId, generateCapEntityProgressIds, generateCapResponseId, generateCapResponseEvidenceId } = require('../utils/codeGenerator');
 
 const ENTITY_TABLE_MAP = {
   'Customer': { table: 'customers', codeField: 'cust_code' },
@@ -84,15 +87,15 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
     }
 
     // Verify auditor access
-    if (req.user.role === 'auditor' && audit.assigned_auditor_code !== req.user.userCode) {
+    if (req.user.role === 'auditor' && audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
-    const parentCapId = parent_cap_id ? parseInt(parent_cap_id, 10) : null;
+    const parentCapId = parent_cap_id || null;
 
     // Only block duplicates for root-level CAPs (no parent).
     if (!parentCapId) {
-      const existing = await CapModel.listCapsByAudit(parseInt(audit_id));
+      const existing = await CapModel.listCapsByAudit(audit_id);
       const rootCaps = existing.filter(c => !c.parent_cap_id);
       if (rootCaps.length > 0) {
         return errorResponse(res, 'A CAP plan already exists for this audit.', 409);
@@ -100,7 +103,7 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
     } else {
       const parentCap = await CapModel.getCapById(parentCapId);
       if (!parentCap) return errorResponse(res, 'Parent CAP not found.', 404);
-      if (parentCap.audit_id !== parseInt(audit_id, 10)) {
+      if (parentCap.audit_id !== audit_id) {
         return errorResponse(res, 'Parent CAP must belong to the same audit.', 400);
       }
       const existingSubs = await CapModel.listSubCapsByParent(parentCapId);
@@ -110,8 +113,10 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
     }
 
     // Create the CAP record
-    const { id: cap_id, cap_plan_code } = await CapModel.createCap({
-      audit_id: parseInt(audit_id),
+    const cap_id = await generateCapId();
+    await CapModel.createCap({
+      cap_id,
+      audit_id,
       title: title || (parentCapId ? `Sub-CAP` : `CAP for ${audit.audit_code}`),
       description: description || null,
       created_by: req.user.userCode,
@@ -123,23 +128,23 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
       try {
         await CapModel.seedSubCapFromParent(cap_id, parentCapId, req.user.userCode);
       } catch (seedErr) {
-        await db.query('DELETE FROM caps WHERE id = ?', [cap_id]);
+        await db.query('DELETE FROM caps WHERE cap_id = ?', [cap_id]);
         if (seedErr.code === 'NO_PARENT_FINDINGS') {
           return errorResponse(res, seedErr.message, 400);
         }
         throw seedErr;
       }
       await CapModel.updateCapStatus(cap_id, 'plan');
-      return successResponse(res, { cap_id, cap_plan_code, parent_cap_id: parentCapId }, 'Sub-CAP plan created successfully.');
+      return successResponse(res, { cap_id, parent_cap_id: parentCapId }, 'Sub-CAP plan created successfully.');
     }
 
     // Root CAP: seed from audit corrective actions
     const [correctiveActions] = await db.query(
       `SELECT * FROM corrective_actions WHERE audit_id = ? AND (cap_response_id IS NULL OR cap_response_id = 0) ORDER BY entity_code`,
-      [parseInt(audit_id)]
+      [audit_id]
     );
     if (!correctiveActions.length) {
-      await db.query('DELETE FROM caps WHERE id = ?', [cap_id]);
+      await db.query('DELETE FROM caps WHERE cap_id = ?', [cap_id]);
       return errorResponse(res, 'No corrective actions found for this audit.', 400);
     }
 
@@ -150,8 +155,8 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
         const k = `${ca.entity_code}__${ca.org_tree_id}`;
         if (!entityInstanceMap.has(k)) {
           const [entRows] = await db.query(
-            `SELECT entity_type FROM audit_assignment_entities WHERE assignment_id = ? AND entity_code = ? AND org_tree_id = ? LIMIT 1`,
-            [parseInt(audit_id), ca.entity_code, ca.org_tree_id]
+            `SELECT entity_type FROM audit_assignment_entities WHERE audit_id = ? AND entity_code = ? AND org_tree_id = ? LIMIT 1`,
+            [audit_id, ca.entity_code, ca.org_tree_id]
           );
           entityInstanceMap.set(k, {
             entity_code: ca.entity_code,
@@ -161,8 +166,8 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
         }
       } else {
         const [allInstances] = await db.query(
-          `SELECT DISTINCT entity_code, org_tree_id, entity_type FROM audit_assignment_entities WHERE assignment_id = ? AND entity_code = ? AND is_active = 1`,
-          [parseInt(audit_id), ca.entity_code]
+          `SELECT DISTINCT entity_code, org_tree_id, entity_type FROM audit_assignment_entities WHERE audit_id = ? AND entity_code = ? AND is_active = 1`,
+          [audit_id, ca.entity_code]
         );
         for (const inst of allInstances) {
           const k = `${inst.entity_code}__${inst.org_tree_id ?? 'null'}`;
@@ -194,52 +199,27 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
       countMap[`${row.entity_code}__${row.org_tree_id ?? 'null'}`] = row.count;
     }
 
-    for (const e of entities) {
+    const progressIds = await generateCapEntityProgressIds(entities.length);
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
       const k = `${e.entity_code}__${e.org_tree_id ?? 'null'}`;
-      await CapModel.initCapEntityProgress(cap_id, e.entity_code, e.org_tree_id ?? null, countMap[k] || 0);
+      await CapModel.initCapEntityProgress(progressIds[i], cap_id, e.entity_code, e.org_tree_id ?? null, countMap[k] || 0);
     }
 
     // New CAP starts in plan, then moves to in_progress once responses begin.
     await CapModel.updateCapStatus(cap_id, 'plan');
 
-    return successResponse(res, { cap_id, cap_plan_code }, 'CAP plan created successfully.');
+    return successResponse(res, { cap_id }, 'CAP plan created successfully.');
   } catch (err) {
     console.error('createCap error:', err);
     return errorResponse(res, 'Failed to create CAP plan.', 500);
   }
 };
 
-async function resolveEntityNames(entityList) {
-  if (!entityList || entityList.length === 0) return {};
-  const codes = [...new Set(entityList.map(e => e.entity_code || e.code).filter(Boolean))];
-  if (codes.length === 0) return {};
-  const ph = codes.map(() => '?').join(',');
-  const [rows] = await db.query(
-    `SELECT cust_code AS code, name FROM customers WHERE cust_code IN (${ph})
-     UNION ALL SELECT cbo_code AS code, name FROM customer_buying_offices WHERE cbo_code IN (${ph})
-     UNION ALL SELECT csup_code AS code, name FROM customer_suppliers WHERE csup_code IN (${ph})
-     UNION ALL SELECT comp_code AS code, name FROM companies WHERE comp_code IN (${ph})
-     UNION ALL SELECT comp_clus_code AS code, name FROM company_clusters WHERE comp_clus_code IN (${ph})
-     UNION ALL SELECT comp_fact_code AS code, name FROM company_factories WHERE comp_fact_code IN (${ph})
-     UNION ALL SELECT comp_unit_code AS code, name FROM company_units WHERE comp_unit_code IN (${ph})
-     UNION ALL SELECT comp_dept_code AS code, name FROM company_departments WHERE comp_dept_code IN (${ph})
-     UNION ALL SELECT comp_section_code AS code, name FROM company_sections WHERE comp_section_code IN (${ph})
-     UNION ALL SELECT afc_code AS code, name FROM audit_firm_companies WHERE afc_code IN (${ph})
-     UNION ALL SELECT afc_branch_code AS code, name FROM audit_firm_company_branches WHERE afc_branch_code IN (${ph})
-     UNION ALL SELECT afc_dept_code AS code, name FROM audit_firm_company_departments WHERE afc_dept_code IN (${ph})`,
-    Array(12).fill(codes).flat()
-  );
-  const nameMap = {};
-  for (const r of rows) {
-    nameMap[r.code] = r.name?.trim() || r.code;
-  }
-  return nameMap;
-}
-
 function filterCapProgressByScope(progress, scopeIds) {
   if (!scopeIds?.length) return progress || [];
-  const scopeSet = new Set(scopeIds.map(Number));
-  return (progress || []).filter((p) => p.org_tree_id != null && scopeSet.has(Number(p.org_tree_id)));
+  const scopeSet = new Set(scopeIds);
+  return (progress || []).filter((p) => p.org_tree_id != null && scopeSet.has(p.org_tree_id));
 }
 
 // ── GET /api/caps ─────────────────────────────────────────────────
@@ -253,7 +233,13 @@ const listCaps = async (req, res) => {
       : [];
 
     if (req.user?.role === 'admin') {
-      caps = await CapModel.listCapsForAdmin(req.user.entityCode, listOpts);
+      const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+      caps = await CapModel.listCapsForAdmin(accessibleCodes, listOpts);
+      const nameMap = await resolveEntityNames(accessibleCodes);
+      for (const c of caps) {
+        const ownerCode = c.owner_entity_code;
+        c.entity_name = ownerCode && ownerCode !== req.user.entityCode ? (nameMap.get(ownerCode)?.name || null) : null;
+      }
     } else if (req.user?.role === 'entity_head') {
       caps = await CapModel.listCapsForEntityHead(req.user.assignedOrgTreeId, listOpts);
     } else {
@@ -262,13 +248,13 @@ const listCaps = async (req, res) => {
 
     // Attach entity count and calculate progress per CAP mirroring listAudits pattern
     for (const c of caps) {
-      const ents = await CapModel.getCapEntities(c.id);
+      const ents = await CapModel.getCapEntities(c.cap_id);
       const scopedEnts = req.user?.role === 'entity_head'
-        ? ents.filter((e) => scopeIds.includes(Number(e.org_tree_id)))
+        ? ents.filter((e) => scopeIds.includes(e.org_tree_id))
         : ents;
       c.entity_count = scopedEnts.length;
 
-      const progress = await CapModel.getCapProgress(c.id);
+      const progress = await CapModel.getCapProgress(c.cap_id);
       const scopedProgress = req.user?.role === 'entity_head'
         ? filterCapProgressByScope(progress, scopeIds)
         : progress;
@@ -292,7 +278,7 @@ const listCaps = async (req, res) => {
 const listCapsByAudit = async (req, res) => {
   try {
     const { auditId } = req.params;
-    const caps = await CapModel.listCapsByAudit(parseInt(auditId));
+    const caps = await CapModel.listCapsByAudit(auditId);
     const root_caps = caps.filter((c) => !c.parent_cap_id);
     const sub_caps = caps.filter((c) => c.parent_cap_id);
     return successResponse(res, { caps, root_caps, sub_caps });
@@ -307,9 +293,9 @@ const getCorrectiveActions = async (req, res) => {
   try {
     const { id } = req.params;
     const [items, corrective_actions, tree] = await Promise.all([
-      CapModel.getCapCorrectiveActionItems(parseInt(id)),
-      CapModel.getCapCorrectiveActions(parseInt(id)),
-      CapModel.getCapEntityTree(parseInt(id)),
+      CapModel.getCapCorrectiveActionItems(id),
+      CapModel.getCapCorrectiveActions(id),
+      CapModel.getCapEntityTree(id),
     ]);
     return successResponse(res, { items, corrective_actions, tree });
   } catch (err) {
@@ -323,7 +309,7 @@ const saveCorrectiveActions = async (req, res) => {
   try {
     const { id } = req.params;
     const { actions } = req.body;
-    await CapModel.saveCapCorrectiveActions(parseInt(id), actions, req.user.userCode);
+    await CapModel.saveCapCorrectiveActions(id, actions, req.user.userCode);
     return successResponse(res, null, 'Corrective actions saved.');
   } catch (err) {
     console.error('saveCorrectiveActions error:', err);
@@ -335,7 +321,7 @@ const saveCorrectiveActions = async (req, res) => {
 const getCapDetail = async (req, res) => {
   try {
     const { id } = req.params;
-    const cap = await CapModel.getCapById(parseInt(id));
+    const cap = await CapModel.getCapById(id);
     if (!cap) return errorResponse(res, 'CAP not found.', 404);
 
     let parent_cap = null;
@@ -343,21 +329,21 @@ const getCapDetail = async (req, res) => {
     if (cap.parent_cap_id) {
       parent_cap = await CapModel.getCapById(cap.parent_cap_id);
     } else {
-      sub_caps = await CapModel.listSubCapsByParent(cap.id);
+      sub_caps = await CapModel.listSubCapsByParent(cap.cap_id);
     }
 
     const [questions, entities, progress, tree] = await Promise.all([
-      CapModel.listCapQuestions(parseInt(id)),
-      CapModel.getCapEntities(parseInt(id)),
-      CapModel.getCapProgress(parseInt(id)),
-      CapModel.getCapEntityTree(parseInt(id)),
+      CapModel.listCapQuestions(id),
+      CapModel.getCapEntities(id),
+      CapModel.getCapProgress(id),
+      CapModel.getCapEntityTree(id),
     ]);
 
     // Role-based access check
     const isCreator = req.user.role === 'admin' && cap.created_by === req.user.userCode;
     // Auditor: if they were assigned to the original audit
     const audit = await AuditModel.findById(cap.audit_id);
-    const isAuditor = req.user.role === 'auditor' && audit?.assigned_auditor_code === req.user.userCode;
+    const isAuditor = req.user.role === 'auditor' && audit?.assigned_auditor_id === req.user.userCode;
     const scopeIds = req.user.role === 'entity_head'
       ? await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId)
       : [];
@@ -391,11 +377,11 @@ const getCapDetail = async (req, res) => {
           }
         }
 
-        if (audit.assigned_auditor_code) {
-          const auditor = await AuditorModel.findByCode(audit.assigned_auditor_code);
+        if (audit.assigned_auditor_id) {
+          const auditor = await AuditorModel.findByCode(audit.assigned_auditor_id);
           if (auditor) {
             const fullName = `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim();
-            source_audit.auditor_name = fullName || auditor.user_code;
+            source_audit.auditor_name = fullName || auditor.auditor_id;
             source_audit.auditor_email = auditor.email || null;
             source_audit.auditor_phone = auditor.phone_number || null;
           }
@@ -425,10 +411,10 @@ const getCapDetail = async (req, res) => {
     let scopedQuestions = questions;
     let scopedTree = tree;
     if (req.user.role === 'entity_head') {
-      const scopeSet = new Set(scopeIds.map(Number));
-      scopedEntities = entities.filter((e) => scopeSet.has(Number(e.org_tree_id)));
+      const scopeSet = new Set(scopeIds);
+      scopedEntities = entities.filter((e) => scopeSet.has(e.org_tree_id));
       scopedProgress = filterCapProgressByScope(progress, scopeIds);
-      scopedQuestions = questions.filter((q) => q.org_tree_id != null && scopeSet.has(Number(q.org_tree_id)));
+      scopedQuestions = questions.filter((q) => q.org_tree_id != null && scopeSet.has(q.org_tree_id));
       if (tree) {
         scopedTree = extractEntityHeadSubtree(tree, req.user.assignedOrgTreeId, scopeIds);
       }
@@ -454,10 +440,10 @@ const getCapDetail = async (req, res) => {
 const getCapItems = async (req, res) => {
   try {
     const { id } = req.params;
-    const cap = await CapModel.getCapById(parseInt(id));
+    const cap = await CapModel.getCapById(id);
     if (!cap) return errorResponse(res, 'CAP not found.', 404);
 
-    const entities = await CapModel.getCapEntities(parseInt(id));
+    const entities = await CapModel.getCapEntities(id);
     const scopeIds = req.user.role === 'entity_head'
       ? await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId)
       : [];
@@ -466,15 +452,15 @@ const getCapItems = async (req, res) => {
     }
 
     let [questions, responses, tree] = await Promise.all([
-      CapModel.listCapQuestions(parseInt(id)),
-      CapModel.getCapResponses(parseInt(id)),
-      CapModel.getCapEntityTree(parseInt(id)),
+      CapModel.listCapQuestions(id),
+      CapModel.getCapResponses(id),
+      CapModel.getCapEntityTree(id),
     ]);
 
     if (req.user.role === 'entity_head') {
-      const scopeSet = new Set(scopeIds.map(Number));
-      questions = questions.filter((q) => q.org_tree_id != null && scopeSet.has(Number(q.org_tree_id)));
-      const allowedQuestionIds = new Set(questions.map((q) => q.id));
+      const scopeSet = new Set(scopeIds);
+      questions = questions.filter((q) => q.org_tree_id != null && scopeSet.has(q.org_tree_id));
+      const allowedQuestionIds = new Set(questions.map((q) => q.cap_question_id));
       responses = responses.filter((r) => allowedQuestionIds.has(r.cap_question_id));
       if (tree) {
         tree = extractEntityHeadSubtree(tree, req.user.assignedOrgTreeId, scopeIds);
@@ -503,12 +489,18 @@ const submitCapResponse = async (req, res) => {
 
     if (!cap_question_id) return errorResponse(res, 'cap_question_id is required.', 400);
 
-    const cap = await CapModel.getCapById(parseInt(id));
+    const cap = await CapModel.getCapById(id);
     if (!cap) return errorResponse(res, 'CAP not found.', 404);
 
-    // Upsert response
+    const { generateCapResponseId } = require('../utils/codeGenerator');
+
+// ... existing code ...
+
+  // Upsert response
+    const cap_response_id = await generateCapResponseId();
     const responseId = await CapModel.upsertCapResponse({
-      cap_question_id: parseInt(cap_question_id),
+      cap_response_id,
+      cap_question_id,
       response_text: response_text || null,
       selected_option_ids: selected_option_ids || null,
       marks_obtained: marks_obtained || 0,
@@ -519,24 +511,24 @@ const submitCapResponse = async (req, res) => {
     });
 
     if (cap.status === 'plan') {
-      await CapModel.updateCapStatus(parseInt(id), 'in_progress');
+      await CapModel.updateCapStatus(id, 'in_progress');
     }
 
     // Update cap_question status
-    await CapModel.updateCapQuestionStatus(parseInt(cap_question_id), 'completed');
+    await CapModel.updateCapQuestionStatus(cap_question_id, 'completed');
 
     // Get the cap question to know the entity
-    const capQuestion = await CapModel.getCapQuestion(parseInt(cap_question_id));
+    const capQuestion = await CapModel.getCapQuestion(cap_question_id);
     if (capQuestion) {
       // Recalculate entity progress
       const orgTreeId = capQuestion.org_tree_id ?? capQuestion.assigned_org_tree_id ?? null;
-      const allResponses = await CapModel.getCapResponsesByEntity(parseInt(id), capQuestion.entity_code, orgTreeId);
-      const progress = await CapModel.getCapProgress(parseInt(id));
+      const allResponses = await CapModel.getCapResponsesByEntity(id, capQuestion.entity_code, orgTreeId);
+      const progress = await CapModel.getCapProgress(id);
       const entityProgress = progress.find(p =>
         p.entity_code === capQuestion.entity_code && (p.org_tree_id ?? null) === (orgTreeId ?? null)
       );
       const total = entityProgress?.total_questions || 1;
-      await CapModel.updateCapEntityProgress(parseInt(id), capQuestion.entity_code, orgTreeId, allResponses.length, total);
+      await CapModel.updateCapEntityProgress(id, capQuestion.entity_code, orgTreeId, allResponses.length, total);
     }
 
     return successResponse(res, { response_id: responseId }, 'Response saved.');
@@ -550,7 +542,7 @@ const submitCapResponse = async (req, res) => {
 const getCapResponses = async (req, res) => {
   try {
     const { id } = req.params;
-    const responses = await CapModel.getCapResponses(parseInt(id));
+    const responses = await CapModel.getCapResponses(id);
     return successResponse(res, { responses });
   } catch (err) {
     console.error('getCapResponses error:', err);
@@ -562,7 +554,7 @@ const getCapResponses = async (req, res) => {
 const getCapProgress = async (req, res) => {
   try {
     const { id } = req.params;
-    const progress = await CapModel.getCapProgress(parseInt(id));
+    const progress = await CapModel.getCapProgress(id);
     return successResponse(res, { progress });
   } catch (err) {
     console.error('getCapProgress error:', err);
@@ -574,16 +566,16 @@ const getCapProgress = async (req, res) => {
 const completeCap = async (req, res) => {
   try {
     const { id } = req.params;
-    const cap = await CapModel.getCapById(parseInt(id));
+    const cap = await CapModel.getCapById(id);
     if (!cap) return errorResponse(res, 'CAP not found.', 404);
 
-    const progress = await CapModel.getCapProgress(parseInt(id));
+    const progress = await CapModel.getCapProgress(id);
     const incomplete = progress.filter(p => p.status !== 'completed');
     if (incomplete.length > 0) {
       return errorResponse(res, `${incomplete.length} entity/entities not yet completed.`, 400);
     }
 
-    await CapModel.updateCapStatus(parseInt(id), 'completed');
+    await CapModel.updateCapStatus(id, 'completed');
     return successResponse(res, null, 'CAP completed successfully.');
   } catch (err) {
     console.error('completeCap error:', err);
@@ -603,7 +595,7 @@ const updateCapStatus = async (req, res) => {
       return errorResponse(res, `Invalid status. Allowed: ${allowed.join(', ')}`, 400);
     }
 
-    await CapModel.updateCapStatus(parseInt(id), status);
+    await CapModel.updateCapStatus(id, status);
     return successResponse(res, null, 'Status updated.');
   } catch (err) {
     console.error('updateCapStatus error:', err);
@@ -615,17 +607,17 @@ const updateCapStatus = async (req, res) => {
 const assignCap = async (req, res) => {
   try {
     const { id } = req.params;
-    const { responsible_person_code, responsible_person_name, due_date } = req.body;
+    const { responsible_entity_head_id: responsible_person_code, responsible_person_name, due_date } = req.body;
 
     await db.query(
       `UPDATE corrective_actions
-          SET responsible_person_code = ?,
+          SET responsible_entity_head_id = ?,
               responsible_person_name = ?,
               due_date = ?
-        WHERE id IN (
+        WHERE corrective_action_id IN (
           SELECT corrective_action_id FROM cap_questions WHERE cap_id = ?
         )`,
-      [responsible_person_code || null, responsible_person_name || null, due_date || null, parseInt(id)]
+      [responsible_person_code || null, responsible_person_name || null, due_date || null, id]
     );
 
     return successResponse(res, null, 'CAP assigned.');
@@ -641,13 +633,13 @@ const resolveCap = async (req, res) => {
     const { id } = req.params;
     const { resolution_notes } = req.body;
 
-    await CapModel.updateCapStatus(parseInt(id), 'completed');
+    await CapModel.updateCapStatus(id, 'completed');
 
     await db.query(
       `UPDATE corrective_actions
           SET resolution_notes = ?, status = 'resolved', resolved_at = NOW()
-        WHERE id IN (SELECT corrective_action_id FROM cap_questions WHERE cap_id = ?)`,
-      [resolution_notes || null, parseInt(id)]
+        WHERE corrective_action_id IN (SELECT corrective_action_id FROM cap_questions WHERE cap_id = ?)`,
+      [resolution_notes || null, id]
     );
 
     return successResponse(res, null, 'CAP marked completed.');
@@ -672,7 +664,7 @@ const getEntityHeads = async (req, res) => {
 // ── POST /api/caps/create-follow-up ──────────────────────────────
 const createFollowUpAudit = async (req, res) => {
   try {
-    const { parent_audit_id, title, assigned_auditor_code, start_date, end_date, notes } = req.body;
+    const { parent_audit_id, title, assigned_auditor_id, start_date, end_date, notes } = req.body;
     if (!parent_audit_id || !title || !start_date || !end_date) {
       return errorResponse(res, 'parent_audit_id, title, start_date, end_date are required.', 400);
     }
@@ -680,18 +672,19 @@ const createFollowUpAudit = async (req, res) => {
     const parent = await AuditModel.findById(parent_audit_id);
     if (!parent) return errorResponse(res, 'Parent audit not found.', 404);
 
+    const newAuditId = await generateAuditId();
     const audit_code = `AUD-FU-${Date.now()}`;
-    const [res2] = await db.query(
+    await db.query(
       `INSERT INTO audit_assignments
-         (audit_code, checklist_id, title, audit_type, assigned_auditor_code,
+         (audit_id, checklist_id, title, audit_type, assigned_auditor_id,
           start_date, end_date, status, notes, parent_audit_id, audit_mode, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'cap_verification', ?)`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'cap_verification', ?)`,
       [
-        audit_code,
+        newAuditId,
         parent.checklist_id,
         title,
         parent.audit_type,
-        assigned_auditor_code || parent.assigned_auditor_code,
+        assigned_auditor_id || parent.assigned_auditor_id,
         start_date,
         end_date,
         notes || null,
@@ -699,16 +692,15 @@ const createFollowUpAudit = async (req, res) => {
         req.user.userCode,
       ]
     );
-    const newAuditId = res2.insertId;
 
     // Copy entities from parent audit
     const [parentEntities] = await db.query(
-      `SELECT entity_code, entity_type FROM audit_assignment_entities WHERE assignment_id = ? AND is_active = 1`,
+      `SELECT entity_code, entity_type FROM audit_assignment_entities WHERE audit_id = ? AND is_active = 1`,
       [parent_audit_id]
     );
     for (const e of parentEntities) {
       await db.query(
-        `INSERT INTO audit_assignment_entities (assignment_id, entity_code, entity_type) VALUES (?, ?, ?)`,
+        `INSERT INTO audit_assignment_entities (audit_id, entity_code, entity_type) VALUES (?, ?, ?)`,
         [newAuditId, e.entity_code, e.entity_type]
       );
     }
@@ -730,15 +722,15 @@ const uploadCapEvidence = async (req, res) => {
     if (!response_id) return errorResponse(res, 'response_id is required.', 400);
 
     const relativePath = `/uploads/cap-evidence/${req.file.filename}`;
-    const responseId = parseInt(response_id, 10);
-    const capId = parseInt(id, 10);
+    const responseId = response_id;
+    const capId = id;
     
     // Auth check
     const [rows] = await db.query(
-      `SELECT cr.id
+      `SELECT cr.cap_response_id
          FROM cap_responses cr
-         JOIN cap_questions cq ON cq.id = cr.cap_question_id
-        WHERE cr.id = ? AND cq.cap_id = ?
+         JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id
+        WHERE cr.cap_response_id = ? AND cq.cap_id = ?
         LIMIT 1`,
       [responseId, capId]
     );
@@ -747,6 +739,7 @@ const uploadCapEvidence = async (req, res) => {
     }
 
     const evidenceId = await CapModel.addEvidence({
+      cap_response_evidence_id: await generateCapResponseEvidenceId(),
       cap_response_id: responseId,
       file_type: file_type || 'image',
       file_path: relativePath,
@@ -775,7 +768,7 @@ const uploadCapEvidence = async (req, res) => {
 const deleteCapEvidence = async (req, res) => {
   try {
     const { evidenceId } = req.params;
-    const evidence = await CapModel.deleteEvidence(parseInt(evidenceId));
+    const evidence = await CapModel.deleteEvidence(evidenceId);
     if (!evidence) return errorResponse(res, 'Evidence not found.', 404);
 
     // Remove file from disk

@@ -28,21 +28,24 @@ const authenticate = async (req, res, next) => {
 
     const role = decoded.role || 'admin'; // backward compat for old tokens
 
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'audito_admin') {
       const adminId = decoded.userId || decoded.adminId; // backward compat
       const admin = await AdminModel.findById(adminId);
       if (!admin) return errorResponse(res, 'User not found.', 401);
       if (!admin.is_active) return errorResponse(res, 'Account is deactivated.', 403);
 
+      // Use the role from the JWT token (preserves audito_admin)
+      const resolvedRole = admin.role || role;
+
       req.user = {
         id:          admin.id,
-        userCode:    admin.user_id,
+        userCode:    admin.admin_id,
         email:       admin.email,
-        role:        'admin',
+        role:        resolvedRole,
         accountType: admin.account_type,
-        entityType:  admin.entity_type,
-        entityCode:  admin.entity_code,
-        orgLevel:    admin.org_level,
+        entityType:  admin.entity_type || null,
+        entityCode:  admin.entity_code || null,
+        orgLevel:    admin.org_level || 0,
       };
 
     } else if (role === 'auditor') {
@@ -52,7 +55,7 @@ const authenticate = async (req, res, next) => {
 
       req.user = {
         id:                  auditor.id,
-        userCode:            auditor.user_code,
+        userCode:            auditor.auditor_id,
         email:               auditor.email,
         role:                'auditor',
         userType:            auditor.user_type,
@@ -72,7 +75,7 @@ const authenticate = async (req, res, next) => {
 
       req.user = {
         id:                  head.id,
-        userCode:            head.user_code,
+        userCode:            head.entity_head_id,
         email:               head.email,
         role:                'entity_head',
         userType:            head.user_type,

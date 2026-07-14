@@ -1,42 +1,46 @@
 const { db } = require('../config/db');
+const { generateNoticeId } = require('../utils/codeGenerator');
 
 const NoticeModel = {
-  async createNotice({ title, message, notice_date, assign_to_all, created_by_admin_id, created_by_entity_code }) {
-    const [result] = await db.query(
-      `INSERT INTO notices (title, message, notice_date, assign_to_all, created_by_admin_id, created_by_entity_code)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [title, message, notice_date, assign_to_all ? 1 : 0, created_by_admin_id, created_by_entity_code]
+  async createNotice({ notice_id, title, message, notice_date, assign_to_all, created_by_admin_id, created_by_entity_code }) {
+    const id = notice_id || await generateNoticeId();
+    await db.query(
+      `INSERT INTO notices (notice_id, title, message, notice_date, assign_to_all, created_by_admin_id, created_by_entity_code)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, title, message, notice_date, assign_to_all ? 1 : 0, created_by_admin_id, created_by_entity_code]
     );
-    return result.insertId;
+    return id;
   },
 
-  async getNoticeById(id) {
-    const [rows] = await db.query('SELECT * FROM notices WHERE id = ? AND is_active = TRUE', [id]);
+  async getNoticeById(notice_id) {
+    const [rows] = await db.query('SELECT * FROM notices WHERE notice_id = ? AND is_active = TRUE', [notice_id]);
     return rows[0] || null;
   },
 
-  async listByAdmin(entityCode) {
+  async listByAdmin(entityCodes) {
+    const codes = Array.isArray(entityCodes) ? entityCodes : [entityCodes];
+    const ph = codes.map(() => '?').join(',');
     const [rows] = await db.query(
       `SELECT n.*, 
-              GROUP_CONCAT(a.auditor_code) AS assigned_auditor_codes,
-              COUNT(DISTINCT a.id) AS assigned_count
+              GROUP_CONCAT(a.auditor_id) AS assigned_auditor_ids,
+              COUNT(DISTINCT a.notice_auditor_assignment_id) AS assigned_count
        FROM notices n
-       LEFT JOIN notice_auditor_assignments a ON n.id = a.notice_id
-       WHERE n.created_by_entity_code = ? AND n.is_active = TRUE
-       GROUP BY n.id
+       LEFT JOIN notice_auditor_assignments a ON n.notice_id = a.notice_id
+       WHERE n.created_by_entity_code IN (${ph}) AND n.is_active = TRUE
+       GROUP BY n.notice_id
        ORDER BY n.notice_date DESC, n.created_at DESC`,
-      [entityCode]
+      codes
     );
 
     return rows.map((row) => ({
       ...row,
       assign_to_all: !!row.assign_to_all,
-      assigned_auditor_codes: row.assigned_auditor_codes ? String(row.assigned_auditor_codes).split(',') : [],
+      assigned_auditor_ids: row.assigned_auditor_ids ? String(row.assigned_auditor_ids).split(',') : [],
       assigned_count: Number(row.assigned_count || 0),
     }));
   },
 
-  async updateNotice(id, fields) {
+  async updateNotice(notice_id, fields) {
     const allowed = ['title', 'message', 'notice_date', 'assign_to_all'];
     const updates = [];
     const values = [];
@@ -47,43 +51,43 @@ const NoticeModel = {
       }
     }
     if (!updates.length) return false;
-    values.push(id);
-    await db.query(`UPDATE notices SET ${updates.join(', ')} WHERE id = ?`, values);
+    values.push(notice_id);
+    await db.query(`UPDATE notices SET ${updates.join(', ')} WHERE notice_id = ?`, values);
     return true;
   },
 
-  async deactivateNotice(id) {
-    await db.query('UPDATE notices SET is_active = FALSE WHERE id = ?', [id]);
+  async deactivateNotice(notice_id) {
+    await db.query('UPDATE notices SET is_active = FALSE WHERE notice_id = ?', [notice_id]);
   },
 
-  async assignAuditors(notice_id, auditor_codes) {
+  async assignAuditors(notice_id, auditor_ids) {
     await db.query('DELETE FROM notice_auditor_assignments WHERE notice_id = ?', [notice_id]);
-    if (!Array.isArray(auditor_codes) || auditor_codes.length === 0) {
+    if (!Array.isArray(auditor_ids) || auditor_ids.length === 0) {
       return;
     }
 
     const values = [];
-    const placeholders = auditor_codes.map(() => '(?, ?)').join(', ');
-    for (const auditor_code of auditor_codes) {
-      values.push(notice_id, auditor_code);
+    const placeholders = auditor_ids.map(() => '(?, ?)').join(', ');
+    for (const auditor_id of auditor_ids) {
+      values.push(notice_id, auditor_id);
     }
 
     await db.query(
-      `INSERT INTO notice_auditor_assignments (notice_id, auditor_code) VALUES ${placeholders}`,
+      `INSERT INTO notice_auditor_assignments (notice_id, auditor_id) VALUES ${placeholders}`,
       values
     );
   },
 
-  async getNoticesForAuditor(createdByEntityCode, auditorCode) {
+  async getNoticesForAuditor(createdByEntityCode, auditorId) {
     const [rows] = await db.query(
       `SELECT DISTINCT n.*
        FROM notices n
-       LEFT JOIN notice_auditor_assignments a ON n.id = a.notice_id
+       LEFT JOIN notice_auditor_assignments a ON n.notice_id = a.notice_id
        WHERE n.is_active = TRUE
          AND n.created_by_entity_code = ?
-         AND (n.assign_to_all = TRUE OR a.auditor_code = ?)
+         AND (n.assign_to_all = TRUE OR a.auditor_id = ?)
        ORDER BY n.notice_date DESC, n.created_at DESC`,
-      [createdByEntityCode, auditorCode]
+      [createdByEntityCode, auditorId]
     );
     return rows.map((row) => ({
       ...row,

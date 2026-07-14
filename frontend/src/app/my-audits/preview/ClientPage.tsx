@@ -36,7 +36,7 @@ interface AuditEntity {
 }
 
 interface AuditDetail {
-  id: number;
+  id: string;
   audit_code: string;
   title: string;
   audit_type: "internal" | "external";
@@ -48,21 +48,21 @@ interface AuditDetail {
   notes: string | null;
   checklist_name: string | null;
   checklist_id: number | null;
-  assigned_auditor_code: string | null;
+  assigned_auditor_id: string | null;
   assigned_firm_code: string | null;
   created_at: string;
   entities: AuditEntity[];
 }
 
 interface QuestionOption {
-  id: number;
+  id: string;
   option_text: string;
   marks: number;
   order_index: number;
 }
 
 interface ChecklistQuestion {
-  id: number;
+  id: string;
   question_text: string;
   answer_type: "free_text" | "single_option" | "multiple_options" | "dropdown";
   total_marks: number;
@@ -245,7 +245,7 @@ export default function MyAuditPreviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [stepHistory, setStepHistory] = useState<Step[]>([{ mode: "cards", parentCode: null }]);
-  const [openQuestionId, setOpenQuestionId] = useState<number | null>(null);
+  const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");

@@ -24,17 +24,17 @@ import {
 // ── Interfaces ────────────────────────────────────────────────────
 
 interface Evidence {
-  id: number;
+  evidence_id: string;
   file_type: string;
   file_path: string;
   file_name: string;
 }
 
 interface AuditResponse {
-  id: number;
-  question_id: number;
+  audit_response_id: string;
+  checklist_question_id: string;
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   answer_text: string | null;
   selected_option_ids: string | null;
   marks_obtained: number;
@@ -44,13 +44,13 @@ interface AuditResponse {
 }
 
 interface QuestionOption {
-  id: number;
+  option_id: string;
   option_text: string;
   marks: number;
 }
 
 interface ChecklistQuestion {
-  id: number;
+  question_id: string;
   question_text: string;
   answer_type: "free_text" | "single_option" | "multiple_options" | "dropdown";
   total_marks: number;
@@ -60,7 +60,7 @@ interface ChecklistQuestion {
 
 interface EntityQuestion {
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   questions: ChecklistQuestion[];
 }
 
@@ -68,19 +68,20 @@ interface AuditEntity {
   entity_code: string;
   entity_type: string;
   entity_name: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
 }
 
 interface AuditDetail {
-  id: number;
+  audit_id: string;
   audit_code: string;
   title: string;
   status: string;
   entities: AuditEntity[];
   entity_questions?: EntityQuestion[];
   entity_progress?: Array<{
+    audit_entity_progress_id?: string;
     entity_code: string;
-    org_tree_id?: number | null;
+    org_tree_id?: string | null;
     total_questions: number;
     answered_questions: number;
   }>;
@@ -90,13 +91,13 @@ interface TreeNode {
   entity_type: string;
   code: string;
   name: string;
-  edge_id?: number | null;
+  edge_id?: string | null;
   children?: TreeNode[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-function progressKey(entityCode: string, orgTreeId: number | null | undefined) {
+function progressKey(entityCode: string, orgTreeId: string | null | undefined) {
   return `${entityCode}__${orgTreeId ?? "null"}`;
 }
 
@@ -138,7 +139,7 @@ function formatAnswer(q: ChecklistQuestion, r?: AuditResponse): string {
   const answerText = (r?.answer_text || "").trim();
   const selected = normalizeSelectedOptionIds(r?.selected_option_ids || null);
   const selectedText = (q.options || [])
-    .filter((o) => selected.includes(String(o.id)))
+    .filter((o) => selected.includes(String(o.option_id)))
     .map((o) => o.option_text);
   const optStr = selectedText.length ? selectedText.join(", ") : "";
   if (answerText && optStr) return `${answerText} (${optStr})`;
@@ -156,7 +157,7 @@ function subtreeHasQuestions(
   return (node.children || []).some((c) => subtreeHasQuestions(c, questionsMap));
 }
 
-function findNodeByEdgeId(node: TreeNode, edgeId: number): TreeNode | null {
+function findNodeByEdgeId(node: TreeNode, edgeId: string | null): TreeNode | null {
   if (node.edge_id === edgeId) return node;
   for (const c of node.children || []) {
     const f = findNodeByEdgeId(c, edgeId);
@@ -348,7 +349,7 @@ function QuestionPreviewCard({
                     const url = getEvidenceUrl(ev.file_path);
                     return (
                       <a
-                        key={ev.id}
+                        key={ev.evidence_id}
                         href={url}
                         target="_blank"
                         rel="noreferrer"
@@ -381,7 +382,7 @@ export default function EntityHeadAuditPreviewPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const auditId = searchParams.get("id");
+  const auditId = searchParams.get("audit_id");
 
   const [audit, setAudit] = useState<AuditDetail | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
@@ -444,13 +445,13 @@ export default function EntityHeadAuditPreviewPage() {
     const m = new Map<string, AuditResponse>();
     for (const r of responses) {
       const k = progressKey(r.entity_code, (r as any).org_tree_id ?? null);
-      m.set(`${k}::${r.question_id}`, r);
+      m.set(`${k}::${r.checklist_question_id}`, r);
     }
     return m;
   }, [responses]);
 
   const [stepHistory, setStepHistory] = useState<
-    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: number | null })[]
+    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
   >([{ mode: "cards", parentCode: null }]);
 
   if (isLoading) {
@@ -578,7 +579,7 @@ export default function EntityHeadAuditPreviewPage() {
               }
 
               const node = step.orgTreeId != null
-                ? findNodeByEdgeId(tree, Number(step.orgTreeId))
+                ? findNodeByEdgeId(tree, step.orgTreeId)
                 : findInTree(step.entityCode);
               const entityCode = step.entityCode;
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
@@ -614,7 +615,7 @@ export default function EntityHeadAuditPreviewPage() {
 
                   <div className="space-y-3">
                     {qs.map((q, idx) => (
-                      <QuestionPreviewCard key={q.id} question={q} response={responseByEntityQuestion.get(`${key}::${q.id}`)} index={idx + 1} />
+                      <QuestionPreviewCard key={q.question_id} question={q} response={responseByEntityQuestion.get(`${key}::${q.question_id}`)} index={idx + 1} />
                     ))}
                   </div>
 

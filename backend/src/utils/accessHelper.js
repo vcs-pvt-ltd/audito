@@ -179,6 +179,49 @@ async function getAccessibleEntityCodes(adminCode, entityType) {
 }
 
 /**
+ * Resolves an array of entity codes to their names and types.
+ * Returns a Map<string, { name, entity_type }>.
+ */
+async function resolveEntityNames(codes) {
+  if (!codes || codes.length === 0) return new Map();
+  const unique = [...new Set(codes.filter(Boolean))];
+  if (unique.length === 0) return new Map();
+  const ph = unique.map(() => '?').join(',');
+  const params = unique;
+  const [rows] = await db.query(
+    `SELECT cust_code AS code, name, 'Customer' AS entity_type FROM customers WHERE cust_code IN (${ph})
+     UNION ALL
+     SELECT cbo_code, name, 'Buying Office' FROM customer_buying_offices WHERE cbo_code IN (${ph})
+     UNION ALL
+     SELECT csup_code, name, 'Supplier' FROM customer_suppliers WHERE csup_code IN (${ph})
+     UNION ALL
+     SELECT comp_code, name, 'Company' FROM companies WHERE comp_code IN (${ph})
+     UNION ALL
+     SELECT comp_clus_code, name, 'Cluster' FROM company_clusters WHERE comp_clus_code IN (${ph})
+     UNION ALL
+     SELECT comp_fact_code, name, 'Factory' FROM company_factories WHERE comp_fact_code IN (${ph})
+     UNION ALL
+     SELECT comp_unit_code, name, 'Unit' FROM company_units WHERE comp_unit_code IN (${ph})
+     UNION ALL
+     SELECT comp_dept_code, name, 'Department' FROM company_departments WHERE comp_dept_code IN (${ph})
+     UNION ALL
+     SELECT comp_section_code, name, 'Section' FROM company_sections WHERE comp_section_code IN (${ph})
+     UNION ALL
+     SELECT afc_code, name, 'Audit Firm Company' FROM audit_firm_companies WHERE afc_code IN (${ph})
+     UNION ALL
+     SELECT afc_branch_code, name, 'Branch' FROM audit_firm_company_branches WHERE afc_branch_code IN (${ph})
+     UNION ALL
+     SELECT afc_dept_code, name, 'Department' FROM audit_firm_company_departments WHERE afc_dept_code IN (${ph})`,
+    [...params, ...params, ...params, ...params, ...params, ...params, ...params, ...params, ...params, ...params, ...params, ...params]
+  );
+  const map = new Map();
+  for (const r of rows) {
+    map.set(r.code, { name: r.name?.trim?.() || r.code, entity_type: r.entity_type });
+  }
+  return map;
+}
+
+/**
  * Edge ids visible to an entity head: their assigned org-tree node plus all descendants.
  */
 async function getEntityHeadOrgTreeScope(orgTreeId) {
@@ -241,6 +284,7 @@ function extractEntityHeadSubtree(tree, assignedOrgTreeId, scopeIds = []) {
 module.exports = {
   getPartnerAccountCodes,
   getAccessibleEntityCodes,
+  resolveEntityNames,
   getEntityHeadOrgTreeScope,
   entityMatchesOrgTreeScope,
   auditEntitiesInScope,

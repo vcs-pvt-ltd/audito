@@ -17,8 +17,6 @@ import {
   ArrowRight,
   Trash2,
   X,
-  Save,
-  Ban,
   TreePine,
 } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
@@ -65,8 +63,8 @@ interface TreeNode {
   entity_type: string;
   code: string;
   name: string;
-  edge_id?: number;
-  parent_edge_id?: number | null;
+  edge_id?: string | number;
+  parent_edge_id?: string | number | null;
   is_partner_root?: boolean;
   children: TreeNode[];
   [key: string]: unknown;
@@ -77,15 +75,6 @@ interface EntityOption {
   name: string;
   entity_type: string;
   [key: string]: unknown;
-}
-
-interface PendingAdd {
-  edge_id: number;
-  parent_code: string;
-  parent_edge_id: number | null;
-  child_type: string;
-  child_code: string;
-  name: string;
 }
 
 function nodeKey(node: Pick<TreeNode, "code" | "edge_id">): string {
@@ -199,7 +188,7 @@ function AddEntityPanel({
 
   const handleClearSelection = () => setSelected(new Set());
 
-  const handleAddSelected = () => {
+  const handleAdd = () => {
     const queue = entities.filter((e) => selected.has(e.code));
     if (queue.length === 0) return;
     onAdded(queue);
@@ -253,9 +242,9 @@ function AddEntityPanel({
                 className="text-[10px] px-2 py-1 rounded border border-white/10 text-gray-400 hover:text-white hover:border-white/20 transition-all disabled:opacity-50">
                 Clear
               </button>
-              <button type="button" onClick={handleAddSelected} disabled={selectedCount === 0}
+              <button type="button" onClick={handleAdd} disabled={selectedCount === 0}
                 className="text-[10px] px-2 py-1 rounded border border-secondary-500/20 bg-secondary-500/10 text-secondary-300 hover:bg-secondary-500/15 transition-all disabled:opacity-50 shadow-[0_0_10px_rgba(var(--secondary-500),0.1)]">
-                Queue Selected
+                Add
               </button>
             </div>
           </div>
@@ -308,13 +297,11 @@ function AddEntityPanel({
 function OrgCard({
   node,
   isRoot,
-  isUnsaved,
   childCount,
   onRemove,
 }: {
   node: TreeNode;
   isRoot: boolean;
-  isUnsaved: boolean;
   childCount: number;
   onRemove?: () => void;
 }) {
@@ -330,8 +317,6 @@ function OrgCard({
         hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)]
         ${isRoot
           ? "border-secondary-500/40 shadow-[0_0_20px_rgba(var(--secondary-500),0.15)]"
-          : isUnsaved
-          ? "border-dashed border-secondary-500/30"
           : "border-white/10"
         }
         p-4 flex flex-col items-center gap-2 text-center
@@ -341,10 +326,10 @@ function OrgCard({
         {onRemove && (
           <button
             onClick={onRemove}
-            className="absolute top-2 right-2 p-1 rounded-lg opacity-0 group-hover/card:opacity-100 text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
-            title={isUnsaved ? "Discard" : "Queue for removal"}
+            className="absolute top-2 right-2 p-1 rounded-lg opacity-70 group-hover/card:opacity-100 text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
+            title="Remove"
           >
-            {isUnsaved ? <X size={11} /> : <Trash2 size={11} />}
+            <Trash2 size={11} />
           </button>
         )}
 
@@ -360,13 +345,6 @@ function OrgCard({
             {node.entity_type}
           </p>
         </div>
-
-        {/* NEW badge */}
-        {isUnsaved && (
-          <span className="absolute top-2 left-2 text-[8px] px-1.5 py-0.5 rounded bg-secondary-500/15 text-secondary-400 border border-secondary-500/20 font-bold tracking-widest">
-            NEW
-          </span>
-        )}
       </div>
 
       {/* Children count badge — shown at the bottom of the card, above the connector line */}
@@ -394,6 +372,7 @@ function TreeNodeBuilder({
   onRemoveLocal,
   findChildren,
   allowedChildrenMap,
+  savingNodes,
 }: {
   node: TreeNode;
   depth: number;
@@ -402,10 +381,11 @@ function TreeNodeBuilder({
   expandedCodes: Set<string>;
   onToggleExpand: (nodeKey: string) => void;
   onExpandNode: (nodeKey: string) => void;
-  onAddLocal: (parentCode: string, childType: string, children: EntityOption[], parentEdgeId: number | null) => void;
-  onRemoveLocal: (edgeId: number, name: string) => void;
-  findChildren: (parentCode: string, parentEdgeId: number | null) => Set<string>;
+  onAddLocal: (parentCode: string, childType: string, children: EntityOption[], parentEdgeId: string | number | null) => void;
+  onRemoveLocal: (edgeId: string | number, name: string) => void;
+  findChildren: (parentCode: string, parentEdgeId: string | number | null) => Set<string>;
   allowedChildrenMap: Record<string, string[]>;
+  savingNodes: Set<string>;
 }) {
   const thisNodeKey = nodeKey(node);
   const expanded = expandedCodes.has(thisNodeKey);
@@ -418,9 +398,9 @@ function TreeNodeBuilder({
   const addableChildTypeSet = new Set(addableChildTypes);
   const canHaveChildren = childTypes.length > 0;
   const hasChildren = node.children && node.children.length > 0;
-  const isUnsaved = node.edge_id !== undefined && node.edge_id < 0;
   const thisEdgeId = node.edge_id ?? null;
   const totalChildren = node.children?.length ?? 0;
+  const isSaving = savingNodes.has(node.code);
 
   const [openAddPanels, setOpenAddPanels] = useState<Set<string>>(new Set());
 
@@ -448,7 +428,6 @@ function TreeNodeBuilder({
       <OrgCard
         node={node}
         isRoot={isRoot}
-        isUnsaved={isUnsaved}
         childCount={expanded ? 0 : totalChildren}
         onRemove={
           !isRoot && node.edge_id !== undefined && !node.is_partner_root
@@ -467,7 +446,9 @@ function TreeNodeBuilder({
               : "border-secondary-500/30 text-secondary-400 bg-secondary-500/10 hover:bg-secondary-500/15"
             }`}
         >
-          {expanded ? (
+          {isSaving ? (
+            <><div className="w-2.5 h-2.5 border border-secondary-400 border-t-transparent rounded-full animate-spin" /> Saving...</>
+          ) : expanded ? (
             <><ChevronDown size={10} /> Collapse</>
           ) : (
             <><ChevronRight size={10} /> {hasChildren ? `Show ${totalChildren}` : "Add"}</>
@@ -564,6 +545,7 @@ function TreeNodeBuilder({
                             onRemoveLocal={onRemoveLocal}
                             findChildren={findChildren}
                             allowedChildrenMap={allowedChildrenMap}
+                            savingNodes={savingNodes}
                           />
                         </div>
                       ))}
@@ -601,12 +583,7 @@ export default function OrganizationPage() {
   const [allowedChildrenMap, setAllowedChildrenMap] = useState<Record<string, string[]>>({});
 
   const [loading, setLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const tempEdgeCounter = useRef(-1);
-  const [pendingAdds, setPendingAdds] = useState<PendingAdd[]>([]);
-  const [pendingRemoves, setPendingRemoves] = useState<number[]>([]);
-  const hasChanges = pendingAdds.length > 0 || pendingRemoves.length > 0;
+  const [savingNodes, setSavingNodes] = useState<Set<string>>(new Set());
 
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
   const treeLoaded = useRef(false);
@@ -696,13 +673,13 @@ export default function OrganizationPage() {
   }, [tree]);
 
   const findChildCodes = useCallback(
-    (parentCode: string, parentEdgeId: number | null): Set<string> => {
+    (parentCode: string, parentEdgeId: string | number | null): Set<string> => {
       const codes = new Set<string>();
       if (!tree) return codes;
 
       function findNode(node: TreeNode): TreeNode | null {
         const nodeEdgeId = node.edge_id ?? null;
-        if (node.code === parentCode && nodeEdgeId === parentEdgeId) return node;
+        if (node.code === parentCode && String(nodeEdgeId) === String(parentEdgeId)) return node;
         for (const child of node.children || []) {
           const found = findNode(child);
           if (found) return found;
@@ -721,9 +698,11 @@ export default function OrganizationPage() {
   );
 
   const handleAddLocal = useCallback(
-    (parentCode: string, childType: string, children: EntityOption[], parentEdgeId: number | null) => {
+    async (parentCode: string, childType: string, children: EntityOption[], parentEdgeId: string | number | null) => {
+      if (!accessToken || !tree) return;
+
       // ─── Plan Limits Enforcement ──────────────────────────────
-      if (admin?.plan_limits && tree) {
+      if (admin?.plan_limits) {
         // 1. Department Count Limit
         if (childType === "Department") {
           const currentDepts = countDepartments(tree);
@@ -739,9 +718,8 @@ export default function OrganizationPage() {
         }
 
         // 2. Organization Levels (Depth) Limit
-        // We simulate adding the node to find new depth
-        const findDepthOfParent = (node: TreeNode, targetCode: string, targetEdgeId: number | null): number | null => {
-          if (node.code === targetCode && (node.edge_id ?? null) === targetEdgeId) return 1;
+        const findDepthOfParent = (node: TreeNode, targetCode: string, targetEdgeId: string | number | null): number | null => {
+          if (node.code === targetCode && String(node.edge_id ?? null) === String(targetEdgeId)) return 1;
           for (const child of node.children) {
             const d = findDepthOfParent(child, targetCode, targetEdgeId);
             if (d !== null) return d + 1;
@@ -761,163 +739,63 @@ export default function OrganizationPage() {
         }
       }
 
-      const newAdds: PendingAdd[] = children.map((c) => ({
-        edge_id: tempEdgeCounter.current--,
+      // Immediately sync to backend
+      const adds = children.map((c) => ({
         parent_code: parentCode,
-        parent_edge_id: parentEdgeId,
+        parent_edge_id: parentEdgeId !== null ? String(parentEdgeId) : null,
         child_type: childType,
         child_code: c.code,
-        name: c.name,
       }));
 
-      setPendingAdds((prev) => [...prev, ...newAdds]);
-
-      setTree((prevTree) => {
-        if (!prevTree) return prevTree;
-        const clone: TreeNode = JSON.parse(JSON.stringify(prevTree));
-
-        const newNodes: TreeNode[] = newAdds.map((add) => ({
-          entity_type: childType,
-          code: add.child_code,
-          name: add.name,
-          edge_id: add.edge_id,
-          parent_edge_id: parentEdgeId,
-          children: [],
-        }));
-
-        function walk(node: TreeNode): boolean {
-          const nodeEdgeId = node.edge_id ?? null;
-          if (node.code === parentCode && nodeEdgeId === parentEdgeId) {
-            node.children = [...(node.children || []), ...newNodes];
-            return true;
-          }
-          for (const child of node.children || []) {
-            if (walk(child)) return true;
-          }
-          return false;
+      setSavingNodes(prev => new Set([...prev, parentCode]));
+      try {
+        const res = await orgTreeApi.syncTree(accessToken, { adds, removes: [] });
+        if (res.success) {
+          toast(`Added ${children.length} ${pluralize(childType).toLowerCase()}.`, "success");
+          await fetchTree(true);
+        } else {
+          toast(res.message || "Failed to add entity.", "error");
         }
-        walk(clone);
-        return clone;
-      });
+      } catch {
+        toast("Failed to add entity.", "error");
+      } finally {
+        setSavingNodes(prev => { const next = new Set(prev); next.delete(parentCode); return next; });
+      }
     },
-    []
+    [accessToken, tree, toast, fetchTree, countDepartments]
   );
 
   const handleRemoveLocal = useCallback(
-    async (edgeId: number, name: string) => {
-      if (edgeId > 0) {
-        // Established node: provide a warning instead of a hard block
-        const ok = await confirm({
-          title: "Remove from Structure",
-          message: `Are you sure you want to remove "${name}" and its descendants from the organization tree? This will only succeed if these entities have no active users or checklists.`,
-          confirmText: "Remove",
-          variant: "warning",
-        });
-        if (!ok) return;
-        setPendingRemoves((prev) => [...prev, edgeId]);
-      } else {
-        // Discarding a pending add
-        setPendingAdds((prev) => prev.filter((a) => a.edge_id !== edgeId));
-      }
+    async (edgeId: string | number, name: string) => {
+      if (!accessToken) return;
 
-      // Update local tree state visually to remove the node
-      setTree((prevTree) => {
-        if (!prevTree) return prevTree;
-        const clone: TreeNode = JSON.parse(JSON.stringify(prevTree));
-
-        function walk(node: TreeNode): boolean {
-          if (!node.children) return false;
-          const index = node.children.findIndex((c) => c.edge_id === edgeId);
-          if (index !== -1) {
-            node.children.splice(index, 1);
-            return true;
-          }
-          for (const child of node.children) {
-            if (walk(child)) return true;
-          }
-          return false;
-        }
-        walk(clone);
-        return clone;
-      });
-    },
-    [confirm]
-  );
-
-  const handleSaveTree = async () => {
-    if (!accessToken || !tree || isSaving) return;
-    setIsSaving(true);
-
-    function edgeExistsInTree(node: TreeNode, targetEdgeId: number): boolean {
-      if (node.edge_id === targetEdgeId) return true;
-      for (const child of node.children || [])
-        if (edgeExistsInTree(child, targetEdgeId)) return true;
-      return false;
-    }
-
-    const validAdds = pendingAdds
-      .filter((add) => edgeExistsInTree(tree, add.edge_id))
-      .map((a) => ({
-        parent_code: a.parent_code,
-        parent_edge_id:
-          a.parent_edge_id !== null && a.parent_edge_id > 0 ? a.parent_edge_id : null,
-        child_type: a.child_type,
-        child_code: a.child_code,
-      }));
-
-    if (validAdds.length > 0 || pendingRemoves.length > 0) {
-      const res = await orgTreeApi.syncTree(accessToken, {
-        adds: validAdds,
-        removes: pendingRemoves,
-      });
-      if (res.success) {
-        setPendingAdds([]);
-        setPendingRemoves([]);
-        const blocked = (res.data as { blockedRemovals?: string[] } | null)?.blockedRemovals;
-        if (blocked && blocked.length > 0) {
-          // Some removals were kept because the entities are still in use.
-          toast(res.message || "Some entities could not be removed because they are in use.", "warning");
-        } else {
-          toast("Organization structure saved successfully.", "success");
-        }
-        await fetchTree(true);
-      } else {
-        toast(res.message || "Failed to save tree modifications.", "error");
-      }
-    } else {
-      setPendingAdds([]);
-      setPendingRemoves([]);
-    }
-    setIsSaving(false);
-  };
-
-  const handleDiscard = async () => {
-    const ok = await confirm({
-      title: "Discard Changes",
-      message: "Discard all unsaved organization tree changes?",
-      confirmText: "Discard",
-      variant: "warning",
-    });
-    if (!ok) return;
-    setPendingAdds([]);
-    setPendingRemoves([]);
-    fetchTree();
-  };
-
-  const handleRefresh = useCallback(async () => {
-    if (hasChanges) {
       const ok = await confirm({
-        title: "Refresh Tree",
-        message: "Discard unsaved changes and refresh the tree from server?",
-        confirmText: "Refresh",
+        title: "Remove from Structure",
+        message: `Are you sure you want to remove "${name}" and its descendants from the organization tree? This will only succeed if these entities have no active users or checklists.`,
+        confirmText: "Remove",
         variant: "warning",
       });
       if (!ok) return;
-      setPendingAdds([]);
-      setPendingRemoves([]);
-    }
+
+      const res = await orgTreeApi.syncTree(accessToken, { adds: [], removes: [String(edgeId)] });
+      if (res.success) {
+        const blocked = (res.data as { blockedRemovals?: string[] } | null)?.blockedRemovals;
+        if (blocked && blocked.length > 0) {
+          toast(res.message || "Some entities could not be removed because they are in use.", "warning");
+        } else {
+          toast(`"${name}" removed successfully.`, "success");
+        }
+        await fetchTree(true);
+      } else {
+        toast(res.message || "Failed to remove entity.", "error");
+      }
+    },
+    [accessToken, confirm, toast, fetchTree]
+  );
+
+  const handleRefresh = useCallback(async () => {
     fetchTree(true);
-  }, [confirm, fetchTree, hasChanges]);
+  }, [fetchTree]);
 
   if (isLoading) {
     return (
@@ -962,16 +840,6 @@ export default function OrganizationPage() {
             <IconButton bordered onClick={handleRefresh} title="Refresh Tree">
               <RefreshCw size={16} />
             </IconButton>
-            <Button
-              onClick={handleSaveTree}
-              disabled={!hasChanges || isSaving}
-              loading={isSaving}
-              leftIcon={isSaving ? undefined : <Save size={18} />}
-              className="ml-2"
-            >
-              <span className="hidden sm:inline">{isSaving ? "Saving..." : "Save Structure"}</span>
-              <span className="sm:hidden">{isSaving ? "Saving..." : "Save"}</span>
-            </Button>
           </div>
         </div>
 
@@ -1000,6 +868,7 @@ export default function OrganizationPage() {
                 onRemoveLocal={handleRemoveLocal}
                 findChildren={findChildCodes}
                 allowedChildrenMap={allowedChildrenMap}
+                savingNodes={savingNodes}
               />
             </div>
           </div>
@@ -1012,32 +881,6 @@ export default function OrganizationPage() {
           </div>
         )}
       </div>
-
-      {/* Floating Save Action Bar */}
-      {hasChanges && (
-        <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 lg:left-[calc(50%+120px)] lg:max-w-2xl w-[calc(100%-2rem)] sm:w-[90%] z-50 glass border border-secondary-500/30 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5),0_0_20px_rgba(var(--secondary-500),0.1)] p-3 sm:p-4 flex items-center justify-between gap-3 animation-fade-in transition-all">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-secondary-500/20 flex items-center justify-center text-secondary-400 shrink-0">
-              <FolderTree size={20} />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-white">Unsaved Changes</h3>
-              <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">
-                <span className="text-green-400 font-medium">{pendingAdds.length}</span> added,{" "}
-                <span className="text-red-400 font-medium">{pendingRemoves.length}</span> removed.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={handleDiscard} disabled={isSaving} leftIcon={<Ban size={14} />}>
-              <span className="hidden sm:inline">Discard</span>
-            </Button>
-            <Button size="sm" onClick={handleSaveTree} disabled={isSaving} loading={isSaving} leftIcon={isSaving ? undefined : <Save size={14} />}>
-              {isSaving ? "Synchronizing..." : "Save Structure"}
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

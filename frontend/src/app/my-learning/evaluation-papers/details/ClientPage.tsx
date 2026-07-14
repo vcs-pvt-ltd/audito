@@ -9,6 +9,7 @@ import { ArrowLeft, CheckCircle2, Circle, Loader2, Clock, AlertTriangle, Trophy 
 
 interface Paper {
   id: number;
+  evaluation_paper_id: string;
   title: string;
   description?: string | null;
   time_limit_minutes?: number | null;
@@ -18,13 +19,14 @@ interface Paper {
 }
 
 interface Option {
-  id: number;
+  id: string;
   option_text: string;
   marks?: number;
 }
 
 interface Question {
-  id: number;
+  id: string;
+  question_id: string;
   question_text: string;
   answer_type: "free_text" | "single_option" | "multiple_options" | "dropdown";
   marks: number;
@@ -34,8 +36,8 @@ interface Question {
 
 type AnswerState =
   | { answer_type: "free_text"; answer_text: string }
-  | { answer_type: "single_option" | "dropdown"; selected_option_id: number | null }
-  | { answer_type: "multiple_options"; selected_option_ids: number[] };
+  | { answer_type: "single_option" | "dropdown"; selected_option_id: string | null }
+  | { answer_type: "multiple_options"; selected_option_ids: string[] };
 
 // ── Fix: add `percent` to the result type ──
 interface ResultState {
@@ -51,11 +53,11 @@ export default function EvaluationPaperAttemptPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const paperId = Number(searchParams.get("id"));
+  const paperId = searchParams.get("id") || "";
 
   const [paper, setPaper] = useState<Paper | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
+  const [answers, setAnswers] = useState<Record<string, AnswerState>>({});
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -103,12 +105,13 @@ export default function EvaluationPaperAttemptPage() {
     setPaper(d.paper);
     setQuestions(d.questions || []);
 
-    const initial: Record<number, AnswerState> = {};
+    const initial: Record<string, AnswerState> = {};
     (d.questions || []).forEach((q: any) => {
       const t = q.answer_type as Question["answer_type"];
-      if (t === "free_text") initial[q.id] = { answer_type: "free_text", answer_text: "" };
-      else if (t === "multiple_options") initial[q.id] = { answer_type: "multiple_options", selected_option_ids: [] };
-      else initial[q.id] = { answer_type: t || "single_option", selected_option_id: null } as AnswerState;
+      const key = q.question_id ?? String(q.id);
+      if (t === "free_text") initial[key] = { answer_type: "free_text", answer_text: "" };
+      else if (t === "multiple_options") initial[key] = { answer_type: "multiple_options", selected_option_ids: [] };
+      else initial[key] = { answer_type: t || "single_option", selected_option_id: null } as AnswerState;
     });
     setAnswers(initial);
 
@@ -121,7 +124,7 @@ export default function EvaluationPaperAttemptPage() {
   };
 
   useEffect(() => {
-    if (!accessToken || !Number.isFinite(paperId)) return;
+    if (!accessToken || !paperId) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, paperId]);
@@ -134,9 +137,9 @@ export default function EvaluationPaperAttemptPage() {
 
     try {
       const payloadAnswers = Object.entries(answers).map(([qid, a]) => {
-        if (a.answer_type === "free_text") return { question_id: Number(qid), answer_text: a.answer_text };
-        if (a.answer_type === "multiple_options") return { question_id: Number(qid), selected_option_ids: a.selected_option_ids };
-        return { question_id: Number(qid), selected_option_id: a.selected_option_id };
+        if (a.answer_type === "free_text") return { question_id: qid, answer_text: a.answer_text };
+        if (a.answer_type === "multiple_options") return { question_id: qid, selected_option_ids: a.selected_option_ids.map(String) };
+        return { question_id: qid, selected_option_id: a.selected_option_id != null ? String(a.selected_option_id) : null };
       });
 
       const res = await myLearningApi.submitEvaluationPaper(accessToken, paperId, payloadAnswers);
@@ -292,7 +295,7 @@ export default function EvaluationPaperAttemptPage() {
 
       <div className="space-y-4">
         {questions.map((q, idx) => (
-          <div key={q.id} className="glass border border-white/10 rounded-2xl p-5">
+          <div key={q.question_id ?? q.id} className="glass border border-white/10 rounded-2xl p-5">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-white font-semibold">Q{idx + 1}. {q.question_text}</p>
@@ -303,8 +306,8 @@ export default function EvaluationPaperAttemptPage() {
             {q.answer_type === "free_text" ? (
               <div className="mt-4">
                 <textarea
-                  value={(() => { const a = answers[q.id]; if (a && a.answer_type === "free_text" && "answer_text" in a) return a.answer_text; return ""; })()}
-                  onChange={(e) => setAnswers((p) => ({ ...p, [q.id]: { answer_type: "free_text", answer_text: e.target.value } }))}
+                  value={(() => { const a = answers[q.question_id ?? String(q.id)]; if (a && a.answer_type === "free_text" && "answer_text" in a) return a.answer_text; return ""; })()}
+                  onChange={(e) => setAnswers((p) => ({ ...p, [q.question_id ?? String(q.id)]: { answer_type: "free_text", answer_text: e.target.value } }))}
                   className="w-full min-h-[120px] px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 transition-colors"
                   placeholder="Type your answer..."
                 />
@@ -313,16 +316,17 @@ export default function EvaluationPaperAttemptPage() {
             ) : q.answer_type === "multiple_options" ? (
               <div className="mt-4 space-y-2">
                 {q.options.map((o) => {
-                  const current = answers[q.id];
+                  const qKey = q.question_id ?? String(q.id);
+                  const current = answers[qKey];
                   const selectedIds = current && current.answer_type === "multiple_options" && "selected_option_ids" in current ? current.selected_option_ids : [];
                   const checked = selectedIds.includes(o.id);
                   return (
                     <button key={o.id} type="button"
                       onClick={() => setAnswers((p) => {
-                        const cur = p[q.id];
+                        const cur = p[qKey];
                         const ids = cur && cur.answer_type === "multiple_options" && "selected_option_ids" in cur ? [...cur.selected_option_ids] : [];
                         const next = checked ? ids.filter((x) => x !== o.id) : [...ids, o.id];
-                        return { ...p, [q.id]: { answer_type: "multiple_options", selected_option_ids: next } };
+                        return { ...p, [qKey]: { answer_type: "multiple_options", selected_option_ids: next } };
                       })}
                       className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-2 ${checked ? "border-secondary-500/60 bg-secondary-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
                     >
@@ -338,12 +342,13 @@ export default function EvaluationPaperAttemptPage() {
             ) : (
               <div className="mt-4 space-y-2">
                 {q.options.map((o) => {
-                  const current = answers[q.id];
+                  const qKey = q.question_id ?? String(q.id);
+                  const current = answers[qKey];
                   const selectedId = current && (current.answer_type === "single_option" || current.answer_type === "dropdown") ? current.selected_option_id : null;
                   const checked = selectedId === o.id;
                   return (
                     <button key={o.id} type="button"
-                      onClick={() => setAnswers((p) => ({ ...p, [q.id]: { answer_type: q.answer_type, selected_option_id: o.id } as AnswerState }))}
+                      onClick={() => setAnswers((p) => ({ ...p, [qKey]: { answer_type: q.answer_type, selected_option_id: o.id } as AnswerState }))}
                       className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-2 ${checked ? "border-secondary-500/60 bg-secondary-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
                     >
                       {checked ? <CheckCircle2 size={16} className="text-secondary-400 mt-0.5" /> : <Circle size={16} className="text-gray-500 mt-0.5" />}

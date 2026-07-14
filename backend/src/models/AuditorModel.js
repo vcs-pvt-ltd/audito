@@ -9,31 +9,31 @@ const { db } = require('../config/db');
 
 const AuditorModel = {
 
-  async create({ user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, email_token, email_token_expires }) {
-    const [result] = await db.query(
-      `INSERT INTO auditors (user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, email_token, email_token_expires)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [user_code, first_name, last_name, email, phone_number || null, nic || null, country || null, role, user_type, auditor_type || null, assigned_entity_type || null, assigned_entity_code || null, assigned_org_tree_id || null, created_by_admin_id, created_by_entity_code, email_token, email_token_expires]
+  async create({ auditor_id, first_name, last_name, email, phone_number, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, email_token, email_token_expires }) {
+    await db.query(
+      `INSERT INTO auditors (auditor_id, first_name, last_name, email, phone_number, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, email_token, email_token_expires)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [auditor_id, first_name, last_name, email, phone_number || null, country || null, role, user_type, auditor_type || null, assigned_entity_type || null, assigned_entity_code || null, assigned_org_tree_id || null, created_by_admin_id, created_by_entity_code, email_token, email_token_expires]
     );
-    return result.insertId;
+    return auditor_id;
   },
 
-  async createVerified({ user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, password }) {
-    const [result] = await db.query(
-      `INSERT INTO auditors (user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, password, email_verified)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
-      [user_code, first_name, last_name, email, phone_number || null, nic || null, country || null, role, user_type, auditor_type || null, assigned_entity_type || null, assigned_entity_code || null, assigned_org_tree_id || null, created_by_admin_id, created_by_entity_code, password]
+  async createVerified({ auditor_id, first_name, last_name, email, phone_number, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, password }) {
+    await db.query(
+      `INSERT INTO auditors (auditor_id, first_name, last_name, email, phone_number, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, created_by_admin_id, created_by_entity_code, password, email_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
+      [auditor_id, first_name, last_name, email, phone_number || null, country || null, role, user_type, auditor_type || null, assigned_entity_type || null, assigned_entity_code || null, assigned_org_tree_id || null, created_by_admin_id, created_by_entity_code, password]
     );
-    return result.insertId;
+    return auditor_id;
   },
 
-  async findById(id) {
-    const [rows] = await db.query('SELECT * FROM auditors WHERE id = ? AND is_active = TRUE', [id]);
+  async findById(auditor_id) {
+    const [rows] = await db.query('SELECT * FROM auditors WHERE auditor_id = ? AND is_active = TRUE', [auditor_id]);
     return rows[0] || null;
   },
 
-  async findByCode(user_code) {
-    const [rows] = await db.query('SELECT * FROM auditors WHERE user_code = ? AND is_active = TRUE', [user_code]);
+  async findByCode(auditor_id) {
+    const [rows] = await db.query('SELECT * FROM auditors WHERE auditor_id = ? AND is_active = TRUE', [auditor_id]);
     return rows[0] || null;
   },
 
@@ -42,32 +42,32 @@ const AuditorModel = {
     return rows[0] || null;
   },
 
-  async getOnboardingStatus(id) {
+  async getOnboardingStatus(auditor_id) {
     const [rows] = await db.query(
       `SELECT onboarding_completed, onboarding_skipped, onboarding_completed_at
        FROM auditors
-       WHERE id = ?`,
-      [id]
+       WHERE auditor_id = ?`,
+      [auditor_id]
     );
     return rows[0] || null;
   },
 
-  async updateOnboardingStatus(id, { completed, skipped }) {
+  async updateOnboardingStatus(auditor_id, { completed, skipped }) {
     await db.query(
       `UPDATE auditors
        SET onboarding_completed = ?, onboarding_skipped = ?,
            onboarding_completed_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE onboarding_completed_at END
-       WHERE id = ?`,
-      [completed ? 1 : 0, skipped ? 1 : 0, completed ? 1 : 0, id]
+       WHERE auditor_id = ?`,
+      [completed ? 1 : 0, skipped ? 1 : 0, completed ? 1 : 0, auditor_id]
     );
   },
 
-  async resetOnboardingStatus(id) {
+  async resetOnboardingStatus(auditor_id) {
     await db.query(
       `UPDATE auditors
        SET onboarding_completed = 0, onboarding_skipped = 0, onboarding_completed_at = NULL
-       WHERE id = ?`,
-      [id]
+       WHERE auditor_id = ?`,
+      [auditor_id]
     );
   },
 
@@ -79,20 +79,20 @@ const AuditorModel = {
     return rows[0] || null;
   },
 
-  async verifyEmail(id) {
+  async verifyEmail(auditor_id) {
     await db.query(
-      'UPDATE auditors SET email_verified = TRUE, email_token = NULL, email_token_expires = NULL WHERE id = ?',
-      [id]
+      'UPDATE auditors SET email_verified = TRUE, email_token = NULL, email_token_expires = NULL WHERE auditor_id = ?',
+      [auditor_id]
     );
   },
 
-  async setPassword(id, hashedPassword) {
-    await db.query('UPDATE auditors SET password = ? WHERE id = ?', [hashedPassword, id]);
+  async setPassword(auditor_id, hashedPassword) {
+    await db.query('UPDATE auditors SET password = ? WHERE auditor_id = ?', [hashedPassword, auditor_id]);
   },
 
   async listByCreator(entityCode) {
     const [rows] = await db.query(
-      'SELECT id, user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM auditors WHERE created_by_entity_code = ? AND is_active = TRUE ORDER BY created_at DESC',
+      'SELECT auditor_id AS user_code, auditor_id, first_name, last_name, email, phone_number, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM auditors WHERE created_by_entity_code = ? AND is_active = TRUE ORDER BY created_at DESC',
       [entityCode]
     );
     return rows;
@@ -102,14 +102,14 @@ const AuditorModel = {
     if (!entityCodes.length) return [];
     const placeholders = entityCodes.map(() => '?').join(',');
     const [rows] = await db.query(
-      `SELECT id, user_code, first_name, last_name, email, phone_number, nic, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM auditors WHERE created_by_entity_code IN (${placeholders}) AND is_active = TRUE ORDER BY created_at DESC`,
+      `SELECT auditor_id AS user_code, auditor_id, first_name, last_name, email, phone_number, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM auditors WHERE created_by_entity_code IN (${placeholders}) AND is_active = TRUE ORDER BY created_at DESC`,
       entityCodes
     );
     return rows;
   },
 
-  async update(id, fields) {
-    const allowed = ['first_name', 'last_name', 'phone_number', 'nic', 'country', 'assigned_entity_type', 'assigned_entity_code', 'assigned_org_tree_id'];
+  async update(auditor_id, fields) {
+    const allowed = ['first_name', 'last_name', 'phone_number', 'country', 'assigned_entity_type', 'assigned_entity_code', 'assigned_org_tree_id'];
     const sets = [];
     const values = [];
     for (const key of allowed) {
@@ -119,18 +119,18 @@ const AuditorModel = {
       }
     }
     if (sets.length === 0) return;
-    values.push(id);
-    await db.query(`UPDATE auditors SET ${sets.join(', ')} WHERE id = ?`, values);
+    values.push(auditor_id);
+    await db.query(`UPDATE auditors SET ${sets.join(', ')} WHERE auditor_id = ?`, values);
   },
 
-  async deleteById(id) {
-    await db.query('DELETE FROM auditors WHERE id = ?', [id]);
+  async deleteById(auditor_id) {
+    await db.query('DELETE FROM auditors WHERE auditor_id = ?', [auditor_id]);
   },
 
-  async regenerateToken(id, token, expires) {
+  async regenerateToken(auditor_id, token, expires) {
     await db.query(
-      'UPDATE auditors SET email_token = ?, email_token_expires = ? WHERE id = ?',
-      [token, expires, id]
+      'UPDATE auditors SET email_token = ?, email_token_expires = ? WHERE auditor_id = ?',
+      [token, expires, auditor_id]
     );
   }
 };

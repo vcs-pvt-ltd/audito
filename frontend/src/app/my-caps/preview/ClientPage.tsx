@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState, useRef, type ReactNode } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { IconButton, Button } from "@/components/ui";
-import { capApi } from "@/lib/api";
+import { IconButton } from "@/components/ui";
+import { capApi, auditExecutionApi } from "@/lib/api";
 import {
   AlertCircle,
   ArrowLeft,
@@ -12,8 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
-  Search,
-  CheckCircle2,
+  CheckSquare,
   List,
   AlignLeft,
   ClipboardList,
@@ -30,7 +29,7 @@ interface TreeNode {
 }
 
 interface CapQuestion {
-  id: number;
+  id: string;
   entity_code: string;
   question_text: string;
   answer_type: string;
@@ -46,9 +45,9 @@ interface CapEntity {
 }
 
 interface CapDetail {
-  id: number;
-  cap_plan_code: string;
+  cap_id: string;
   title: string;
+  audit_id?: string;
 }
 
 const ENTITY_TYPE_COLORS: Record<string, string> = {
@@ -69,10 +68,24 @@ const ENTITY_TYPE_COLORS: Record<string, string> = {
 
 const ANSWER_TYPE_CONFIG: Record<string, { label: string; color: string; icon: ReactNode }> = {
   free_text: { label: "Free Text", color: "bg-gray-500/20 text-gray-300 border-gray-500/30", icon: <AlignLeft size={11} /> },
-  single_option: { label: "Single Choice", color: "bg-blue-500/20 text-blue-300 border-blue-500/30", icon: <CheckCircle2 size={11} /> },
+  single_option: { label: "Single Choice", color: "bg-blue-500/20 text-blue-300 border-blue-500/30", icon: <CheckSquare size={11} /> },
   multiple_options: { label: "Multiple Choice", color: "bg-purple-500/20 text-purple-300 border-purple-500/30", icon: <List size={11} /> },
   dropdown: { label: "Dropdown", color: "bg-teal-500/20 text-teal-300 border-teal-500/30", icon: <ChevronDown size={11} /> },
 };
+
+function pruneTree(node: TreeNode, capEntityCodes: Set<string>): TreeNode | null {
+  const nodeKey = `${node.code}__${node.edge_id ?? "null"}`;
+  const isCapEntity = capEntityCodes.has(nodeKey) || capEntityCodes.has(`${node.code}__null`);
+  const prunedChildren: TreeNode[] = [];
+  for (const child of node.children || []) {
+    const pruned = pruneTree(child, capEntityCodes);
+    if (pruned) prunedChildren.push(pruned);
+  }
+  if (isCapEntity || prunedChildren.length > 0) {
+    return { ...node, children: prunedChildren };
+  }
+  return null;
+}
 
 function countDescendantQuestions(node: TreeNode, map: Record<string, CapQuestion[]>): number {
   const nodeKey = `${node.code}__${node.edge_id ?? "null"}`;
@@ -89,7 +102,7 @@ function findInTree(node: TreeNode, code: string): TreeNode | null {
   return null;
 }
 
-// ─── Entity Preview Card (CAP – orange accent) ────────────────────
+// ─── Entity Preview Card ─────────────────────────────────────────
 
 function EntityPreviewCard({
   node, index, questionsMap, onClick,
@@ -106,7 +119,7 @@ function EntityPreviewCard({
     <div onClick={onClick}
       className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group">
       <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
-        <span className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-orange-500/30 shrink-0">
+        <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-secondary-500/30 shrink-0">
           {index}
         </span>
         <div className="flex-1 min-w-0">
@@ -123,7 +136,7 @@ function EntityPreviewCard({
           </div>
         )}
         <div className="flex items-center gap-1.5 text-xs text-gray-400">
-          <ClipboardList size={13} className="text-orange-400" />
+          <ClipboardList size={13} className="text-secondary-400" />
           <span>{totalQs} Action{totalQs !== 1 ? "s" : ""}</span>
         </div>
       </div>
@@ -131,7 +144,7 @@ function EntityPreviewCard({
   );
 }
 
-// ─── CAP Action Preview Item ──────────────────────────────────────
+// ─── Action Preview Item ─────────────────────────────────────────
 
 function ActionPreviewItem({
   question, index, isOpen, onToggle,
@@ -149,7 +162,7 @@ function ActionPreviewItem({
         onClick={onToggle}
         className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.03] transition-colors text-left"
       >
-        <span className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold bg-orange-500/10 border border-orange-500/20 text-orange-400">
+        <span className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold bg-white/5 text-gray-500">
           {index}
         </span>
         <p className={`text-sm flex-1 ${isOpen ? "text-white font-medium" : "text-gray-300 truncate"}`}>
@@ -171,7 +184,7 @@ function ActionPreviewItem({
           </div>
           {question.ca_description && (
             <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-3 flex gap-2.5">
-              <Search size={13} className="text-amber-500 shrink-0 mt-0.5" />
+              <ClipboardCheck size={13} className="text-amber-500 shrink-0 mt-0.5" />
               <div className="min-w-0">
                 <p className="text-[9px] text-amber-500/60 font-bold uppercase tracking-widest mb-1">Identified Finding</p>
                 <p className="text-[11px] text-amber-200/80 italic leading-relaxed">{question.ca_description}</p>
@@ -200,13 +213,13 @@ export default function MyCapPreviewPage() {
   const contentRef = useRef<HTMLDivElement>(null);
 
   const [cap, setCap] = useState<CapDetail | null>(null);
-  const [tree, setTree] = useState<TreeNode | null>(null);
+  const [prunedTree, setPrunedTree] = useState<TreeNode | null>(null);
   const [questions, setQuestions] = useState<CapQuestion[]>([]);
   const [entities, setEntities] = useState<CapEntity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [stepHistory, setStepHistory] = useState<Step[]>([{ mode: "cards", parentCode: null }]);
-  const [openQuestionId, setOpenQuestionId] = useState<number | null>(null);
+  const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -221,9 +234,34 @@ export default function MyCapPreviewPage() {
       if (res.success && res.data) {
         const data = res.data as { cap: CapDetail; tree: TreeNode | null; questions: CapQuestion[]; entities: CapEntity[] };
         setCap(data.cap);
-        setTree(data.tree || null);
         setQuestions(data.questions || []);
         setEntities(data.entities || []);
+
+        // Fetch full org tree (like audit preview) then prune by entity codes
+        const auditId = data.cap?.audit_id;
+        if (auditId && data.entities?.length > 0) {
+          try {
+            const treeRes = await auditExecutionApi.getEntityTree(accessToken, String(auditId));
+            if (treeRes.success && treeRes.data) {
+              const td = treeRes.data as { tree: TreeNode | null };
+              if (td.tree) {
+                const capCodes = new Set(data.entities.map((e) => `${e.entity_code}__${(e as any).org_tree_id ?? "null"}`));
+                setPrunedTree(pruneTree(td.tree, capCodes));
+                setLoading(false);
+                return;
+              }
+            }
+          } catch { /* fall through to fallback */ }
+        }
+
+        // Fallback: use the tree from the CAP API response
+        const rawTree = data.tree || null;
+        if (rawTree && data.entities && data.entities.length > 0) {
+          const capCodes = new Set(data.entities.map((e) => `${e.entity_code}__${(e as any).org_tree_id ?? "null"}`));
+          setPrunedTree(pruneTree(rawTree, capCodes));
+        } else {
+          setPrunedTree(rawTree);
+        }
       } else {
         setError(res.message || "Failed to load CAP preview.");
       }
@@ -240,7 +278,7 @@ export default function MyCapPreviewPage() {
   if (isLoading) {
     return (
       <div className="h-screen bg-transparent flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -260,12 +298,12 @@ export default function MyCapPreviewPage() {
   const goBack = () => setStepHistory(h => h.length > 1 ? h.slice(0, -1) : h);
 
   function getCards(): TreeNode[] {
-    if (!tree || activeStep.mode !== "cards") return [];
+    if (!prunedTree || activeStep.mode !== "cards") return [];
     const { parentCode } = activeStep;
     if (parentCode === null) {
-      return ENTITY_TYPE_COLORS[tree.entity_type] ? [tree] : (tree.children ?? []);
+      return ENTITY_TYPE_COLORS[prunedTree.entity_type] ? [prunedTree] : (prunedTree.children ?? []);
     }
-    const parent = findInTree(tree, parentCode);
+    const parent = findInTree(prunedTree, parentCode);
     return parent ? (parent.children ?? []) : [];
   }
 
@@ -290,7 +328,7 @@ export default function MyCapPreviewPage() {
   for (let i = 1; i < stepHistory.length; i++) {
     const s = stepHistory[i];
     if (s.mode === "cards" && s.parentCode) {
-      const found = tree ? findInTree(tree, s.parentCode) : null;
+      const found = prunedTree ? findInTree(prunedTree, s.parentCode) : null;
       breadcrumbs.push(found?.name || s.parentCode);
     } else if (s.mode === "questions") {
       breadcrumbs.push(s.entityName);
@@ -309,7 +347,7 @@ export default function MyCapPreviewPage() {
             </IconButton>
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-white truncate flex items-center gap-2">
-                <ClipboardCheck size={16} className="text-orange-400 shrink-0" />
+                <ClipboardCheck size={16} className="text-secondary-400 shrink-0" />
                 {cap?.title || "Preview CAP"}
               </h1>
               {breadcrumbs.length > 0 && (
@@ -337,7 +375,7 @@ export default function MyCapPreviewPage() {
         {/* Content */}
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : error ? (
           <div className="flex-1 flex items-center justify-center p-6">
@@ -354,7 +392,7 @@ export default function MyCapPreviewPage() {
                 // ── Cards view ──────────────────────────────────
                 (() => {
                   // If no tree, fall back to flat entity list
-                  if (!tree) {
+                  if (!prunedTree) {
                     if (entities.length === 0) {
                       return (
                         <div className="py-16 text-center">
@@ -379,7 +417,7 @@ export default function MyCapPreviewPage() {
                               }])}
                               className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group">
                               <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
-                                <span className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-sm font-bold text-white shrink-0">
+                                <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white shrink-0">
                                   {i + 1}
                                 </span>
                                 <div className="flex-1 min-w-0">
@@ -389,7 +427,7 @@ export default function MyCapPreviewPage() {
                                 <ChevronRight size={18} className="text-white/60 group-hover:text-white transition-all shrink-0" />
                               </div>
                               <div className="p-4 flex items-center gap-1.5 text-xs text-gray-400">
-                                <ClipboardList size={13} className="text-orange-400" />
+                                <ClipboardList size={13} className="text-secondary-400" />
                                 <span>{qs.length} Action{qs.length !== 1 ? "s" : ""}</span>
                               </div>
                             </div>
@@ -433,7 +471,7 @@ export default function MyCapPreviewPage() {
                   };
                   const k = `${step.entityCode}__${step.entityEdgeId ?? 'null'}`;
                   const qs = qMap[k] || qMap[`${step.entityCode}__null`] || [];
-                  const entityNode = tree ? findInTree(tree, step.entityCode) : null;
+                  const entityNode = prunedTree ? findInTree(prunedTree, step.entityCode) : null;
                   const typeCls = entityNode
                     ? (ENTITY_TYPE_COLORS[entityNode.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30")
                     : "bg-gray-500/20 text-gray-300 border-gray-500/30";
@@ -443,8 +481,8 @@ export default function MyCapPreviewPage() {
                     <div className="space-y-4">
                       {/* Entity header */}
                       <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shrink-0">
-                          <Building2 size={15} className="text-orange-400" />
+                        <div className="w-9 h-9 rounded-lg bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center shrink-0">
+                          <Building2 size={15} className="text-secondary-400" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-white truncate">{step.entityName}</p>
@@ -481,17 +519,16 @@ export default function MyCapPreviewPage() {
                         const hasSubEntityQuestions = subEntities.some(c => countDescendantQuestions(c, qMap) > 0);
                         return (
                           <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/[0.06]">
-                            <Button
-                              variant="secondary"
+                            <button
                               onClick={() => setStepHistory(h => h.slice(0, -1))}
-                              leftIcon={<ArrowLeft size={14} />}
+                              className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
                             >
-                              Back
-                            </Button>
+                              <ArrowLeft size={14} /> Back
+                            </button>
                             {hasSubEntityQuestions && (
                               <button
                                 onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: step.entityCode }])}
-                                className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-orange-500 text-white hover:bg-orange-400 transition-all shadow-lg shadow-orange-500/20"
+                                className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
                               >
                                 Next <ChevronRight size={14} />
                               </button>

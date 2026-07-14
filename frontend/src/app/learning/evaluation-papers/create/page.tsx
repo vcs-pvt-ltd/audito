@@ -521,7 +521,8 @@ export default function CreateEvaluationPaperPage() {
       });
       if (!createRes.success) { setSaveError(createRes.message || "Failed to create paper."); return; }
 
-      const newId = (createRes.data as any)?.id ? Number((createRes.data as any).id) : null;
+      const created = (createRes.data as any) ?? {};
+      const newId = created.evaluation_paper_id ?? created.id;
       if (!newId) { setSaveError("Failed to create paper (missing id)."); return; }
 
       const apiQuestions = questions.map((q) => ({

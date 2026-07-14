@@ -124,13 +124,12 @@ interface User {
   last_name: string;
   email: string;
   phone_number?: string;
-  nic?: string;
   country?: string;
   role: string;
   user_type: string;
   assigned_entity_type?: string;
   assigned_entity_code?: string;
-  assigned_org_tree_id?: number;
+  assigned_org_tree_id?: string;
   email_verified: boolean;
   is_active: boolean;
   is_linked?: boolean;
@@ -145,11 +144,10 @@ interface UserFormData {
   last_name: string;
   email: string;
   phone_number: string;
-  nic: string;
   country: string;
   assigned_entity_code: string;
   assigned_entity_type: string;
-  assigned_org_tree_id?: number;
+  assigned_org_tree_id?: string;
 }
 
 // Flattened tree node with parentage info
@@ -215,7 +213,6 @@ function UserModal({
     last_name: "",
     email: "",
     phone_number: "",
-    nic: "",
     country: "",
     assigned_entity_code: "",
     assigned_entity_type: "",
@@ -291,7 +288,7 @@ function UserModal({
   useEffect(() => {
     if (editData && flatNodes.length > 0 && open) {
       const selections: Record<number, string> = {};
-      const targetId = String(editData.assigned_org_tree_id);
+      const targetId = editData.assigned_org_tree_id;
 
       let currentNode = flatNodes.find(n => n.id === targetId);
       if (currentNode) {
@@ -339,7 +336,7 @@ function UserModal({
         ...f,
         assigned_entity_code: selected?.code || code,
         assigned_entity_type: treeSteps[stepIndex],
-        assigned_org_tree_id: selected?.id && /^[0-9]+$/.test(selected.id) ? Number(selected.id) : undefined,
+        assigned_org_tree_id: selected?.id || undefined,
       }));
     } else {
       // Clear assignment if an upstream step changed
@@ -354,7 +351,6 @@ function UserModal({
         last_name: editData.last_name || "",
         email: editData.email || "",
         phone_number: editData.phone_number || "",
-        nic: editData.nic || "",
         country: editData.country || "",
         assigned_entity_code: editData.assigned_entity_code || "",
         assigned_entity_type: editData.assigned_entity_type || "",
@@ -366,7 +362,6 @@ function UserModal({
         last_name: "",
         email: "",
         phone_number: "",
-        nic: "",
         country: orgCountry || "",
         assigned_entity_code: "",
         assigned_entity_type: "",
@@ -395,7 +390,6 @@ function UserModal({
     if (!form.email.trim()) return setError("Email is required.");
     if (!form.country.trim()) return setError("Country is required.");
     if (!form.phone_number.trim()) return setError("Phone number is required.");
-    if (!form.nic.trim()) return setError("NIC is required.");
     if (treeSteps.length > 0 && !form.assigned_entity_code) {
       return setError(`Please select a ${treeSteps[treeSteps.length - 1]} to assign.`);
     }
@@ -531,33 +525,21 @@ function UserModal({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            {/* Phone with dial code prefix */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Phone Number <span className="text-red-400">*</span></label>
-              <div className="flex">
-                {dialCode && (
-                  <span className="inline-flex items-center px-2.5 bg-white/5 border border-white/10 border-r-0 rounded-l-lg text-gray-400 text-sm">
-                    {dialCode}
-                  </span>
-                )}
-                <input
-                  type="text"
-                  value={form.phone_number}
-                  onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
-                  placeholder="Phone number"
-                  className={`${inputClass} ${dialCode ? "rounded-l-none" : ""}`}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-1.5">NIC <span className="text-red-400">*</span></label>
+          {/* Phone with dial code prefix */}
+          <div>
+            <label className="block text-sm text-gray-400 mb-1.5">Phone Number <span className="text-red-400">*</span></label>
+            <div className="flex">
+              {dialCode && (
+                <span className="inline-flex items-center px-2.5 bg-white/5 border border-white/10 border-r-0 rounded-l-lg text-gray-400 text-sm">
+                  {dialCode}
+                </span>
+              )}
               <input
                 type="text"
-                value={form.nic}
-                onChange={(e) => setForm({ ...form, nic: e.target.value })}
-                placeholder="NIC number"
-                className={inputClass}
+                value={form.phone_number}
+                onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
+                placeholder="Phone number"
+                className={`${inputClass} ${dialCode ? "rounded-l-none" : ""}`}
               />
             </div>
           </div>
@@ -635,7 +617,7 @@ function RegisterSelfModal({
 }: {
   open: boolean;
   onNo: () => void;
-  onYes: (entityCode: string, entityType: string, assignedOrgTreeId?: number) => void;
+  onYes: (entityCode: string, entityType: string, assignedOrgTreeId?: string) => void;
   loading: boolean;
   label: string;
   treeSteps: string[];
@@ -647,7 +629,7 @@ function RegisterSelfModal({
   const [stepSelections, setStepSelections] = useState<Record<number, string>>({});
   const [selectedEntityCode, setSelectedEntityCode] = useState("");
   const [selectedEntityType, setSelectedEntityType] = useState("");
-  const [selectedOrgTreeId, setSelectedOrgTreeId] = useState<number | undefined>(undefined);
+  const [selectedOrgTreeId, setSelectedOrgTreeId] = useState<string | undefined>(undefined);
   const [treeLoading, setTreeLoading] = useState(false);
   const [entityError, setEntityError] = useState("");
 
@@ -720,7 +702,7 @@ function RegisterSelfModal({
       const selected = flatNodes.find((n) => n.id === code || n.code === code);
       setSelectedEntityCode(selected?.code || code);
       setSelectedEntityType(treeSteps[stepIndex]);
-      setSelectedOrgTreeId(selected?.id && /^[0-9]+$/.test(selected.id) ? Number(selected.id) : undefined);
+      setSelectedOrgTreeId(selected?.id || undefined);
     } else {
       setSelectedEntityCode("");
       setSelectedEntityType("");
@@ -1055,9 +1037,9 @@ export default function UsersClientPage() {
     }
   }, [accessToken]);
 
-  const getEntityName = (orgTreeId?: number, entityCode?: string) => {
+  const getEntityName = (orgTreeId?: string, entityCode?: string) => {
     if (orgTreeId) {
-      const node = entities.find(n => n.id === String(orgTreeId));
+      const node = entities.find(n => n.id === orgTreeId);
       if (node) return node.name;
     }
     return entityCode || "—";
@@ -1066,11 +1048,12 @@ export default function UsersClientPage() {
   const handleSubmit = async (formData: UserFormData) => {
     if (!accessToken) return;
     if (editUser) {
-      const res = await usersApi.update(accessToken, editUser.user_code, {
+      const userCode = editUser.user_code;
+      if (!userCode) throw new Error("User code is missing — cannot update.");
+      const res = await usersApi.update(accessToken, userCode, {
         first_name: formData.first_name,
         last_name: formData.last_name,
         phone_number: formData.phone_number,
-        nic: formData.nic,
         country: formData.country,
         assigned_entity_code: formData.assigned_entity_code || undefined,
         assigned_entity_type: formData.assigned_entity_type || undefined,
@@ -1084,7 +1067,6 @@ export default function UsersClientPage() {
         last_name: formData.last_name,
         email: formData.email,
         phone_number: formData.phone_number,
-        nic: formData.nic,
         country: formData.country,
         user_type: config.backendType,
         assigned_entity_code: formData.assigned_entity_code || undefined,
@@ -1101,7 +1083,7 @@ export default function UsersClientPage() {
     email: string,
     assignedEntityCode: string,
     assignedEntityType: string,
-    assignedOrgTreeId?: number
+    assignedOrgTreeId?: string
   ) => {
     if (!accessToken) return;
     const res = await usersApi.createFromAdmin(accessToken, {
@@ -1116,7 +1098,7 @@ export default function UsersClientPage() {
     fetchUsers();
   };
 
-  const handleRegisterSelf = async (entityCode: string, entityType: string, assignedOrgTreeId?: number) => {
+  const handleRegisterSelf = async (entityCode: string, entityType: string, assignedOrgTreeId?: string) => {
     if (!accessToken || !admin) return;
     setRegisterSelfLoading(true);
     try {
@@ -1231,7 +1213,7 @@ export default function UsersClientPage() {
                       const itemIndex = (currentPage - 1) * pageSize + index + 1;
                       return (
                         <tr
-                          key={user.user_code}
+                          key={user.user_code || `user-${index}`}
                           className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
                         >
                           <td className="px-4 py-3 text-gray-400 text-sm">{itemIndex}</td>
@@ -1306,7 +1288,7 @@ export default function UsersClientPage() {
               {paginated.map((user, index) => {
                 const itemIndex = (currentPage - 1) * pageSize + index + 1;
                 return (
-                  <div key={user.user_code} className="glass rounded-xl border border-white/10 p-4">
+                  <div key={user.user_code || `user-mobile-${index}`} className="glass rounded-xl border border-white/10 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-xs text-gray-500">#{itemIndex}</p>

@@ -16,7 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 type AuditStatus = "plan" | "in_progress" | "completed";
 
 interface DashboardAudit {
-  id: number;
+  audit_id: string;
   audit_code: string;
   title: string;
   audit_type: string;
@@ -172,7 +172,7 @@ export default function AuditorDashboard({ overview, admin }: { overview: Dashbo
       if (a.start_date) {
         const dateStr = a.start_date.substring(0, 10);
         if (!map[dateStr]) map[dateStr] = [];
-        if (!map[dateStr].some(exist => exist.id === a.id)) {
+        if (!map[dateStr].some(exist => exist.audit_id === a.audit_id)) {
           map[dateStr].push(a);
         }
       }
@@ -201,7 +201,7 @@ export default function AuditorDashboard({ overview, admin }: { overview: Dashbo
           <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-0.5 pointer-events-none">
             {dayAudits.slice(0, 3).map((audit) => (
               <span 
-                key={audit.id} 
+                key={audit.audit_id} 
                 className={`h-1.5 w-1.5 rounded-full ${
                   audit.status === "completed" 
                     ? "bg-emerald-400" 
@@ -430,8 +430,8 @@ export default function AuditorDashboard({ overview, admin }: { overview: Dashbo
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1 custom-scrollbar">
                   {selectedDateAudits.map((a) => (
                     <div 
-                      key={a.id} 
-                      onClick={() => router.push(`/my-audits/details?id=${a.id}`)}
+                      key={a.audit_id} 
+                      onClick={() => router.push(`/my-audits/details?id=${a.audit_id}`)}
                       className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all cursor-pointer flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0 flex-1">
@@ -481,8 +481,8 @@ export default function AuditorDashboard({ overview, admin }: { overview: Dashbo
                 ) : (
                   currentActiveAudits.map((a) => (
                     <button 
-                      key={a.id} 
-                      onClick={() => router.push(`/my-audits/details?id=${a.id}`)}
+                      key={a.audit_id} 
+                      onClick={() => router.push(`/my-audits/details?id=${a.audit_id}`)}
                       className="w-full p-3 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-secondary-500/20 text-left transition-all group flex flex-col gap-2"
                     >
                       <div className="flex items-start justify-between gap-3 w-full">

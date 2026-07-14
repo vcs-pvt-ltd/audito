@@ -20,6 +20,7 @@ import {
   Filter,
   Send,
   BookOpen,
+  Building2,
 } from "lucide-react";
 import { Button, IconButton, Modal, Input, Textarea, Table, THead, Th, TBody, Tr, Td } from "@/components/ui";
 
@@ -38,7 +39,8 @@ interface NoticeItem {
   notice_date: string;
   assign_to_all: boolean;
   assigned_count: number;
-  assigned_auditor_codes: string[];
+  assigned_auditor_ids: string[];
+  entity_name?: string | null;
 }
 
 function AddNoticeModal({
@@ -199,7 +201,7 @@ function ViewNoticeAssignmentsModal({
 
   const assigned = notice.assign_to_all
     ? allAuditors
-    : allAuditors.filter(a => notice.assigned_auditor_codes.includes(a.user_code));
+    : allAuditors.filter(a => notice.assigned_auditor_ids.includes(a.user_code));
 
   return (
     <Modal
@@ -300,7 +302,7 @@ export default function SettingsNoticesPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!accessToken) return;
     const ok = await confirm({
       title: "Delete Notice",
@@ -369,6 +371,7 @@ export default function SettingsNoticesPage() {
                 <THead>
                   <Th align="center" className="w-12">#</Th>
                   <Th>Title</Th>
+                  <Th>Organization</Th>
                   <Th align="center">Scope</Th>
                   <Th align="center">Released</Th>
                   <Th align="right">Actions</Th>
@@ -382,6 +385,16 @@ export default function SettingsNoticesPage() {
                           <h3 className="text-sm font-semibold text-white group-hover:text-secondary-400 transition-colors">{n.title}</h3>
                           <p className="text-xs text-gray-400 line-clamp-1 mt-0.5 leading-relaxed">{n.message}</p>
                         </div>
+                      </Td>
+                      <Td>
+                        {n.entity_name ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                            <Building2 size={12} className="text-gray-500 shrink-0" />
+                            <span className="truncate max-w-[120px]">{n.entity_name}</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-600">—</span>
+                        )}
                       </Td>
                       <Td align="center">
                         {n.assign_to_all ? (
@@ -401,7 +414,7 @@ export default function SettingsNoticesPage() {
                           >
                             {n.assign_to_all ? "Auditors" : `${n.assigned_count} Assigned`}
                           </button>
-                          <IconButton tone="danger" onClick={() => handleDelete(n.id)}>
+                          <IconButton tone="danger" onClick={() => handleDelete(String(n.id))}>
                             <Trash2 size={14} />
                           </IconButton>
                         </div>
@@ -435,9 +448,9 @@ export default function SettingsNoticesPage() {
                         >
                            {n.assign_to_all ? "Auditors" : `${n.assigned_count} Assigned`}
                         </button>
-                        <IconButton tone="danger" onClick={() => handleDelete(n.id)}>
-                           <Trash2 size={14} />
-                        </IconButton>
+                         <IconButton tone="danger" onClick={() => handleDelete(String(n.id))}>
+                            <Trash2 size={14} />
+                         </IconButton>
                      </div>
                   </div>
                ))}

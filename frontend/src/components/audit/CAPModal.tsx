@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import { X, ClipboardList, ChevronDown, ChevronRight } from "lucide-react";
 
 export interface CapItem {
-  id: number;
-  cap_code: string;
-  audit_id: number;
+  id: string;
+  cap_id: string;
+  audit_id: string;
   entity_code: string;
   entity_name?: string;
-  question_id: number;
+  question_id: string;
   question_text?: string;
   severity: "low" | "medium" | "high" | "critical";
   status: "open" | "in_progress" | "resolved" | "verified" | "closed";
@@ -144,7 +144,7 @@ export default function CAPModal({
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-[10px] font-mono text-secondary-400 bg-secondary-500/10 px-2 py-0.5 rounded-full border border-secondary-500/20">
-                                    {cap.cap_code}
+                                    {cap.cap_id}
                                   </span>
                                   <span
                                     className={`text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase ${CAP_SEVERITY_BADGE[cap.severity] || ""}`}

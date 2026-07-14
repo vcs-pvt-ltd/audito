@@ -44,7 +44,11 @@ function LoginForm() {
       const res = await login({ email, password });
 
       if (res.success) {
-        router.push("/dashboard");
+        // Check role from the auth context after login
+        // The login function updates the auth state synchronously in context
+        // We read from context — but it may not have updated yet, so we use an inline check
+        const isAuditoAdmin = (res as any).role === "audito_admin";
+        router.push(isAuditoAdmin ? "/admin-panel/dashboard" : "/dashboard");
       } else if (res.paymentRequired && res.payment?.payment_code) {
         router.push(`/payment?code=${res.payment.payment_code}`);
       } else if (res.subscriptionExpired) {

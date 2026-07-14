@@ -21,7 +21,7 @@ const CustomerModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, cust_code]
     );
-    return result.insertId;
+    return cust_code;
   },
 
   async findCustomerByCode(cust_code) {
@@ -60,7 +60,7 @@ const CustomerModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, cust_code || null, cbo_code]
     );
-    return result.insertId;
+    return cbo_code;
   },
 
   async findBuyingOfficeByCode(cbo_code) {
@@ -111,7 +111,7 @@ const CustomerModel = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, cust_code || null, csup_code]
     );
-    return result.insertId;
+    return csup_code;
   },
 
   async findSupplierByCode(csup_code) {

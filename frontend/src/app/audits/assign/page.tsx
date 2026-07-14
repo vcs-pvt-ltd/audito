@@ -22,7 +22,7 @@ import {
 import { Button, IconButton, fieldClass } from "@/components/ui";
 
 interface TreeNode {
-  id: number;
+  id: string;
   parent_code: string;
   child_code: string;
   child_type: string;
@@ -45,8 +45,8 @@ function AuditAssignContent() {
   const [treeData, setTreeData] = useState<any[]>([]);
   const [allAuditors, setAllAuditors] = useState<any[]>([]);
 
-  const [selBranchId, setSelBranchId] = useState<number | "">("");
-  const [selDeptId, setSelDeptId] = useState<number | "">("");
+  const [selBranchId, setSelBranchId] = useState<string | "">("");
+  const [selDeptId, setSelDeptId] = useState<string | "">("");
   const [selAuditorCode, setSelAuditorCode] = useState("");
 
   useEffect(() => {
@@ -64,8 +64,8 @@ function AuditAssignContent() {
         if (aRes.success && aRes.data) {
           const fetchedAudit = (aRes.data as any).audit || aRes.data;
           setAudit(fetchedAudit);
-          if (fetchedAudit.assigned_auditor_code) {
-            setSelAuditorCode(fetchedAudit.assigned_auditor_code);
+          if (fetchedAudit.assigned_auditor_id) {
+            setSelAuditorCode(fetchedAudit.assigned_auditor_id);
           }
         }
         if (tRes.success) {
@@ -92,7 +92,7 @@ function AuditAssignContent() {
         const targetId = currentAuditor.assigned_org_tree_id;
 
         // Find if this ID is a branch or a dept
-        const findNode = (nodes: any[], id: number): any => {
+        const findNode = (nodes: any[], id: string): any => {
           if (!Array.isArray(nodes)) return null;
           for (const n of nodes) {
             const nId = n.edge_id || n.id;
@@ -113,11 +113,11 @@ function AuditAssignContent() {
           const nodeType = node.child_type || node.entity_type || "";
 
           if (nodeType.includes("Branch")) {
-            setSelBranchId(Number(nodeId));
+            setSelBranchId(String(nodeId));
           } else if (nodeType.includes("Department") || nodeType.includes("Dept")) {
-            setSelDeptId(Number(nodeId));
+            setSelDeptId(String(nodeId));
             // Find parent branch
-            const findParent = (nodes: any[], childId: number): any => {
+            const findParent = (nodes: any[], childId: string): any => {
               for (const n of nodes) {
                 if (n.children && n.children.some((c: any) => String(c.edge_id || c.id) === String(childId))) return n;
                 if (n.children) {
@@ -130,7 +130,7 @@ function AuditAssignContent() {
             const parent = findParent(roots, nodeId);
             if (parent) {
               const pId = parent.edge_id || parent.id;
-              setSelBranchId(Number(pId));
+              setSelBranchId(String(pId));
             }
           }
         }
@@ -203,21 +203,21 @@ function AuditAssignContent() {
     if (!selBranchId && !selDeptId) return [];
 
     // Get all valid org tree IDs for the selected scope
-    const allowedIds = new Set<number>();
+    const allowedIds = new Set<string>();
 
     if (selDeptId) {
-      allowedIds.add(Number(selDeptId));
+      allowedIds.add(String(selDeptId));
     } else if (selBranchId) {
       const collectIds = (nodes: any[]) => {
         if (!Array.isArray(nodes)) return;
         for (const n of nodes) {
           const nId = n.edge_id || n.id;
           if (String(nId) === String(selBranchId)) {
-            allowedIds.add(Number(nId));
+            allowedIds.add(String(nId));
             const addChildren = (cnodes: any[]) => {
               for (const cn of cnodes) {
                 const cnId = cn.edge_id || cn.id;
-                allowedIds.add(Number(cnId));
+                allowedIds.add(String(cnId));
                 if (cn.children) addChildren(cn.children);
               }
             };
@@ -233,7 +233,7 @@ function AuditAssignContent() {
       collectIds(roots);
     }
 
-    return allAuditors.filter(u => u.assigned_org_tree_id && allowedIds.has(u.assigned_org_tree_id));
+    return allAuditors.filter(u => u.assigned_org_tree_id && allowedIds.has(String(u.assigned_org_tree_id)));
   }, [allAuditors, treeData, selBranchId, selDeptId]);
 
   const handleSave = async () => {
@@ -242,7 +242,7 @@ function AuditAssignContent() {
     try {
       // Per user request: auditors table identifies entity, no need for assigned_org_tree_id in audit_assignments
       const res = await auditApi.update(accessToken, auditId, {
-        assigned_auditor_code: selAuditorCode
+        assigned_auditor_id: selAuditorCode
       });
       if (res.success) {
         toast("Auditor assigned successfully.", "success");
@@ -323,7 +323,7 @@ function AuditAssignContent() {
                       <select
                         value={selBranchId}
                         onChange={(e) => {
-                          setSelBranchId(e.target.value ? Number(e.target.value) : "");
+                          setSelBranchId(e.target.value ? e.target.value : "");
                           setSelDeptId("");
                           setSelAuditorCode("");
                         }}
@@ -345,7 +345,7 @@ function AuditAssignContent() {
                         value={selDeptId}
                         disabled={!selBranchId}
                         onChange={(e) => {
-                          setSelDeptId(e.target.value ? Number(e.target.value) : "");
+                          setSelDeptId(e.target.value ? e.target.value : "");
                           setSelAuditorCode("");
                         }}
                         className={`${selectClass} disabled:opacity-30 disabled:cursor-not-allowed`}
@@ -437,7 +437,7 @@ function AuditAssignContent() {
                   leftIcon={<UserPlus size={18} strokeWidth={2.5} />}
                   className="px-8 py-3.5 rounded-2xl font-bold disabled:grayscale shadow-lg shadow-secondary-500/20 active:scale-95"
                 >
-                  {audit.assigned_auditor_code ? "Update Assignment" : "Finalize Assignment"}
+                  {audit.assigned_auditor_id ? "Update Assignment" : "Finalize Assignment"}
                 </Button>
               </div>
             </div>

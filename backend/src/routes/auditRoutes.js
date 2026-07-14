@@ -16,7 +16,7 @@ const {
 router.use(authenticate);
 
 // Helper route: entities that have questions in a checklist
-router.get('/checklist/:id/entities', getChecklistEntities);
+router.get('/checklist/:checklist_id/entities', getChecklistEntities);
 
 // Count route — must be before /:id to avoid being swallowed by the param route
 router.get('/count', getAuditCount);

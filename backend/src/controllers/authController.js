@@ -15,6 +15,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const AdminModel = require('../models/AdminModel');
+const PromoCodeModel = require('../models/PromoCodeModel');
 const AuditorModel = require('../models/AuditorModel');
 const EntityHeadModel = require('../models/EntityHeadModel');
 const CustomerModel = require('../models/CustomerModel');
@@ -33,7 +34,9 @@ const {
   generateAfcCode,
   generateAfcBranchCode,
   generateAfcDeptCode,
-  generateAdminUserCode
+  generateAdminUserCode,
+  generateRefreshTokenId,
+  generatePasswordResetOtpId
 } = require('../utils/codeGenerator');
 const { successResponse, errorResponse, validateRequiredFields, isValidEmail } = require('../utils/helpers');
 const { db } = require('../config/db');
@@ -84,22 +87,23 @@ function normalizeAccountType(accountType, entityType) {
 
 function generateTokensForRole(role, record) {
   let payload;
+  const actualRole = record.role || role;
 
-  if (role === 'admin') {
+  if (actualRole === 'admin' || actualRole === 'audito_admin') {
     payload = {
-      userId: record.id,
-      userCode: record.user_id,
+      userId: record.admin_id,
+      userCode: record.admin_id,
       email: record.email,
-      role: 'admin',
-      accountType: normalizeAccountType(record.account_type, record.entity_type),
-      entityType: record.entity_type,
-      entityCode: record.entity_code,
-      orgLevel: record.org_level,
+      role: actualRole,
+      accountType: actualRole === 'audito_admin' ? 'audito_admin' : normalizeAccountType(record.account_type, record.entity_type),
+      entityType: record.entity_type || null,
+      entityCode: record.entity_code || null,
+      orgLevel: record.org_level || 0,
     };
-  } else if (role === 'auditor') {
+  } else if (actualRole === 'auditor') {
     payload = {
-      userId: record.id,
-      userCode: record.user_code,
+      userId: record.auditor_id,
+      userCode: record.auditor_id,
       email: record.email,
       role: 'auditor',
       userType: record.user_type,
@@ -111,8 +115,8 @@ function generateTokensForRole(role, record) {
   } else {
     // entity_head
     payload = {
-      userId: record.id,
-      userCode: record.user_code,
+      userId: record.entity_head_id,
+      userCode: record.entity_head_id,
       email: record.email,
       role: 'entity_head',
       userType: record.user_type,
@@ -127,7 +131,7 @@ function generateTokensForRole(role, record) {
   });
 
   const refreshToken = jwt.sign(
-    { userId: record.id, userCode: payload.userCode, role },
+    { userId: payload.userId, userCode: payload.userCode, role: actualRole },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: '7d' }
   );
@@ -138,20 +142,20 @@ function generateTokensForRole(role, record) {
 // ─── Helpers: build user response & collect accounts ─────────────
 
 function buildUserResponse(role, record) {
-  if (role === 'admin') {
+  const actualRole = record.role || role;
+  if (actualRole === 'admin' || actualRole === 'audito_admin') {
     return {
-      id: record.user_id,
+      id: record.admin_id,
       first_name: record.first_name,
       last_name: record.last_name,
       email: record.email,
       phone_number: record.phone_number || null,
-      nic: record.nic || null,
       country: record.country || null,
-      role: 'admin',
-      account_type: normalizeAccountType(record.account_type, record.entity_type),
-      entity_type: record.entity_type,
-      entity_code: record.entity_code,
-      org_level: record.org_level,
+      role: actualRole,
+      account_type: actualRole === 'audito_admin' ? 'audito_admin' : normalizeAccountType(record.account_type, record.entity_type),
+      entity_type: record.entity_type || null,
+      entity_code: record.entity_code || null,
+      org_level: record.org_level || 0,
       user_type: null,
       assigned_entity_type: null,
       assigned_entity_code: null,
@@ -164,12 +168,11 @@ function buildUserResponse(role, record) {
   }
   // auditor or entity_head
   return {
-    id: record.user_code,
+    id: role === 'auditor' ? record.auditor_id : record.entity_head_id,
     first_name: record.first_name,
     last_name: record.last_name,
     email: record.email,
     phone_number: record.phone_number || null,
-    nic: record.nic || null,
     country: record.country || null,
     role,
     account_type: null,
@@ -192,6 +195,7 @@ function buildUserResponse(role, record) {
 }
 
 function getRootEntityCode(role, record) {
+  if (role === 'audito_admin') return null;
   return role === 'admin' ? record.entity_code : record.created_by_entity_code;
 }
 
@@ -220,15 +224,16 @@ async function collectAccounts(email) {
 
   const admin = await AdminModel.findByEmail(email);
   if (admin && admin.is_active) {
+    const actualRole = admin.role || 'admin';
     accounts.push({
-      role: 'admin',
-      user_code: admin.user_id,
+      role: actualRole,
+      user_code: admin.admin_id,
       first_name: admin.first_name,
       last_name: admin.last_name,
-      account_type: normalizeAccountType(admin.account_type, admin.entity_type),
-      entity_type: admin.entity_type,
-      entity_code: admin.entity_code,
-      org_level: admin.org_level,
+      account_type: actualRole === 'audito_admin' ? 'audito_admin' : normalizeAccountType(admin.account_type, admin.entity_type),
+      entity_type: admin.entity_type || null,
+      entity_code: admin.entity_code || null,
+      org_level: admin.org_level || 0,
       user_type: null,
     });
   }
@@ -237,7 +242,7 @@ async function collectAccounts(email) {
   if (auditor && auditor.is_active && auditor.email_verified && auditor.password) {
     accounts.push({
       role: 'auditor',
-      user_code: auditor.user_code,
+      user_code: auditor.auditor_id,
       first_name: auditor.first_name,
       last_name: auditor.last_name,
       account_type: null,
@@ -253,7 +258,7 @@ async function collectAccounts(email) {
   if (head && head.is_active && head.email_verified && head.password) {
     accounts.push({
       role: 'entity_head',
-      user_code: head.user_code,
+      user_code: head.entity_head_id,
       first_name: head.first_name,
       last_name: head.last_name,
       account_type: null,
@@ -294,14 +299,14 @@ const register = async (req, res) => {
       org_phone_number,
       first_name,
       last_name,
-      nic,
       email,
       phone_number,
       company_type,
       password,
       plan_name,
       billing_cycle,
-      timezone
+      timezone,
+      promo_code
     } = req.body;
 
     // Validate required fields
@@ -309,6 +314,16 @@ const register = async (req, res) => {
       'entity_type', 'org_name', 'first_name', 'last_name', 'email', 'password', 'plan_name'
     ]);
     if (missing) return errorResponse(res, missing, 400);
+
+    // Validate promo code if provided
+    let discount = 0;
+    if (promo_code) {
+      const promo = await PromoCodeModel.findByCode(promo_code);
+      if (!promo) {
+        return errorResponse(res, 'Invalid or expired promo code.', 400);
+      }
+      discount = parseFloat(promo.discount_percentage);
+    }
 
     if (!VALID_ENTITY_TYPES.includes(entity_type)) {
       return errorResponse(
@@ -340,14 +355,6 @@ const register = async (req, res) => {
       );
       if (existing.length > 0) {
         return errorResponse(res, 'Registration number already exists for this entity type.', 409);
-      }
-    }
-
-    // Check duplicate NIC in admins table
-    if (nic) {
-      const [nicRows] = await db.query('SELECT id FROM admins WHERE nic = ? LIMIT 1', [nic]);
-      if (nicRows.length > 0) {
-        return errorResponse(res, 'NIC is already registered with another account.', 409);
       }
     }
 
@@ -394,10 +401,9 @@ const register = async (req, res) => {
 
     // Insert admin with generic entity_code
     const adminId = await AdminModel.create({
-      user_id: userCode,
+      admin_id: userCode,
       first_name,
       last_name,
-      nic: nic || null,
       email,
       country: country || null,
       phone_number: phone_number || null,
@@ -410,7 +416,11 @@ const register = async (req, res) => {
 
     // Free plans are activated immediately. Paid plans defer the subscription
     // until payment is confirmed — until then limits fall back to Basic.
-    const planAmount = SubscriptionModel.computeAmount(plan_name, billing_cycle);
+    let planAmount = SubscriptionModel.computeAmount(plan_name, billing_cycle);
+    if (discount > 0) {
+      planAmount = planAmount * (1 - discount / 100);
+      planAmount = Math.max(0, parseFloat(planAmount.toFixed(2)));
+    }
     if (planAmount <= 0) {
       await SubscriptionModel.createSubscription(connection, orgCode, plan_name, 'None');
     }
@@ -488,7 +498,7 @@ const login = async (req, res) => {
       if (!adminRec.is_verified) {
         return errorResponse(res, 'Please verify your email address. Check your inbox for the verification link.', 403);
       }
-      candidates.push({ role: 'admin', record: adminRec });
+      candidates.push({ role: adminRec.role || 'admin', record: adminRec });
     }
     if (headRec && headRec.is_active && headRec.email_verified && headRec.password) {
       candidates.push({ role: 'entity_head', record: headRec });
@@ -588,13 +598,20 @@ const login = async (req, res) => {
 
     // Store refresh token
     const refreshExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const recordId = activeRole === 'admin' || activeRole === 'audito_admin'
+      ? activeRecord.admin_id
+      : activeRole === 'auditor'
+        ? activeRecord.auditor_id
+        : activeRecord.entity_head_id;
+        const refreshTokenId = await generateRefreshTokenId();
+
     await db.query(
-      'INSERT INTO refresh_tokens (admin_id, user_role, token, expires_at) VALUES (?, ?, ?, ?)',
-      [activeRecord.id, activeRole, tokens.refreshToken, refreshExpiry]
+      'INSERT INTO refresh_tokens (refresh_token_id, admin_id, user_role, token, expires_at) VALUES (?, ?, ?, ?, ?)',
+      [refreshTokenId, recordId, activeRole, tokens.refreshToken, refreshExpiry]
     );
 
     if (activeRole === 'admin') {
-      await AdminModel.updateLastLogin(activeRecord.id);
+      await AdminModel.updateLastLogin(recordId);
     }
 
     // Collect ALL available accounts for this email (regardless of password match)
@@ -639,7 +656,7 @@ const refreshToken = async (req, res) => {
     if (rows.length === 0) return errorResponse(res, 'Invalid or expired refresh token.', 401);
 
     let record;
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'audito_admin') {
       record = await AdminModel.findById(userId);
     } else if (role === 'auditor') {
       record = await AuditorModel.findById(userId);
@@ -653,9 +670,16 @@ const refreshToken = async (req, res) => {
     const tokens = generateTokensForRole(role, record);
 
     const refreshExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const recordId = role === 'admin' || role === 'audito_admin'
+      ? record.admin_id
+      : role === 'auditor'
+        ? record.auditor_id
+        : record.entity_head_id;
+const refreshTokenId = await generateRefreshTokenId();
+
     await db.query(
-      'INSERT INTO refresh_tokens (admin_id, user_role, token, expires_at) VALUES (?, ?, ?, ?)',
-      [record.id, role, tokens.refreshToken, refreshExpiry]
+      'INSERT INTO refresh_tokens (refresh_token_id, admin_id, user_role, token, expires_at) VALUES (?, ?, ?, ?, ?)',
+      [refreshTokenId, recordId, role, tokens.refreshToken, refreshExpiry]
     );
 
     return successResponse(res, { tokens }, 'Token refreshed.');
@@ -699,10 +723,10 @@ const getMe = async (req, res) => {
     const email = req.user.email;
     let userResponse, organization = null;
 
-    if (role === 'admin') {
-      const admin = await AdminModel.findById(req.user.id);
+    if (role === 'admin' || role === 'audito_admin') {
+      const admin = await AdminModel.findById(req.user.userCode);
       if (!admin) return errorResponse(res, 'Admin not found.', 404);
-      userResponse = buildUserResponse('admin', admin);
+      userResponse = buildUserResponse(role, admin);
 
       const config = ENTITY_CONFIG[admin.entity_type];
       if (config) {
@@ -721,11 +745,11 @@ const getMe = async (req, res) => {
         }
       }
     } else if (role === 'auditor') {
-      const auditor = await AuditorModel.findById(req.user.id);
+      const auditor = await AuditorModel.findById(req.user.userCode);
       if (!auditor) return errorResponse(res, 'Auditor not found.', 404);
       userResponse = buildUserResponse('auditor', auditor);
     } else if (role === 'entity_head') {
-      const head = await EntityHeadModel.findById(req.user.id);
+      const head = await EntityHeadModel.findById(req.user.userCode);
       if (!head) return errorResponse(res, 'Entity head not found.', 404);
       userResponse = buildUserResponse('entity_head', head);
     } else {
@@ -736,9 +760,9 @@ const getMe = async (req, res) => {
     const accounts = await collectAccounts(email);
 
     // Fetch plan limits
-    const record = role === 'admin' ? await AdminModel.findById(req.user.id) :
-      role === 'auditor' ? await AuditorModel.findById(req.user.id) :
-        await EntityHeadModel.findById(req.user.id);
+    const record = (role === 'admin' || role === 'audito_admin') ? await AdminModel.findById(req.user.userCode) :
+      role === 'auditor' ? await AuditorModel.findById(req.user.userCode) :
+        await EntityHeadModel.findById(req.user.userCode);
 
     // Identify & handle plan expiry first so plan limits reflect any downgrade.
     const subscription = await resolveSubscriptionStatus(role, record);
@@ -770,7 +794,7 @@ const updateOrganization = async (req, res) => {
     const { name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number } = req.body;
     if (!name) return errorResponse(res, 'Organization name is required.', 400);
 
-    const admin = await AdminModel.findById(req.user.id);
+    const admin = await AdminModel.findById(req.user.userCode);
     if (!admin) return errorResponse(res, 'Admin not found.', 404);
 
     const config = ENTITY_CONFIG[admin.entity_type];
@@ -808,7 +832,7 @@ const changePassword = async (req, res) => {
     const role = req.user.role;
     let record;
 
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'audito_admin') {
       record = await AdminModel.findByEmail(req.user.email);
     } else if (role === 'auditor') {
       record = await AuditorModel.findByEmail(req.user.email);
@@ -823,12 +847,12 @@ const changePassword = async (req, res) => {
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(new_password, salt);
 
-    if (role === 'admin') {
-      await AdminModel.updatePassword(record.id, hashedPassword);
+    if (role === 'admin' || role === 'audito_admin') {
+      await AdminModel.updatePassword(record.admin_id, hashedPassword);
     } else if (role === 'auditor') {
-      await AuditorModel.setPassword(record.id, hashedPassword);
+      await AuditorModel.setPassword(record.auditor_id, hashedPassword);
     } else if (role === 'entity_head') {
-      await EntityHeadModel.setPassword(record.id, hashedPassword);
+      await EntityHeadModel.setPassword(record.entity_head_id, hashedPassword);
     }
 
     return successResponse(res, null, 'Password changed successfully.');
@@ -882,13 +906,20 @@ const switchAccount = async (req, res) => {
     const tokens = generateTokensForRole(target_role, record);
 
     const refreshExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const recordId = target_role === 'admin' || target_role === 'audito_admin'
+      ? record.admin_id
+      : target_role === 'auditor'
+        ? record.auditor_id
+        : record.entity_head_id;
+        const refreshTokenId = await generateRefreshTokenId();
+
     await db.query(
-      'INSERT INTO refresh_tokens (admin_id, user_role, token, expires_at) VALUES (?, ?, ?, ?)',
-      [record.id, target_role, tokens.refreshToken, refreshExpiry]
+      'INSERT INTO refresh_tokens (refresh_token_id, admin_id, user_role, token, expires_at) VALUES (?, ?, ?, ?, ?)',
+      [refreshTokenId, recordId, target_role, tokens.refreshToken, refreshExpiry]
     );
 
     if (target_role === 'admin') {
-      await AdminModel.updateLastLogin(record.id);
+      await AdminModel.updateLastLogin(recordId);
     }
 
     // Identify & handle plan expiry first so plan limits reflect any downgrade.
@@ -935,10 +966,11 @@ const forgotPassword = async (req, res) => {
     await db.query('UPDATE password_reset_otps SET used = TRUE WHERE email = ? AND used = FALSE', [email]);
 
     // Store OTP
-    await db.query(
-      'INSERT INTO password_reset_otps (email, otp, expires_at) VALUES (?, ?, ?)',
-      [email, otp, expiresAt]
-    );
+   const passwordResetOtpId = await generatePasswordResetOtpId();
+await db.query(
+  'INSERT INTO password_reset_otps (password_reset_otp_id, email, otp, expires_at) VALUES (?, ?, ?, ?)',
+  [passwordResetOtpId, email, otp, expiresAt]
+);
 
     // Send OTP email
     try {
@@ -979,17 +1011,18 @@ const verifyOtp = async (req, res) => {
     }
 
     // Mark OTP as used
-    await db.query('UPDATE password_reset_otps SET used = TRUE WHERE id = ?', [rows[0].id]);
+    await db.query('UPDATE password_reset_otps SET used = TRUE WHERE password_reset_otp_id = ?', [rows[0].password_reset_otp_id]);
 
     // Generate a temporary reset token (valid for 5 minutes)
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
     // Store reset token in a new OTP row (reuse table with special otp value)
-    await db.query(
-      'INSERT INTO password_reset_otps (email, otp, expires_at, used) VALUES (?, ?, ?, FALSE)',
-      [email, `RST-${resetToken}`, resetExpiry]
-    );
+   const resetRowId = await generatePasswordResetOtpId();
+await db.query(
+  'INSERT INTO password_reset_otps (password_reset_otp_id, email, otp, expires_at, used) VALUES (?, ?, ?, ?, FALSE)',
+  [resetRowId, email, `RST-${resetToken}`, resetExpiry]
+);
 
     return successResponse(res, { reset_token: resetToken }, 'OTP verified. You can now reset your password.');
   } catch (error) {
@@ -1024,7 +1057,7 @@ const resetPassword = async (req, res) => {
     }
 
     // Mark token as used
-    await db.query('UPDATE password_reset_otps SET used = TRUE WHERE id = ?', [rows[0].id]);
+    await db.query('UPDATE password_reset_otps SET used = TRUE WHERE password_reset_otp_id = ?', [rows[0].password_reset_otp_id]);
 
     // Find admin — required (forgot password is admin-initiated)
     const admin = await AdminModel.findByEmail(email);
@@ -1034,13 +1067,13 @@ const resetPassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(new_password, salt);
 
     // Update password for every role that shares this email
-    await AdminModel.updatePassword(admin.id, hashedPassword);
+    await AdminModel.updatePassword(admin.admin_id, hashedPassword);
 
     const auditor = await AuditorModel.findByEmail(email);
-    if (auditor) await AuditorModel.setPassword(auditor.id, hashedPassword);
+    if (auditor) await AuditorModel.setPassword(auditor.auditor_id, hashedPassword);
 
     const head = await EntityHeadModel.findByEmail(email);
-    if (head) await EntityHeadModel.setPassword(head.id, hashedPassword);
+    if (head) await EntityHeadModel.setPassword(head.entity_head_id, hashedPassword);
 
     return successResponse(res, null, 'Password reset successfully. You can now log in.');
   } catch (error) {
@@ -1063,9 +1096,17 @@ const verifyEmail = async (req, res) => {
     // 1. Check Admins (uses verification_token)
     const admin = await AdminModel.findByVerificationToken(token);
     if (admin) {
-      await AdminModel.markAsVerified(admin.id);
-      // If the admin registered on a paid plan, surface the pending payment so
-      // the client can continue into the payment flow after verifying.
+      const needsPassword = !admin.password;
+      if (needsPassword) {
+        // Invited admin — return info so frontend can show set-password form
+        return successResponse(res, {
+          email: admin.email,
+          first_name: admin.first_name,
+          needs_password: true,
+          admin_id: admin.admin_id,
+        }, 'Email verified. Please set your password.', 200);
+      }
+      await AdminModel.markAsVerified(admin.admin_id);
       const pendingPayment = await PaymentModel.findPendingByOrgPurpose(admin.entity_code, 'registration');
       return successResponse(res, {
         email: admin.email,
@@ -1077,7 +1118,6 @@ const verifyEmail = async (req, res) => {
               plan_name: pendingPayment.plan_name,
               billing_cycle: pendingPayment.billing_cycle,
               amount: Number(pendingPayment.amount),
-              currency: pendingPayment.currency,
             }
           : null,
       }, 'Email verified successfully. You may now log in.', 200);
@@ -1086,7 +1126,7 @@ const verifyEmail = async (req, res) => {
     // 2. Check Auditors (uses email_token + expires)
     const auditor = await AuditorModel.findByEmailToken(token);
     if (auditor) {
-      await AuditorModel.verifyEmail(auditor.id);
+      await AuditorModel.verifyEmail(auditor.auditor_id);
       return successResponse(res, {
         email: auditor.email,
         first_name: auditor.first_name,
@@ -1097,7 +1137,7 @@ const verifyEmail = async (req, res) => {
     // 3. Check Entity Heads (uses email_token + expires)
     const head = await EntityHeadModel.findByEmailToken(token);
     if (head) {
-      await EntityHeadModel.verifyEmail(head.id);
+      await EntityHeadModel.verifyEmail(head.entity_head_id);
       return successResponse(res, {
         email: head.email,
         first_name: head.first_name,
@@ -1150,7 +1190,7 @@ const saveProfileImage = (role, userId, base64Str) => {
 const updateProfile = async (req, res) => {
   try {
     const role = req.user.role;
-    const { first_name, last_name, phone_number, nic, country, profile_image } = req.body;
+    const { first_name, last_name, phone_number, country, profile_image } = req.body;
 
     if (!first_name || !last_name) {
       return errorResponse(res, 'first_name and last_name are required.', 400);
@@ -1158,14 +1198,14 @@ const updateProfile = async (req, res) => {
 
     // 1. Fetch old profile_image path
     let oldProfileImage = null;
-    if (role === 'admin') {
-      const [rows] = await db.query('SELECT profile_image FROM admins WHERE id = ?', [req.user.id]);
+    if (role === 'admin' || role === 'audito_admin') {
+      const [rows] = await db.query('SELECT profile_image FROM admins WHERE admin_id = ?', [req.user.userCode]);
       if (rows && rows.length > 0) oldProfileImage = rows[0].profile_image;
     } else if (role === 'auditor') {
-      const [rows] = await db.query('SELECT profile_image FROM auditors WHERE id = ?', [req.user.id]);
+      const [rows] = await db.query('SELECT profile_image FROM auditors WHERE auditor_id = ?', [req.user.userCode]);
       if (rows && rows.length > 0) oldProfileImage = rows[0].profile_image;
     } else if (role === 'entity_head') {
-      const [rows] = await db.query('SELECT profile_image FROM entity_heads WHERE id = ?', [req.user.id]);
+      const [rows] = await db.query('SELECT profile_image FROM entity_heads WHERE entity_head_id = ?', [req.user.userCode]);
       if (rows && rows.length > 0) oldProfileImage = rows[0].profile_image;
     }
 
@@ -1173,7 +1213,7 @@ const updateProfile = async (req, res) => {
     let finalProfileImagePath = null;
     if (profile_image) {
       if (profile_image.startsWith('data:image/')) {
-        finalProfileImagePath = saveProfileImage(role, req.user.id, profile_image);
+        finalProfileImagePath = saveProfileImage(role, req.user.userCode, profile_image);
 
         // Delete old image file
         if (oldProfileImage && oldProfileImage.startsWith('/uploads/profile-images/')) {
@@ -1205,20 +1245,20 @@ const updateProfile = async (req, res) => {
     }
 
     // 3. Update in Database
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'audito_admin') {
       await db.query(
-        'UPDATE admins SET first_name = ?, last_name = ?, phone_number = ?, nic = ?, country = ?, profile_image = ? WHERE id = ?',
-        [first_name.trim(), last_name.trim(), phone_number || null, nic || null, country || null, finalProfileImagePath, req.user.id]
+        'UPDATE admins SET first_name = ?, last_name = ?, phone_number = ?, country = ?, profile_image = ? WHERE admin_id = ?',
+        [first_name.trim(), last_name.trim(), phone_number || null, country || null, finalProfileImagePath, req.user.userCode]
       );
     } else if (role === 'auditor') {
       await db.query(
-        'UPDATE auditors SET first_name = ?, last_name = ?, phone_number = ?, nic = ?, country = ?, profile_image = ? WHERE id = ?',
-        [first_name.trim(), last_name.trim(), phone_number || null, nic || null, country || null, finalProfileImagePath, req.user.id]
+        'UPDATE auditors SET first_name = ?, last_name = ?, phone_number = ?, country = ?, profile_image = ? WHERE auditor_id = ?',
+        [first_name.trim(), last_name.trim(), phone_number || null, country || null, finalProfileImagePath, req.user.userCode]
       );
     } else if (role === 'entity_head') {
       await db.query(
-        'UPDATE entity_heads SET first_name = ?, last_name = ?, phone_number = ?, nic = ?, country = ?, profile_image = ? WHERE id = ?',
-        [first_name.trim(), last_name.trim(), phone_number || null, nic || null, country || null, finalProfileImagePath, req.user.id]
+        'UPDATE entity_heads SET first_name = ?, last_name = ?, phone_number = ?, country = ?, profile_image = ? WHERE entity_head_id = ?',
+        [first_name.trim(), last_name.trim(), phone_number || null, country || null, finalProfileImagePath, req.user.userCode]
       );
     } else {
       return errorResponse(res, 'Invalid role.', 400);
@@ -1242,14 +1282,14 @@ const getOnboardingStatus = async (req, res) => {
     let status = null;
 
     if (role === 'admin') {
-      record = await AdminModel.findById(req.user.id);
-      status = await AdminModel.getOnboardingStatus(req.user.id);
+      record = await AdminModel.findById(req.user.userCode);
+      status = await AdminModel.getOnboardingStatus(req.user.userCode);
     } else if (role === 'auditor') {
-      record = await AuditorModel.findById(req.user.id);
-      status = await AuditorModel.getOnboardingStatus(req.user.id);
+      record = await AuditorModel.findById(req.user.userCode);
+      status = await AuditorModel.getOnboardingStatus(req.user.userCode);
     } else if (role === 'entity_head') {
-      record = await EntityHeadModel.findById(req.user.id);
-      status = await EntityHeadModel.getOnboardingStatus(req.user.id);
+      record = await EntityHeadModel.findById(req.user.userCode);
+      status = await EntityHeadModel.getOnboardingStatus(req.user.userCode);
     } else {
       return errorResponse(res, 'Only valid system users can access onboarding status.', 403);
     }
@@ -1282,11 +1322,11 @@ const updateOnboardingStatus = async (req, res) => {
 
     let record = null;
     if (role === 'admin') {
-      record = await AdminModel.findById(req.user.id);
+      record = await AdminModel.findById(req.user.userCode);
     } else if (role === 'auditor') {
-      record = await AuditorModel.findById(req.user.id);
+      record = await AuditorModel.findById(req.user.userCode);
     } else if (role === 'entity_head') {
-      record = await EntityHeadModel.findById(req.user.id);
+      record = await EntityHeadModel.findById(req.user.userCode);
     } else {
       return errorResponse(res, 'Only valid system users can update onboarding status.', 403);
     }
@@ -1295,36 +1335,36 @@ const updateOnboardingStatus = async (req, res) => {
 
     if (role === 'admin') {
       if (action === 'complete') {
-        await AdminModel.updateOnboardingStatus(record.id, { completed: true, skipped: false });
+        await AdminModel.updateOnboardingStatus(record.admin_id, { completed: true, skipped: false });
       } else if (action === 'skip') {
-        await AdminModel.updateOnboardingStatus(record.id, { completed: false, skipped: true });
+        await AdminModel.updateOnboardingStatus(record.admin_id, { completed: false, skipped: true });
       } else {
-        await AdminModel.resetOnboardingStatus(record.id);
+        await AdminModel.resetOnboardingStatus(record.admin_id);
       }
     } else if (role === 'auditor') {
       if (action === 'complete') {
-        await AuditorModel.updateOnboardingStatus(record.id, { completed: true, skipped: false });
+        await AuditorModel.updateOnboardingStatus(record.auditor_id, { completed: true, skipped: false });
       } else if (action === 'skip') {
-        await AuditorModel.updateOnboardingStatus(record.id, { completed: false, skipped: true });
+        await AuditorModel.updateOnboardingStatus(record.auditor_id, { completed: false, skipped: true });
       } else {
-        await AuditorModel.resetOnboardingStatus(record.id);
+        await AuditorModel.resetOnboardingStatus(record.auditor_id);
       }
     } else if (role === 'entity_head') {
       if (action === 'complete') {
-        await EntityHeadModel.updateOnboardingStatus(record.id, { completed: true, skipped: false });
+        await EntityHeadModel.updateOnboardingStatus(record.entity_head_id, { completed: true, skipped: false });
       } else if (action === 'skip') {
-        await EntityHeadModel.updateOnboardingStatus(record.id, { completed: false, skipped: true });
+        await EntityHeadModel.updateOnboardingStatus(record.entity_head_id, { completed: false, skipped: true });
       } else {
-        await EntityHeadModel.resetOnboardingStatus(record.id);
+        await EntityHeadModel.resetOnboardingStatus(record.entity_head_id);
       }
     }
 
     const updatedStatus =
       role === 'admin'
-        ? await AdminModel.getOnboardingStatus(record.id)
+        ? await AdminModel.getOnboardingStatus(record.admin_id)
         : role === 'auditor'
-          ? await AuditorModel.getOnboardingStatus(record.id)
-          : await EntityHeadModel.getOnboardingStatus(record.id);
+          ? await AuditorModel.getOnboardingStatus(record.auditor_id)
+          : await EntityHeadModel.getOnboardingStatus(record.entity_head_id);
 
     return successResponse(res, {
       onboarding_completed: !!updatedStatus.onboarding_completed,
@@ -1334,6 +1374,71 @@ const updateOnboardingStatus = async (req, res) => {
   } catch (error) {
     console.error('updateOnboardingStatus error:', error);
     return errorResponse(res, 'Failed to update onboarding status.', 500);
+  }
+};
+
+const validatePromoCode = async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return errorResponse(res, 'Promo code is required.', 400);
+    }
+
+    const promo = await PromoCodeModel.findByCode(code);
+    if (!promo) {
+      return errorResponse(res, 'Invalid or expired promo code.', 404);
+    }
+
+    return successResponse(res, {
+      code: promo.code,
+      discount_percentage: parseFloat(promo.discount_percentage)
+    }, 'Promo code is valid.');
+  } catch (error) {
+    console.error('Validate promo code error:', error);
+    return errorResponse(res, 'Failed to validate promo code.', 500);
+  }
+};
+
+// ─── SET ADMIN PASSWORD (PUBLIC) ────────────────────────────────
+
+/**
+ * POST /api/auth/set-admin-password
+ * Body: { token, password }
+ *
+ * Invited admin sets their password after email verification.
+ */
+const setAdminPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return errorResponse(res, 'Token and password are required.', 400);
+    }
+
+    if (password.length < 8) {
+      return errorResponse(res, 'Password must be at least 8 characters.', 400);
+    }
+
+    const admin = await AdminModel.findByVerificationToken(token);
+    if (!admin) {
+      return errorResponse(res, 'Invalid or expired verification link.', 400);
+    }
+
+    // If already has a password and is verified, this is a re-use
+    if (admin.password && admin.is_verified) {
+      return errorResponse(res, 'Password already set. Please log in.', 400);
+    }
+
+    const hashed = await bcrypt.hash(password, 12);
+    await AdminModel.setAdminPassword(admin.admin_id, hashed);
+
+    return successResponse(res, {
+      email: admin.email,
+      first_name: admin.first_name,
+    }, 'Password set successfully. You can now log in.');
+  } catch (error) {
+    console.error('Set admin password error:', error);
+    return errorResponse(res, 'Failed to set password.', 500);
   }
 };
 
@@ -1349,8 +1454,10 @@ module.exports = {
   verifyOtp,
   resetPassword,
   verifyEmail,
+  setAdminPassword,
   updateProfile,
   updateOrganization,
   getOnboardingStatus,
   updateOnboardingStatus,
+  validatePromoCode,
 };

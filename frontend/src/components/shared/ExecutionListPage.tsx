@@ -28,7 +28,6 @@ interface ExecutionItem {
   code: string;
   title: string;
   checklist_name?: string;
-  cap_plan_code?: string;
   audit_code?: string;
   type?: "internal" | "external";
   status: string;
@@ -180,7 +179,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                 ? a.progress_pct
                 : (total > 0 ? Math.round((answered / total) * 100) : 0);
               return {
-                id: a.id,
+                id: a.audit_id,
                 code: a.audit_code,
                 title: a.title,
                 checklist_name: a.checklist_name,
@@ -204,10 +203,9 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
               ? c.progress_pct
               : (total > 0 ? Math.round((answered / total) * 100) : 0);
             return {
-              id: c.id,
-              code: c.cap_plan_code,
+              id: c.cap_id,
+              code: c.cap_id,
               title: c.title,
-              cap_plan_code: c.cap_plan_code,
               audit_code: c.audit_code,
               status: c.status,
               created_at: c.created_at,
@@ -249,7 +247,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
         item.title?.toLowerCase().includes(keyword) ||
         item.code?.toLowerCase().includes(keyword) ||
         item.audit_code?.toLowerCase().includes(keyword) ||
-        item.cap_plan_code?.toLowerCase().includes(keyword);
+        item.code?.toLowerCase().includes(keyword);
 
       const matchesDate =
         workflowType === "audit"

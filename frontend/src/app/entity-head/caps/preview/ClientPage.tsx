@@ -25,8 +25,7 @@ import {
 // ── Interfaces ────────────────────────────────────────────────────
 
 interface Cap {
-  id: number;
-  cap_plan_code: string;
+  cap_id: string;
   audit_code: string;
   audit_title: string;
   title: string;
@@ -36,17 +35,17 @@ interface Cap {
 }
 
 interface CapQuestionOption {
-  id: number;
+  cap_question_option_id: string;
   option_text: string;
   marks: number;
   order_index: number;
 }
 
 interface CapQuestion {
-  id: number;
-  cap_id: number;
+  cap_question_id: string;
+  cap_id: string;
   entity_code: string;
-  org_tree_id?: number | null;
+  org_tree_id?: string | null;
   question_text: string;
   status: string;
   ca_description: string | null;
@@ -60,21 +59,21 @@ interface CapQuestion {
 }
 
 interface CapResponse {
-  id: number;
-  cap_question_id: number;
+  cap_response_id: string;
+  cap_question_id: string;
   response_text: string | null;
   selected_option_ids: string | null | number[];
   marks_obtained?: number;
   remarks?: string | null;
   status: string;
-  evidence?: { id: number; file_type: string; file_path: string; file_name: string }[];
+  evidence?: { evidence_id: string; file_type: string; file_path: string; file_name: string }[];
 }
 
 interface TreeNode {
   entity_type: string;
   code: string;
   name: string;
-  edge_id?: number | null;
+  edge_id?: string | null;
   children?: TreeNode[];
 }
 
@@ -98,7 +97,7 @@ function formatAnswer(q: CapQuestion, r?: CapResponse): string {
   const answerText = (r?.response_text || "").trim();
   const selected = normalizeSelectedOptionIds(r?.selected_option_ids || null);
   const selectedText = (q.options || [])
-    .filter((o) => selected.includes(String(o.id)))
+    .filter((o) => selected.includes(String(o.cap_question_option_id)))
     .map((o) => o.option_text);
   const optStr = selectedText.length ? selectedText.join(", ") : "";
   if (answerText && optStr) return `${answerText} (${optStr})`;
@@ -107,7 +106,7 @@ function formatAnswer(q: CapQuestion, r?: CapResponse): string {
   return "";
 }
 
-function progressKey(entityCode: string, orgTreeId: number | null | undefined) {
+function progressKey(entityCode: string, orgTreeId: string | null | undefined) {
   return `${entityCode}__${orgTreeId ?? "null"}`;
 }
 
@@ -129,7 +128,7 @@ function subtreeHasCaps(
   return (node.children || []).some((c) => subtreeHasCaps(c, capsMap));
 }
 
-function findNodeByEdgeId(node: TreeNode, edgeId: number): TreeNode | null {
+function findNodeByEdgeId(node: TreeNode, edgeId: string | null): TreeNode | null {
   if (node.edge_id === edgeId) return node;
   for (const c of node.children || []) {
     const f = findNodeByEdgeId(c, edgeId);
@@ -321,7 +320,7 @@ function ActionPreviewCard({
                     const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
                     const url = getEvidenceUrl(ev.file_path);
                     return (
-                      <a key={ev.id} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20">
+                      <a key={ev.evidence_id} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20">
                         {kind === "image" ? (
                           <img src={url} alt={ev.file_name || "evidence"} className="w-full h-24 object-cover rounded-md" />
                         ) : (
@@ -349,12 +348,12 @@ export default function EntityHeadCapPreviewPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const capId = searchParams.get("id") as string;
+  const capId = searchParams.get("cap_id") as string;
 
   const [cap, setCap] = useState<Cap | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [questions, setQuestions] = useState<CapQuestion[]>([]);
-  const [responsesByQuestion, setResponsesByQuestion] = useState<Record<number, CapResponse>>({});
+  const [responsesByQuestion, setResponsesByQuestion] = useState<Record<string, CapResponse>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -385,7 +384,7 @@ export default function EntityHeadCapPreviewPage() {
       const items = itemsRes.data as { questions: CapQuestion[]; responses: CapResponse[]; tree: TreeNode | null };
       setQuestions(items.questions || []);
       
-      const rMap: Record<number, CapResponse> = {};
+      const rMap: Record<string, CapResponse> = {};
       for (const r of items.responses || []) {
         rMap[r.cap_question_id] = r;
       }
@@ -410,7 +409,7 @@ export default function EntityHeadCapPreviewPage() {
   }, [questions]);
 
   const [stepHistory, setStepHistory] = useState<
-    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: number | null })[]
+    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
   >([{ mode: "cards", parentCode: null }]);
 
   if (isLoading) {
@@ -537,7 +536,7 @@ export default function EntityHeadCapPreviewPage() {
               }
 
               const node = step.orgTreeId != null
-                ? findNodeByEdgeId(tree, Number(step.orgTreeId))
+                ? findNodeByEdgeId(tree, step.orgTreeId)
                 : findInTree(step.entityCode);
               const entityCode = step.entityCode;
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
@@ -573,7 +572,7 @@ export default function EntityHeadCapPreviewPage() {
 
                   <div className="space-y-3">
                     {qs.map((q, idx) => (
-                      <ActionPreviewCard key={q.id} action={q} response={responsesByQuestion[q.id]} index={idx + 1} />
+                      <ActionPreviewCard key={q.cap_question_id} action={q} response={responsesByQuestion[q.cap_question_id]} index={idx + 1} />
                     ))}
                   </div>
 

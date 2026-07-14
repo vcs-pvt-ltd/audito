@@ -26,6 +26,8 @@ router.post('/forgot-password', authController.forgotPassword);
 router.post('/verify-otp', authController.verifyOtp);
 router.post('/reset-password', authController.resetPassword);
 router.post('/verify-email', authController.verifyEmail);
+router.post('/set-admin-password', authController.setAdminPassword);
+router.post('/validate-promo-code', authController.validatePromoCode);
 
 // Protected routes
 router.get('/me', authenticate, authController.getMe);

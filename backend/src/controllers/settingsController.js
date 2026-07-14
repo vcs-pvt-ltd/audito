@@ -4,11 +4,13 @@ const { successResponse, errorResponse } = require('../utils/helpers');
 const ENTITY_CONFIG = {
   'Customer': { table: 'customers', codeField: 'cust_code' },
   'Buying Office': { table: 'customer_buying_offices', codeField: 'cbo_code' },
+  'Supplier': { table: 'customer_suppliers', codeField: 'csup_code' },
   'Company': { table: 'companies', codeField: 'comp_code' },
   'Cluster': { table: 'company_clusters', codeField: 'comp_clus_code' },
   'Factory': { table: 'company_factories', codeField: 'comp_fact_code' },
   'Unit': { table: 'company_units', codeField: 'comp_unit_code' },
   'Department': { table: 'company_departments', codeField: 'comp_dept_code' },
+  'Section': { table: 'company_sections', codeField: 'comp_section_code' },
   'Audit Firm Company': { table: 'audit_firm_companies', codeField: 'afc_code' },
   'Branch': { table: 'audit_firm_company_branches', codeField: 'afc_branch_code' },
   'Audit Firm Department': { table: 'audit_firm_company_departments', codeField: 'afc_dept_code' }

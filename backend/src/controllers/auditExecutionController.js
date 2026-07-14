@@ -23,6 +23,7 @@ const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
 const { db } = require('../config/db');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
+const { generateCorrectiveActionId, generateAuditResponseId, generateAuditEvidenceId, generateAuditEntityProgressId } = require('../utils/codeGenerator');
 const {
   getEntityHeadOrgTreeScope,
   auditEntitiesInScope,
@@ -85,7 +86,7 @@ async function recomputeAndUpsertProgressForAudit(auditId, entityQuestions) {
     const entity_code = String(eq.entity_code);
     const orgTreeId = (eq.org_tree_id === undefined || eq.org_tree_id === null || eq.org_tree_id === '')
       ? null
-      : (Number.isFinite(Number(eq.org_tree_id)) ? Number(eq.org_tree_id) : null);
+      : eq.org_tree_id;
     const k = `${entity_code}__${orgTreeId ?? 'null'}`;
     const resp = byKey[k] || [];
     const questions = Array.isArray(eq.questions) ? eq.questions : [];
@@ -98,6 +99,7 @@ async function recomputeAndUpsertProgressForAudit(auditId, entityQuestions) {
       : (answered >= questions.length ? 'completed' : (answered > 0 ? 'in_progress' : 'not_started'));
 
     await AuditExecutionModel.upsertProgress({
+      audit_entity_progress_id: await generateAuditEntityProgressId(),
       audit_id: auditId,
       org_tree_id: orgTreeId,
       entity_code,
@@ -113,8 +115,7 @@ async function recomputeAndUpsertProgressForAudit(auditId, entityQuestions) {
 function buildQuestionsForEntityInstance(allQuestions, entity_code, org_tree_id) {
   const normOrgTreeId = (v) => {
     if (v === undefined || v === null || v === '') return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+    return v;
   };
 
   const targetOrgTreeId = normOrgTreeId(org_tree_id);
@@ -126,8 +127,8 @@ function buildQuestionsForEntityInstance(allQuestions, entity_code, org_tree_id)
   const seen = new Set();
   const out = [];
   for (const q of selected) {
-    if (seen.has(q.id)) continue;
-    seen.add(q.id);
+    if (seen.has(q.checklist_question_id)) continue;
+    seen.add(q.checklist_question_id);
     out.push(q);
   }
   return out;
@@ -165,8 +166,8 @@ async function getEntityHeadScope(req) {
 
 function filterProgressByScope(progress, scopeIds) {
   if (!scopeIds?.length) return progress || [];
-  const scopeSet = new Set(scopeIds.map(Number));
-  return (progress || []).filter((p) => p.org_tree_id != null && scopeSet.has(Number(p.org_tree_id)));
+  const scopeSet = new Set(scopeIds);
+  return (progress || []).filter((p) => p.org_tree_id != null && scopeSet.has(p.org_tree_id));
 }
 
 // ── GET /api/audit-execution/my-audits ───────────────────────────
@@ -178,12 +179,12 @@ const listMyAudits = async (req, res) => {
       ? await AuditModel.listForEntityHead(req.user.assignedOrgTreeId)
       : await AuditModel.listForAuditor(userCode);
     for (const a of audits) {
-      const ents = await AuditModel.getEntities(a.id);
+      const ents = await AuditModel.getEntities(a.audit_id);
       const scopedEnts = req.user.role === 'entity_head'
-        ? ents.filter((e) => scopeIds.includes(Number(e.org_tree_id)))
+        ? ents.filter((e) => scopeIds.includes(e.org_tree_id))
         : ents;
       a.entity_count = scopedEnts.length;
-      const progress = await AuditExecutionModel.getProgress(a.id);
+      const progress = await AuditExecutionModel.getProgress(a.audit_id);
       const scopedProgress = req.user.role === 'entity_head'
         ? filterProgressByScope(progress, scopeIds)
         : progress;
@@ -207,15 +208,14 @@ const getCorrectiveActions = async (req, res) => {
     const audit = await AuditModel.findById(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
 
-    if (req.user.role === 'auditor' && audit.assigned_auditor_code !== req.user.userCode) {
+    if (req.user.role === 'auditor' && audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
-    const auditId = parseInt(id);
     const [items, corrective_actions, tree] = await Promise.all([
-      AuditExecutionModel.listCapRequiredItems(auditId),
-      AuditExecutionModel.listCorrectiveActionsByAudit(auditId),
-      AuditExecutionModel.getEntityTree(auditId),
+      AuditExecutionModel.listCapRequiredItems(id),
+      AuditExecutionModel.listCorrectiveActionsByAudit(id),
+      AuditExecutionModel.getEntityTree(id),
     ]);
 
     const entityToOrgTreeIds = {};
@@ -250,7 +250,7 @@ const getCorrectiveActions = async (req, res) => {
         assigned_org_tree_id: assignedOrgTreeId,
         responsible_entity_head: head
           ? {
-            user_code: head.user_code,
+            user_code: head.entity_head_id,
             first_name: head.first_name,
             last_name: head.last_name,
             email: head.email,
@@ -273,7 +273,7 @@ const saveCorrectiveActions = async (req, res) => {
     const audit = await AuditModel.findById(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
 
-    if (req.user.role === 'auditor' && audit.assigned_auditor_code !== req.user.userCode) {
+    if (req.user.role === 'auditor' && audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
@@ -283,9 +283,7 @@ const saveCorrectiveActions = async (req, res) => {
     const actions = Array.isArray(req.body.actions) ? req.body.actions : [];
     if (!actions.length) return errorResponse(res, 'No actions provided.', 400);
 
-    const auditId = parseInt(id);
-
-    const tree = await AuditExecutionModel.getEntityTree(auditId);
+    const tree = await AuditExecutionModel.getEntityTree(id);
     const entityToOrgTreeIds = {};
     const walk = (node) => {
       if (!node) return;
@@ -317,21 +315,22 @@ const saveCorrectiveActions = async (req, res) => {
         : null;
       const orgTreeId = a.org_tree_id ?? a.assigned_org_tree_id ?? unambiguousFallback ?? null;
       const head = orgTreeId ? headByOrgTreeId[orgTreeId] : null;
-      const responsiblePersonCode = head?.user_code || null;
+      const responsiblePersonCode = head?.entity_head_id || null;
       const responsiblePersonName = head ? `${head.first_name} ${head.last_name}`.trim() : null;
 
       const caId = await AuditExecutionModel.upsertCorrectiveAction({
-        audit_id: auditId,
-        response_id: parseInt(a.response_id),
+        corrective_action_id: await generateCorrectiveActionId(),
+        audit_id: id,
+        audit_response_id: a.response_id,
         entity_code: String(a.entity_code),
-        question_id: parseInt(a.question_id),
+        checklist_question_id: a.question_id,
         org_tree_id: orgTreeId,
-        responsible_person_code: responsiblePersonCode,
+        responsible_entity_head_id: responsiblePersonCode,
         responsible_person_name: responsiblePersonName,
         due_date: a.due_date ? String(a.due_date).slice(0, 10) : null,
         created_by: req.user.userCode,
       });
-      results.push({ id: caId, response_id: parseInt(a.response_id) });
+      results.push({ id: caId, response_id: a.response_id });
     }
 
     return successResponse(res, { saved: results }, 'Corrective actions saved.');
@@ -349,7 +348,7 @@ const getAuditDetail = async (req, res) => {
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
 
     // Verify auditor access
-    if (req.user.role === 'auditor' && audit.assigned_auditor_code !== req.user.userCode) {
+    if (req.user.role === 'auditor' && audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
@@ -368,7 +367,7 @@ const getAuditDetail = async (req, res) => {
     let progress = await AuditExecutionModel.getProgress(id);
     if (req.user.role === 'entity_head') {
       progress = filterProgressByScope(progress, scopeIds);
-      audit.entities = (audit.entities || []).filter((e) => scopeIds.includes(Number(e.org_tree_id)));
+      audit.entities = (audit.entities || []).filter((e) => scopeIds.includes(e.org_tree_id));
     }
     audit.entity_progress = progress;
 
@@ -386,7 +385,7 @@ const getAuditDetail = async (req, res) => {
           org_tree_id: (q.org_tree_id ?? eq.org_tree_id ?? null),
         })));
 
-        const tree = await AuditExecutionModel.getEntityTree(parseInt(id));
+        const tree = await AuditExecutionModel.getEntityTree(id);
         const treeEntities = [];
         const walk = (node) => {
           if (!node) return;
@@ -402,14 +401,14 @@ const getAuditDetail = async (req, res) => {
           const orgTreeIdRaw = ent.org_tree_id ?? ent.assigned_org_tree_id ?? null;
           const orgTreeId = (orgTreeIdRaw === null || orgTreeIdRaw === undefined || orgTreeIdRaw === '')
             ? null
-            : (Number.isFinite(Number(orgTreeIdRaw)) ? Number(orgTreeIdRaw) : null);
+            : orgTreeIdRaw;
           const k = `${ent.entity_code}__${orgTreeId ?? 'null'}`;
           if (!instanceMap.has(k)) instanceMap.set(k, { entity_code: ent.entity_code, org_tree_id: orgTreeId });
         }
         for (const ent of treeEntities) {
           const orgTreeId = (ent.org_tree_id === null || ent.org_tree_id === undefined || ent.org_tree_id === '')
             ? null
-            : (Number.isFinite(Number(ent.org_tree_id)) ? Number(ent.org_tree_id) : null);
+            : ent.org_tree_id;
           const k = `${ent.entity_code}__${orgTreeId ?? 'null'}`;
           if (!instanceMap.has(k)) instanceMap.set(k, { entity_code: ent.entity_code, org_tree_id: orgTreeId });
         }
@@ -423,14 +422,14 @@ const getAuditDetail = async (req, res) => {
         });
 
         if (req.user.role === 'entity_head') {
-          const scopeSet = new Set(scopeIds.map(Number));
+          const scopeSet = new Set(scopeIds);
           audit.entity_questions = audit.entity_questions.filter(
-            (eq) => eq.org_tree_id != null && scopeSet.has(Number(eq.org_tree_id))
+            (eq) => eq.org_tree_id != null && scopeSet.has(eq.org_tree_id)
           );
         }
 
-        await recomputeAndUpsertProgressForAudit(parseInt(id), audit.entity_questions);
-        audit.entity_progress = await AuditExecutionModel.getProgress(parseInt(id));
+        await recomputeAndUpsertProgressForAudit(id, audit.entity_questions);
+        audit.entity_progress = await AuditExecutionModel.getProgress(id);
       } else {
         audit.entity_questions = [];
       }
@@ -451,7 +450,7 @@ const startAudit = async (req, res) => {
     const { id } = req.params;
     const audit = await AuditModel.findById(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
-    if (audit.assigned_auditor_code !== req.user.userCode) {
+    if (audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
@@ -476,7 +475,8 @@ const startAudit = async (req, res) => {
         const entQs = buildQuestionsForEntityInstance(questions, ent.entity_code, ent.org_tree_id ?? null);
         const totalMarks = entQs.reduce((s, q) => s + parseFloat(q.total_marks || 0), 0);
         await AuditExecutionModel.upsertProgress({
-          audit_id: parseInt(id), org_tree_id: ent.org_tree_id || null, entity_code: ent.entity_code,
+          audit_entity_progress_id: await generateAuditEntityProgressId(),
+          audit_id: id, org_tree_id: ent.org_tree_id || null, entity_code: ent.entity_code,
           total_questions: entQs.length, answered_questions: 0,
           total_marks: totalMarks, obtained_marks: 0,
           status: 'not_started',
@@ -499,7 +499,7 @@ const submitResponse = async (req, res) => {
     const { id } = req.params;
     const audit = await AuditModel.findById(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
-    if (audit.assigned_auditor_code !== req.user.userCode) {
+    if (audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
     }
     if (audit.status !== 'in_progress') {
@@ -516,15 +516,14 @@ const submitResponse = async (req, res) => {
       return errorResponse(res, 'entity_code and question_id are required.', 400);
     }
 
-    const safeOrgTreeId = (org_tree_id !== undefined && org_tree_id !== null)
-      ? parseInt(org_tree_id)
-      : null;
+    const safeOrgTreeId = org_tree_id || null;
 
     const responseId = await AuditExecutionModel.upsertResponse({
-      audit_id: parseInt(id),
+      audit_response_id: await generateAuditResponseId(),
+      audit_id: id,
       org_tree_id: safeOrgTreeId,
       entity_code,
-      question_id: parseInt(question_id),
+      checklist_question_id: question_id,
       answer_text, selected_option_ids,
       marks_obtained: parseFloat(marks_obtained) || 0,
       remarks, cap_required: !!cap_required,
@@ -533,7 +532,7 @@ const submitResponse = async (req, res) => {
     });
 
     // Update entity progress
-    const allResponses = await AuditExecutionModel.getResponsesByEntity(parseInt(id), safeOrgTreeId, entity_code);
+    const allResponses = await AuditExecutionModel.getResponsesByEntity(id, safeOrgTreeId, entity_code);
     const questions = await ChecklistModel.listQuestions(audit.checklist_id);
     const entQs = buildQuestionsForEntityInstance(questions, entity_code, safeOrgTreeId);
     const totalMarks = entQs.reduce((s, q) => s + parseFloat(q.total_marks || 0), 0);
@@ -542,7 +541,8 @@ const submitResponse = async (req, res) => {
     const progressStatus = answeredCount >= entQs.length ? 'completed' : 'in_progress';
 
     await AuditExecutionModel.upsertProgress({
-      audit_id: parseInt(id), org_tree_id: safeOrgTreeId, entity_code,
+      audit_entity_progress_id: await generateAuditEntityProgressId(),
+      audit_id: id, org_tree_id: safeOrgTreeId, entity_code,
       total_questions: entQs.length, answered_questions: answeredCount,
       total_marks: totalMarks, obtained_marks: obtainedMarks,
       status: progressStatus,
@@ -567,15 +567,15 @@ const getResponses = async (req, res) => {
       }
     }
 
-    let responses = await AuditExecutionModel.getAllResponses(parseInt(id));
+    let responses = await AuditExecutionModel.getAllResponses(id);
     if (req.user.role === 'entity_head') {
-      const scopeSet = new Set(scopeIds.map(Number));
-      responses = responses.filter((r) => r.org_tree_id != null && scopeSet.has(Number(r.org_tree_id)));
+      const scopeSet = new Set(scopeIds);
+      responses = responses.filter((r) => r.org_tree_id != null && scopeSet.has(r.org_tree_id));
     }
 
     // Attach evidence to each response
     for (const r of responses) {
-      r.evidence = await AuditExecutionModel.getEvidence(r.id);
+      r.evidence = await AuditExecutionModel.getEvidence(r.audit_response_id);
     }
 
     return successResponse(res, { responses });
@@ -589,14 +589,14 @@ const getResponses = async (req, res) => {
 const getEntityResponses = async (req, res) => {
   try {
     const { id, entityCode } = req.params;
-    const orgTreeId = req.query.org_tree_id ? parseInt(String(req.query.org_tree_id)) : null;
+    const orgTreeId = req.query.org_tree_id || null;
     if (!orgTreeId) {
       return errorResponse(res, 'org_tree_id query param is required.', 400);
     }
-    const responses = await AuditExecutionModel.getResponsesByEntity(parseInt(id), orgTreeId, String(entityCode));
+    const responses = await AuditExecutionModel.getResponsesByEntity(id, orgTreeId, String(entityCode));
 
     for (const r of responses) {
-      r.evidence = await AuditExecutionModel.getEvidence(r.id);
+      r.evidence = await AuditExecutionModel.getEvidence(r.audit_response_id);
     }
 
     return successResponse(res, { responses });
@@ -617,7 +617,8 @@ const uploadEvidence = async (req, res) => {
 
     const relativePath = `/uploads/evidence/${req.file.filename}`;
     const evidenceId = await AuditExecutionModel.addEvidence({
-      response_id: parseInt(response_id),
+      audit_evidence_id: await generateAuditEvidenceId(),
+      audit_response_id: response_id,
       file_type: file_type || 'image',
       file_path: relativePath,
       file_name: req.file.originalname,
@@ -641,7 +642,7 @@ const uploadEvidence = async (req, res) => {
 const deleteEvidence = async (req, res) => {
   try {
     const { evidenceId } = req.params;
-    const evidence = await AuditExecutionModel.deleteEvidence(parseInt(evidenceId));
+    const evidence = await AuditExecutionModel.deleteEvidence(evidenceId);
     if (!evidence) return errorResponse(res, 'Evidence not found.', 404);
 
     // Remove file from disk
@@ -659,7 +660,7 @@ const deleteEvidence = async (req, res) => {
 const getProgress = async (req, res) => {
   try {
     const { id } = req.params;
-    const progress = await AuditExecutionModel.getProgress(parseInt(id));
+    const progress = await AuditExecutionModel.getProgress(id);
     return successResponse(res, { progress });
   } catch (err) {
     console.error('getProgress error:', err);
@@ -673,7 +674,7 @@ const completeAudit = async (req, res) => {
     const { id } = req.params;
     const audit = await AuditModel.findById(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
-    if (audit.assigned_auditor_code !== req.user.userCode) {
+    if (audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
     }
     if (audit.status !== 'in_progress') {
@@ -681,13 +682,13 @@ const completeAudit = async (req, res) => {
     }
 
     // Check all entities are completed
-    const progress = await AuditExecutionModel.getProgress(parseInt(id));
+    const progress = await AuditExecutionModel.getProgress(id);
     const incomplete = progress.filter(p => (p.total_questions || 0) > 0 && p.status !== 'completed');
     if (incomplete.length > 0) {
       return errorResponse(res, `${incomplete.length} entity/entities not yet completed.`, 400);
     }
 
-    await AuditExecutionModel.completeAudit(parseInt(id));
+    await AuditExecutionModel.completeAudit(id);
 
     return successResponse(res, null, 'Audit completed successfully.');
   } catch (err) {
@@ -722,11 +723,11 @@ const getReport = async (req, res) => {
         }
       }
 
-      if (audit.assigned_auditor_code) {
-        const auditor = await AuditorModel.findByCode(audit.assigned_auditor_code);
+      if (audit.assigned_auditor_id) {
+        const auditor = await AuditorModel.findByCode(audit.assigned_auditor_id);
         if (auditor) {
           const fullName = `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim();
-          audit.auditor_name = fullName || auditor.user_code;
+          audit.auditor_name = fullName || auditor.auditor_id;
           audit.auditor_email = auditor.email || null;
           audit.auditor_phone = auditor.phone_number || null;
         }
@@ -742,13 +743,13 @@ const getReport = async (req, res) => {
     }
 
     // Get all responses with evidence
-    const responses = await AuditExecutionModel.getAllResponses(parseInt(id));
+    const responses = await AuditExecutionModel.getAllResponses(id);
     for (const r of responses) {
-      r.evidence = await AuditExecutionModel.getEvidence(r.id);
+      r.evidence = await AuditExecutionModel.getEvidence(r.audit_response_id);
     }
 
     // Get progress
-    const progress = await AuditExecutionModel.getProgress(parseInt(id));
+    const progress = await AuditExecutionModel.getProgress(id);
     if (progress?.length > 0) {
       const progressEntities = progress.map(p => ({ entity_code: p.entity_code }));
       const nameMap = await resolveEntityNames(progressEntities);
@@ -764,8 +765,8 @@ const getReport = async (req, res) => {
       // Attach options
       for (const q of questions) {
         const [opts] = await db.query(
-          'SELECT * FROM checklist_question_options WHERE question_id = ? ORDER BY order_index',
-          [q.id]
+          'SELECT * FROM checklist_question_options WHERE checklist_question_id = ? ORDER BY order_index',
+          [q.checklist_question_id]
         );
         q.options = opts;
       }
@@ -804,7 +805,7 @@ const getEntityTree = async (req, res) => {
     const audit = await AuditModel.findById(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
 
-    if (req.user.role === 'auditor' && audit.assigned_auditor_code !== req.user.userCode) {
+    if (req.user.role === 'auditor' && audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
@@ -816,7 +817,7 @@ const getEntityTree = async (req, res) => {
       }
     }
 
-    let tree = await AuditExecutionModel.getEntityTree(parseInt(id));
+    let tree = await AuditExecutionModel.getEntityTree(id);
     if (req.user.role === 'entity_head' && tree) {
       tree = extractEntityHeadSubtree(tree, req.user.assignedOrgTreeId, scopeIds);
     }
