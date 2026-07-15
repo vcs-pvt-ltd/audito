@@ -19,6 +19,8 @@ import {
   BarChart3,
   Tag,
   X,
+  Crown,
+  Sparkles,
 } from "lucide-react";
 import Image from "next/image";
 import logo from "@/assets/logo/audito_logo.png";
@@ -239,7 +241,270 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
   );
 }
 
-/* ─── Merged Step 1: Account Type + Hierarchy ────────────────────── */
+/* ─── Plan Selection Step ──────────────────────────────────────── */
+
+const BASIC_YEARLY_TOTAL = Math.round(99 * 11 * 0.8);
+
+function PlanSelectionStep({
+  selectedPlan,
+  billingCycle,
+  onPlanSelect,
+  onBillingCycleChange,
+  onNext,
+  error,
+}: {
+  selectedPlan: string;
+  billingCycle: "Monthly" | "Yearly";
+  onPlanSelect: (plan: string) => void;
+  onBillingCycleChange: (cycle: "Monthly" | "Yearly") => void;
+  onNext: () => void;
+  error: string;
+}) {
+  const router = useRouter();
+  const isYearly = billingCycle === "Yearly";
+
+  const plans = [
+    {
+      key: "Basic",
+      name: "Basic",
+      price: isYearly ? `$${BASIC_YEARLY_TOTAL}` : "$0",
+      period: isYearly ? "/year" : "/month",
+      subtitle: isYearly ? "1st month free, then $79.20/mo" : "1st month free, then $99/mo",
+      desc: "Perfect for trying out Audito",
+      color: "from-[#378745]/40 to-[#1D4226]/40",
+      textColor: "text-white",
+    },
+    {
+      key: "Pro",
+      name: "Pro",
+      price: isYearly ? `$${Math.round(199 * 12 * 0.8)}` : "$199",
+      period: isYearly ? "/year" : "/month",
+      subtitle: isYearly ? `Save $${Math.round(199 * 12 * 0.2)}/year` : null,
+      desc: "For growing teams",
+      color: "from-[#F1FDF9]/40 to-[#B7DAD0]/60",
+      textColor: "text-[#062D27]",
+      badge: "Most Popular",
+    },
+    {
+      key: "Elite",
+      name: "Elite",
+      price: isYearly ? `$${Math.round(299 * 12 * 0.8)}` : "$299",
+      period: isYearly ? "/year" : "/month",
+      subtitle: isYearly ? `Save $${Math.round(299 * 12 * 0.2)}/year` : null,
+      desc: "For large organizations",
+      color: "from-[#0F766E] to-[#062D27]",
+      textColor: "text-white",
+    },
+    {
+      key: "Custom",
+      name: "Custom",
+      price: "Custom",
+      period: "",
+      subtitle: null,
+      desc: "Tailored to your needs",
+      color: "from-[#1a1a2e]/60 to-[#16213e]/60",
+      textColor: "text-[#EECA53]",
+    },
+  ];
+
+  const comparisonRows = [
+    { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6", "Custom"] },
+    { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16", "Custom"] },
+    { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14", "Custom"] },
+    { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25", "Custom"] },
+    { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15", "Custom"] },
+    { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true, true] },
+    { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true, true] },
+  ];
+  const workspaceRows = comparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
+  const coreRows = comparisonRows.filter((r) => r.group === "CORE FEATURES");
+
+  return (
+    <div className="glass rounded-2xl p-5 sm:p-8">
+      <div className="flex items-center gap-2 mb-6">
+        <button type="button" onClick={() => router.push('/')} className="text-gray-400 hover:text-white transition-colors">
+          <ArrowLeft size={18} />
+        </button>
+        <h3 className="text-lg font-semibold text-white">Choose Your Plan</h3>
+      </div>
+
+   
+
+      {/* ── Comparison Table ── */}
+      {/* Desktop table */}
+      <div className="hidden lg:block mb-6 overflow-x-auto">
+        <div className="min-w-[700px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-white/5 text-secondary-400">
+                <th className="text-left px-5 py-3 text-xs tracking-wide font-semibold uppercase">Workspace Management</th>
+                <th className="px-5 py-3 text-xs font-semibold">Basic</th>
+                <th className="px-5 py-3 text-xs font-semibold">Pro</th>
+                <th className="px-5 py-3 text-xs font-semibold">Elite</th>
+                <th className="px-5 py-3 text-xs font-semibold">Custom</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workspaceRows.map((row) => (
+                <tr key={row.feature} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+                  <td className="px-5 py-3 text-gray-200 text-xs">{row.feature}</td>
+                  {row.values.map((v, i) => (
+                    <td key={i} className="px-5 py-3 text-center text-white font-medium text-xs">
+                      {v === "Custom" ? <span className="text-[#EECA53] font-semibold">Custom</span> : v}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              <tr className="border-t border-white/10 bg-white/5">
+                <td className="px-5 py-2.5 text-xs tracking-wide font-semibold uppercase text-secondary-400">Core Features</td>
+                <td /><td /><td /><td />
+              </tr>
+              {coreRows.map((row) => (
+                <tr key={row.feature} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+                  <td className="px-5 py-3 text-gray-200 text-xs">{row.feature}</td>
+                  {row.values.map((v, i) => (
+                    <td key={i} className="px-5 py-3 text-center">
+                      {v
+                        ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950 shadow-sm shadow-secondary-500/40 mx-auto"><Check size={12} /></span>
+                        : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400 mx-auto"><X size={12} /></span>}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+         {/* Billing toggle */}
+      <div className="flex justify-center mb-6">
+        <div className="glass rounded-lg p-1 flex items-center gap-1 border border-white/5">
+          {(["Monthly", "Yearly"] as const).map((cycle) => (
+            <button
+              key={cycle}
+              type="button"
+              onClick={() => onBillingCycleChange(cycle)}
+              className={`relative px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
+                billingCycle === cycle
+                  ? "bg-secondary-500 text-primary-950 shadow"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              {cycle}
+              {cycle === "Yearly" && billingCycle !== "Yearly" && (
+                <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-emerald-500 text-primary-950 text-[8px] font-bold rounded-full">
+                  -20%
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Mobile/tablet comparison cards */}
+      <div className="lg:hidden space-y-3 mb-6">
+        <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1">Workspace Management</p>
+        {workspaceRows.map((row) => (
+          <div key={row.feature} className="glass rounded-xl border border-white/10 overflow-hidden">
+            <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
+            <div className="grid grid-cols-4 divide-x divide-white/10">
+              {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
+                <div key={name} className="flex flex-col items-center py-3 gap-1">
+                  <span className="text-[10px] text-gray-400">{name}</span>
+                  <span className={`text-sm font-semibold ${name === "Custom" ? "text-[#EECA53]" : "text-white"}`}>{row.values[i]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1 pt-2">Core Features</p>
+        {coreRows.map((row) => (
+          <div key={row.feature} className="glass rounded-xl border border-white/10 overflow-hidden">
+            <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
+            <div className="grid grid-cols-4 divide-x divide-white/10">
+              {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
+                <div key={name} className="flex flex-col items-center py-3 gap-1">
+                  <span className="text-[10px] text-gray-400">{name}</span>
+                  {row.values[i]
+                    ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950"><Check size={12} /></span>
+                    : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400"><X size={12} /></span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Plan cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        {plans.map((plan) => {
+          const isSelected = selectedPlan === plan.key;
+          return (
+            <button
+              key={plan.key}
+              type="button"
+              onClick={() => onPlanSelect(plan.key)}
+              className={`relative text-left rounded-2xl p-5 border transition-all ${
+                isSelected
+                  ? `bg-gradient-to-br ${plan.color} border-secondary-500/50 ring-2 ring-secondary-500`
+                  : `bg-gradient-to-br ${plan.color} border-white/10 hover:border-white/20`
+              }`}
+            >
+              {plan.badge && (
+                <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[9px] font-bold rounded-full uppercase tracking-wide whitespace-nowrap">
+                  {plan.badge}
+                </div>
+              )}
+              <div className="flex items-center gap-2 mb-3">
+                {plan.key === "Custom" ? (
+                  <Sparkles size={18} className="text-[#EECA53]" />
+                ) : plan.key === "Elite" ? (
+                  <Crown size={18} className="text-white" />
+                ) : (
+                  <Image src={logo} alt="Audito" className="h-auto w-16 object-contain" />
+                )}
+                <h4 className={`text-lg font-bold ${plan.textColor}`}>{plan.name}</h4>
+              </div>
+              <div className="mb-2">
+                <span className={`text-2xl font-bold ${plan.textColor}`}>{plan.price}</span>
+                {plan.period && <span className={`ml-1 text-xs ${plan.textColor} opacity-60`}>{plan.period}</span>}
+              </div>
+              {plan.subtitle && (
+                <p className="text-[11px] text-secondary-400 font-medium mb-1">{plan.subtitle}</p>
+              )}
+              <p className={`text-xs ${plan.textColor} opacity-60`}>{plan.desc}</p>
+              <div className={`mt-3 w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? "border-secondary-400 bg-secondary-400" : "border-white/20"}`}>
+                {isSelected && <Check size={11} className="text-primary-950" />}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4">
+          <p className="text-sm text-red-400">{error}</p>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={onNext}
+        className="w-full flex items-center justify-center gap-2 py-3.5 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-xl transition-all active:scale-[0.985]"
+      >
+        Continue Setup
+        <ArrowRight size={18} />
+      </button>
+
+      <p className="text-center text-sm text-gray-400 mt-5">
+        Already have an account?{" "}
+        <Link href="/login" className="text-secondary-400 hover:text-secondary-300 font-medium">Log in</Link>
+      </p>
+    </div>
+  );
+}
+
+/* ─── Step 2: Account Type + Hierarchy ────────────────────── */
 
 function AccountTypeStep({
   selectedGroup,
@@ -247,6 +512,7 @@ function AccountTypeStep({
   onGroupSelect,
   onEntityTypeSelect,
   onNext,
+  onBack,
   error,
 }: {
   selectedGroup: AccountGroup | null;
@@ -254,6 +520,7 @@ function AccountTypeStep({
   onGroupSelect: (g: AccountGroup) => void;
   onEntityTypeSelect: (e: AllEntityType) => void;
   onNext: () => void;
+  onBack: () => void;
   error: string;
 }) {
   const router = useRouter();
@@ -278,7 +545,7 @@ function AccountTypeStep({
     <div className="glass rounded-2xl p-5 sm:p-8">
       {/* Header */}
       <div className="flex items-center gap-2 mb-6">
-        <button type="button" onClick={() => router.push('/')} className="text-gray-400 hover:text-white transition-colors">
+        <button type="button" onClick={onBack} className="text-gray-400 hover:text-white transition-colors">
           <ArrowLeft size={18} />
         </button>
         <h3 className="text-lg font-semibold text-white">Select Account Type</h3>
@@ -452,15 +719,28 @@ function AccountTypeStep({
 
 function RegisterForm() {
   const searchParams = useSearchParams();
+  const router = useRouter();
 
-  // Steps: 1=account type+hierarchy (merged), 2=pricing, 3=org details, 4=admin
-  const [step, setStep] = useState(1);
+  const planFromUrl = searchParams.get("plan");
+  const typeFromUrl = searchParams.get("type");
+
+  const [step, setStep] = useState(() => {
+    if (planFromUrl && ["Basic", "Pro", "Elite"].includes(planFromUrl)) return 2;
+    if (planFromUrl === "Custom") return 2;
+    return 1;
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isRegistered, setIsRegistered] = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState<AccountGroup | null>("Customer");
-  const [selectedEntityType, setSelectedEntityType] = useState<AllEntityType | null>("Customer");
+  const [selectedGroup, setSelectedGroup] = useState<AccountGroup | null>(
+    (typeFromUrl && ["Customer", "Company", "Audit Firm"].includes(typeFromUrl) ? typeFromUrl : "Customer") as AccountGroup
+  );
+  const [selectedEntityType, setSelectedEntityType] = useState<AllEntityType | null>(
+    (typeFromUrl && ["Customer", "Company", "Audit Firm"].includes(typeFromUrl)
+      ? accountTypes.find((t) => t.key === typeFromUrl)!.entityTypes[0].name
+      : "Customer") as AllEntityType
+  );
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -507,6 +787,7 @@ function RegisterForm() {
   const [countries, setCountries] = useState<Country[]>([]);
   const [countrySearch, setCountrySearch] = useState("");
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const [agreedToPrivacyPolicy, setAgreedToPrivacyPolicy] = useState(false);
 
   const selectedCountry = countries.find((c) => c.country === formData.country);
   const dialCode = selectedCountry?.international_dialing || "";
@@ -516,7 +797,9 @@ function RegisterForm() {
   }, []);
 
   useEffect(() => {
+    const plan = searchParams.get("plan");
     const type = searchParams.get("type");
+
     if (type && ["Customer", "Company", "Audit Firm"].includes(type)) {
       const group = type as AccountGroup;
       setSelectedGroup(group);
@@ -525,31 +808,38 @@ function RegisterForm() {
       setFormData((prev) => ({ ...prev, entity_type: defaultEntity }));
     }
 
-    const plan = searchParams.get("plan");
-    if (plan === "Custom") {
-      setIsCustomPlan(true);
-      setFormData((prev) => ({ ...prev, plan_name: "Custom" }));
+    if (plan) {
+      if (plan === "Custom") {
+        setIsCustomPlan(true);
+        setFormData((prev) => ({ ...prev, plan_name: "Custom" }));
 
-      // Check if coming from /custom-solution with pre-configured limits
-      try {
-        const raw = sessionStorage.getItem("custom_solution_payload");
-        if (raw) {
-          const payload = JSON.parse(raw);
-          sessionStorage.removeItem("custom_solution_payload");
-          if (payload.customSolution) {
-            setCustomSolution(payload.customSolution);
-            setCustomLimitsReady(true);
+        try {
+          const raw = sessionStorage.getItem("custom_solution_payload");
+          if (raw) {
+            const payload = JSON.parse(raw);
+            sessionStorage.removeItem("custom_solution_payload");
+            if (payload.customSolution) {
+              setCustomSolution(payload.customSolution);
+              setCustomLimitsReady(true);
+            }
+            if (payload.billing_cycle) {
+              setFormData((prev) => ({ ...prev, billing_cycle: payload.billing_cycle }));
+            }
           }
-          if (payload.billing_cycle) {
-            setFormData((prev) => ({ ...prev, billing_cycle: payload.billing_cycle }));
-          }
-          // Stay at step 1 so user can select account type; step 2 will be skipped
+        } catch {
+          // Ignore parse errors
         }
-      } catch {
-        // Ignore parse errors — fall through to normal flow
+      } else if (["Basic", "Pro", "Elite"].includes(plan)) {
+        setFormData((prev) => ({ ...prev, plan_name: plan }));
       }
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (isCustomPlan && customLimitsReady && step < 4) {
+      setStep(4);
+    }
+  }, [customLimitsReady, isCustomPlan]);
 
   // Auto-sync org_email to admin email
   useEffect(() => {
@@ -574,13 +864,30 @@ function RegisterForm() {
   };
 
   const handleStep1Next = () => {
+    if (!formData.plan_name || !["Basic", "Pro", "Elite", "Custom"].includes(formData.plan_name)) {
+      setError("Please select a plan to continue.");
+      return;
+    }
+    setError("");
+    if (formData.plan_name === "Custom") {
+      setIsCustomPlan(true);
+      if (customLimitsReady) {
+        setStep(4);
+      } else {
+        setStep(2);
+      }
+    } else {
+      setStep(2);
+    }
+  };
+
+  const handleStep2Next = () => {
     if (!selectedEntityType) {
       setError("Please select an entity type to continue.");
       return;
     }
     setError("");
-    // If custom limits were pre-configured on /custom-solution, skip step 2
-    setStep(customLimitsReady ? 3 : 2);
+    setStep(isCustomPlan && !customLimitsReady ? 3 : 4);
   };
 
   const passwordRequirements = useMemo(() => ({
@@ -633,6 +940,7 @@ function RegisterForm() {
 
     if (!formData.password) return "Password is required.";
     if (formData.password !== confirmPassword) return "Passwords do not match.";
+    if (!agreedToPrivacyPolicy) return "You must agree to the Privacy Policy to create an account.";
     return null;
   };
 
@@ -738,22 +1046,47 @@ function RegisterForm() {
         </div>
 
         <StepIndicator current={step} total={4} />
-        <p className="text-center text-xs text-gray-500 mb-6">Step {step} of 4</p>
+        <p className="text-center text-xs text-gray-500 mb-6">
+          {step === 1 && "Step 1 of 4 — Choose Your Plan"}
+          {step === 2 && "Step 2 of 4 — Account Type"}
+          {step === 3 && (isCustomPlan && !customLimitsReady ? "Step 3 of 4 — Configure Plan" : "Step 3 of 4 — Organization Details")}
+          {step === 4 && (isCustomPlan && !customLimitsReady ? "Step 4 of 4 — Organization Details" : "Step 4 of 4 — Admin Account")}
+          {step === 5 && "Step 4 of 4 — Admin Account"}
+        </p>
 
-        {/* ─── Step 1: Merged account type + hierarchy ── */}
-        {step === 1 && (
-          <AccountTypeStep
-            selectedGroup={selectedGroup}
-            selectedEntityType={selectedEntityType}
-            onGroupSelect={handleGroupSelect}
-            onEntityTypeSelect={handleEntityTypeSelect}
+        {/* ─── Step 1: Plan Selection ── */}
+        {step === 1 && !planFromUrl && (
+          <PlanSelectionStep
+            selectedPlan={formData.plan_name || "Basic"}
+            billingCycle={formData.billing_cycle as "Monthly" | "Yearly"}
+            onPlanSelect={(plan) => {
+              setFormData((prev) => ({ ...prev, plan_name: plan }));
+              setError("");
+            }}
+            onBillingCycleChange={(cycle) => updateField("billing_cycle", cycle)}
             onNext={handleStep1Next}
             error={error}
           />
         )}
 
-        {/* ─── Step 2: Pricing Plans or Custom Configuration ──────────── */}
-        {step === 2 && isCustomPlan && (() => {
+        {/* ─── Step 2: Merged account type + hierarchy ── */}
+        {step === 2 && (
+          <AccountTypeStep
+            selectedGroup={selectedGroup}
+            selectedEntityType={selectedEntityType}
+            onGroupSelect={handleGroupSelect}
+            onEntityTypeSelect={handleEntityTypeSelect}
+            onNext={handleStep2Next}
+            onBack={() => {
+              if (isCustomPlan && !customLimitsReady) setStep(1);
+              else router.push("/");
+            }}
+            error={error}
+          />
+        )}
+
+        {/* ─── Step 3: Custom Configuration (when coming from /custom-solution without pre-filled limits) ── */}
+        {step === 3 && isCustomPlan && !customLimitsReady && (() => {
           const customFeatures = [
             { key: "max_company_levels" as const, label: "Company Levels", min: 1, max: 20, desc: "Hierarchical organizational levels" },
             { key: "max_departments" as const, label: "Departments", min: 1, max: 100, desc: "Department entities in your organization" },
@@ -765,7 +1098,7 @@ function RegisterForm() {
           return (
             <div className="glass rounded-2xl p-6 sm:p-8">
               <div className="flex items-center gap-2 mb-5">
-                <button type="button" onClick={() => setStep(1)} className="text-gray-400 hover:text-white transition-colors">
+                <button type="button" onClick={() => setStep(2)} className="text-gray-400 hover:text-white transition-colors">
                   <ArrowLeft size={18} />
                 </button>
                 <h3 className="text-lg font-semibold text-white">Configure Your Custom Plan</h3>
@@ -859,7 +1192,7 @@ function RegisterForm() {
                 type="button"
                 onClick={() => {
                   setError("");
-                  setStep(3);
+                  setStep(4);
                 }}
                 className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-lg transition-all"
               >
@@ -870,205 +1203,12 @@ function RegisterForm() {
           );
         })()}
 
-        {step === 2 && !isCustomPlan && (() => {
-          const isYearly = formData.billing_cycle === "Yearly";
-          const price = (monthly: number) =>
-            isYearly ? Math.round(monthly * 12 * 0.8) : monthly;
-          const period = isYearly ? "/year" : "/month";
-
-          return (
-            <div className="glass rounded-2xl p-6 sm:p-8">
-              <div className="flex items-center gap-2 mb-5">
-                <button type="button" onClick={() => setStep(1)} className="text-gray-400 hover:text-white transition-colors">
-                  <ArrowLeft size={18} />
-                </button>
-                <h3 className="text-lg font-semibold text-white">Choose Your Plan</h3>
-              </div>
-
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-5">
-                  <p className="text-sm text-red-400">{error}</p>
-                </div>
-              )}
-
-              {/* Billing toggle */}
-              <div className="flex justify-center mb-6">
-                <div className="glass rounded-lg p-1 flex items-center gap-1 border border-white/5">
-                  {(["Monthly", "Yearly"] as const).map((cycle) => (
-                    <button
-                      key={cycle}
-                      type="button"
-                      onClick={() => {
-                        updateField("billing_cycle", cycle);
-                        if (cycle === "Yearly" && formData.plan_name === "Basic") {
-                          updateField("plan_name", "Pro");
-                        }
-                      }}
-                      className={`relative px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
-                        formData.billing_cycle === cycle
-                          ? "bg-secondary-500 text-primary-950 shadow"
-                          : "text-gray-400 hover:text-white"
-                      }`}
-                    >
-                      {cycle}
-                      {cycle === "Yearly" && formData.billing_cycle !== "Yearly" && (
-                        <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-emerald-500 text-primary-950 text-[8px] font-bold rounded-full">
-                          -20%
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                {/* Basic */}
-                <div
-                  onClick={() => !isYearly && updateField("plan_name", "Basic")}
-                  className={`relative rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#378745]/40 to-[#1D4226]/40 flex flex-col transition-all ${
-                    isYearly
-                      ? "opacity-40 cursor-not-allowed select-none"
-                      : `cursor-pointer hover:-translate-y-1 ${formData.plan_name === "Basic" ? "ring-2 ring-secondary-500" : ""}`
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-4">
-                    <Image src={logo} alt="Audito" className="h-auto w-20 object-contain" />
-                    <h3 className="text-2xl font-bold text-white">Basic</h3>
-                  </div>
-                  <div className="mb-1">
-                    <span className="text-4xl font-bold text-white">$0</span>
-                    <span className="ml-1 text-sm text-gray-400">/month</span>
-                  </div>
-                  <p className="text-sm text-gray-400 mb-4">Perfect for trying out Audito</p>
-                  <div className={`mt-auto w-5 h-5 rounded-full border-2 flex items-center justify-center self-end ${!isYearly && formData.plan_name === "Basic" ? "border-secondary-400 bg-secondary-400" : "border-white/20"}`}>
-                    {!isYearly && formData.plan_name === "Basic" && <Check size={11} className="text-primary-950" />}
-                  </div>
-                  {isYearly && (
-                    <div className="absolute inset-0 rounded-3xl flex items-center justify-center">
-                      <span className="px-3 py-1 bg-black/30 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Pro */}
-                <div
-                  onClick={() => updateField("plan_name", "Pro")}
-                  className={`relative rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#F1FDF9]/40 to-[#B7DAD0]/60 flex flex-col cursor-pointer transition-all hover:-translate-y-1 ${
-                    formData.plan_name === "Pro" ? "ring-2 ring-secondary-500" : ""
-                  }`}
-                >
-                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[10px] font-bold rounded-full uppercase tracking-wide shadow-lg whitespace-nowrap">
-                    Most Popular
-                  </div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Image src={logo} alt="Audito" className="h-auto w-20 object-contain" />
-                    <h3 className="text-2xl font-bold text-[#062D27]">Pro</h3>
-                  </div>
-                  <div className="mb-1">
-                    <span className="text-4xl font-bold text-[#062D27]">${price(99)}</span>
-                    <span className="ml-1 text-sm text-[#062D27]">{period}</span>
-                  </div>
-                  {isYearly && (
-                    <p className="text-[11px] text-emerald-700 mb-1">Save ${Math.round(99 * 12 * 0.2)}/year</p>
-                  )}
-                  <p className="text-sm text-[#062D27] mb-4">For growing teams</p>
-                  <div className={`mt-auto w-5 h-5 rounded-full border-2 flex items-center justify-center self-end ${formData.plan_name === "Pro" ? "border-secondary-400 bg-secondary-400" : "border-[#062D27]/30"}`}>
-                    {formData.plan_name === "Pro" && <Check size={11} className="text-primary-950" />}
-                  </div>
-                </div>
-
-                {/* Elite */}
-                <div
-                  onClick={() => updateField("plan_name", "Elite")}
-                  className={`rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#0F766E] to-[#062D27] flex flex-col cursor-pointer transition-all hover:-translate-y-1 ${
-                    formData.plan_name === "Elite" ? "ring-2 ring-secondary-500" : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-4">
-                    <Image src={logo} alt="Audito" className="h-auto w-20 object-contain" />
-                    <h3 className="text-2xl font-bold text-white">Elite</h3>
-                  </div>
-                  <div className="mb-1">
-                    <span className="text-4xl font-bold text-white">${price(299)}</span>
-                    <span className="ml-1 text-sm text-gray-300">{period}</span>
-                  </div>
-                  {isYearly && (
-                    <p className="text-[11px] text-emerald-400 mb-1">Save ${Math.round(299 * 12 * 0.2)}/year</p>
-                  )}
-                  <p className="text-sm text-gray-300 mb-4">For large organizations</p>
-                  <div className={`mt-auto w-5 h-5 rounded-full border-2 flex items-center justify-center self-end ${formData.plan_name === "Elite" ? "border-secondary-400 bg-secondary-400" : "border-white/30"}`}>
-                    {formData.plan_name === "Elite" && <Check size={11} className="text-primary-950" />}
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Promo Code Section ── */}
-              {formData.plan_name !== "Basic" && !isYearly && (
-                <div className="mb-4">
-                  {promoDiscount ? (
-                    <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-secondary-500/40 bg-secondary-500/10">
-                      <div className="flex items-center gap-2">
-                        <Tag size={14} className="text-secondary-400" />
-                        <span className="text-sm text-secondary-400 font-semibold">{formData.promo_code}</span>
-                        <span className="text-xs text-secondary-300">— {promoDiscount}% off applied!</span>
-                      </div>
-                      <button type="button" onClick={handleRemovePromo} className="text-gray-400 hover:text-red-400 transition-colors">
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-2 uppercase tracking-wider">Have a Promo Code?</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={promoCode}
-                          onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoError(""); }}
-                          placeholder="ENTER CODE"
-                          className="flex-1 px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-secondary-500/50 transition-colors tracking-widest uppercase"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleValidatePromo}
-                          disabled={promoLoading || !promoCode.trim()}
-                          className="px-4 py-2.5 rounded-lg bg-secondary-500 hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed text-primary-950 text-sm font-semibold transition-colors flex items-center gap-2"
-                        >
-                          {promoLoading ? <Loader2 size={14} className="animate-spin" /> : <Tag size={14} />}
-                          Apply
-                        </button>
-                      </div>
-                      {promoError && <p className="text-xs text-red-400 mt-1.5">{promoError}</p>}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  const plan = formData.plan_name;
-                  if (!plan || !["Basic", "Pro", "Elite"].includes(plan)) {
-                    setError("Please select a plan to continue.");
-                    return;
-                  }
-                  setError("");
-                  setStep(3);
-                }}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-lg transition-all"
-              >
-                Next: Organization Details
-                <ArrowRight size={16} />
-              </button>
-            </div>
-          );
-        })()}
-
-        {/* ─── Step 3: Organization Details ──────────────────────────── */}
-        {step === 3 && (
+        {/* ─── Step 4: Organization Details ──────────────────────────── */}
+        {step === 4 && (
           <div className="glass rounded-2xl p-6 sm:p-8">
             <div className="flex items-center gap-2 mb-6">
               <button
-                onClick={() => setStep(2)}
+                onClick={() => setStep(isCustomPlan && !customLimitsReady ? 3 : 2)}
                 className="text-gray-400 hover:text-white transition-colors"
               >
                 <ArrowLeft size={18} />
@@ -1252,7 +1392,7 @@ function RegisterForm() {
                   const err = validateStep3();
                   if (err) { setError(err); return; }
                   setError("");
-                  setStep(4);
+                  setStep(5);
                 }}
                 className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-lg transition-all"
               >
@@ -1270,13 +1410,13 @@ function RegisterForm() {
           </div>
         )}
 
-        {/* ─── Step 4: Admin Account ─────────────────────────────────── */}
-        {step === 4 && (
+        {/* ─── Step 5: Admin Account ─────────────────────────────────── */}
+        {step === 5 && (
           <form onSubmit={handleSubmit} className="glass rounded-2xl p-6 sm:p-8">
             <div className="flex items-center gap-2 mb-6">
               <button
                 type="button"
-                onClick={() => setStep(3)}
+                onClick={() => setStep(isCustomPlan && !customLimitsReady ? 3 : 4)}
                 className="text-gray-400 hover:text-white transition-colors"
               >
                 <ArrowLeft size={18} />
@@ -1434,6 +1574,40 @@ function RegisterForm() {
                   </div>
                 </div>
               )}
+
+              {/* Privacy Policy Agreement */}
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <div className="relative mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={agreedToPrivacyPolicy}
+                    onChange={(e) => setAgreedToPrivacyPolicy(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <div className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${
+                    agreedToPrivacyPolicy
+                      ? "bg-secondary-500 border-secondary-500"
+                      : "border-white/30 bg-white/5 group-hover:border-white/50"
+                  }`}>
+                    {agreedToPrivacyPolicy && (
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M2.5 6L5 8.5L9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary-950" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+                <span className="text-sm text-gray-400 leading-snug">
+                  I agree to the{" "}
+                  <Link
+                    href="/privacy-policies"
+                    target="_blank"
+                    className="text-secondary-400 hover:text-secondary-300 font-medium underline underline-offset-2"
+                  >
+                    Privacy Policy
+                  </Link>
+                  {" "}and acknowledge that my data will be processed in accordance with it.
+                </span>
+              </label>
 
               <button
                 type="submit"

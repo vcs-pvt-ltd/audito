@@ -19,7 +19,7 @@ import {
   BadgePercent,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { auditApi, checklistApi, usersApi, structureApi, orgTreeApi, paymentApi, billingCreditsApi, type PaymentDetails, type LinkBillingCredit } from "@/lib/api";
+import { auditApi, checklistApi, usersApi, structureApi, paymentApi, billingCreditsApi, type PaymentDetails, type LinkBillingCredit } from "@/lib/api";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui";
 
@@ -33,6 +33,8 @@ const COMPARISON_ROWS = [
   { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
 ];
 
+const BASIC_YEARLY_TOTAL = Math.round(99 * 11 * 0.8);
+
 const PLANS = [
   {
     name: "Basic",
@@ -40,17 +42,17 @@ const PLANS = [
     description: "Perfect for trying out Audito",
     color: "from-[#378745]/40 to-[#1D4226]/40",
     badge: null,
-    limits: { audits: 2, checklists: 3, auditors: 1, department: 4, company_level: 1 },
+    limits: { audits: 2, checklists: 3, auditors: 1, department: 4 },
   },
   {
     name: "Pro",
-    priceMonthly: 99,
+    priceMonthly: 199,
     description: "For growing teams",
     popular: true,
     color: "from-[#F1FDF9]/40 to-[#B7DAD0]/60",
     textColor: "text-[#062D27]",
     badge: "Most Popular",
-    limits: { audits: 6, checklists: 6, auditors: 3, department: 8, company_level: 2 },
+    limits: { audits: 6, checklists: 6, auditors: 3, department: 8 },
   },
   {
     name: "Elite",
@@ -58,7 +60,7 @@ const PLANS = [
     description: "For large organizations",
     color: "from-[#0F766E] to-[#062D27]",
     badge: null,
-    limits: { audits: 14, checklists: 25, auditors: 15, department: 16, company_level: 6 },
+    limits: { audits: 14, checklists: 25, auditors: 15, department: 16 },
   },
 ];
 
@@ -68,7 +70,7 @@ export default function BillingPage() {
   const router = useRouter();
   const [loadingUsage, setLoadingUsage] = useState(true);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
-  const [stats, setStats] = useState({ audits: 0, checklists: 0, auditors: 0, departments: 0, levels: 0 });
+  const [stats, setStats] = useState({ audits: 0, checklists: 0, auditors: 0, departments: 0 });
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const [payments, setPayments] = useState<PaymentDetails[]>([]);
   const [linkCredits, setLinkCredits] = useState<LinkBillingCredit[]>([]);
@@ -103,15 +105,13 @@ export default function BillingPage() {
         checklistApi.list(accessToken),
         usersApi.list(accessToken, "Auditor"),
         isCompany ? structureApi.listByType(accessToken, "department") : Promise.resolve({ success: true, data: { items: [] } }),
-        orgTreeApi.getTree(accessToken),
       ])
-        .then(([auditsRes, checklistsRes, auditorsRes, deptsRes, treeRes]) => {
+        .then(([auditsRes, checklistsRes, auditorsRes, deptsRes]) => {
           setStats({
             audits: (auditsRes.data as any)?.audits?.length || 0,
             checklists: (checklistsRes.data as any)?.checklists?.length || (checklistsRes.data as any)?.length || 0,
             auditors: (auditorsRes.data as any)?.users?.length || 0,
             departments: (deptsRes.data as any)?.items?.length || 0,
-            levels: (treeRes.data as any)?.hierarchyChain?.length || 0,
           });
         })
         .finally(() => setLoadingUsage(false));
@@ -247,11 +247,11 @@ export default function BillingPage() {
           {/* Usage bars — 2 col on mobile, 5 col on md+ */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6">
             {[
+              { label: "Company Levels", current: stats.departments, limit: admin.plan_limits?.company_level || 1, icon: Building2 },
               { label: "Audits", current: stats.audits, limit: admin.plan_limits?.audits, icon: BarChart3 },
               { label: "Checklists", current: stats.checklists, limit: admin.plan_limits?.checklists, icon: CheckCircle2 },
               { label: "Auditors", current: stats.auditors, limit: admin.plan_limits?.auditors, icon: UsersIcon },
               { label: "Departments", current: stats.departments, limit: admin.plan_limits?.department, icon: Building2 },
-              { label: "Levels", current: stats.levels, limit: admin.plan_limits?.company_level, icon: Zap },
             ].map((item) => {
               const pct = Math.min(100, ((item.current) / (item.limit || 1)) * 100);
               const isNearLimit = pct >= 80;
@@ -294,27 +294,23 @@ export default function BillingPage() {
           >
             {visiblePlans.map((plan) => {
               const isCurrent = currentPlan.name === plan.name;
-              const isBasicYearly = plan.name === "Basic" && billingCycle === "yearly";
-              const price = billingCycle === "monthly" ? plan.priceMonthly : Math.round(plan.priceMonthly * 12 * 0.8);
+              const isBasicYearly = false;
+              const price = plan.name === "Basic" && billingCycle === "yearly"
+                ? BASIC_YEARLY_TOTAL
+                : billingCycle === "monthly" ? plan.priceMonthly : Math.round(plan.priceMonthly * 12 * 0.8);
               const period = billingCycle === "monthly" ? "/mo" : "/year";
+              const priceLabel = plan.name === "Basic" ? `$${price}` : `$${price}`;
+              const periodLabel = plan.name === "Basic" && billingCycle === "yearly" ? "/year" : (plan.name === "Basic" ? "/month" : period);
 
               return (
                 <div
                   key={plan.name}
                   className={`relative rounded-2xl border border-white/10 bg-gradient-to-br ${plan.color} p-5 sm:p-6 flex flex-col transition-all duration-300 ${
-                    isBasicYearly
-                      ? "opacity-40 select-none"
-                      : isCurrent
+                    isCurrent
                       ? "ring-2 ring-secondary-500 ring-offset-2 ring-offset-primary-950"
                       : "hover:border-white/20"
                   }`}
                 >
-                  {isBasicYearly && (
-                    <div className="absolute inset-0 rounded-2xl flex items-center justify-center z-10">
-                      <span className="px-3 py-1 bg-black/40 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
-                    </div>
-                  )}
-
                   {plan.badge && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[10px] font-bold rounded-full uppercase tracking-wide shadow-lg whitespace-nowrap z-10">
                       {plan.badge}
@@ -328,28 +324,31 @@ export default function BillingPage() {
 
                   <div className={`mb-5 ${plan.textColor || "text-white"}`}>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-3xl font-bold">${plan.name === "Basic" ? 0 : price}</span>
-                      <span className="text-xs opacity-60">{plan.name === "Basic" ? "/month" : period}</span>
+                      <span className="text-3xl font-bold">${price}</span>
+                      <span className="text-xs opacity-60">{periodLabel}</span>
                     </div>
+                    {plan.name === "Basic" && (
+                      <p className="text-[10px] opacity-50 mt-0.5">{billingCycle === "yearly" ? "$79.20/mo after 1st month free" : "$99/mo from 2nd month"}</p>
+                    )}
                   </div>
 
                   <button
-                    disabled={isCurrent || isBasicYearly || checkingOut !== null}
+                    disabled={isCurrent || checkingOut !== null}
                     onClick={() => handleUpgrade(plan.name)}
-                    className={`mt-auto w-full py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
-                      isCurrent || isBasicYearly
+                    className={`mt-auto w-full py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap- ${
+                      isCurrent
                         ? "bg-white/10 text-white/40 cursor-default border border-white/10"
                         : plan.name === "Elite"
                         ? "bg-secondary-500 text-primary-950 hover:bg-secondary-400"
                         : "bg-white/10 hover:bg-white/20 text-white border border-white/10"
-                    } ${checkingOut !== null && !isCurrent && !isBasicYearly ? "opacity-60 cursor-wait" : ""}`}
+                    } ${checkingOut !== null && !isCurrent ? "opacity-60 cursor-wait" : ""}`}
                   >
                     {checkingOut === plan.name ? (
                       <Loader2 size={14} className="animate-spin" />
                     ) : (
                       <>
                         {isCurrent ? "Current Plan" : subscription?.is_expired ? "Renew" : "Upgrade"}
-                        {!isCurrent && !isBasicYearly && <ArrowRight size={14} />}
+                        {!isCurrent && <ArrowRight size={14} />}
                       </>
                     )}
                   </button>
