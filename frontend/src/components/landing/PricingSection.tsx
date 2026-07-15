@@ -17,11 +17,13 @@ type Plan = {
 };
 
 const PLAN_DEFS = [
-  { name: "Basic", priceMonthly: 0, description: "Perfect for trying out Audito", cta: "Get Started", href: "/register" },
-  { name: "Pro", priceMonthly: 99, description: "For growing teams", cta: "Get Started", href: "/register" },
-  { name: "Elite", priceMonthly: 299, description: "For large organizations", cta: "Get Started", href: "/register" },
+  { name: "Basic", priceMonthly: 0, description: "Perfect for trying out Audito", cta: "Get Started", href: "/register?plan=Basic" },
+  { name: "Pro", priceMonthly: 199, description: "For growing teams", cta: "Get Started", href: "/register?plan=Pro" },
+  { name: "Elite", priceMonthly: 299, description: "For large organizations", cta: "Get Started", href: "/register?plan=Elite" },
   { name: "Custom", priceMonthly: 0, description: "Tailored to your needs", cta: "Contact Us", href: "/custom-solution" },
 ];
+
+const BASIC_YEARLY_TOTAL = Math.round(99 * 11 * 0.8);
 
 const comparisonRows = [
   { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6", "Custom"] },
@@ -35,16 +37,19 @@ const comparisonRows = [
 
 type CardProps = { plan: Plan };
 
-const BasicCard = ({ plan }: CardProps) => (
+const BasicCard = ({ plan, billingCycle }: CardProps & { billingCycle?: "monthly" | "yearly" }) => {
+  const isYearly = billingCycle === "yearly";
+  return (
   <div className="pricing-card rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#378745]/40 to-[#1D4226]/40 h-full flex flex-col">
     <div className="flex justify-start mb-4">
       <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
       <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">{plan.name}</h3>
     </div>
-    <div className="text-start mb-2">
-      <span className="text-4xl sm:text-5xl font-bold text-white">{plan.price}</span>
-      <span className="ml-1 text-sm text-gray-400">{plan.period}</span>
+    <div className="text-start mb-1">
+      <span className="text-4xl sm:text-5xl font-bold text-white">{isYearly ? `$${BASIC_YEARLY_TOTAL}` : plan.price}</span>
+      <span className="ml-1 text-sm text-gray-400">{isYearly ? "/year" : "/month"}</span>
     </div>
+    <p className="text-xs text-secondary-400 mb-1">{isYearly ? "$79.20/mo after 1st month free" : "$99/mo from 2nd month"}</p>
     <p className="text-sm mb-5 text-start text-gray-400">{plan.description}</p>
     <Link href={plan.href}
       className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-white bg-[#27645E] hover:bg-[#1d4f4a] hover:shadow-lg hover:shadow-black/30 active:scale-[0.98]"
@@ -52,7 +57,8 @@ const BasicCard = ({ plan }: CardProps) => (
       {plan.cta}
     </Link>
   </div>
-);
+  );
+};
 
 const ProCard = ({ plan }: CardProps) => (
   <div className="pricing-card pricing-card-pro relative rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#F1FDF9]/40 to-[#B7DAD0]/60 h-full flex flex-col">
@@ -318,17 +324,7 @@ export default function PricingSection() {
         {/* Desktop cards */}
         <div className="hidden lg:grid grid-cols-4 gap-6 xl:gap-8 max-w-7xl mx-auto mb-8 items-stretch">
           <Reveal variant="up" delay={0} className="h-full">
-            <div className={`h-full transition-opacity duration-300 ${billingCycle === "yearly" ? "opacity-40 pointer-events-none select-none" : ""}`}>
-              {billingCycle === "yearly" && (
-                <div className="relative h-full">
-                  <BasicCard plan={plans[0]} />
-                  <div className="absolute inset-0 rounded-3xl flex items-center justify-center">
-                    <span className="px-3 py-1 bg-white/10 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
-                  </div>
-                </div>
-              )}
-              {billingCycle !== "yearly" && <BasicCard plan={plans[0]} />}
-            </div>
+            <BasicCard plan={plans[0]} billingCycle={billingCycle} />
           </Reveal>
           <Reveal variant="up" delay={120} className="h-full"><ProCard plan={plans[1]} /></Reveal>
           <Reveal variant="up" delay={240} className="h-full"><EliteCard plan={plans[2]} /></Reveal>
@@ -339,14 +335,7 @@ export default function PricingSection() {
         <div className="hidden md:flex lg:hidden flex-col gap-5 max-w-3xl mx-auto mb-8">
           <div className="w-full"><ProCard plan={plans[1]} /></div>
           <div className="grid grid-cols-2 gap-5">
-            <div className={`transition-opacity duration-300 ${billingCycle === "yearly" ? "opacity-40 pointer-events-none select-none relative" : ""}`}>
-              <BasicCard plan={plans[0]} />
-              {billingCycle === "yearly" && (
-                <div className="absolute inset-0 rounded-3xl flex items-center justify-center">
-                  <span className="px-3 py-1 bg-white/10 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
-                </div>
-              )}
-            </div>
+            <BasicCard plan={plans[0]} billingCycle={billingCycle} />
             <EliteCard plan={plans[2]} />
           </div>
           <div className="w-full"><CustomCard plan={plans[3]} /></div>
@@ -355,14 +344,7 @@ export default function PricingSection() {
         {/* Mobile cards */}
         <div className="flex flex-col md:hidden gap-5 max-w-sm mx-auto mb-8">
           <ProCard plan={plans[1]} />
-          <div className={`transition-opacity duration-300 ${billingCycle === "yearly" ? "opacity-40 pointer-events-none select-none relative" : ""}`}>
-            <BasicCard plan={plans[0]} />
-            {billingCycle === "yearly" && (
-              <div className="absolute inset-0 rounded-3xl flex items-center justify-center">
-                <span className="px-3 py-1 bg-white/10 border border-white/20 rounded-full text-xs text-gray-300 font-medium backdrop-blur-sm">Monthly only</span>
-              </div>
-            )}
-          </div>
+          <BasicCard plan={plans[0]} billingCycle={billingCycle} />
           <EliteCard plan={plans[2]} />
           <CustomCard plan={plans[3]} />
         </div>

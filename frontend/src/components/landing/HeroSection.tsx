@@ -132,7 +132,7 @@ export default function HeroSection() {
             <strong className="text-white">improve efficiency</strong> with ease.
           </p>
 
-          <Link href="/register"
+          <Link href="/register?plan=Basic"
             className="hero-cta cta-glow inline-flex items-center gap-2 px-6 py-3 bg-[#B8860B] hover:bg-[#A07509] text-white font-semibold rounded-lg transition-colors text-sm group"
           >
             Start a Free Trial
@@ -205,7 +205,7 @@ export default function HeroSection() {
               with ease
             </p>
 
-            <Link href="/register"
+            <Link href="/register?plan=Basic"
               className="hero-cta cta-glow inline-flex items-center gap-2 px-6 py-3 bg-[#B8860B] hover:bg-[#A07509] text-white font-semibold rounded-lg transition-colors text-sm group"
             >
               Start a Free Trial

@@ -17,19 +17,10 @@ const LimitsEnforcer = {
   async checkStructureLimits(rootEntityCode, entityType) {
     const limits = await SubscriptionModel.getLimits(rootEntityCode);
 
-    if (entityType === 'Company') {
-      const [[{ count }]] = await db.query(
-        'SELECT COUNT(*) as count FROM companies WHERE cust_code = ? AND is_active = TRUE', [rootEntityCode]
-      );
-      if (count >= limits.company_level) {
-        return `Plan Limit Reached: Your current plan allows a maximum of ${limits.company_level} Company entity(s).`;
-      }
-    }
-    else if (entityType === 'Department') {
+    if (entityType === 'Department') {
       const [[{ count: compDeptCount }]] = await db.query(
         'SELECT COUNT(*) as count FROM company_departments WHERE (cust_code = ? OR comp_code = ?) AND is_active = TRUE', [rootEntityCode, rootEntityCode]
       );
-      // Wait, Audit Firm might also create departments. But the table says "Company level", "Department".
       if (compDeptCount >= limits.department) {
         return `Plan Limit Reached: Your current plan allows a maximum of ${limits.department} Department entity(s).`;
       }

@@ -717,26 +717,6 @@ export default function OrganizationPage() {
           }
         }
 
-        // 2. Organization Levels (Depth) Limit
-        const findDepthOfParent = (node: TreeNode, targetCode: string, targetEdgeId: string | number | null): number | null => {
-          if (node.code === targetCode && String(node.edge_id ?? null) === String(targetEdgeId)) return 1;
-          for (const child of node.children) {
-            const d = findDepthOfParent(child, targetCode, targetEdgeId);
-            if (d !== null) return d + 1;
-          }
-          return null;
-        };
-
-        const parentDepth = findDepthOfParent(tree, parentCode, parentEdgeId);
-        if (parentDepth !== null && parentDepth + 1 > admin.plan_limits.company_level) {
-          setLimitModal({
-            open: true,
-            title: "Level Limit Reached",
-            message: `Your current plan only allows up to ${admin.plan_limits.company_level} levels in the organization hierarchy.`,
-            limit: admin.plan_limits.company_level
-          });
-          return;
-        }
       }
 
       // Immediately sync to backend

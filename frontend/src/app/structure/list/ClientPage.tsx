@@ -298,7 +298,6 @@ export default function SetupStructurePage() {
 
   const isLimitExceeded = (() => {
     if (!admin?.plan_limits) return false;
-    if (config.entityTypeBody === "Company") return entities.length >= (admin.plan_limits.company_level || 0);
     if (admin.plan_limits.department !== undefined) return entities.length >= admin.plan_limits.department;
     return false;
   })();
@@ -313,10 +312,6 @@ export default function SetupStructurePage() {
       return;
     }
     if (admin?.plan_limits) {
-      if (config.entityTypeBody === "Company" && entities.length >= admin.plan_limits.company_level) {
-        setLimitModalOpen(true);
-        return;
-      }
       // For non-company entity types, enforce the department quota per entity type
       if (config.entityTypeBody !== "Company" && admin.plan_limits.department !== undefined && entities.length >= admin.plan_limits.department) {
         setLimitModalOpen(true);
@@ -415,21 +410,9 @@ export default function SetupStructurePage() {
         <LimitReachedModal
           isOpen={limitModalOpen}
           onClose={() => setLimitModalOpen(false)}
-          title={
-            config.entityTypeBody === "Company"
-              ? `${config.label} Limit Reached`
-              : "Structure Entity Limit Reached"
-          }
-          message={
-            config.entityTypeBody === "Company"
-              ? `Your current plan has reached the maximum number of ${config.labelPlural.toLowerCase()} allowed.`
-              : "Your current plan has reached the maximum number of structure entities allowed across your organizational structure."
-          }
-          limit={
-            config.entityTypeBody === "Company"
-              ? admin?.plan_limits?.company_level || 0
-              : admin?.plan_limits?.department || 0
-          }
+          title="Structure Entity Limit Reached"
+          message="Your current plan has reached the maximum number of structure entities allowed across your organizational structure."
+          limit={admin?.plan_limits?.department || 0}
         />
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
