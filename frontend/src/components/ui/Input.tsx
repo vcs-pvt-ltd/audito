@@ -3,12 +3,12 @@
 import React from "react";
 
 export const fieldClass =
-  "w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/30 transition-all";
+  "w-full min-h-11 bg-black/10 border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-400/60 focus:ring-4 focus:ring-secondary-500/10 focus:bg-white/[0.055] transition-all";
 
 function Label({ label, required }: { label?: React.ReactNode; required?: boolean }) {
   if (!label) return null;
   return (
-    <label className="block text-sm text-gray-400 mb-1.5">
+    <label className="block text-sm font-medium text-gray-300 mb-2">
       {label} {required && <span className="text-red-400">*</span>}
     </label>
   );
@@ -28,7 +28,7 @@ export function Input({ label, required, error, leftAddon, className = "", ...pr
       <Label label={label} required={required} />
       {leftAddon ? (
         <div className="flex">
-          <span className="inline-flex items-center px-2.5 bg-white/5 border border-white/10 border-r-0 rounded-l-lg text-gray-400 text-sm">
+          <span className="inline-flex items-center px-3 bg-white/[0.035] border border-white/10 border-r-0 rounded-l-xl text-gray-400 text-sm">
             {leftAddon}
           </span>
           <input className={`${fieldClass} rounded-l-none ${className}`} {...props} />

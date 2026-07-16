@@ -50,15 +50,15 @@ export default function Modal({
   if (!open || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative glass rounded-2xl w-full ${SIZE_CLASSES[size]} max-h-[90vh] overflow-y-auto shadow-2xl`}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={onClose} />
+      <div role="dialog" aria-modal="true" className={`relative glass bg-[#0b2118]/95 rounded-t-3xl sm:rounded-3xl w-full ${SIZE_CLASSES[size]} max-h-[92vh] overflow-y-auto shadow-2xl border-white/15`}>
         {(title || icon || !hideClose) && (
-          <div className="flex items-center justify-between gap-3 p-5 border-b border-white/10">
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-[#0b2118]/90 backdrop-blur-xl">
             <div className="flex items-center gap-3 min-w-0">
               {icon}
               <div className="min-w-0">
-                {title && <h2 className="text-lg font-semibold text-white truncate">{title}</h2>}
+                {title && <h2 className="text-xl font-semibold tracking-tight text-white truncate">{title}</h2>}
                 {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}
               </div>
             </div>
@@ -70,7 +70,7 @@ export default function Modal({
           </div>
         )}
 
-        <div className={bodyPadded ? "p-5" : ""}>{children}</div>
+        <div className={bodyPadded ? "p-5 sm:p-6" : ""}>{children}</div>
 
         {footer && <div className="flex gap-3 p-5 pt-0">{footer}</div>}
       </div>

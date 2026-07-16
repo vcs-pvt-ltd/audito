@@ -12,7 +12,7 @@ const ALIGN: Record<Align, string> = {
 /** Glass table shell: rounded card + horizontal scroll + base table. */
 export function Table({ className = "", children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className="glass rounded-xl overflow-hidden">
+    <div className="glass rounded-2xl overflow-hidden border-white/[0.08]">
       <div className="overflow-x-auto">
         <table className={`w-full text-sm ${className}`}>{children}</table>
       </div>
@@ -23,7 +23,7 @@ export function Table({ className = "", children }: { className?: string; childr
 export function THead({ children }: { children: React.ReactNode }) {
   return (
     <thead>
-      <tr className="border-b border-white/10">{children}</tr>
+      <tr className="border-b border-white/10 bg-white/[0.035]">{children}</tr>
     </thead>
   );
 }
@@ -35,7 +35,7 @@ export function Th({
   ...props
 }: React.ThHTMLAttributes<HTMLTableCellElement> & { align?: Align }) {
   return (
-    <th className={`px-4 py-3 text-gray-400 font-medium ${ALIGN[align]} ${className}`} {...props}>
+    <th className={`px-5 py-4 text-[11px] uppercase tracking-wider text-gray-400 font-semibold whitespace-nowrap ${ALIGN[align]} ${className}`} {...props}>
       {children}
     </th>
   );
@@ -51,7 +51,7 @@ export function Tr({
   ...props
 }: React.HTMLAttributes<HTMLTableRowElement>) {
   return (
-    <tr className={`hover:bg-white/[0.02] transition-colors ${className}`} {...props}>
+    <tr className={`hover:bg-white/[0.035] transition-colors duration-200 ${className}`} {...props}>
       {children}
     </tr>
   );
@@ -64,7 +64,7 @@ export function Td({
   ...props
 }: React.TdHTMLAttributes<HTMLTableCellElement> & { align?: Align }) {
   return (
-    <td className={`px-4 py-3 ${ALIGN[align]} ${className}`} {...props}>
+    <td className={`px-5 py-4 ${ALIGN[align]} ${className}`} {...props}>
       {children}
     </td>
   );

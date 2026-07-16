@@ -176,10 +176,9 @@ export default function ContactSection() {
               <div>
                 <p className="text-sm text-gray-300 mb-3">Connect quickly with:</p>
                 <div className="flex items-center gap-3 justify-center lg:justify-start">
-                  <SocialIcon href="#" iconSrc={whatsappIcon} label="WhatsApp" />
-                  <SocialIcon href="#" iconSrc={mailIcon} label="Email" />
-                  <SocialIcon href="#" iconSrc={linkedinIcon} label="LinkedIn" />
-                  <SocialIcon href="#" iconSrc={xIcon} label="X" />
+                  <SocialIcon href="https://wa.me/94773612339" iconSrc={whatsappIcon} label="WhatsApp" />
+                  <SocialIcon href="mailto:info@audito.cloud" iconSrc={mailIcon} label="Email" />
+                  <SocialIcon href="https://www.linkedin.com/company/valuecraft-minds" iconSrc={linkedinIcon} label="LinkedIn" />
                 </div>
               </div>
             </div>

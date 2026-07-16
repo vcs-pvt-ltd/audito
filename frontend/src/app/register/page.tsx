@@ -207,14 +207,14 @@ function Input({
 }) {
   return (
     <div>
-      <label className="block text-sm text-gray-400 mb-1">
+      <label className="mb-2 block text-sm font-medium text-gray-300">
         {label} {required && <span className="text-red-400">*</span>}
       </label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 transition-colors"
+        className="w-full min-h-11 rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-white placeholder-gray-500 transition-all focus:border-secondary-400/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-secondary-500/10"
         placeholder={placeholder}
       />
     </div>
@@ -225,15 +225,15 @@ function Input({
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
-    <div className="flex items-center gap-2 justify-center mb-2">
+    <div className="mx-auto mb-2 flex max-w-xs items-center justify-center gap-2" aria-label={`Step ${current} of ${total}`}>
       {Array.from({ length: total }, (_, i) => (
         <div
           key={i}
-          className={`h-1.5 rounded-full transition-all ${i + 1 === current
-            ? "w-8 bg-secondary-500"
+          className={`h-1.5 rounded-full transition-all duration-300 ${i + 1 === current
+            ? "w-10 bg-secondary-400 shadow-[0_0_12px_rgba(217,163,70,.32)]"
             : i + 1 < current
-              ? "w-6 bg-secondary-500/40"
-              : "w-6 bg-white/10"
+              ? "w-7 bg-secondary-500/50"
+              : "w-7 bg-white/10"
             }`}
         />
       ))}
@@ -320,20 +320,23 @@ function PlanSelectionStep({
   const coreRows = comparisonRows.filter((r) => r.group === "CORE FEATURES");
 
   return (
-    <div className="glass rounded-2xl p-5 sm:p-8">
-      <div className="flex items-center gap-2 mb-6">
-        <button type="button" onClick={() => router.push('/')} className="text-gray-400 hover:text-white transition-colors">
+    <div className="p-5 pt-1 sm:p-8 sm:pt-2">
+      <div className="mb-6 flex items-start gap-3">
+        <button type="button" onClick={() => router.push('/')} aria-label="Go back" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white">
           <ArrowLeft size={18} />
         </button>
-        <h3 className="text-lg font-semibold text-white">Choose Your Plan</h3>
+        <div>
+          <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Choose your plan</h3>
+          <p className="mt-1 text-sm leading-relaxed text-gray-400">Compare workspace limits and select the plan that fits your organization.</p>
+        </div>
       </div>
 
    
 
       {/* ── Comparison Table ── */}
       {/* Desktop table */}
-      <div className="hidden lg:block mb-6 overflow-x-auto">
-        <div className="min-w-[700px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
+      <div className="hidden lg:block mb-7 overflow-x-auto">
+        <div className="min-w-[700px] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-white/5 text-secondary-400">
@@ -377,14 +380,14 @@ function PlanSelectionStep({
       </div>
 
          {/* Billing toggle */}
-      <div className="flex justify-center mb-6">
-        <div className="glass rounded-lg p-1 flex items-center gap-1 border border-white/5">
+      <div className="mb-7 flex justify-center">
+        <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/15 p-1.5">
           {(["Monthly", "Yearly"] as const).map((cycle) => (
             <button
               key={cycle}
               type="button"
               onClick={() => onBillingCycleChange(cycle)}
-              className={`relative px-5 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
+              className={`relative min-w-24 px-5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
                 billingCycle === cycle
                   ? "bg-secondary-500 text-primary-950 shadow"
                   : "text-gray-400 hover:text-white"
@@ -405,7 +408,7 @@ function PlanSelectionStep({
       <div className="lg:hidden space-y-3 mb-6">
         <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1">Workspace Management</p>
         {workspaceRows.map((row) => (
-          <div key={row.feature} className="glass rounded-xl border border-white/10 overflow-hidden">
+          <div key={row.feature} className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
             <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
             <div className="grid grid-cols-4 divide-x divide-white/10">
               {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
@@ -419,7 +422,7 @@ function PlanSelectionStep({
         ))}
         <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1 pt-2">Core Features</p>
         {coreRows.map((row) => (
-          <div key={row.feature} className="glass rounded-xl border border-white/10 overflow-hidden">
+          <div key={row.feature} className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
             <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
             <div className="grid grid-cols-4 divide-x divide-white/10">
               {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
@@ -436,7 +439,7 @@ function PlanSelectionStep({
       </div>
 
       {/* Plan cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+      <div className="mb-7 grid grid-cols-1 gap-4 sm:grid-cols-4">
         {plans.map((plan) => {
           const isSelected = selectedPlan === plan.key;
           return (
@@ -444,10 +447,10 @@ function PlanSelectionStep({
               key={plan.key}
               type="button"
               onClick={() => onPlanSelect(plan.key)}
-              className={`relative text-left rounded-2xl p-5 border transition-all ${
+              className={`relative min-h-[180px] text-left rounded-2xl p-5 border transition-all duration-200 ${
                 isSelected
-                  ? `bg-gradient-to-br ${plan.color} border-secondary-500/50 ring-2 ring-secondary-500`
-                  : `bg-gradient-to-br ${plan.color} border-white/10 hover:border-white/20`
+                  ? `bg-gradient-to-br ${plan.color} border-secondary-400/60 ring-2 ring-secondary-400 ring-offset-2 ring-offset-[#0b2118] shadow-xl shadow-black/20`
+                  : `bg-gradient-to-br ${plan.color} border-white/10 hover:-translate-y-0.5 hover:border-white/20 hover:shadow-lg hover:shadow-black/15`
               }`}
             >
               {plan.badge && (
@@ -482,7 +485,7 @@ function PlanSelectionStep({
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4">
+        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
           <p className="text-sm text-red-400">{error}</p>
         </div>
       )}
@@ -490,7 +493,7 @@ function PlanSelectionStep({
       <button
         type="button"
         onClick={onNext}
-        className="w-full flex items-center justify-center gap-2 py-3.5 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-xl transition-all active:scale-[0.985]"
+        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px"
       >
         Continue Setup
         <ArrowRight size={18} />
@@ -523,7 +526,6 @@ function AccountTypeStep({
   onBack: () => void;
   error: string;
 }) {
-  const router = useRouter();
   const activeGroup = selectedGroup ?? "Customer";
   const activeConfig = accountTypes.find((t) => t.key === activeGroup)!;
 
@@ -540,21 +542,30 @@ function AccountTypeStep({
     selectedEntityType
       ? activeConfig.entityTypes.find((e) => e.name === selectedEntityType)?.level ?? null
       : null;
+  const selectedEntity = selectedEntityType
+    ? activeConfig.entityTypes.find((e) => e.name === selectedEntityType)
+    : activeConfig.entityTypes[0];
+  const ActiveIcon = activeConfig.icon;
 
   return (
-    <div className="glass rounded-2xl p-5 sm:p-8">
+    <div className="p-5 pt-1 sm:p-8 sm:pt-2">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-6">
-        <button type="button" onClick={onBack} className="text-gray-400 hover:text-white transition-colors">
+      <div className="flex items-start gap-3 mb-5">
+        <button type="button" onClick={onBack} aria-label="Go back" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white transition-colors">
           <ArrowLeft size={18} />
         </button>
-        <h3 className="text-lg font-semibold text-white">Select Account Type</h3>
+        <div>
+          <h3 className="text-xl sm:text-2xl font-semibold tracking-tight text-white">Choose your account type</h3>
+          <p className="mt-1 text-sm leading-relaxed text-gray-400">Select the organization that best represents your workspace, then choose where it sits in the hierarchy.</p>
+        </div>
       </div>
+
+     
 
       {/* ══════════════════════════════════════
           MOBILE LAYOUT (< sm)
       ══════════════════════════════════════ */}
-      <div className="sm:hidden space-y-4">
+      <div className="sm:hidden space-y-5">
         {/* Group selector tabs */}
         <div className="grid grid-cols-3 gap-2">
           {accountTypes.map((type) => {
@@ -565,7 +576,7 @@ function AccountTypeStep({
                 key={type.key}
                 type="button"
                 onClick={() => { onGroupSelect(type.key); onEntityTypeSelect(type.entityTypes[0].name); }}
-                className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border transition-all ${isActive ? "bg-secondary-500/10 border-secondary-500/50" : "bg-white/5 border-white/10"}`}
+                className={`relative flex min-h-[86px] flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-2xl border transition-all ${isActive ? "bg-secondary-500/12 border-secondary-500/50 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10"}`}
               >
                 <Icon size={18} className={isActive ? "text-secondary-400" : "text-gray-400"} />
                 <span className={`text-[11px] font-semibold text-center leading-tight ${isActive ? "text-secondary-400" : "text-white"}`}>{type.label}</span>
@@ -576,7 +587,7 @@ function AccountTypeStep({
 
         {/* Entity type list for selected group */}
         <div className="space-y-2">
-          <p className="text-[10px] tracking-[2px] text-secondary-600 uppercase px-1">Select Level</p>
+          <p className="text-[10px] font-semibold tracking-[2px] text-secondary-500 uppercase px-1">Choose organizational level</p>
           {activeConfig.entityTypes.map((et) => {
             const isSelected = selectedEntityType === et.name;
             return (
@@ -584,7 +595,7 @@ function AccountTypeStep({
                 key={et.name}
                 type="button"
                 onClick={() => onEntityTypeSelect(et.name)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${isSelected ? "bg-secondary-500/10 border-secondary-500/40" : "bg-white/5 border-white/10"}`}
+                className={`w-full min-h-[68px] flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${isSelected ? "bg-secondary-500/10 border-secondary-500/45 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10"}`}
               >
                 <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${et.color ?? "bg-white/20"}`} />
                 <div className="flex-1 min-w-0">
@@ -596,6 +607,7 @@ function AccountTypeStep({
             );
           })}
         </div>
+        
       </div>
 
       {/* ══════════════════════════════════════
@@ -603,7 +615,7 @@ function AccountTypeStep({
       ══════════════════════════════════════ */}
       <div className="hidden sm:block">
         {/* Top: 3 account type cards */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-3 gap-3 mb-7">
           {accountTypes.map((type) => {
             const Icon = type.icon;
             const isActive = activeGroup === type.key;
@@ -612,9 +624,10 @@ function AccountTypeStep({
                 key={type.key}
                 type="button"
                 onClick={() => { onGroupSelect(type.key); onEntityTypeSelect(type.entityTypes[0].name); }}
-                className={`text-left rounded-xl p-4 border transition-all ${isActive ? "bg-secondary-500/10 border-secondary-500/50" : "bg-white/5 border-white/10 hover:border-white/20"}`}
+                className={`group relative min-h-[132px] text-left rounded-2xl p-4 border transition-all duration-200 ${isActive ? "bg-secondary-500/10 border-secondary-500/50 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10 hover:-translate-y-0.5 hover:bg-white/[0.055] hover:border-white/20"}`}
               >
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 ${isActive ? "bg-secondary-500/20" : "bg-white/5"}`}>
+                {isActive && <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950"><Check size={12} strokeWidth={3} /></span>}
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-colors ${isActive ? "bg-secondary-500/20" : "bg-white/5 group-hover:bg-white/10"}`}>
                   <Icon size={18} className={isActive ? "text-secondary-400" : "text-gray-400"} />
                 </div>
                 <p className={`text-sm font-semibold ${isActive ? "text-secondary-400" : "text-white"}`}>{type.label}</p>
@@ -623,16 +636,48 @@ function AccountTypeStep({
             );
           })}
         </div>
-
-        {/* Bottom: hierarchy grid + detail panel */}
-        <div className="flex gap-4">
-          <div className="flex items-center">
-            <span className="text-[9px] tracking-[2px] text-secondary-700 uppercase select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
-              Select Organizational Level
-            </span>
+         {/* Selected account summary — kept at the top so context stays visible while choosing a level. */}
+      <div className="mb-6 overflow-hidden rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/[0.11] via-primary-500/[0.08] to-transparent">
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
+          <div className="flex min-w-0 flex-1 items-center gap-3.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-secondary-500/25 bg-secondary-500/15 text-secondary-400 shadow-lg shadow-black/10">
+              <ActiveIcon size={21} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-secondary-500">Currently selected</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <p className="text-base font-semibold text-white">{selectedEntity?.label ?? selectedEntity?.name ?? activeConfig.label}</p>
+                {selectedEntity && <span className="rounded-full border border-white/10 bg-black/10 px-2 py-0.5 text-[10px] font-medium text-gray-400">Level {selectedEntity.level}</span>}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-gray-400">{activeConfig.detail.desc}</p>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[9px] tracking-[2px] text-secondary-600 uppercase mb-3">Hierarchy Flow</p>
+          <div className="flex flex-wrap gap-2 sm:max-w-[46%] sm:justify-end">
+            {activeConfig.detail.capabilities.map((cap) => {
+              const CapIcon = cap.icon;
+              return (
+                <span key={cap.label} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/10 px-2.5 py-1.5 text-[10px] font-medium text-gray-300">
+                  <CapIcon size={11} className="text-secondary-400" />
+                  {cap.label}
+                </span>
+              );
+            })}
+
+            
+          </div>
+        </div>
+      </div>
+
+        {/* Bottom: full-width hierarchy grid */}
+        <div className="rounded-2xl border border-white/[0.08] bg-black/10 p-4 sm:p-5">
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold tracking-[2px] text-secondary-500 uppercase">Organization hierarchy</p>
+              <p className="mt-1 text-xs text-gray-500">Higher levels have broader workspace oversight.</p>
+            </div>
+            <span className="hidden md:inline text-[10px] text-gray-500">Select one level to continue</span>
+          </div>
+          <div className="min-w-0">
             <div className="grid grid-cols-3 gap-3">
               {accountTypes.map((type) => {
                 const isColActive = activeGroup === type.key;
@@ -650,9 +695,12 @@ function AccountTypeStep({
                             type="button"
                             disabled={isEmpty}
                             onClick={() => handleLevelClick(type.key, lvl)}
-                            className={`flex-1 h-9 rounded-lg px-3 text-xs font-medium text-left transition-all ${isEmpty ? "opacity-20 cursor-default" : "cursor-pointer hover:scale-[1.02]"} ${colorCls ?? "bg-white/5"} ${isSelected ? "ring-1 ring-secondary-400 ring-offset-1 ring-offset-transparent" : ""} text-white`}
+                            className={`flex-1 h-10 rounded-xl px-3 text-xs font-medium text-left transition-all ${isEmpty ? "opacity-[0.08] cursor-default" : "cursor-pointer hover:brightness-110 hover:translate-x-0.5"} ${colorCls ?? "bg-white/5"} ${isSelected ? "ring-2 ring-secondary-300 ring-offset-2 ring-offset-[#0a1d15] shadow-lg shadow-black/20" : ""} text-white`}
                           >
-                            {name ?? ""}
+                            <span className="flex items-center justify-between gap-1">
+                              <span className="truncate">{name ?? ""}</span>
+                              {isSelected && <Check size={12} className="shrink-0" strokeWidth={3} />}
+                            </span>
                           </button>
                         </div>
                       );
@@ -662,38 +710,11 @@ function AccountTypeStep({
               })}
             </div>
           </div>
-          <div className="w-44 shrink-0 bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
-            <div className="w-9 h-9 rounded-lg bg-secondary-500/15 border border-secondary-500/30 flex items-center justify-center">
-              {(() => { const Icon = activeConfig.icon; return <Icon size={16} className="text-secondary-400" />; })()}
-            </div>
-            <div>
-              <p className="text-lg font-bold text-white leading-tight">
-                {selectedEntityType ? activeConfig.entityTypes.find((e) => e.name === selectedEntityType)?.label ?? selectedEntityType : activeConfig.label}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-1 leading-snug">{activeConfig.detail.desc}</p>
-            </div>
-            <div>
-              <p className="text-[9px] tracking-[2px] text-secondary-700 uppercase mb-2">Key Capabilities</p>
-              <div className="flex flex-col gap-2">
-                {activeConfig.detail.capabilities.map((cap, i) => {
-                  const CapIcon = cap.icon;
-                  return (
-                    <div key={i} className="flex items-start gap-2">
-                      <div className="w-5 h-5 rounded-full bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                        <CapIcon size={10} className="text-secondary-500" />
-                      </div>
-                      <span className="text-[11px] text-gray-400 leading-snug">{cap.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mt-4">
+        <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
           <p className="text-sm text-red-400">{error}</p>
         </div>
       )}
@@ -701,7 +722,7 @@ function AccountTypeStep({
       <button
         type="button"
         onClick={onNext}
-        className="w-full flex items-center justify-center gap-2 py-3.5 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-xl transition-all active:scale-[0.985] mt-6"
+        className="mt-7 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px"
       >
         Continue Setup
         <ArrowRight size={18} />
@@ -1016,7 +1037,7 @@ function RegisterForm() {
             </p>
             <Link
               href="/login"
-              className="inline-flex items-center gap-2 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold px-6 py-3 rounded-xl transition-colors"
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 px-6 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400"
             >
               Go to Login <ArrowRight size={18} />
             </Link>
@@ -1027,26 +1048,26 @@ function RegisterForm() {
   }
 
   return (
-    <div className="min-h-screen px-4 pt-20 pb-12 sm:py-12">
+    <div className="relative min-h-screen px-4 pb-12 pt-16 sm:py-12">
       {/* Background blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/3 left-1/4 w-80 h-80 bg-primary-600/15 rounded-full blur-3xl" />
         <div className="absolute bottom-1/3 right-1/4 w-60 h-60 bg-accent-500/10 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative max-w-3xl mx-auto pt-8">
+      <div className="glass relative mx-auto max-w-4xl overflow-hidden rounded-3xl border-white/10 pt-6 shadow-2xl shadow-black/20 sm:pt-8">
         {/* Logo */}
-        <div className="text-center mb-4">
+        <div className="mb-5 px-5 text-center sm:px-8">
           <Link href="/" className="inline-block">
             <Image src={logo} alt="Audito" width={110} height={30} className="h-8 mx-auto" />
           </Link>
-          <p className="text-[10px] tracking-[2px] text-secondary-600 uppercase mt-3 mb-1">
-            Account Setup Progress
+          <p className="mb-1 mt-3 text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">
+            Create your workspace
           </p>
         </div>
 
         <StepIndicator current={step} total={4} />
-        <p className="text-center text-xs text-gray-500 mb-6">
+        <p className="mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8">
           {step === 1 && "Step 1 of 4 — Choose Your Plan"}
           {step === 2 && "Step 2 of 4 — Account Type"}
           {step === 3 && (isCustomPlan && !customLimitsReady ? "Step 3 of 4 — Configure Plan" : "Step 3 of 4 — Organization Details")}
@@ -1096,28 +1117,27 @@ function RegisterForm() {
           ];
 
           return (
-            <div className="glass rounded-2xl p-6 sm:p-8">
-              <div className="flex items-center gap-2 mb-5">
-                <button type="button" onClick={() => setStep(2)} className="text-gray-400 hover:text-white transition-colors">
+            <div className="p-5 pt-1 sm:p-8 sm:pt-2">
+              <div className="mb-6 flex items-start gap-3">
+                <button type="button" onClick={() => setStep(2)} aria-label="Go back" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white">
                   <ArrowLeft size={18} />
                 </button>
-                <h3 className="text-lg font-semibold text-white">Configure Your Custom Plan</h3>
+                <div>
+                  <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Configure your custom plan</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-gray-400">Set the capacity and premium features your workspace requires.</p>
+                </div>
               </div>
 
-              <p className="text-sm text-gray-400 mb-6">
-                Specify the features and limits your organization needs. Our team will review your requirements and assign a custom price.
-              </p>
-
               {error && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-5">
+                <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
                   <p className="text-sm text-red-400">{error}</p>
                 </div>
               )}
 
-              <div className="space-y-5 mb-6">
-                <p className="text-[10px] tracking-[2px] text-secondary-600 uppercase">Resource Limits</p>
+              <div className="mb-7 space-y-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Resource limits</p>
                 {customFeatures.map((feat) => (
-                  <div key={feat.key} className="flex items-center justify-between gap-4 p-3 rounded-xl bg-white/5 border border-white/10">
+                  <div key={feat.key} className="flex items-center justify-between gap-4 rounded-2xl border border-white/[0.08] bg-black/10 p-4 transition-colors hover:bg-white/[0.035]">
                     <div>
                       <p className="text-sm font-medium text-white">{feat.label}</p>
                       <p className="text-[11px] text-gray-500">{feat.desc}</p>
@@ -1126,7 +1146,7 @@ function RegisterForm() {
                       <button
                         type="button"
                         onClick={() => setCustomSolution(prev => ({ ...prev, [feat.key]: Math.max(feat.min, prev[feat.key] - 1) }))}
-                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors text-lg font-bold"
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-lg font-bold text-white transition-colors hover:bg-white/15"
                       >
                         -
                       </button>
@@ -1134,7 +1154,7 @@ function RegisterForm() {
                       <button
                         type="button"
                         onClick={() => setCustomSolution(prev => ({ ...prev, [feat.key]: Math.min(feat.max, prev[feat.key] + 1) }))}
-                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors text-lg font-bold"
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-lg font-bold text-white transition-colors hover:bg-white/15"
                       >
                         +
                       </button>
@@ -1142,8 +1162,8 @@ function RegisterForm() {
                   </div>
                 ))}
 
-                <p className="text-[10px] tracking-[2px] text-secondary-600 uppercase pt-2">Premium Features</p>
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                <p className="pt-3 text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Premium features</p>
+                <div className="rounded-2xl border border-white/[0.08] bg-black/10 p-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-white">Auditor Evaluation System</p>
@@ -1158,7 +1178,7 @@ function RegisterForm() {
                     </button>
                   </div>
                 </div>
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                <div className="rounded-2xl border border-white/[0.08] bg-black/10 p-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-white">Company-to-Company Linking</p>
@@ -1175,7 +1195,7 @@ function RegisterForm() {
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl bg-secondary-500/10 border border-secondary-500/20 mb-6">
+              <div className="mb-7 rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/10 to-transparent p-4 sm:p-5">
                 <p className="text-xs text-secondary-400 font-semibold uppercase tracking-wide mb-2">Your Custom Selection</p>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <span className="text-gray-400">Company Levels: <span className="text-white font-medium">{customSolution.max_company_levels}</span></span>
@@ -1194,7 +1214,7 @@ function RegisterForm() {
                   setError("");
                   setStep(4);
                 }}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-lg transition-all"
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px"
               >
                 Next: Organization Details
                 <ArrowRight size={16} />
@@ -1205,27 +1225,32 @@ function RegisterForm() {
 
         {/* ─── Step 4: Organization Details ──────────────────────────── */}
         {step === 4 && (
-          <div className="glass rounded-2xl p-6 sm:p-8">
-            <div className="flex items-center gap-2 mb-6">
+          <div className="p-5 pt-1 sm:p-8 sm:pt-2">
+            <div className="mb-7 flex items-start gap-3">
               <button
+                type="button"
                 onClick={() => setStep(isCustomPlan && !customLimitsReady ? 3 : 2)}
-                className="text-gray-400 hover:text-white transition-colors"
+                aria-label="Go back"
+                className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white"
               >
                 <ArrowLeft size={18} />
               </button>
-              <h3 className="text-lg font-semibold text-white">Organization Details</h3>
-              <span className="ml-auto text-xs px-2 py-1 rounded-full bg-secondary-500/20 text-secondary-400">
-                {activeConfig?.label}
-              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Organization details</h3>
+                  <span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-400">{activeConfig?.label}</span>
+                </div>
+                <p className="mt-1 text-sm leading-relaxed text-gray-400">Tell us about the organization this Audito workspace belongs to.</p>
+              </div>
             </div>
 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-6">
+              <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
                 <p className="text-sm text-red-400">{error}</p>
               </div>
             )}
 
-            <div className="space-y-4">
+            <div className="space-y-5">
               <Input
                 label="Organization Name"
                 required
@@ -1236,13 +1261,13 @@ function RegisterForm() {
 
               {selectedEntityType === "Company" && (
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
+                  <label className="mb-2 block text-sm font-medium text-gray-300">
                     Company Type <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={formData.company_type || ""}
                     onChange={(e) => updateField("company_type", e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:border-secondary-500/50 transition-colors"
+                    className="w-full min-h-11 rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-white transition-all focus:border-secondary-400/60 focus:outline-none focus:ring-4 focus:ring-secondary-500/10"
                   >
                     <option value="" disabled className="bg-[#0c2218] text-white">Select company type</option>
                     <option value="Ready to sell" className="bg-[#0c2218] text-white">Ready to sell</option>
@@ -1271,9 +1296,11 @@ function RegisterForm() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Country Dropdown */}
                 <div className="relative">
-                  <label className="block text-sm text-gray-400 mb-1">Country <span className="text-red-400">*</span></label>
+                  <label className="mb-2 block text-sm font-medium text-gray-300">Country <span className="text-red-400">*</span></label>
                   <div
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white cursor-pointer flex items-center gap-2"
+                    role="button"
+                    tabIndex={0}
+                    className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-white transition-all hover:border-white/20"
                     onClick={() => setShowCountryDropdown(!showCountryDropdown)}
                   >
                     {formData.country ? (
@@ -1289,14 +1316,14 @@ function RegisterForm() {
                     )}
                   </div>
                   {showCountryDropdown && (
-                    <div className="absolute z-50 mt-1 w-full bg-primary-900 border border-white/10 rounded-lg shadow-xl max-h-52 overflow-hidden">
+                    <div className="absolute z-50 mt-2 max-h-60 w-full overflow-hidden rounded-2xl border border-white/15 bg-[#0b2118]/95 shadow-2xl backdrop-blur-xl">
                       <div className="p-2 border-b border-white/10">
                         <input
                           type="text"
                           value={countrySearch}
                           onChange={(e) => setCountrySearch(e.target.value)}
                           placeholder="Search countries..."
-                          className="w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-white text-sm placeholder-gray-500 focus:outline-none"
+                          className="w-full rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-secondary-400/60 focus:outline-none"
                           autoFocus
                         />
                       </div>
@@ -1336,10 +1363,10 @@ function RegisterForm() {
 
                 {/* Org Phone */}
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Phone Number <span className="text-red-400">*</span></label>
+                  <label className="mb-2 block text-sm font-medium text-gray-300">Phone number <span className="text-red-400">*</span></label>
                   <div className="flex">
                     {dialCode && (
-                      <span className="inline-flex items-center px-2.5 rounded-l-lg bg-white/5 border border-white/10 border-r-0 text-gray-400 text-sm">
+                      <span className="inline-flex items-center rounded-l-xl border border-r-0 border-white/10 bg-white/[0.04] px-3 text-sm text-gray-400">
                         {dialCode}
                       </span>
                     )}
@@ -1348,7 +1375,7 @@ function RegisterForm() {
                       value={formData.org_phone_number || ""}
                       onChange={(e) => updateField("org_phone_number", e.target.value)}
                       placeholder="Phone number"
-                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 transition-colors ${dialCode ? "rounded-r-lg" : "rounded-lg"
+                      className={`min-h-11 w-full border border-white/10 bg-black/10 px-4 py-3 text-sm text-white placeholder-gray-500 transition-all focus:border-secondary-400/60 focus:outline-none focus:ring-4 focus:ring-secondary-500/10 ${dialCode ? "rounded-r-xl" : "rounded-xl"
                         }`}
                     />
                   </div>
@@ -1357,13 +1384,13 @@ function RegisterForm() {
 
               {/* Timezone hint — outside the grid so it never disrupts Country/Phone layout */}
               {formData.timezone && (
-                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 -mt-2">
+                <div className="-mt-1 flex items-center gap-1.5 rounded-lg border border-white/[0.06] bg-black/10 px-3 py-2 text-[11px] text-gray-500">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-secondary-600"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   Timezone auto-detected: <span className="text-secondary-500 font-medium">{formData.timezone}</span>
                 </div>
               )}
 
-              <div className="space-y-4">
+              <div className="space-y-5 border-t border-white/[0.07] pt-5">
                 <Input
                   label="Address Line 1"
                   required
@@ -1394,7 +1421,7 @@ function RegisterForm() {
                   setError("");
                   setStep(5);
                 }}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold rounded-lg transition-all"
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px"
               >
                 Next: Admin Account
                 <ArrowRight size={16} />
@@ -1412,28 +1439,32 @@ function RegisterForm() {
 
         {/* ─── Step 5: Admin Account ─────────────────────────────────── */}
         {step === 5 && (
-          <form onSubmit={handleSubmit} className="glass rounded-2xl p-6 sm:p-8">
-            <div className="flex items-center gap-2 mb-6">
+          <form onSubmit={handleSubmit} className="p-5 pt-1 sm:p-8 sm:pt-2">
+            <div className="mb-7 flex items-start gap-3">
               <button
                 type="button"
                 onClick={() => setStep(isCustomPlan && !customLimitsReady ? 3 : 4)}
-                className="text-gray-400 hover:text-white transition-colors"
+                aria-label="Go back"
+                className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white"
               >
                 <ArrowLeft size={18} />
               </button>
-              <h3 className="text-lg font-semibold text-white">Admin Account</h3>
-              <span className="ml-auto text-xs px-2 py-1 rounded-full bg-secondary-500/20 text-secondary-400">
-                {activeConfig?.label}
-              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Admin account</h3>
+                  <span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-400">{activeConfig?.label}</span>
+                </div>
+                <p className="mt-1 text-sm leading-relaxed text-gray-400">Create the primary administrator who will manage this workspace.</p>
+              </div>
             </div>
 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-6">
+              <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
                 <p className="text-sm text-red-400">{error}</p>
               </div>
             )}
 
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Input
                   label="First Name"
@@ -1453,7 +1484,7 @@ function RegisterForm() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
+                  <label className="mb-2 block text-sm font-medium text-gray-300">
                     Email <span className="text-red-400">*</span>
                     <span className="ml-1.5 text-[10px] text-secondary-500 font-normal">(same as organization email)</span>
                   </label>
@@ -1461,15 +1492,15 @@ function RegisterForm() {
                     type="email"
                     value={formData.email}
                     readOnly
-                    className="w-full px-4 py-3 rounded-lg bg-white/[0.03] border border-white/10 text-white/50 placeholder-gray-500 cursor-not-allowed transition-colors"
+                    className="min-h-11 w-full cursor-not-allowed rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-sm text-white/50 placeholder-gray-500"
                     placeholder="auto-filled from organization email"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Phone Number <span className="text-red-400">*</span></label>
+                  <label className="mb-2 block text-sm font-medium text-gray-300">Phone number <span className="text-red-400">*</span></label>
                   <div className="flex">
                     {dialCode && (
-                      <span className="inline-flex items-center px-2.5 rounded-l-lg bg-white/5 border border-white/10 border-r-0 text-gray-400 text-sm h-[46px]">
+                      <span className="inline-flex h-[46px] items-center rounded-l-xl border border-r-0 border-white/10 bg-white/[0.04] px-3 text-sm text-gray-400">
                         {dialCode}
                       </span>
                     )}
@@ -1478,7 +1509,7 @@ function RegisterForm() {
                       value={formData.phone_number || ""}
                       onChange={(e) => updateField("phone_number", e.target.value)}
                       placeholder="Phone number"
-                      className={`w-full px-4 py-3 bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 transition-colors h-[46px] ${dialCode ? "rounded-r-lg" : "rounded-lg"
+                      className={`h-[46px] w-full border border-white/10 bg-black/10 px-4 py-3 text-sm text-white placeholder-gray-500 transition-all focus:border-secondary-400/60 focus:outline-none focus:ring-4 focus:ring-secondary-500/10 ${dialCode ? "rounded-r-xl" : "rounded-xl"
                         }`}
                     />
                   </div>
@@ -1490,7 +1521,7 @@ function RegisterForm() {
               {/* Password Row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
+                  <label className="mb-2 block text-sm font-medium text-gray-300">
                     Password <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
@@ -1498,7 +1529,7 @@ function RegisterForm() {
                       type={showPassword ? "text" : "password"}
                       value={formData.password}
                       onChange={(e) => updateField("password", e.target.value)}
-                      className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 transition-colors pr-12"
+                      className="min-h-11 w-full rounded-xl border border-white/10 bg-black/10 px-4 py-3 pr-12 text-sm text-white placeholder-gray-500 transition-all focus:border-secondary-400/60 focus:outline-none focus:ring-4 focus:ring-secondary-500/10"
                       placeholder="Strong password"
                     />
                     <button
@@ -1511,7 +1542,7 @@ function RegisterForm() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
+                  <label className="mb-2 block text-sm font-medium text-gray-300">
                     Confirm Password <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
@@ -1519,10 +1550,10 @@ function RegisterForm() {
                       type={showConfirmPassword ? "text" : "password"}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className={`w-full px-4 py-3 rounded-lg bg-white/5 border text-white placeholder-gray-500 focus:outline-none transition-colors pr-12 ${
+                      className={`min-h-11 w-full rounded-xl border bg-black/10 px-4 py-3 pr-12 text-sm text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-4 ${
                         confirmPassword && formData.password !== confirmPassword 
-                        ? "border-red-500/50 focus:border-red-500" 
-                        : "border-white/10 focus:border-secondary-500/50"
+                        ? "border-red-500/50 focus:border-red-500 focus:ring-red-500/10" 
+                        : "border-white/10 focus:border-secondary-400/60 focus:ring-secondary-500/10"
                       }`}
                       placeholder="Repeat password"
                     />
@@ -1539,7 +1570,7 @@ function RegisterForm() {
 
               {/* Password Requirements Checklist */}
               {formData.password && (
-                <div className="bg-white/5 border border-white/10 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="animate-in fade-in slide-in-from-top-2 rounded-2xl border border-white/[0.08] bg-black/10 p-4 duration-300">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-[10px] text-gray-500 uppercase tracking-wider">Security Strength</span>
                     <span className={`text-[10px] uppercase tracking-wider ${passwordStrength.text}`}>{passwordStrength.label}</span>
@@ -1612,7 +1643,7 @@ function RegisterForm() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 disabled:opacity-50 text-primary-950 font-semibold rounded-lg transition-all"
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:translate-y-0 disabled:opacity-50"
               >
                 {loading ? <Loader2 size={18} className="animate-spin" /> : "Create Account"}
               </button>
