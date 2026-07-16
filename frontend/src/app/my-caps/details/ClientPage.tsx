@@ -348,7 +348,7 @@ export default function MyCapDetailPage() {
   const isPending = cap.status === "plan" || cap.status === "pending";
 
   return (
-    <div className="min-h-screen text-white pt-24 pb-12 px-4 sm:px-6">
+    <div className="min-h-full text-white px-4 pb-28 pt-20 sm:px-6 sm:pb-28 lg:pb-12 lg:pt-8">
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
@@ -512,7 +512,7 @@ export default function MyCapDetailPage() {
 
 function Loading() {
   return (
-    <div className="h-screen bg-transparent flex items-center justify-center">
+    <div className="min-h-full bg-transparent flex items-center justify-center px-4">
       <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
     </div>
   );

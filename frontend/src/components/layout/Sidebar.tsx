@@ -12,7 +12,7 @@ import { noticeApi, linksApi } from "@/lib/api";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
   ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
-  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Check, Trash2, Inbox,
 } from "lucide-react";
 
 // ─── Avatar helper (mirrors profile page) ────────────────────────
@@ -640,7 +640,7 @@ export default function Sidebar() {
 
       <aside
         ref={asideRef}
-        className={`fixed lg:sticky lg:top-0 lg:h-screen inset-y-0 left-0 z-[80]
+        className={`fixed lg:sticky lg:top-0 lg:h-dvh inset-y-0 left-0 z-[80]
           ${collapsed ? "lg:w-[72px]" : "lg:w-64"} w-64
           glass border-r border-white/10 flex flex-col transition-all
           lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
@@ -802,39 +802,52 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* Notifications popup */}
+      {/* Notifications inbox */}
       {notificationsOpen && typeof document !== "undefined" && createPortal(
         <div ref={notifPopupRef}
-          style={{ position: "absolute", left: popupPos?.left ?? 0, top: popupPos?.top ?? 0 }}
-          className="w-80 max-h-[60vh] overflow-auto rounded-xl border border-white/10 glass p-3 z-[9999] shadow-2xl">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-white font-medium">Notifications</span>
-            <button onClick={() => setNotificationsOpen(false)} className="text-gray-400 hover:text-white"><X size={14} /></button>
+          style={{ position: "fixed", left: popupPos?.left ?? 8, top: popupPos?.top ?? 8 }}
+          className="z-[9999] flex w-[min(24rem,calc(100vw-1rem))] max-h-[min(34rem,calc(100dvh-5rem))] flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-[#08251a]/[0.98] shadow-2xl shadow-black/50 backdrop-blur-2xl">
+          <div className="border-b border-white/[0.08] bg-gradient-to-r from-secondary-500/[0.13] to-transparent px-4 py-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-secondary-400/20 bg-secondary-500/15 text-secondary-300"><Bell size={16} /></div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-white">Notifications</h2>
+                  <p className="text-[11px] text-gray-400">{notices.filter((n) => !(n as any).is_read).length > 0 ? `${notices.filter((n) => !(n as any).is_read).length} unread item${notices.filter((n) => !(n as any).is_read).length === 1 ? "" : "s"}` : "You’re all caught up"}</p>
+                </div>
+              </div>
+              <button onClick={() => setNotificationsOpen(false)} aria-label="Close notifications" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-white/[0.08] hover:text-white"><X size={16} /></button>
+            </div>
           </div>
           {loadingNotices ? (
-            <div className="py-6 flex items-center justify-center text-gray-400">Loading...</div>
+            <div className="flex min-h-44 flex-1 flex-col items-center justify-center gap-2 text-sm text-gray-400"><Loader2 size={20} className="animate-spin text-secondary-400" /> Loading notifications…</div>
           ) : notices.length === 0 ? (
-            <div className="py-6 text-center text-gray-500">No notifications</div>
+            <div className="flex min-h-44 flex-1 flex-col items-center justify-center px-6 text-center"><div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.03] text-gray-500"><Inbox size={20} /></div><p className="text-sm font-medium text-gray-300">No notifications yet</p><p className="mt-1 text-xs leading-5 text-gray-500">Updates relevant to your workspace will appear here.</p></div>
           ) : (
-            <div className="space-y-2">
+            <div className="flex-1 space-y-2 overflow-y-auto p-2.5 overscroll-contain">
               {notices.map((n, i) => (
-                <div key={`${(n as any).id || i}`} className={`p-2 rounded-lg hover:bg-white/5 ${(n as any).is_read ? "opacity-80" : ""}`}>
-                  <p className="text-sm text-white truncate flex items-center gap-2">
-                    {!(n as any).is_read && <span className="w-1.5 h-1.5 rounded-full bg-secondary-400 shrink-0" />}
-                    {(n as any).title || (n as any).message || "Notification"}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">{(n as any).created_at ? new Date((n as any).created_at).toLocaleString() : ""}</p>
-                  <div className="mt-2 flex items-center gap-2">
+                <article key={`${(n as any).id || i}`} className={`relative overflow-hidden rounded-xl border p-3 transition-colors ${(n as any).is_read ? "border-white/[0.06] bg-white/[0.02]" : "border-secondary-400/20 bg-secondary-500/[0.07]"}`}>
+                  {!(n as any).is_read && <span className="absolute inset-y-0 left-0 w-0.5 bg-secondary-400" />}
+                  <div className="flex gap-2.5">
+                    <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${(n as any).is_read ? "bg-gray-600" : "bg-secondary-400 shadow-[0_0_8px_rgba(251,191,36,0.65)]"}`} />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-semibold leading-5 text-white">{(n as any).title || "Notification"}</h3>
+                      {(n as any).message && (n as any).message !== (n as any).title && <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-400">{(n as any).message}</p>}
+                      {(n as any).created_at && <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-500">{new Date((n as any).created_at).toLocaleString()}</p>}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2 pl-4">
                     <button onClick={() => void updateNoticeState((n as any).is_read ? "unread" : "read", n)}
-                      className="text-[11px] px-2 py-1 rounded border border-white/10 text-gray-300 hover:text-white hover:border-white/20">
-                      {(n as any).is_read ? "Mark as unread" : "Mark as read"}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] font-medium text-gray-300 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white">
+                      <Check size={12} /> {(n as any).is_read ? "Mark unread" : "Mark read"}
                     </button>
                     <button onClick={() => void updateNoticeState("delete", n)}
-                      className="text-[11px] px-2 py-1 rounded border border-red-500/30 text-red-300 hover:text-red-200 hover:border-red-400/50">
-                      Delete
+                      aria-label="Delete notification" title="Delete notification"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-red-500/20 text-red-300 transition hover:border-red-400/50 hover:bg-red-500/10 hover:text-red-200">
+                      <Trash2 size={12} />
                     </button>
                   </div>
-                </div>
+                </article>
               ))}
             </div>
           )}

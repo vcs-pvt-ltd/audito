@@ -61,6 +61,8 @@ export default function ChecklistsPage() {
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("active");
+  const [repeatFilter, setRepeatFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<string>("newest");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -108,22 +110,32 @@ export default function ChecklistsPage() {
       if (statusFilter === "active" && !c.is_active) return false;
       if (statusFilter === "inactive" && c.is_active) return false;
       if (typeFilter !== "all" && (c.checklist_type_name || "") !== typeFilter) return false;
+      const repeats = Boolean(c.repeat_duration_value && c.repeat_duration_unit);
+      if (repeatFilter === "repeating" && !repeats) return false;
+      if (repeatFilter === "one_time" && repeats) return false;
       if (!query) return true;
       const hay = `${c.name || ""} ${c.description || ""} ${c.checklist_type_name || ""}`.toLowerCase();
       return hay.includes(query);
     });
-  }, [checklists, q, typeFilter, statusFilter]);
+  }, [checklists, q, typeFilter, statusFilter, repeatFilter]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [q, typeFilter, statusFilter]);
+  }, [q, typeFilter, statusFilter, repeatFilter, sortBy]);
 
-  const totalPages = Math.ceil(filtered.length / pageSize);
+  const sorted = useMemo(() => [...filtered].sort((a, b) => {
+    if (sortBy === "name") return (a.name || "").localeCompare(b.name || "");
+    if (sortBy === "oldest") return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+    if (sortBy === "most_used") return Number(b.assigned_audit_count || 0) - Number(a.assigned_audit_count || 0);
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+  }), [filtered, sortBy]);
+
+  const totalPages = Math.ceil(sorted.length / pageSize);
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   const handleCreateClick = () => {
     const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
@@ -236,44 +248,17 @@ export default function ChecklistsPage() {
 
         {/* Filters */}
         {!loading && checklists.length > 0 && (
-          <div className="glass rounded-xl p-4 mb-5">
-            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-              <div className="relative flex-1">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search by name / description / type..."
-                  className="w-full bg-white/[0.03] border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-secondary-500/40"
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"
-                >
-                  <option value="all">All Types</option>
-                  {typeOptions.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  <option value="all">All Status</option>
-                </select>
-
-                <div className="text-xs text-gray-500 px-3 py-2">
-                  Showing <span className="text-gray-300 font-medium">{filtered.length}</span> / {checklists.length}
-                </div>
-              </div>
+          <div className="glass mb-5 rounded-2xl p-3 sm:p-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
+              <label className="grid gap-1 text-[11px] font-medium text-gray-400 sm:col-span-2 lg:col-span-3 xl:col-span-2">Search
+                <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, description, or type..." className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-secondary-500/40" /></div>
+              </label>
+              <label className="grid gap-1 text-[11px] font-medium text-gray-400">Type<select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="all">All types</option>{typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
+              <label className="grid gap-1 text-[11px] font-medium text-gray-400">Status<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All statuses</option></select></label>
+              <label className="grid gap-1 text-[11px] font-medium text-gray-400">Schedule<select value={repeatFilter} onChange={(e) => setRepeatFilter(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="all">Any schedule</option><option value="repeating">Repeating</option><option value="one_time">One-time</option></select></label>
+              <label className="grid gap-1 text-[11px] font-medium text-gray-400">Sort by<select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A-Z</option><option value="most_used">Most used</option></select></label>
+              <button type="button" onClick={() => { setQ(""); setTypeFilter("all"); setStatusFilter("active"); setRepeatFilter("all"); setSortBy("newest"); }} className="mt-5 h-10 rounded-lg border border-white/10 px-3 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.06]">Reset</button>
+              <div className="text-xs text-gray-500 sm:col-span-2 lg:col-span-3 xl:col-span-7">Showing <span className="font-medium text-gray-300">{filtered.length}</span> of {checklists.length} checklists</div>
             </div>
           </div>
         )}

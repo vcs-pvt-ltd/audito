@@ -304,7 +304,7 @@ export default function MyAuditPreviewPage() {
 
   if (isLoading) {
     return (
-      <div className="h-screen bg-transparent flex items-center justify-center">
+      <div className="min-h-full bg-transparent flex items-center justify-center px-4">
         <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -355,7 +355,7 @@ export default function MyAuditPreviewPage() {
   }
 
   return (
-    <div className="h-screen bg-transparent flex">
+    <div className="h-full min-h-full bg-transparent flex">
       <div className="flex-1 flex flex-col overflow-hidden pt-16 lg:pt-0">
 
         {/* Top bar */}
@@ -404,7 +404,7 @@ export default function MyAuditPreviewPage() {
             </div>
           </div>
         ) : audit ? (
-          <div ref={contentRef} className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 lg:pb-6">
+          <div ref={contentRef} className="flex-1 overflow-y-auto p-4 pb-28 sm:p-6 sm:pb-28 lg:pb-6">
             <div className="max-w-4xl mx-auto">
 
               {activeStep.mode === "cards" ? (

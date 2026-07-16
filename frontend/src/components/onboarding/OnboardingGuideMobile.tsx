@@ -1,125 +1,60 @@
 "use client";
 
-import React from "react";
-import {
-  ArrowLeft,
-  ChevronRight,
-  CheckCircle2,
-  Clock,
-  RotateCw,
-  Check,
-} from "lucide-react";
+import { ArrowLeft, Check, CheckCircle2, ChevronRight } from "lucide-react";
 import { useOnboarding } from "@/context/OnboardingContext";
-import { useAuth } from "@/context/AuthContext";
-
-function StepStatusBadge({ state, active }: { state: "done" | "pending"; active?: boolean }) {
-  if (state === "done") {
-    return (
-      <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full border border-emerald-400/20 whitespace-nowrap">
-        <CheckCircle2 size={10} /> DONE
-      </span>
-    );
-  }
-  return (
-    <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap transition-all ${
-      active
-        ? "text-secondary-400 bg-secondary-400/10 border-secondary-400/40 animate-pulse"
-        : "text-amber-400 bg-amber-400/10 border-amber-400/20"
-    }`}>
-      {active ? <RotateCw size={10} className="animate-spin" /> : <Clock size={10} />}
-      {active ? "ACTIVE" : "PENDING"}
-    </span>
-  );
-}
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 
 export default function OnboardingGuideMobile() {
-  const { admin } = useAuth();
+  const { confirm } = useUiFeedback();
   const {
-    steps, currentStep, progressPct, allDone,
-    goBack, goNext, canGoBack, canGoNext,
-    busy, skipOnboarding, completeOnboarding,
+    steps, currentStep, progressPct, allDone, goBack, goNext,
+    canGoBack, canGoNext, busy, skipOnboarding, completeOnboarding,
   } = useOnboarding();
 
   const step = steps[currentStep];
-  if (!step || !admin) return null;
+  if (!step) return null;
 
-  const doneCount = steps.filter((s) => s.state === "done").length;
+  const handleSkip = async () => {
+    const approved = await confirm({
+      title: "Skip onboarding?",
+      message: "You can return to setup later from your workspace, but your remaining onboarding steps will be closed for now.",
+      confirmText: "Skip setup",
+      cancelText: "Continue setup",
+      variant: "warning",
+    });
+    if (approved) await skipOnboarding();
+  };
 
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-primary-950/95 backdrop-blur-xl shadow-2xl">
-      {/* Progress bar */}
-      <div className="h-0.5 bg-white/5">
-        <div
-          className="h-full bg-secondary-400 transition-all duration-500"
-          style={{ width: `${progressPct}%` }}
-        />
-      </div>
-
-      <div className="px-4 pt-3 pb-4 space-y-3">
-        {/* Step header */}
-        <div className="flex items-center gap-3">
-          <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 ${
-            step.state === "done" ? "bg-emerald-500 text-primary-950" : "bg-secondary-500/20 text-secondary-400"
-          }`}>
-            {step.state === "done" ? <Check size={13} /> : currentStep + 1}
+    <aside className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#062117]/[0.98] px-4 pt-3 shadow-[0_-18px_42px_rgba(0,0,0,0.3)] backdrop-blur-2xl" style={{ paddingBottom: "max(0.85rem, env(safe-area-inset-bottom))" }}>
+      <div className="mx-auto max-w-xl">
+        <div className="mb-3 flex items-center gap-3">
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-xs font-bold ${step.state === "done" ? "border-emerald-400/25 bg-emerald-400/15 text-emerald-200" : "border-secondary-400/25 bg-secondary-500/15 text-secondary-300"}`}>
+            {step.state === "done" ? <Check size={16} /> : currentStep + 1}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold leading-none mb-0.5">
-              Step {currentStep + 1}/{steps.length} · {doneCount} done
-            </p>
-            <p className="text-sm font-semibold text-white truncate">{step.title}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Current step · {Math.round(progressPct)}% complete</p>
+            <p className="truncate text-sm font-semibold text-white">{step.title}</p>
           </div>
-          <StepStatusBadge state={step.state} active={step.state !== "done"} />
+          {step.state === "done" && <CheckCircle2 size={17} className="shrink-0 text-emerald-300" />}
         </div>
 
-        {/* Description */}
-        <p className="text-xs text-gray-400 leading-relaxed">{step.description}</p>
+        <p className="mb-3 max-h-10 overflow-hidden text-xs leading-5 text-gray-400">{step.description}</p>
 
-        {/* Instructions */}
-        <div className="space-y-1.5">
-          {step.instructions.map((line, idx) => (
-            <div key={idx} className="flex items-start gap-2 text-xs text-gray-300">
-              <div className="mt-1.5 h-1 w-1 rounded-full bg-secondary-400 shrink-0" />
-              <span className="leading-snug">{line}</span>
-            </div>
-          ))}
-        </div>
-
-       
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={goBack}
-            disabled={!canGoBack}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-white/10 text-gray-400 hover:text-white transition-all disabled:opacity-20"
-          >
-            <ArrowLeft size={13} /> Prev
+        <div className="mb-3 flex items-center gap-2">
+          <button onClick={goBack} disabled={!canGoBack} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-white/10 px-3 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-35">
+            <ArrowLeft size={14} /> Back
           </button>
-          <button
-            onClick={goNext}
-            disabled={!canGoNext}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-secondary-500/10 border border-secondary-500/30 text-secondary-400 hover:bg-secondary-500/20 transition-all disabled:opacity-20"
-          >
-            Next <ChevronRight size={13} />
+          <button onClick={goNext} disabled={!canGoNext} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-secondary-400/25 bg-secondary-500/12 px-3 text-xs font-semibold text-secondary-200 transition hover:bg-secondary-500/20 disabled:cursor-not-allowed disabled:opacity-35">
+            Next step <ChevronRight size={14} />
           </button>
-          <button
-            onClick={() => void completeOnboarding()}
-            disabled={!allDone || busy}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black bg-emerald-500 text-primary-950 hover:bg-emerald-400 disabled:opacity-30 transition-all"
-          >
-            <CheckCircle2 size={13} /> Done
+          <button onClick={() => void completeOnboarding()} disabled={!allDone || busy} aria-label="Complete setup" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-emerald-400 px-3 text-primary-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-35">
+            <CheckCircle2 size={16} />
           </button>
         </div>
 
-        {/* Skip */}
-        <button
-          onClick={() => void skipOnboarding()}
-          className="w-full text-center text-[10px] font-bold uppercase tracking-widest text-gray-600 hover:text-gray-400 transition-colors"
-        >
-          Skip Setup
-        </button>
+        <button onClick={() => void handleSkip()} disabled={busy} className="w-full pb-0.5 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 transition hover:text-gray-300 disabled:cursor-not-allowed disabled:opacity-50">Skip setup for now</button>
       </div>
-    </div>
+    </aside>
   );
 }

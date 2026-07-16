@@ -29,6 +29,7 @@ interface ExecutionItem {
   title: string;
   checklist_name?: string;
   audit_code?: string;
+  audit_title?: string;
   type?: "internal" | "external";
   status: string;
   start_date?: string;
@@ -141,6 +142,10 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
   const [searchTerm, setSearchTerm] = useState("");
   const [startDateFilter, setStartDateFilter] = useState("");
   const [endDateFilter, setEndDateFilter] = useState("");
+  const [auditScheduleFilter, setAuditScheduleFilter] = useState("all");
+  const [capAuditFilter, setCapAuditFilter] = useState("all");
+  const [capProgressFilter, setCapProgressFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Pagination state
@@ -207,6 +212,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
               code: c.cap_id,
               title: c.title,
               audit_code: c.audit_code,
+              audit_title: c.audit_title,
               status: c.status,
               created_at: c.created_at,
               progress_pct: pct,
@@ -247,16 +253,32 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
         item.title?.toLowerCase().includes(keyword) ||
         item.code?.toLowerCase().includes(keyword) ||
         item.audit_code?.toLowerCase().includes(keyword) ||
+        item.audit_title?.toLowerCase().includes(keyword) ||
         item.code?.toLowerCase().includes(keyword);
 
-      const matchesDate =
-        workflowType === "audit"
-          ? dateInRange(item.start_date || item.created_at)
-          : dateInRange(item.created_at);
+      const matchesDate = workflowType !== "audit" || dateInRange(item.start_date || item.created_at);
 
-      return matchesSearch && matchesDate;
+      const matchesAudit = workflowType !== "cap" || capAuditFilter === "all" || item.audit_code === capAuditFilter;
+      const progress = item.progress_pct ?? Math.round(((item.answered_questions || 0) / Math.max(item.total_questions || 1, 1)) * 100);
+      const today = new Date().toISOString().slice(0, 10);
+      const startDay = String(item.start_date || "").slice(0, 10);
+      const endDay = String(item.end_date || "").slice(0, 10);
+      const matchesAuditSchedule =
+        workflowType !== "audit" ||
+        auditScheduleFilter === "all" ||
+        (auditScheduleFilter === "upcoming" && Boolean(startDay) && startDay > today) ||
+        (auditScheduleFilter === "current" && Boolean(startDay) && startDay <= today && (!endDay || endDay >= today)) ||
+        (auditScheduleFilter === "overdue" && Boolean(endDay) && endDay < today && item.status !== "completed");
+      const matchesProgress =
+        workflowType !== "cap" ||
+        capProgressFilter === "all" ||
+        (capProgressFilter === "not_started" && progress === 0) ||
+        (capProgressFilter === "in_progress" && progress > 0 && progress < 100) ||
+        (capProgressFilter === "completed" && progress >= 100);
+
+      return matchesSearch && matchesDate && matchesAudit && matchesProgress && matchesAuditSchedule;
     });
-  }, [items, keyword, workflowType, startDateFilter, endDateFilter]);
+  }, [items, keyword, workflowType, startDateFilter, endDateFilter, auditScheduleFilter, capAuditFilter, capProgressFilter]);
 
   const filtered = useMemo(() => {
     return filter === "all"
@@ -267,13 +289,26 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, searchTerm, startDateFilter, endDateFilter]);
+  }, [filter, searchTerm, startDateFilter, endDateFilter, auditScheduleFilter, capAuditFilter, capProgressFilter, sortBy]);
 
-  const totalPages = Math.ceil(filtered.length / pageSize);
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "title") return a.title.localeCompare(b.title);
+      if (sortBy === "progress_desc") return (b.progress_pct || 0) - (a.progress_pct || 0);
+      if (sortBy === "progress_asc") return (a.progress_pct || 0) - (b.progress_pct || 0);
+      if (sortBy === "start_soonest") return new Date(a.start_date || 0).getTime() - new Date(b.start_date || 0).getTime();
+      if (sortBy === "end_soonest") return new Date(a.end_date || 0).getTime() - new Date(b.end_date || 0).getTime();
+      const aTime = new Date(a.created_at || 0).getTime();
+      const bTime = new Date(b.created_at || 0).getTime();
+      return sortBy === "oldest" ? aTime - bTime : bTime - aTime;
+    });
+  }, [filtered, sortBy]);
+
+  const totalPages = Math.ceil(sorted.length / pageSize);
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   const counts: Counts = useMemo(() => {
     const res: Counts = { all: baseFiltered.length };
@@ -285,9 +320,33 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
     return res;
   }, [baseFiltered, statusOptions, workflowType]);
 
+  const capAuditOptions = useMemo(() => Array.from(new Set(
+    items.map((item) => item.audit_code).filter((code): code is string => Boolean(code))
+  )).sort(), [items]);
+
+  const activeAdvancedFilters = [
+    workflowType === "audit" ? startDateFilter : "",
+    workflowType === "audit" ? endDateFilter : "",
+    workflowType === "audit" && auditScheduleFilter !== "all" ? auditScheduleFilter : "",
+    workflowType === "cap" && capAuditFilter !== "all" ? capAuditFilter : "",
+    workflowType === "cap" && capProgressFilter !== "all" ? capProgressFilter : "",
+    workflowType === "cap" && sortBy !== "newest" ? sortBy : "",
+  ].filter(Boolean).length;
+
+  const resetFilters = () => {
+    setSearchTerm("");
+    setStartDateFilter("");
+    setEndDateFilter("");
+    setAuditScheduleFilter("all");
+    setCapAuditFilter("all");
+    setCapProgressFilter("all");
+    setSortBy("newest");
+    setFilter("all");
+  };
+
   if (isLoading) {
     return (
-      <div className="h-screen bg-transparent flex items-center justify-center">
+      <div className="min-h-full bg-transparent flex items-center justify-center px-4">
         <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -297,18 +356,18 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
   const Icon = workflowType === "audit" ? ClipboardCheck : ClipboardList;
 
   return (
-    <div className="h-screen bg-transparent flex">
-      <main className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto">
+    <div className="min-h-full bg-transparent">
+      <main className="mx-auto w-full max-w-7xl p-4 pb-28 pt-20 sm:p-6 sm:pb-28 lg:p-8 lg:pb-10 lg:pt-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-lg bg-secondary-500/20 flex items-center justify-center">
-                <Icon size={20} className="text-secondary-400" />
+        <div className="mb-5 flex items-start justify-between gap-3 sm:mb-6">
+          <div className="min-w-0">
+            <h1 className="flex text-xl font-bold text-white sm:text-2xl items-center gap-2.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-secondary-500/20 bg-secondary-500/15">
+                <Icon size={19} className="text-secondary-400" />
               </div>
-              {labels.title}
+              <span className="truncate">{labels.title}</span>
             </h1>
-            <p className="hidden sm:block text-sm text-gray-400 mt-1 ml-[46px]">{labels.description}</p>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-gray-400 sm:ml-[50px] sm:text-sm">{labels.description}</p>
           </div>
           <IconButton bordered onClick={fetchItems} title="Refresh">
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
@@ -330,66 +389,80 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                 className="w-full h-10 rounded-lg bg-white/[0.03] border border-white/10 pl-9 pr-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-secondary-500/50"
               />
             </div>
-            {workflowType === "audit" && (
-              <button
-                type="button"
-                onClick={() => setFiltersOpen(v => !v)}
-                className={`flex items-center gap-1.5 h-10 px-3 rounded-lg border text-xs font-medium transition-all shrink-0 ${
-                  filtersOpen || startDateFilter || endDateFilter
-                    ? "bg-secondary-500/10 text-secondary-400 border-secondary-500/30"
-                    : "text-gray-400 border-white/10 hover:text-white hover:border-white/20"
-                }`}
-              >
-                <SlidersHorizontal size={13} />
-                {(startDateFilter || endDateFilter) && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-secondary-400" />
-                )}
-                <ChevronDown size={12} className={`transition-transform duration-200 ${filtersOpen ? "rotate-180" : ""}`} />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(v => !v)}
+              className={`flex items-center gap-1.5 h-10 px-3 rounded-lg border text-xs font-medium transition-all shrink-0 ${
+                filtersOpen || activeAdvancedFilters > 0
+                  ? "bg-secondary-500/10 text-secondary-400 border-secondary-500/30"
+                  : "text-gray-400 border-white/10 hover:text-white hover:border-white/20"
+              }`}
+            >
+              <SlidersHorizontal size={13} />
+              {activeAdvancedFilters > 0 && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-secondary-400 px-1 text-[9px] font-bold text-primary-950">{activeAdvancedFilters}</span>
+              )}
+              <ChevronDown size={12} className={`transition-transform duration-200 ${filtersOpen ? "rotate-180" : ""}`} />
+            </button>
             
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => { setSearchTerm(""); setStartDateFilter(""); setEndDateFilter(""); setFilter("all"); }}
+              onClick={resetFilters}
               className="h-10 shrink-0"
             >
               Reset
             </Button>
           </div>
 
-          {/* Mobile collapsible date filters */}
-          {workflowType === "audit" && filtersOpen && (
+          {/* Mobile advanced filters */}
+          {filtersOpen && (
             <div className="md:hidden flex flex-col gap-2.5 px-3 pb-3 pt-1 border-t border-white/[0.06]">
-              <div>
-                <label className="block text-[11px] text-gray-400 mb-1">Start Date</label>
-                <div className="flex items-center gap-2 rounded-lg bg-white/[0.03] border border-white/10 px-3">
-                  <Calendar size={13} className="text-gray-500 shrink-0" />
-                  <input
-                    type="date"
-                    value={startDateFilter}
-                    onChange={(e) => setStartDateFilter(e.target.value)}
-                    className="w-full h-9 bg-transparent text-sm text-white focus:outline-none [color-scheme:dark]"
-                  />
+              {workflowType === "audit" && <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] text-gray-400 mb-1">Start after</label>
+                  <div className="flex items-center gap-2 rounded-lg bg-white/[0.03] border border-white/10 px-3">
+                    <Calendar size={13} className="text-gray-500 shrink-0" />
+                    <input type="date" value={startDateFilter} onChange={(e) => setStartDateFilter(e.target.value)} className="w-full h-9 bg-transparent text-sm text-white focus:outline-none [color-scheme:dark]" />
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="block text-[11px] text-gray-400 mb-1">End Date</label>
-                <div className="flex items-center gap-2 rounded-lg bg-white/[0.03] border border-white/10 px-3">
-                  <Calendar size={13} className="text-gray-500 shrink-0" />
-                  <input
-                    type="date"
-                    value={endDateFilter}
-                    onChange={(e) => setEndDateFilter(e.target.value)}
-                    className="w-full h-9 bg-transparent text-sm text-white focus:outline-none [color-scheme:dark]"
-                  />
+                <div>
+                  <label className="block text-[11px] text-gray-400 mb-1">End before</label>
+                  <div className="flex items-center gap-2 rounded-lg bg-white/[0.03] border border-white/10 px-3">
+                    <Calendar size={13} className="text-gray-500 shrink-0" />
+                    <input type="date" value={endDateFilter} onChange={(e) => setEndDateFilter(e.target.value)} className="w-full h-9 bg-transparent text-sm text-white focus:outline-none [color-scheme:dark]" />
+                  </div>
                 </div>
-              </div>
+              </div>}
+              {workflowType === "audit" && (
+                <>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div><label className="block text-[11px] text-gray-400 mb-1">Status</label><select value={filter} onChange={(e) => setFilter(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-[#0b261a] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="all">All statuses</option><option value="plan">Planned</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></div>
+                    <div><label className="block text-[11px] text-gray-400 mb-1">Schedule</label><select value={auditScheduleFilter} onChange={(e) => setAuditScheduleFilter(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-[#0b261a] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="all">Any schedule</option><option value="upcoming">Upcoming</option><option value="current">Current</option><option value="overdue">Overdue</option></select></div>
+                  </div>
+                  <div><label className="block text-[11px] text-gray-400 mb-1">Sort by</label><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-[#0b261a] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="newest">Newest first</option><option value="start_soonest">Start date</option><option value="end_soonest">End date</option><option value="progress_desc">Most progress</option><option value="progress_asc">Least progress</option><option value="title">Title A-Z</option></select></div>
+                </>
+              )}
+              {workflowType === "cap" && (
+                <>
+                  <div>
+                    <label className="block text-[11px] text-gray-400 mb-1">Linked audit</label>
+                    <select value={capAuditFilter} onChange={(e) => setCapAuditFilter(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-[#0b261a] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50">
+                      <option value="all">All linked audits</option>
+                      {capAuditOptions.map((code) => <option key={code} value={code}>{code}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div><label className="block text-[11px] text-gray-400 mb-1">Status</label><select value={capProgressFilter} onChange={(e) => setCapProgressFilter(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-[#0b261a] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="all">Any status</option><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></div>
+                    <div><label className="block text-[11px] text-gray-400 mb-1">Sort by</label><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-[#0b261a] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="progress_desc">Most progress</option><option value="progress_asc">Least progress</option><option value="title">Title A–Z</option></select></div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
           {/* ── Desktop: full grid (unchanged) ── */}
-          <div className={`hidden md:grid p-3 sm:p-4 ${workflowType === "audit" ? "md:grid-cols-4" : "md:grid-cols-2"} gap-2.5 sm:gap-3`}>
+          <div className={`hidden md:grid p-3 sm:p-4 ${workflowType === "audit" ? "md:grid-cols-4 xl:grid-cols-7" : "md:grid-cols-3 xl:grid-cols-5"} gap-2.5 sm:gap-4`}>
             <div className="relative">
               <label className="block text-[11px] text-gray-400 mb-1">Search</label>
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -429,6 +502,17 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                     />
                   </div>
                 </div>
+                <div><label className="block text-[11px] text-gray-400 mb-1">Status</label><select value={filter} onChange={(e) => setFilter(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="all">All statuses</option><option value="plan">Planned</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></div>
+                <div><label className="block text-[11px] text-gray-400 mb-1">Schedule</label><select value={auditScheduleFilter} onChange={(e) => setAuditScheduleFilter(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="all">Any schedule</option><option value="upcoming">Upcoming</option><option value="current">Current</option><option value="overdue">Overdue</option></select></div>
+                <div><label className="block text-[11px] text-gray-400 mb-1">Sort by</label><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="newest">Newest first</option><option value="start_soonest">Start date</option><option value="end_soonest">End date</option><option value="progress_desc">Most progress</option><option value="progress_asc">Least progress</option><option value="title">Title A-Z</option></select></div>
+              </>
+            )}
+
+            {workflowType === "cap" && (
+              <>
+                <div><label className="block text-[11px] text-gray-400 mb-1">Linked audit</label><select value={capAuditFilter} onChange={(e) => setCapAuditFilter(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="all">All linked audits</option>{capAuditOptions.map((code) => <option key={code} value={code}>{code}</option>)}</select></div>
+                <div><label className="block text-[11px] text-gray-400 mb-1">Status</label><select value={capProgressFilter} onChange={(e) => setCapProgressFilter(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="all">Any status</option><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></div>
+                <div><label className="block text-[11px] text-gray-400 mb-1">Sort by</label><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white focus:outline-none focus:border-secondary-500/50"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="progress_desc">Most progress</option><option value="progress_asc">Least progress</option><option value="title">Title A–Z</option></select></div>
               </>
             )}
 
@@ -436,7 +520,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
               <Button
                 variant="secondary"
                 fullWidth
-                onClick={() => { setSearchTerm(""); setStartDateFilter(""); setEndDateFilter(""); setFilter("all"); }}
+                onClick={resetFilters}
               >
                 Reset
               </Button>
@@ -445,7 +529,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
         </div>
 
         {/* Filter tabs */}
-        {!loading && items.length > 0 && (
+        {workflowType === "cap" && !loading && items.length > 0 && (
           <div className="grid grid-cols-2 gap-2 mb-6 md:flex md:items-center md:gap-1 md:p-1 md:glass md:rounded-xl md:w-fit">
             {statusOptions.map((status) => (
               <button
@@ -543,6 +627,9 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                         <Td>
                           <div className="flex flex-col gap-0.5">
                             <p className="text-white font-medium">{item.title}</p>
+                            {workflowType === "cap" && item.audit_code && (
+                              <p className="text-[11px] text-gray-500">Linked audit: <span className="font-medium text-gray-400">{item.audit_code}</span></p>
+                            )}
                           </div>
                         </Td>
                         <Td>
@@ -631,6 +718,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                       <div className="flex-1 min-w-0">
                         <p className="text-[10px] text-gray-500 mb-1">#{itemIndex}</p>
                         <h3 className="text-sm font-bold text-white line-clamp-2 leading-tight mb-2">{item.title}</h3>
+                        {workflowType === "cap" && item.audit_code && <p className="mb-2 truncate text-[10px] font-medium text-gray-500">Linked audit: {item.audit_code}</p>}
                         <div className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider w-fit ${STATUS_BADGE[displayStatus] || STATUS_BADGE["plan"]}`}>
                           {STATUS_ICON[displayStatus]}
                           {displayStatus.replace("_", " ")}

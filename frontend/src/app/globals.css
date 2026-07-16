@@ -73,6 +73,7 @@
 
   * {
     border-color: var(--app-border);
+    min-width: 0;
   }
 
   html {
@@ -84,6 +85,14 @@
     min-height: 100vh;
     background-color: var(--app-bg);
     text-rendering: optimizeLegibility;
+  }
+
+  img, video, canvas, svg {
+    max-width: 100%;
+  }
+
+  button, input, select, textarea {
+    touch-action: manipulation;
   }
 
   button, a, input, textarea, select {
@@ -198,6 +207,12 @@
   .progress-fill {
     @apply h-full rounded-full transition-all duration-500;
   }
+  .page-container {
+    @apply mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-8;
+  }
+  .page-section {
+    @apply rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4 shadow-[0_12px_36px_rgba(0,0,0,0.12)] backdrop-blur-xl sm:p-5 lg:p-6;
+  }
 }
 
 /* Consistent application page rhythm without requiring page rewrites. */
@@ -242,6 +257,14 @@ main select[class*="bg-white/5"]:focus {
 
   main h1.text-2xl {
     font-size: 1.35rem;
+  }
+
+  main > div {
+    min-width: 0;
+  }
+
+  .glass.rounded-3xl {
+    border-radius: 1.25rem;
   }
 }
 

@@ -68,7 +68,7 @@ const createCheckout = async (req, res) => {
     const rootCode = req.user.entityCode;
     if (!rootCode) return errorResponse(res, 'No organization found for this account.', 400);
 
-    const amount = SubscriptionModel.computeAmount(plan_name, billing_cycle);
+    const amount = SubscriptionModel.computeAmount(plan_name, billing_cycle, req.user.entityType);
     if (amount <= 0) {
       return errorResponse(res, 'The selected plan does not require a payment.', 400);
     }
@@ -108,15 +108,15 @@ async function activateVerifiedPayment(payment, gatewayReference) {
     if (payment.plan_name === 'Custom') {
       const csr = await CustomSolutionModel.findByOrgCode(payment.root_entity_code);
       if (csr) {
-        customLimits = {
-          company_level: 6,
+        customLimits = SubscriptionModel.normalizeCustomLimits({
+          company_level: csr.max_company_levels,
           department: csr.max_departments,
           audits: csr.max_audits,
           checklists: csr.max_checklists,
           auditors: csr.max_auditors,
-          auditor_eval: !!csr.allow_auditor_eval,
-          company_to_company: !!csr.allow_company_to_company,
-        };
+          auditor_eval: csr.allow_auditor_eval,
+          company_to_company: csr.allow_company_to_company,
+        });
       }
     }
 
@@ -198,16 +198,15 @@ const confirmPayment = async (req, res) => {
     if (payment.plan_name === 'Custom') {
       const csr = await CustomSolutionModel.findByOrgCode(payment.root_entity_code);
       if (csr) {
-        customLimits = {
-          // Custom plans always include the complete Company hierarchy.
-          company_level: 6,
+        customLimits = SubscriptionModel.normalizeCustomLimits({
+          company_level: csr.max_company_levels,
           department: csr.max_departments,
           audits: csr.max_audits,
           checklists: csr.max_checklists,
           auditors: csr.max_auditors,
-          auditor_eval: !!csr.allow_auditor_eval,
-          company_to_company: !!csr.allow_company_to_company,
-        };
+          auditor_eval: csr.allow_auditor_eval,
+          company_to_company: csr.allow_company_to_company,
+        });
       }
     }
 

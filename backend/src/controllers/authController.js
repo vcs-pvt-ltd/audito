@@ -72,16 +72,13 @@ const ENTITY_CONFIG = {
 
 const VALID_ENTITY_TYPES = Object.keys(ENTITY_CONFIG);
 
-// Pricing's "Company hierarchy depth" is ordered from the Company root.
-// Customer and Audit Firm entity families have separate structures and are
-// intentionally not affected by max_company_levels.
-const COMPANY_HIERARCHY_DEPTH = {
-  'Company': 1,
-  'Cluster': 2,
-  'Factory': 3,
-  'Unit': 4,
-  'Department': 5,
-  'Section': 6
+// Standard plans control the entity type that may start a workspace.
+// Customer-family registrations require Elite. Company and Audit Firm entry
+// points depend on the selected standard plan.
+const PLAN_REGISTRATION_ENTITY_ACCESS = {
+  Basic: ['Factory', 'Unit', 'Department', 'Audit Firm Department'],
+  Pro: ['Cluster', 'Factory', 'Unit', 'Department', 'Branch', 'Audit Firm Department'],
+  Elite: ['Customer', 'Buying Office', 'Supplier', 'Company', 'Cluster', 'Factory', 'Unit', 'Department', 'Audit Firm Company', 'Branch', 'Audit Firm Department']
 };
 
 // Helper: get entity code from admin (now just entity_code)
@@ -348,17 +345,12 @@ const register = async (req, res) => {
     }
 
     const normalizedPlanName = SubscriptionModel.normalizePlanName(plan_name);
-    const selectedCompanyDepth = COMPANY_HIERARCHY_DEPTH[entity_type];
-    if (plan_name !== 'Custom' && selectedCompanyDepth) {
-      const allowedCompanyDepth = SubscriptionModel.PLAN_LIMITS[normalizedPlanName]?.company_level
-        ?? SubscriptionModel.PLAN_LIMITS.Basic.company_level;
-      if (selectedCompanyDepth > allowedCompanyDepth) {
-        return errorResponse(
-          res,
-          `${normalizedPlanName} allows ${allowedCompanyDepth} Company hierarchy level(s). Select an available Company entity type or upgrade the plan.`,
-          403
-        );
-      }
+    if (plan_name !== 'Custom' && !PLAN_REGISTRATION_ENTITY_ACCESS[normalizedPlanName]?.includes(entity_type)) {
+      return errorResponse(
+        res,
+        `${normalizedPlanName} does not include ${entity_type} as a workspace entry type. Choose an available type or upgrade the plan.`,
+        403
+      );
     }
 
     if (!isValidEmail(email)) return errorResponse(res, 'Invalid email address.', 400);
@@ -446,7 +438,7 @@ const register = async (req, res) => {
     // until payment is confirmed — until then limits fall back to Basic.
     // Custom plans are also deferred until admin assigns a price.
     const isCustomPlan = plan_name === 'Custom';
-    let planAmount = isCustomPlan ? 0 : SubscriptionModel.computeAmount(plan_name, billing_cycle);
+    let planAmount = isCustomPlan ? 0 : SubscriptionModel.computeAmount(plan_name, billing_cycle, entity_type);
     if (discount > 0) {
       planAmount = planAmount * (1 - discount / 100);
       planAmount = Math.max(0, parseFloat(planAmount.toFixed(2)));
@@ -457,20 +449,28 @@ const register = async (req, res) => {
 
     // For custom plans, store the custom solution request
     if (isCustomPlan && custom_solution) {
+      const customLimits = SubscriptionModel.normalizeCustomLimits({
+        company_level: custom_solution.max_company_levels,
+        department: custom_solution.max_departments,
+        audits: custom_solution.max_audits,
+        checklists: custom_solution.max_checklists,
+        auditors: custom_solution.max_auditors,
+        auditor_eval: custom_solution.allow_auditor_eval,
+        company_to_company: custom_solution.allow_company_to_company,
+      });
       await CustomSolutionModel.create({
         root_entity_code: orgCode,
         admin_id: adminId,
         org_name,
         org_email: org_email || email,
         entity_type,
-        // Custom plans always include all Company hierarchy levels.
-        max_company_levels: 6,
-        max_departments: custom_solution.max_departments || 4,
-        max_audits: custom_solution.max_audits || 2,
-        max_checklists: custom_solution.max_checklists || 3,
-        max_auditors: custom_solution.max_auditors || 1,
-        allow_auditor_eval: custom_solution.allow_auditor_eval || false,
-        allow_company_to_company: custom_solution.allow_company_to_company || false,
+        max_company_levels: customLimits.company_level,
+        max_departments: customLimits.department,
+        max_audits: customLimits.audits,
+        max_checklists: customLimits.checklists,
+        max_auditors: customLimits.auditors,
+        allow_auditor_eval: customLimits.auditor_eval,
+        allow_company_to_company: customLimits.company_to_company,
       });
     }
 
@@ -585,7 +585,7 @@ const login = async (req, res) => {
       // Prepare a renewal payment so the client can route into the payment flow.
       // Reuse an existing pending renewal to avoid spawning duplicates per attempt.
       let payment = null;
-      const renewalAmount = SubscriptionModel.computeAmount(subscription.plan_name, subscription.billing_cycle);
+      const renewalAmount = SubscriptionModel.computeAmount(subscription.plan_name, subscription.billing_cycle, activeRecord.entity_type);
       if (renewalAmount > 0) {
         const rootCode = getRootEntityCode(activeRole, activeRecord);
         let pending = await PaymentModel.findPendingByOrgPurpose(rootCode, 'renewal');

@@ -91,14 +91,14 @@ export default function MyFieldVisitsPage() {
 
   if (admin.role !== "auditor") {
     return (
-      <div className="p-6 pt-20 lg:pt-8 text-gray-300">
+      <div className="p-4 pt-20 text-gray-300 sm:p-6 lg:p-8 lg:pt-8">
         Only auditors can access this page.
       </div>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 pt-20 lg:pt-8 space-y-6 overflow-y-auto h-full">
+    <div className="mx-auto min-h-full w-full max-w-7xl space-y-5 p-4 pb-28 pt-20 sm:p-6 sm:pb-28 lg:space-y-6 lg:p-8 lg:pb-10 lg:pt-8">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-secondary-500/10 flex items-center justify-center border border-secondary-500/20">

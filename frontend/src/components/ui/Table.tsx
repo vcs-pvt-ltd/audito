@@ -13,8 +13,8 @@ const ALIGN: Record<Align, string> = {
 export function Table({ className = "", children }: { className?: string; children: React.ReactNode }) {
   return (
     <div className="glass rounded-2xl overflow-hidden border-white/[0.08]">
-      <div className="overflow-x-auto">
-        <table className={`w-full text-sm ${className}`}>{children}</table>
+      <div className="overflow-x-auto overscroll-x-contain">
+        <table className={`w-full min-w-[640px] text-sm ${className}`}>{children}</table>
       </div>
     </div>
   );

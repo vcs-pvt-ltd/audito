@@ -52,7 +52,7 @@ export default function Modal({
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={onClose} />
-      <div role="dialog" aria-modal="true" className={`relative glass bg-[#0b2118]/95 rounded-t-3xl sm:rounded-3xl w-full ${SIZE_CLASSES[size]} max-h-[92vh] overflow-y-auto shadow-2xl border-white/15`}>
+      <div role="dialog" aria-modal="true" className={`relative glass bg-[#0b2118]/95 rounded-t-3xl sm:rounded-3xl w-full ${SIZE_CLASSES[size]} max-h-[92dvh] overflow-y-auto shadow-2xl border-white/15`}>
         {(title || icon || !hideClose) && (
           <div className="sticky top-0 z-10 flex items-center justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-[#0b2118]/90 backdrop-blur-xl">
             <div className="flex items-center gap-3 min-w-0">
@@ -72,7 +72,7 @@ export default function Modal({
 
         <div className={bodyPadded ? "p-5 sm:p-6" : ""}>{children}</div>
 
-        {footer && <div className="flex gap-3 p-5 pt-0">{footer}</div>}
+        {footer && <div className="flex flex-col-reverse gap-3 p-5 pt-0 sm:flex-row sm:justify-end">{footer}</div>}
       </div>
     </div>,
     document.body

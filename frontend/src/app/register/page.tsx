@@ -32,7 +32,7 @@ import {
   type RegisterPayload,
   type AllEntityType,
 } from "@/lib/api";
-import { getCompanyLevelLimit, PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
+import { canRegisterEntityType, CUSTOM_PLAN_MINIMUM_LIMITS, PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
 
 /* ─── Country Code → IANA Timezone Map ──────────────────────────── */
 
@@ -134,12 +134,11 @@ const accountTypes: AccountTypeConfig[] = [
     icon: LayoutGrid,
     description: "Manufacturing & operations",
     entityTypes: [
-      { name: "Company", level: 6, color: "bg-primary-400", desc: "Top-level company entity" },
-      { name: "Cluster", level: 5, color: "bg-primary-400/80", desc: "Regional or product clusters" },
-      { name: "Factory", level: 4, color: "bg-primary-400/60", desc: "Manufacturing factories" },
-      { name: "Unit", level: 3, color: "bg-primary-400/40", desc: "Operational units within factories" },
-      { name: "Department", level: 2, color: "bg-primary-400/30", desc: "Departments within units" },
-      { name: "Section", level: 1, color: "bg-primary-400/20", desc: "Sections within departments" },
+      { name: "Company", level: 5, color: "bg-primary-400", desc: "Top-level company entity" },
+      { name: "Cluster", level: 4, color: "bg-primary-400/80", desc: "Regional or product clusters" },
+      { name: "Factory", level: 3, color: "bg-primary-400/60", desc: "Manufacturing factories" },
+      { name: "Unit", level: 2, color: "bg-primary-400/40", desc: "Operational units within factories" },
+      { name: "Department", level: 1, color: "bg-primary-400/30", desc: "Departments within units" },
     ],
     highlightLevels: [6, 5, 4, 3, 2, 1],
     detail: {
@@ -176,6 +175,44 @@ const accountTypes: AccountTypeConfig[] = [
 /* ─── Helpers ────────────────────────────────────────────────────── */
 
 const ALL_LEVELS = [7, 6, 5, 4, 3, 2, 1];
+/** Price or plan requirement shown on every selectable hierarchy card. */
+const ENTITY_ENTRY_PRICE_LABELS: Partial<Record<AllEntityType, string>> = {
+  Customer: "$999",
+  "Buying Office": "$599",
+  Supplier: "$299",
+  Cluster: "$199",
+  Branch: "$199",
+  Company: "$299",
+  "Audit Firm Company": "$299",
+};
+
+const CUSTOM_CONFIGURATION_FEATURES = [
+  { key: "max_company_levels" as const, label: "Company levels", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_company_levels, max: 100, desc: "Company-level capacity for your workspace" },
+  { key: "max_departments" as const, label: "Departments", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_departments, max: 100, desc: "Department entities in your organization" },
+  { key: "max_audits" as const, label: "Audits", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_audits, max: 100, desc: "Active audit assignments" },
+  { key: "max_checklists" as const, label: "Audit checklists", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_checklists, max: 100, desc: "Reusable audit checklist templates" },
+  { key: "max_auditors" as const, label: "Auditors", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_auditors, max: 100, desc: "Auditor accounts on your team" },
+];
+
+type CustomSolutionLimits = {
+  max_company_levels: number;
+  max_departments: number;
+  max_audits: number;
+  max_checklists: number;
+  max_auditors: number;
+  allow_auditor_eval: boolean;
+  allow_company_to_company: boolean;
+};
+
+const normalizeCustomSolution = (candidate?: Partial<CustomSolutionLimits>): CustomSolutionLimits => ({
+  max_company_levels: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_company_levels, Number(candidate?.max_company_levels) || CUSTOM_PLAN_MINIMUM_LIMITS.max_company_levels),
+  max_departments: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_departments, Number(candidate?.max_departments) || CUSTOM_PLAN_MINIMUM_LIMITS.max_departments),
+  max_audits: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_audits, Number(candidate?.max_audits) || CUSTOM_PLAN_MINIMUM_LIMITS.max_audits),
+  max_checklists: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_checklists, Number(candidate?.max_checklists) || CUSTOM_PLAN_MINIMUM_LIMITS.max_checklists),
+  max_auditors: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_auditors, Number(candidate?.max_auditors) || CUSTOM_PLAN_MINIMUM_LIMITS.max_auditors),
+  allow_auditor_eval: true,
+  allow_company_to_company: true,
+});
 
 /** Returns the bar colour class for a given group + level, or null if empty */
 function getLevelStyle(group: AccountGroup, level: number): string | null {
@@ -255,6 +292,13 @@ function PlanSelectionStep({
   onBillingCycleChange,
   onNext,
   error,
+  promoCode,
+  promoDiscount,
+  promoLoading,
+  promoError,
+  onPromoCodeChange,
+  onValidatePromo,
+  onRemovePromo,
 }: {
   selectedPlan: string;
   billingCycle: "Monthly" | "Yearly";
@@ -262,6 +306,13 @@ function PlanSelectionStep({
   onBillingCycleChange: (cycle: "Monthly" | "Yearly") => void;
   onNext: () => void;
   error: string;
+  promoCode: string;
+  promoDiscount: number | null;
+  promoLoading: boolean;
+  promoError: string;
+  onPromoCodeChange: (value: string) => void;
+  onValidatePromo: () => void;
+  onRemovePromo: () => void;
 }) {
   const router = useRouter();
   const isYearly = billingCycle === "Yearly";
@@ -301,7 +352,7 @@ function PlanSelectionStep({
     {
       key: "Custom",
       name: "Custom",
-      price: "Custom",
+      price: "",
       period: "",
       subtitle: null,
       desc: "Tailored to your needs",
@@ -313,20 +364,19 @@ function PlanSelectionStep({
   const comparisonRows = [
     {
       group: "WORKSPACE MANAGEMENT",
-      feature: "Company hierarchy depth",
+      feature: "Company levels",
       values: [
         String(PLAN_COMPANY_LEVEL_LIMITS.Basic),
         String(PLAN_COMPANY_LEVEL_LIMITS.Pro),
         String(PLAN_COMPANY_LEVEL_LIMITS.Elite),
-        "Custom",
       ],
     },
-    { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16", "Custom"] },
-    { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14", "Custom"] },
-    { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25", "Custom"] },
-    { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15", "Custom"] },
-    { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true, true] },
-    { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true, true] },
+    { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16"] },
+    { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14"] },
+    { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25"] },
+    { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15"] },
+    { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true] },
+    { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
   ];
   const workspaceRows = comparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
   const coreRows = comparisonRows.filter((r) => r.group === "CORE FEATURES");
@@ -348,7 +398,7 @@ function PlanSelectionStep({
       {/* ── Comparison Table ── */}
       {/* Desktop table */}
       <div className="hidden lg:block mb-7 overflow-x-auto">
-        <div className="min-w-[700px] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
+        <div className="min-w-[580px] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-white/5 text-secondary-400">
@@ -356,7 +406,6 @@ function PlanSelectionStep({
                 <th className="px-5 py-3 text-xs font-semibold">Basic</th>
                 <th className="px-5 py-3 text-xs font-semibold">Pro</th>
                 <th className="px-5 py-3 text-xs font-semibold">Elite</th>
-                <th className="px-5 py-3 text-xs font-semibold">Custom</th>
               </tr>
             </thead>
             <tbody>
@@ -365,14 +414,14 @@ function PlanSelectionStep({
                   <td className="px-5 py-3 text-gray-200 text-xs">{row.feature}</td>
                   {row.values.map((v, i) => (
                     <td key={i} className="px-5 py-3 text-center text-white font-medium text-xs">
-                      {v === "Custom" ? <span className="text-[#EECA53] font-semibold">Custom</span> : v}
+                      {v}
                     </td>
                   ))}
                 </tr>
               ))}
               <tr className="border-t border-white/10 bg-white/5">
                 <td className="px-5 py-2.5 text-xs tracking-wide font-semibold uppercase text-secondary-400">Core Features</td>
-                <td /><td /><td /><td />
+                <td /><td /><td />
               </tr>
               {coreRows.map((row) => (
                 <tr key={row.feature} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
@@ -422,11 +471,11 @@ function PlanSelectionStep({
         {workspaceRows.map((row) => (
           <div key={row.feature} className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
             <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-            <div className="grid grid-cols-4 divide-x divide-white/10">
-              {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
+            <div className="grid grid-cols-3 divide-x divide-white/10">
+              {["Basic", "Pro", "Elite"].map((name, i) => (
                 <div key={name} className="flex flex-col items-center py-3 gap-1">
                   <span className="text-[10px] text-gray-400">{name}</span>
-                  <span className={`text-sm font-semibold ${name === "Custom" ? "text-[#EECA53]" : "text-white"}`}>{row.values[i]}</span>
+                  <span className="text-sm font-semibold text-white">{row.values[i]}</span>
                 </div>
               ))}
             </div>
@@ -436,8 +485,8 @@ function PlanSelectionStep({
         {coreRows.map((row) => (
           <div key={row.feature} className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
             <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-            <div className="grid grid-cols-4 divide-x divide-white/10">
-              {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
+            <div className="grid grid-cols-3 divide-x divide-white/10">
+              {["Basic", "Pro", "Elite"].map((name, i) => (
                 <div key={name} className="flex flex-col items-center py-3 gap-1">
                   <span className="text-[10px] text-gray-400">{name}</span>
                   {row.values[i]
@@ -480,10 +529,12 @@ function PlanSelectionStep({
                 )}
                 <h4 className={`text-lg font-bold ${plan.textColor}`}>{plan.name}</h4>
               </div>
-              <div className="mb-2">
-                <span className={`text-2xl font-bold ${plan.textColor}`}>{plan.price}</span>
-                {plan.period && <span className={`ml-1 text-xs ${plan.textColor} opacity-60`}>{plan.period}</span>}
-              </div>
+              {plan.price && (
+                <div className="mb-2">
+                  <span className={`text-2xl font-bold ${plan.textColor}`}>{plan.price}</span>
+                  {plan.period && <span className={`ml-1 text-xs ${plan.textColor} opacity-60`}>{plan.period}</span>}
+                </div>
+              )}
               {plan.subtitle && (
                 <p className="text-[11px] text-secondary-400 font-medium mb-1">{plan.subtitle}</p>
               )}
@@ -495,6 +546,18 @@ function PlanSelectionStep({
           );
         })}
       </div>
+
+      {(["Pro", "Elite"] as const).includes(selectedPlan as "Pro" | "Elite") && (
+        <PromoCodePanel
+          promoCode={promoCode}
+          promoDiscount={promoDiscount}
+          promoLoading={promoLoading}
+          promoError={promoError}
+          onPromoCodeChange={onPromoCodeChange}
+          onValidate={onValidatePromo}
+          onRemove={onRemovePromo}
+        />
+      )}
 
       {error && (
         <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
@@ -521,6 +584,75 @@ function PlanSelectionStep({
 
 /* ─── Step 2: Account Type + Hierarchy ────────────────────── */
 
+function PromoCodePanel({
+  promoCode,
+  promoDiscount,
+  promoLoading,
+  promoError,
+  onPromoCodeChange,
+  onValidate,
+  onRemove,
+}: {
+  promoCode: string;
+  promoDiscount: number | null;
+  promoLoading: boolean;
+  promoError: string;
+  onPromoCodeChange: (value: string) => void;
+  onValidate: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <section className="mb-6 rounded-2xl border border-white/[0.1] bg-white/[0.03] p-4 sm:p-5">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-secondary-400/20 bg-secondary-500/15 text-secondary-300"><Tag size={16} /></div>
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-semibold text-white">Do you have a promo code?</h4>
+          <p className="mt-0.5 text-xs leading-5 text-gray-400">Apply it now and your discount will be included when you continue to payment.</p>
+        </div>
+      </div>
+
+      {promoDiscount !== null ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-2.5">
+          <p className="flex items-center gap-2 text-sm font-medium text-emerald-200"><CheckCircle2 size={16} /> {promoDiscount}% discount applied</p>
+          <button type="button" onClick={onRemove} className="text-xs font-semibold text-emerald-300 transition hover:text-white">Remove code</button>
+        </div>
+      ) : (
+        <div className="mt-4">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input value={promoCode} onChange={(e) => onPromoCodeChange(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onValidate(); } }} placeholder="Enter promo code" className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/15 px-3 text-sm font-medium tracking-wide text-white placeholder:font-normal placeholder:tracking-normal placeholder:text-gray-600 focus:outline-none focus:border-secondary-500/50" />
+            <button type="button" onClick={onValidate} disabled={promoLoading || !promoCode.trim()} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-secondary-400/25 bg-secondary-500/10 px-4 text-sm font-semibold text-secondary-300 transition hover:bg-secondary-500/20 disabled:cursor-not-allowed disabled:opacity-50">{promoLoading && <Loader2 size={15} className="animate-spin" />}{promoLoading ? "Checking" : "Apply code"}</button>
+          </div>
+          {promoError && <p className="mt-2 text-xs font-medium text-red-300">{promoError}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PromoCodeStep({
+  planName,
+  billingCycle,
+  onNext,
+  ...promoProps
+}: {
+  planName: "Pro" | "Elite";
+  billingCycle: "Monthly" | "Yearly";
+  onNext: () => void;
+} & React.ComponentProps<typeof PromoCodePanel>) {
+  return (
+    <div className="p-5 pt-1 sm:p-8 sm:pt-2">
+      <div className="mb-6">
+        <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Apply a promo code</h3>
+        <p className="mt-1 text-sm leading-relaxed text-gray-400">Your {planName} {billingCycle.toLowerCase()} plan is selected. A promo code is optional and can be applied before you continue.</p>
+      </div>
+      <PromoCodePanel {...promoProps} />
+      <button type="button" onClick={onNext} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px">
+        Continue to account type <ArrowRight size={18} />
+      </button>
+    </div>
+  );
+}
+
 function AccountTypeStep({
   selectedGroup,
   selectedEntityType,
@@ -544,14 +676,12 @@ function AccountTypeStep({
 }) {
   const activeGroup = selectedGroup ?? "Customer";
   const activeConfig = accountTypes.find((t) => t.key === activeGroup)!;
-  const companyLevelLimit = getCompanyLevelLimit(planName, customCompanyLevelLimit);
 
-  const isEntityLocked = (group: AccountGroup, entityName: AllEntityType) => {
-    if (group !== "Company") return false;
-    const companyConfig = accountTypes.find((type) => type.key === "Company")!;
-    const depth = companyConfig.entityTypes.findIndex((entity) => entity.name === entityName) + 1;
-    return depth > companyLevelLimit;
-  };
+  const isEntityLocked = (group: AccountGroup, entityName: AllEntityType) =>
+    !canRegisterEntityType(planName, group, entityName);
+
+  const firstAvailableEntity = (group: AccountGroup) =>
+    accountTypes.find((type) => type.key === group)!.entityTypes.find((entity) => !isEntityLocked(group, entity.name))?.name;
 
   const isLevelLocked = (group: AccountGroup, level: number) => {
     const config = accountTypes.find((type) => type.key === group)!;
@@ -562,6 +692,8 @@ function AccountTypeStep({
   const handleLevelClick = (group: AccountGroup, level: number) => {
     const name = getLevelName(group, level);
     if (!name) return;
+    const availableEntity = firstAvailableEntity(group);
+    if (!availableEntity) return;
     if (group !== activeGroup) onGroupSelect(group);
     const config = accountTypes.find((t) => t.key === group)!;
     const et = config.entityTypes.find((e) => e.level === level)!;
@@ -591,15 +723,7 @@ function AccountTypeStep({
         </div>
       </div>
 
-      <div className="mb-6 flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-black/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold text-white">{planName} plan allowance</p>
-          <p className="mt-0.5 text-[11px] text-gray-500">Company is level 1; deeper Company entities unlock with higher plans.</p>
-        </div>
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-secondary-500/20 bg-secondary-500/10 px-3 py-1.5 text-xs font-semibold text-secondary-400">
-          {companyLevelLimit} Company {companyLevelLimit === 1 ? "level" : "levels"}
-        </span>
-      </div>
+    
 
      
 
@@ -612,12 +736,14 @@ function AccountTypeStep({
           {accountTypes.map((type) => {
             const Icon = type.icon;
             const isActive = activeGroup === type.key;
+            const isGroupLocked = !firstAvailableEntity(type.key);
             return (
               <button
                 key={type.key}
                 type="button"
-                onClick={() => { onGroupSelect(type.key); onEntityTypeSelect(type.entityTypes[0].name); }}
-                className={`relative flex min-h-[86px] flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-2xl border transition-all ${isActive ? "bg-secondary-500/12 border-secondary-500/50 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10"}`}
+                disabled={isGroupLocked}
+                onClick={() => { const entity = firstAvailableEntity(type.key); onGroupSelect(type.key); if (entity) onEntityTypeSelect(entity); }}
+                className={`relative flex min-h-[86px] flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-2xl border transition-all ${isGroupLocked ? "cursor-not-allowed border-white/[0.06] bg-black/10 opacity-45" : isActive ? "bg-secondary-500/12 border-secondary-500/50 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10"}`}
               >
                 <Icon size={18} className={isActive ? "text-secondary-400" : "text-gray-400"} />
                 <span className={`text-[11px] font-semibold text-center leading-tight ${isActive ? "text-secondary-400" : "text-white"}`}>{type.label}</span>
@@ -645,6 +771,7 @@ function AccountTypeStep({
                   <p className={`text-sm font-semibold ${isSelected ? "text-secondary-400" : "text-white"}`}>{et.label ?? et.name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{et.desc}</p>
                 </div>
+                {ENTITY_ENTRY_PRICE_LABELS[et.name] && <span className="self-end text-[10px] font-semibold text-secondary-300">{ENTITY_ENTRY_PRICE_LABELS[et.name]}</span>}
                 {isLocked ? (
                   <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500"><LockKeyhole size={12} /> Upgrade</span>
                 ) : isSelected && <Check size={15} className="text-secondary-400 shrink-0" />}
@@ -664,12 +791,14 @@ function AccountTypeStep({
           {accountTypes.map((type) => {
             const Icon = type.icon;
             const isActive = activeGroup === type.key;
+            const isGroupLocked = !firstAvailableEntity(type.key);
             return (
               <button
                 key={type.key}
                 type="button"
-                onClick={() => { onGroupSelect(type.key); onEntityTypeSelect(type.entityTypes[0].name); }}
-                className={`group relative min-h-[132px] text-left rounded-2xl p-4 border transition-all duration-200 ${isActive ? "bg-secondary-500/10 border-secondary-500/50 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10 hover:-translate-y-0.5 hover:bg-white/[0.055] hover:border-white/20"}`}
+                disabled={isGroupLocked}
+                onClick={() => { const entity = firstAvailableEntity(type.key); onGroupSelect(type.key); if (entity) onEntityTypeSelect(entity); }}
+                className={`group relative min-h-[132px] text-left rounded-2xl p-4 border transition-all duration-200 ${isGroupLocked ? "cursor-not-allowed border-white/[0.06] bg-black/10 opacity-45" : isActive ? "bg-secondary-500/10 border-secondary-500/50 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10 hover:-translate-y-0.5 hover:bg-white/[0.055] hover:border-white/20"}`}
               >
                 {isActive && <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950"><Check size={12} strokeWidth={3} /></span>}
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-colors ${isActive ? "bg-secondary-500/20" : "bg-white/5 group-hover:bg-white/10"}`}>
@@ -677,46 +806,12 @@ function AccountTypeStep({
                 </div>
                 <p className={`text-sm font-semibold ${isActive ? "text-secondary-400" : "text-white"}`}>{type.label}</p>
                 <p className="text-xs text-gray-500 mt-0.5 leading-snug">{type.description}</p>
-                {type.key === "Company" && (
-                  <span className="mt-2 inline-flex rounded-full border border-white/10 bg-black/10 px-2 py-1 text-[9px] font-semibold text-gray-400">
-                    {companyLevelLimit} of 6 levels available
-                  </span>
-                )}
+                
               </button>
             );
           })}
         </div>
-         {/* Selected account summary — kept at the top so context stays visible while choosing a level. */}
-      <div className="mb-6 overflow-hidden rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/[0.11] via-primary-500/[0.08] to-transparent">
-        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
-          <div className="flex min-w-0 flex-1 items-center gap-3.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-secondary-500/25 bg-secondary-500/15 text-secondary-400 shadow-lg shadow-black/10">
-              <ActiveIcon size={21} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-secondary-500">Currently selected</p>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <p className="text-base font-semibold text-white">{selectedEntity?.label ?? selectedEntity?.name ?? activeConfig.label}</p>
-                {selectedEntity && <span className="rounded-full border border-white/10 bg-black/10 px-2 py-0.5 text-[10px] font-medium text-gray-400">Level {selectedEntity.level}</span>}
-              </div>
-              <p className="mt-1 text-xs leading-relaxed text-gray-400">{activeConfig.detail.desc}</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 sm:max-w-[46%] sm:justify-end">
-            {activeConfig.detail.capabilities.map((cap) => {
-              const CapIcon = cap.icon;
-              return (
-                <span key={cap.label} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/10 px-2.5 py-1.5 text-[10px] font-medium text-gray-300">
-                  <CapIcon size={11} className="text-secondary-400" />
-                  {cap.label}
-                </span>
-              );
-            })}
-
-            
-          </div>
-        </div>
-      </div>
+       
 
         {/* Bottom: full-width hierarchy grid */}
         <div className="rounded-2xl border border-white/[0.08] bg-black/10 p-4 sm:p-5">
@@ -746,13 +841,14 @@ function AccountTypeStep({
                             type="button"
                             disabled={isEmpty || isLocked}
                             onClick={() => handleLevelClick(type.key, lvl)}
-                            title={isLocked ? `${planName} includes ${companyLevelLimit} Company hierarchy ${companyLevelLimit === 1 ? "level" : "levels"}. Upgrade to unlock ${name}.` : undefined}
-                            className={`flex-1 h-10 rounded-xl px-3 text-xs font-medium text-left transition-all ${isEmpty ? "opacity-[0.08] cursor-default" : isLocked ? "cursor-not-allowed bg-white/[0.035] opacity-35 grayscale" : "cursor-pointer hover:brightness-110 hover:translate-x-0.5"} ${isLocked ? "" : colorCls ?? "bg-white/5"} ${isSelected ? "ring-2 ring-secondary-300 ring-offset-2 ring-offset-[#0a1d15] shadow-lg shadow-black/20" : ""} text-white`}
+                            title={isLocked ? `${planName} does not include ${name} as a workspace entry type. Choose an available type or upgrade the plan.` : undefined}
+                            className={`relative flex-1 h-10 rounded-xl px-3 text-xs font-medium text-left transition-all ${isEmpty ? "opacity-[0.08] cursor-default" : isLocked ? "cursor-not-allowed bg-white/[0.035] opacity-35 grayscale" : "cursor-pointer hover:brightness-110 hover:translate-x-0.5"} ${isLocked ? "" : colorCls ?? "bg-white/5"} ${isSelected ? "ring-2 ring-secondary-300 ring-offset-2 ring-offset-[#0a1d15] shadow-lg shadow-black/20" : ""} text-white`}
                           >
                             <span className="flex items-center justify-between gap-1">
                               <span className="truncate">{name ?? ""}</span>
                               {isLocked ? <LockKeyhole size={11} className="shrink-0" /> : isSelected && <Check size={12} className="shrink-0" strokeWidth={3} />}
                             </span>
+                            {ENTITY_ENTRY_PRICE_LABELS[name as AllEntityType] && <span className="absolute bottom-1 right-2 text-[9px] font-semibold text-secondary-200">{ENTITY_ENTRY_PRICE_LABELS[name as AllEntityType]}</span>}
                           </button>
                         </div>
                       );
@@ -763,7 +859,40 @@ function AccountTypeStep({
             </div>
           </div>
         </div>
+
+          {/* Selected account summary — kept at the top so context stays visible while choosing a level. */}
+      <div className="mt-6 overflow-hidden rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/[0.11] via-primary-500/[0.08] to-transparent">
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
+          <div className="flex min-w-0 flex-1 items-center gap-3.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-secondary-500/25 bg-secondary-500/15 text-secondary-400 shadow-lg shadow-black/10">
+              <ActiveIcon size={21} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-secondary-500">Currently selected</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <p className="text-base font-semibold text-white">{selectedEntity?.label ?? selectedEntity?.name ?? activeConfig.label}</p>
+                {selectedEntity && <span className="rounded-full border border-white/10 bg-black/10 px-2 py-0.5 text-[10px] font-medium text-gray-400">Level {selectedEntity.level}</span>}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-gray-400">{activeConfig.detail.desc}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 sm:max-w-[46%] sm:justify-end">
+            {activeConfig.detail.capabilities.map((cap) => {
+              const CapIcon = cap.icon;
+              return (
+                <span key={cap.label} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/10 px-2.5 py-1.5 text-[10px] font-medium text-gray-300">
+                  <CapIcon size={11} className="text-secondary-400" />
+                  {cap.label}
+                </span>
+              );
+            })}
+
+            
+          </div>
+        </div>
       </div>
+      </div>
+      
 
       {error && (
         <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
@@ -797,8 +926,10 @@ function RegisterForm() {
   const planFromUrl = searchParams.get("plan");
   const typeFromUrl = searchParams.get("type");
   const billingFromUrl = searchParams.get("billing");
+  const isPricingPromoPlan = planFromUrl === "Pro" || planFromUrl === "Elite";
 
   const [step, setStep] = useState(() => {
+    if (isPricingPromoPlan) return 1;
     if (planFromUrl && ["Basic", "Pro", "Elite"].includes(planFromUrl)) return 2;
     if (planFromUrl === "Custom") return 2;
     return 1;
@@ -826,15 +957,7 @@ function RegisterForm() {
 
   const [isCustomPlan, setIsCustomPlan] = useState(false);
   const [customLimitsReady, setCustomLimitsReady] = useState(false);
-  const [customSolution, setCustomSolution] = useState({
-    max_company_levels: 6,
-    max_departments: 4,
-    max_audits: 2,
-    max_checklists: 3,
-    max_auditors: 1,
-    allow_auditor_eval: false,
-    allow_company_to_company: false,
-  });
+  const [customSolution, setCustomSolution] = useState<CustomSolutionLimits>(() => normalizeCustomSolution());
 
   const [formData, setFormData] = useState<RegisterPayload & { promo_code?: string }>({
     entity_type: "Customer",
@@ -865,10 +988,6 @@ function RegisterForm() {
 
   const selectedCountry = countries.find((c) => c.country === formData.country);
   const dialCode = selectedCountry?.international_dialing || "";
-  const companyLevelLimit = getCompanyLevelLimit(formData.plan_name ?? "Basic", 6);
-  const selectedCompanyDepth = selectedGroup === "Company" && selectedEntityType
-    ? accountTypes.find((type) => type.key === "Company")!.entityTypes.findIndex((entity) => entity.name === selectedEntityType) + 1
-    : 0;
 
   useEffect(() => {
     countriesApi.getAll().then(setCountries);
@@ -882,7 +1001,9 @@ function RegisterForm() {
     if (type && ["Customer", "Company", "Audit Firm"].includes(type)) {
       const group = type as AccountGroup;
       setSelectedGroup(group);
-      const defaultEntity = accountTypes.find((t) => t.key === group)!.entityTypes[0].name;
+      const defaultEntity = accountTypes.find((t) => t.key === group)!.entityTypes
+        .find((entity) => canRegisterEntityType(plan || "Basic", group, entity.name))?.name;
+      if (!defaultEntity) return;
       setSelectedEntityType(defaultEntity);
       setFormData((prev) => ({ ...prev, entity_type: defaultEntity }));
     }
@@ -898,7 +1019,7 @@ function RegisterForm() {
             const payload = JSON.parse(raw);
             sessionStorage.removeItem("custom_solution_payload");
             if (payload.customSolution) {
-              setCustomSolution({ ...payload.customSolution, max_company_levels: 6 });
+              setCustomSolution(normalizeCustomSolution(payload.customSolution));
               setCustomLimitsReady(true);
             }
             if (payload.billing_cycle) {
@@ -923,16 +1044,20 @@ function RegisterForm() {
     }
   }, [customLimitsReady, isCustomPlan]);
 
-  // URL parameters can preselect an entity that the chosen standard plan does
-  // not include. Reset it to the first valid Company level in that case.
+  // Keep the selected entry type valid when the selected plan changes.
   useEffect(() => {
-    if (formData.plan_name === "Custom" || selectedGroup !== "Company") return;
-    if (selectedCompanyDepth > companyLevelLimit) {
-      const companyRoot = accountTypes.find((type) => type.key === "Company")!.entityTypes[0].name;
-      setSelectedEntityType(companyRoot);
-      setFormData((prev) => ({ ...prev, entity_type: companyRoot }));
-    }
-  }, [companyLevelLimit, formData.plan_name, selectedCompanyDepth, selectedGroup]);
+    const planName = formData.plan_name ?? "Basic";
+    if (selectedGroup && selectedEntityType && canRegisterEntityType(planName, selectedGroup, selectedEntityType)) return;
+
+    const replacement = accountTypes
+      .map((group) => ({ group: group.key, entity: group.entityTypes.find((item) => canRegisterEntityType(planName, group.key, item.name))?.name }))
+      .find((item) => item.entity);
+    if (!replacement?.entity) return;
+    const nextEntityType = replacement.entity;
+    setSelectedGroup(replacement.group);
+    setSelectedEntityType(nextEntityType);
+    setFormData((prev) => ({ ...prev, entity_type: nextEntityType }));
+  }, [formData.plan_name, selectedEntityType, selectedGroup]);
 
   // Auto-sync org_email to admin email
   useEffect(() => {
@@ -946,7 +1071,9 @@ function RegisterForm() {
 
   const handleGroupSelect = (group: AccountGroup) => {
     setSelectedGroup(group);
-    const defaultEntity = accountTypes.find((t) => t.key === group)!.entityTypes[0].name;
+    const defaultEntity = accountTypes.find((t) => t.key === group)!.entityTypes
+      .find((entity) => canRegisterEntityType(formData.plan_name ?? "Basic", group, entity.name))?.name;
+    if (!defaultEntity) return;
     setSelectedEntityType(defaultEntity);
     setFormData((prev) => ({ ...prev, entity_type: defaultEntity }));
   };
@@ -979,8 +1106,8 @@ function RegisterForm() {
       setError("Please select an entity type to continue.");
       return;
     }
-    if (formData.plan_name !== "Custom" && selectedGroup === "Company" && selectedCompanyDepth > companyLevelLimit) {
-      setError(`${formData.plan_name} allows ${companyLevelLimit} Company hierarchy ${companyLevelLimit === 1 ? "level" : "levels"}. Select an available level or upgrade your plan.`);
+    if (!selectedGroup || !canRegisterEntityType(formData.plan_name ?? "Basic", selectedGroup, selectedEntityType)) {
+      setError(`${formData.plan_name} does not include the selected organization entry type. Choose an available type or upgrade your plan.`);
       return;
     }
     setError("");
@@ -1080,7 +1207,7 @@ function RegisterForm() {
     setError("");
     try {
       const payload = isCustomPlan
-        ? { ...formData, custom_solution: customSolution }
+        ? { ...formData, custom_solution: normalizeCustomSolution(customSolution) }
         : formData;
       const res = (await authApi.register(payload)) as { success: boolean; message?: string };
       // Email verification comes first; paid plans continue to payment after
@@ -1143,13 +1270,14 @@ function RegisterForm() {
         </div>
 
         <StepIndicator current={step} total={4} />
-        <p className="mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8">
+        <p className={"mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8 " + (isPricingPromoPlan && step === 1 ? "hidden" : "")}>
           {step === 1 && "Step 1 of 4 — Choose Your Plan"}
           {step === 2 && "Step 2 of 4 — Account Type"}
           {step === 3 && (isCustomPlan && !customLimitsReady ? "Step 3 of 4 — Configure Plan" : "Step 3 of 4 — Organization Details")}
           {step === 4 && (isCustomPlan && !customLimitsReady ? "Step 4 of 4 — Organization Details" : "Step 4 of 4 — Admin Account")}
           {step === 5 && "Step 4 of 4 — Admin Account"}
         </p>
+        {isPricingPromoPlan && step === 1 && <p className="mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8">Step 1 of 4 — Promo Code</p>}
 
         {/* ─── Step 1: Plan Selection ── */}
         {step === 1 && !planFromUrl && (
@@ -1158,17 +1286,41 @@ function RegisterForm() {
             billingCycle={formData.billing_cycle as "Monthly" | "Yearly"}
             onPlanSelect={(plan) => {
               setFormData((prev) => ({ ...prev, plan_name: plan }));
+              if (plan !== "Pro" && plan !== "Elite") handleRemovePromo();
               setError("");
             }}
             onBillingCycleChange={(cycle) => updateField("billing_cycle", cycle)}
             onNext={handleStep1Next}
             error={error}
+            promoCode={promoCode}
+            promoDiscount={promoDiscount}
+            promoLoading={promoLoading}
+            promoError={promoError}
+            onPromoCodeChange={(value) => { setPromoCode(value); setPromoError(""); }}
+            onValidatePromo={() => void handleValidatePromo()}
+            onRemovePromo={handleRemovePromo}
           />
         )}
 
         {/* ─── Step 2: Merged account type + hierarchy ── */}
+        {step === 1 && isPricingPromoPlan && (
+          <PromoCodeStep
+            planName={planFromUrl as "Pro" | "Elite"}
+            billingCycle={formData.billing_cycle as "Monthly" | "Yearly"}
+            promoCode={promoCode}
+            promoDiscount={promoDiscount}
+            promoLoading={promoLoading}
+            promoError={promoError}
+            onPromoCodeChange={(value) => { setPromoCode(value); setPromoError(""); }}
+            onValidate={() => void handleValidatePromo()}
+            onRemove={handleRemovePromo}
+            onNext={() => { setError(""); setStep(2); }}
+          />
+        )}
+
         {step === 2 && (
-          <AccountTypeStep
+          <>
+            <AccountTypeStep
             selectedGroup={selectedGroup}
             selectedEntityType={selectedEntityType}
             planName={formData.plan_name ?? "Basic"}
@@ -1177,22 +1329,22 @@ function RegisterForm() {
             onEntityTypeSelect={handleEntityTypeSelect}
             onNext={handleStep2Next}
             onBack={() => {
-              if (isCustomPlan && customLimitsReady) router.push("/custom-solution");
+              if (isPricingPromoPlan) setStep(1);
+              else if (isCustomPlan && customLimitsReady) router.push("/custom-solution");
               else if (isCustomPlan) setStep(1);
               else router.push("/");
             }}
             error={error}
-          />
+            />
+          </>
         )}
 
         {/* ─── Step 3: Custom Configuration (when coming from /custom-solution without pre-filled limits) ── */}
         {step === 3 && isCustomPlan && !customLimitsReady && (() => {
-          const customFeatures = [
-            { key: "max_departments" as const, label: "Departments", min: 1, max: 100, desc: "Department entities in your organization" },
-            { key: "max_audits" as const, label: "Audits", min: 1, max: 100, desc: "Active audit assignments" },
-            { key: "max_checklists" as const, label: "Audit Checklists", min: 1, max: 100, desc: "Reusable audit checklist templates" },
-            { key: "max_auditors" as const, label: "Auditors", min: 1, max: 100, desc: "Auditor accounts on your team" },
-          ];
+          const updateCustomLimit = (key: keyof typeof CUSTOM_PLAN_MINIMUM_LIMITS, value: number) => {
+            const feature = CUSTOM_CONFIGURATION_FEATURES.find((item) => item.key === key)!;
+            setCustomSolution((previous) => ({ ...previous, [key]: Math.min(feature.max, Math.max(feature.min, value)) }));
+          };
 
           return (
             <div className="p-5 pt-1 sm:p-8 sm:pt-2">
@@ -1202,7 +1354,7 @@ function RegisterForm() {
                 </button>
                 <div>
                   <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Configure your custom plan</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-gray-400">Set the capacity and premium features your workspace requires.</p>
+                  <p className="mt-1 text-sm leading-relaxed text-gray-400">Start with every Elite feature, then increase the capacity your workspace requires.</p>
                 </div>
               </div>
 
@@ -1213,76 +1365,43 @@ function RegisterForm() {
               )}
 
               <div className="mb-7 space-y-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Resource limits</p>
-                {customFeatures.map((feat) => (
-                  <div key={feat.key} className="flex items-center justify-between gap-4 rounded-2xl border border-white/[0.08] bg-black/10 p-4 transition-colors hover:bg-white/[0.035]">
-                    <div>
-                      <p className="text-sm font-medium text-white">{feat.label}</p>
-                      <p className="text-[11px] text-gray-500">{feat.desc}</p>
+                <div className="rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/10 to-transparent p-4">
+                  <p className="text-sm font-semibold text-white">Elite is your starting point</p>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-400">Every custom plan includes Elite&apos;s feature set. Capacity can increase from this baseline, but never decrease below it.</p>
+                </div>
+                <p className="text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Capacity</p>
+                {CUSTOM_CONFIGURATION_FEATURES.map((feature) => {
+                  const value = customSolution[feature.key];
+                  const volume = (value / feature.max) * 100;
+                  const eliteMarker = (feature.min / feature.max) * 100;
+                  return (
+                    <div key={feature.key} className="rounded-2xl border border-white/[0.08] bg-black/10 p-4 transition-colors hover:bg-white/[0.035]">
+                      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(240px,0.9fr)] sm:items-center">
+                        <div><p className="text-sm font-medium text-white">{feature.label}</p><p className="mt-0.5 text-[11px] text-gray-500">{feature.desc}</p></div>
+                        <div>
+                          <div className="mb-2 flex justify-end"><output className="text-[11px] font-semibold text-secondary-300">{value}</output></div>
+                          <div className="relative">
+                            <input type="range" min={0} max={feature.max} value={value} onChange={(event) => updateCustomLimit(feature.key, Number(event.target.value))} aria-label={`${feature.label} volume`} className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-secondary-500" style={{ background: `linear-gradient(to right, #D4AF37 0%, #D4AF37 ${volume}%, rgba(255,255,255,.1) ${volume}%, rgba(255,255,255,.1) 100%)` }} />
+                            <span aria-hidden="true" className="pointer-events-none absolute -top-1 h-4 w-px bg-secondary-200" style={{ left: `${eliteMarker}%` }} />
+                            <span aria-hidden="true" className="pointer-events-none absolute -top-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-semibold text-secondary-300" style={{ left: `${eliteMarker}%` }}>Elite {feature.min}</span>
+                          </div>
+                          <div className="mt-1.5 flex justify-between text-[10px] text-gray-500"><span>0</span><span>{feature.max}</span></div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setCustomSolution(prev => ({ ...prev, [feat.key]: Math.max(feat.min, prev[feat.key] - 1) }))}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-lg font-bold text-white transition-colors hover:bg-white/15"
-                      >
-                        -
-                      </button>
-                      <span className="w-12 text-center text-white font-semibold text-lg">{customSolution[feat.key]}</span>
-                      <button
-                        type="button"
-                        onClick={() => setCustomSolution(prev => ({ ...prev, [feat.key]: Math.min(feat.max, prev[feat.key] + 1) }))}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-lg font-bold text-white transition-colors hover:bg-white/15"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
+                  );
+                })}
+                <p className="pt-3 text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Included Elite features</p>
+                {[["Auditor Evaluation System", "Evaluate auditor performance with tests and scoring"], ["Company-to-Company Linking", "Link and collaborate with external organizations"]].map(([title, description]) => (
+                  <div key={title} className="flex items-center justify-between gap-4 rounded-2xl border border-secondary-500/15 bg-secondary-500/[0.06] p-4"><div><p className="text-sm font-medium text-white">{title}</p><p className="mt-0.5 text-[11px] text-gray-500">{description}</p></div><span className="inline-flex items-center gap-1.5 rounded-full border border-secondary-500/25 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-300"><Check size={12} /> Included</span></div>
                 ))}
-
-                <p className="pt-3 text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Premium features</p>
-                <div className="rounded-2xl border border-white/[0.08] bg-black/10 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-white">Auditor Evaluation System</p>
-                      <p className="text-[11px] text-gray-500">Evaluate auditor performance with tests and scoring</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCustomSolution(prev => ({ ...prev, allow_auditor_eval: !prev.allow_auditor_eval }))}
-                      className={`relative w-11 h-6 rounded-full transition-colors ${customSolution.allow_auditor_eval ? "bg-secondary-500" : "bg-white/20"}`}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${customSolution.allow_auditor_eval ? "translate-x-5" : ""}`} />
-                    </button>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-white/[0.08] bg-black/10 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-white">Company-to-Company Linking</p>
-                      <p className="text-[11px] text-gray-500">Link and collaborate with external organizations</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCustomSolution(prev => ({ ...prev, allow_company_to_company: !prev.allow_company_to_company }))}
-                      className={`relative w-11 h-6 rounded-full transition-colors ${customSolution.allow_company_to_company ? "bg-secondary-500" : "bg-white/20"}`}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${customSolution.allow_company_to_company ? "translate-x-5" : ""}`} />
-                    </button>
-                  </div>
-                </div>
               </div>
 
               <div className="mb-7 rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/10 to-transparent p-4 sm:p-5">
                 <p className="text-xs text-secondary-400 font-semibold uppercase tracking-wide mb-2">Your Custom Selection</p>
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-gray-400">Company Levels: <span className="text-white font-medium">6 (all levels)</span></span>
-                  <span className="text-gray-400">Departments: <span className="text-white font-medium">{customSolution.max_departments}</span></span>
-                  <span className="text-gray-400">Audits: <span className="text-white font-medium">{customSolution.max_audits}</span></span>
-                  <span className="text-gray-400">Checklists: <span className="text-white font-medium">{customSolution.max_checklists}</span></span>
-                  <span className="text-gray-400">Auditors: <span className="text-white font-medium">{customSolution.max_auditors}</span></span>
-                  <span className="text-gray-400">Auditor Eval: <span className="text-white font-medium">{customSolution.allow_auditor_eval ? "Yes" : "No"}</span></span>
-                  <span className="text-gray-400">Company Link: <span className="text-white font-medium">{customSolution.allow_company_to_company ? "Yes" : "No"}</span></span>
+                  {CUSTOM_CONFIGURATION_FEATURES.map((feature) => <span key={feature.key} className="text-gray-400">{feature.label}: <span className="font-medium text-white">{customSolution[feature.key]}</span></span>)}
+                  <span className="text-gray-400">Elite features: <span className="font-medium text-white">Included</span></span>
                 </div>
               </div>
 

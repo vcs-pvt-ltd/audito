@@ -108,9 +108,10 @@ export default function AuditsPage() {
   const [filter, setFilter] = useState<string>("all");
 
   const [q, setQ] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
+  const [progressFilter, setProgressFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<string>("newest");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -144,7 +145,6 @@ export default function AuditsPage() {
     const base = filter === "all" ? audits : audits.filter(a => a.status === filter);
     const query = q.trim().toLowerCase();
     return base.filter((a) => {
-      if (typeFilter !== "all" && a.audit_type !== typeFilter) return false;
       if (fromDate) {
         const aStart = String(a.start_date).slice(0, 10);
         if (aStart < fromDate) return false;
@@ -153,22 +153,34 @@ export default function AuditsPage() {
         const aEnd = String(a.end_date).slice(0, 10);
         if (aEnd > toDate) return false;
       }
+      const progress = Number(a.progress_pct || 0);
+      if (progressFilter === "not_started" && progress !== 0) return false;
+      if (progressFilter === "in_progress" && (progress <= 0 || progress >= 100)) return false;
+      if (progressFilter === "completed" && progress < 100) return false;
       if (!query) return true;
       const hay = `${a.title || ""} ${a.checklist_name || ""}`.toLowerCase();
       return hay.includes(query);
     });
-  }, [audits, filter, q, typeFilter, fromDate, toDate]);
+  }, [audits, filter, q, fromDate, toDate, progressFilter]);
 
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, q, typeFilter, fromDate, toDate]);
+  }, [filter, q, fromDate, toDate, progressFilter, sortBy]);
 
-  const totalPages = Math.ceil(filtered.length / pageSize);
+  const sorted = useMemo(() => [...filtered].sort((a, b) => {
+    if (sortBy === "title") return (a.title || "").localeCompare(b.title || "");
+    if (sortBy === "start_soonest") return new Date(a.start_date || 0).getTime() - new Date(b.start_date || 0).getTime();
+    if (sortBy === "end_soonest") return new Date(a.end_date || 0).getTime() - new Date(b.end_date || 0).getTime();
+    if (sortBy === "progress_desc") return Number(b.progress_pct || 0) - Number(a.progress_pct || 0);
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+  }), [filtered, sortBy]);
+
+  const totalPages = Math.ceil(sorted.length / pageSize);
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   const counts = {
     all: audits.length,
@@ -322,48 +334,18 @@ export default function AuditsPage() {
           </div>
         </div>
 
-        {/* Search Bar */}
+        {/* Search and advanced filters */}
         {!loading && audits.length > 0 && (
-          <div className="mb-6 max-w-lg">
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl glass border border-white/[0.06]">
-              <Search size={14} className="text-gray-500" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search audits..."
-                className="bg-transparent outline-none text-sm text-gray-200 placeholder:text-gray-600 w-full"
-              />
-            </div>
+          <div className="mb-5 grid gap-2.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400 sm:col-span-2 lg:col-span-3 xl:col-span-1">Search<div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search audits or checklists..." className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-gray-200 placeholder:text-gray-600 outline-none focus:border-secondary-500/40" /></div></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Status<select value={filter} onChange={(e) => setFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">All statuses</option><option value="plan">Planned</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Progress<select value={progressFilter} onChange={(e) => setProgressFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">Any progress</option><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Starts after<input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200 [color-scheme:dark]" /></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Ends before<input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200 [color-scheme:dark]" /></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Sort by<select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="newest">Newest first</option><option value="start_soonest">Start date</option><option value="end_soonest">End date</option><option value="progress_desc">Most progress</option><option value="title">Title A-Z</option></select></label>
           </div>
         )}
 
-        {/* Filter tabs */}
-        {!loading && audits.length > 0 && (
-          <div className="grid grid-cols-2 gap-2 mb-6 md:flex md:items-center md:gap-1 md:p-1 md:glass md:rounded-xl md:w-fit">
-            {(["all", "plan", "in_progress", "completed", "cancelled"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-4 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap border md:border-0 ${
-                  filter === f
-                    ? "bg-secondary-500/20 text-secondary-400 shadow-sm border-secondary-500/30"
-                    : "text-gray-400 hover:text-white hover:bg-white/[0.04] border-white/10"
-                }`}
-              >
-                {f === "all" ? "All" : STATUS_LABEL[f]}
-                <span
-                  className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full ${
-                    filter === f
-                      ? "bg-secondary-500/30 text-secondary-300"
-                      : "bg-white/[0.06] text-gray-500"
-                  }`}
-                >
-                  {counts[f]}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* Content */}
         {loading ? (

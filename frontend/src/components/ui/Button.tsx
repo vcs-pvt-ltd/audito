@@ -46,7 +46,7 @@ export default function Button({
   return (
     <button
       disabled={disabled || loading}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-200 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${fullWidth ? "w-full" : ""} ${className}`}
+      className={`inline-flex min-h-10 max-w-full items-center justify-center gap-2 rounded-xl text-center font-semibold transition-all duration-200 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${fullWidth ? "w-full" : ""} ${className}`}
       {...props}
     >
       {loading ? <Loader2 size={size === "sm" ? 14 : 16} className="animate-spin" /> : leftIcon}

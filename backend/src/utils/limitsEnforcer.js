@@ -1,13 +1,24 @@
 const { db } = require('../config/db');
 const SubscriptionModel = require('../models/SubscriptionModel');
 
-const COMPANY_HIERARCHY_DEPTH = {
-  Company: 1,
-  Cluster: 2,
-  Factory: 3,
-  Unit: 4,
-  Department: 5,
-  Section: 6
+const FIRST_CHILD_BY_ROOT_ENTITY_TYPE = {
+  Company: 'Cluster',
+  Cluster: 'Factory',
+  Factory: 'Unit',
+  Unit: 'Department',
+  Department: 'Section',
+  'Audit Firm Company': 'Branch',
+  Branch: 'Audit Firm Department'
+};
+
+const STRUCTURE_ENTITY_STORAGE = {
+  Cluster: { table: 'company_clusters', ownerColumn: 'comp_code' },
+  Factory: { table: 'company_factories', ownerColumn: 'comp_code' },
+  Unit: { table: 'company_units', ownerColumn: 'comp_code' },
+  Department: { table: 'company_departments', ownerColumn: 'comp_code' },
+  Section: { table: 'company_sections', ownerColumn: 'comp_code' },
+  Branch: { table: 'audit_firm_company_branches', ownerColumn: 'afc_code' },
+  'Audit Firm Department': { table: 'audit_firm_company_departments', ownerColumn: 'afc_code' }
 };
 
 // Enforcement uses the lenient limits lookup (getLimits), which falls back to
@@ -18,7 +29,9 @@ const COMPANY_HIERARCHY_DEPTH = {
 
 const LimitsEnforcer = {
   /**
-   * Check structure limits (Companies and Departments).
+   * Check structure limits. The first entity type below the registered root
+   * uses the plan's company-level capacity. Each later structure entity type
+   * uses the plan's department capacity.
    * @param {string} rootEntityCode
    * @param {string} entityType
    * @returns {string|null} Error message if limit exceeded, else null.
@@ -26,32 +39,25 @@ const LimitsEnforcer = {
   async checkStructureLimits(rootEntityCode, entityType) {
     const limits = await SubscriptionModel.getLimits(rootEntityCode);
 
-    // max_company_levels is a hierarchy-depth limit, not a count of records.
-    // The registered Company root is depth 1; each entity type below it adds
-    // one level. For independently registered sub-entities, depth is measured
-    // relative to that entity so their root still counts as level 1.
-    const requestedDepth = COMPANY_HIERARCHY_DEPTH[entityType];
-    if (requestedDepth) {
-      const [adminRows] = await db.query(
-        'SELECT entity_type FROM admins WHERE entity_code = ? LIMIT 1',
-        [rootEntityCode]
-      );
-      const rootDepth = COMPANY_HIERARCHY_DEPTH[adminRows[0]?.entity_type];
-      if (rootDepth) {
-        const relativeDepth = requestedDepth - rootDepth + 1;
-        if (relativeDepth > limits.company_level) {
-          return `Plan Limit Reached: Your current plan allows ${limits.company_level} Company hierarchy level(s). Upgrade to create ${entityType}.`;
-        }
-      }
-    }
+    const storage = STRUCTURE_ENTITY_STORAGE[entityType];
+    if (!storage) return null;
 
-    if (entityType === 'Department') {
-      const [[{ count: compDeptCount }]] = await db.query(
-        'SELECT COUNT(*) as count FROM company_departments WHERE (cust_code = ? OR comp_code = ?) AND is_active = TRUE', [rootEntityCode, rootEntityCode]
-      );
-      if (compDeptCount >= limits.department) {
-        return `Plan Limit Reached: Your current plan allows a maximum of ${limits.department} Department entity(s).`;
-      }
+    const [adminRows] = await db.query(
+      'SELECT entity_type FROM admins WHERE entity_code = ? LIMIT 1',
+      [rootEntityCode]
+    );
+    const rootEntityType = adminRows[0]?.entity_type;
+    const isFirstChildType = FIRST_CHILD_BY_ROOT_ENTITY_TYPE[rootEntityType] === entityType;
+    const limit = isFirstChildType ? limits.company_level : limits.department;
+
+    const [[{ count }]] = await db.query(
+      `SELECT COUNT(*) AS count FROM \`${storage.table}\` WHERE \`${storage.ownerColumn}\` = ? AND is_active = TRUE`,
+      [rootEntityCode]
+    );
+
+    if (count >= limit) {
+      const capacityName = isFirstChildType ? 'company-level' : 'department';
+      return `Plan Limit Reached: Your current plan allows a maximum of ${limit} ${entityType} entity(s) under the ${capacityName} capacity.`;
     }
     return null; // OK
   },

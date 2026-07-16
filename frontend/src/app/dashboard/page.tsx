@@ -80,7 +80,7 @@ export default function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-transparent pt-14 lg:pt-0">
+      <div className="flex min-h-full items-center justify-center bg-transparent px-4 pt-14 lg:pt-0">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-secondary-400 border-t-transparent" />
       </div>
     );
@@ -119,7 +119,7 @@ export default function DashboardPage() {
 
   return (
     <div className="h-full bg-transparent">
-      <main className="xl:h-full xl:overflow-hidden p-5 pt-20 lg:p-6 lg:pt-6 overflow-y-auto xl:overflow-y-visible pb-28 xl:pb-6">
+      <main className="mx-auto w-full max-w-[1800px] p-4 pb-28 pt-20 sm:p-6 sm:pb-28 lg:p-6 lg:pb-6 lg:pt-6 xl:h-full xl:overflow-hidden xl:overflow-y-visible">
         {error && (
           <div className="mb-4 rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
             {error}
