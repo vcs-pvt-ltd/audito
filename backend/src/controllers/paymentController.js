@@ -127,7 +127,8 @@ const confirmPayment = async (req, res) => {
       const csr = await CustomSolutionModel.findByOrgCode(payment.root_entity_code);
       if (csr) {
         customLimits = {
-          company_level: csr.max_company_levels,
+          // Custom plans always include the complete Company hierarchy.
+          company_level: 6,
           department: csr.max_departments,
           audits: csr.max_audits,
           checklists: csr.max_checklists,

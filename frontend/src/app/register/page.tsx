@@ -21,6 +21,7 @@ import {
   X,
   Crown,
   Sparkles,
+  LockKeyhole,
 } from "lucide-react";
 import Image from "next/image";
 import logo from "@/assets/logo/audito_logo.png";
@@ -31,6 +32,7 @@ import {
   type RegisterPayload,
   type AllEntityType,
 } from "@/lib/api";
+import { getCompanyLevelLimit, PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
 
 /* ─── Country Code → IANA Timezone Map ──────────────────────────── */
 
@@ -132,13 +134,14 @@ const accountTypes: AccountTypeConfig[] = [
     icon: LayoutGrid,
     description: "Manufacturing & operations",
     entityTypes: [
-      { name: "Company", level: 5, color: "bg-primary-400", desc: "Top-level company entity" },
-      { name: "Cluster", level: 4, color: "bg-primary-400/80", desc: "Regional or product clusters" },
-      { name: "Factory", level: 3, color: "bg-primary-400/60", desc: "Manufacturing factories" },
-      { name: "Unit", level: 2, color: "bg-primary-400/40", desc: "Operational units within factories" },
-      { name: "Department", level: 1, color: "bg-primary-400/30", desc: "Departments within units" },
+      { name: "Company", level: 6, color: "bg-primary-400", desc: "Top-level company entity" },
+      { name: "Cluster", level: 5, color: "bg-primary-400/80", desc: "Regional or product clusters" },
+      { name: "Factory", level: 4, color: "bg-primary-400/60", desc: "Manufacturing factories" },
+      { name: "Unit", level: 3, color: "bg-primary-400/40", desc: "Operational units within factories" },
+      { name: "Department", level: 2, color: "bg-primary-400/30", desc: "Departments within units" },
+      { name: "Section", level: 1, color: "bg-primary-400/20", desc: "Sections within departments" },
     ],
-    highlightLevels: [5, 4, 3, 2, 1],
+    highlightLevels: [6, 5, 4, 3, 2, 1],
     detail: {
       desc: "Manufacturing or service company managing multi-level operations, factories, and departments.",
       capabilities: [
@@ -308,7 +311,16 @@ function PlanSelectionStep({
   ];
 
   const comparisonRows = [
-    { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6", "Custom"] },
+    {
+      group: "WORKSPACE MANAGEMENT",
+      feature: "Company hierarchy depth",
+      values: [
+        String(PLAN_COMPANY_LEVEL_LIMITS.Basic),
+        String(PLAN_COMPANY_LEVEL_LIMITS.Pro),
+        String(PLAN_COMPANY_LEVEL_LIMITS.Elite),
+        "Custom",
+      ],
+    },
     { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16", "Custom"] },
     { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14", "Custom"] },
     { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25", "Custom"] },
@@ -322,7 +334,7 @@ function PlanSelectionStep({
   return (
     <div className="p-5 pt-1 sm:p-8 sm:pt-2">
       <div className="mb-6 flex items-start gap-3">
-        <button type="button" onClick={() => router.push('/')} aria-label="Go back" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white">
+        <button type="button" onClick={() => router.push('/')} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6">
           <ArrowLeft size={18} />
         </button>
         <div>
@@ -512,6 +524,8 @@ function PlanSelectionStep({
 function AccountTypeStep({
   selectedGroup,
   selectedEntityType,
+  planName,
+  customCompanyLevelLimit,
   onGroupSelect,
   onEntityTypeSelect,
   onNext,
@@ -520,6 +534,8 @@ function AccountTypeStep({
 }: {
   selectedGroup: AccountGroup | null;
   selectedEntityType: AllEntityType | null;
+  planName: string;
+  customCompanyLevelLimit: number;
   onGroupSelect: (g: AccountGroup) => void;
   onEntityTypeSelect: (e: AllEntityType) => void;
   onNext: () => void;
@@ -528,6 +544,20 @@ function AccountTypeStep({
 }) {
   const activeGroup = selectedGroup ?? "Customer";
   const activeConfig = accountTypes.find((t) => t.key === activeGroup)!;
+  const companyLevelLimit = getCompanyLevelLimit(planName, customCompanyLevelLimit);
+
+  const isEntityLocked = (group: AccountGroup, entityName: AllEntityType) => {
+    if (group !== "Company") return false;
+    const companyConfig = accountTypes.find((type) => type.key === "Company")!;
+    const depth = companyConfig.entityTypes.findIndex((entity) => entity.name === entityName) + 1;
+    return depth > companyLevelLimit;
+  };
+
+  const isLevelLocked = (group: AccountGroup, level: number) => {
+    const config = accountTypes.find((type) => type.key === group)!;
+    const entity = config.entityTypes.find((item) => item.level === level);
+    return entity ? isEntityLocked(group, entity.name) : false;
+  };
 
   const handleLevelClick = (group: AccountGroup, level: number) => {
     const name = getLevelName(group, level);
@@ -535,6 +565,7 @@ function AccountTypeStep({
     if (group !== activeGroup) onGroupSelect(group);
     const config = accountTypes.find((t) => t.key === group)!;
     const et = config.entityTypes.find((e) => e.level === level)!;
+    if (isEntityLocked(group, et.name)) return;
     onEntityTypeSelect(et.name);
   };
 
@@ -551,13 +582,23 @@ function AccountTypeStep({
     <div className="p-5 pt-1 sm:p-8 sm:pt-2">
       {/* Header */}
       <div className="flex items-start gap-3 mb-5">
-        <button type="button" onClick={onBack} aria-label="Go back" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white transition-colors">
+        <button type="button" onClick={onBack} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white transition-colors sm:left-6 sm:top-6">
           <ArrowLeft size={18} />
         </button>
         <div>
           <h3 className="text-xl sm:text-2xl font-semibold tracking-tight text-white">Choose your account type</h3>
           <p className="mt-1 text-sm leading-relaxed text-gray-400">Select the organization that best represents your workspace, then choose where it sits in the hierarchy.</p>
         </div>
+      </div>
+
+      <div className="mb-6 flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-black/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold text-white">{planName} plan allowance</p>
+          <p className="mt-0.5 text-[11px] text-gray-500">Company is level 1; deeper Company entities unlock with higher plans.</p>
+        </div>
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-secondary-500/20 bg-secondary-500/10 px-3 py-1.5 text-xs font-semibold text-secondary-400">
+          {companyLevelLimit} Company {companyLevelLimit === 1 ? "level" : "levels"}
+        </span>
       </div>
 
      
@@ -590,19 +631,23 @@ function AccountTypeStep({
           <p className="text-[10px] font-semibold tracking-[2px] text-secondary-500 uppercase px-1">Choose organizational level</p>
           {activeConfig.entityTypes.map((et) => {
             const isSelected = selectedEntityType === et.name;
+            const isLocked = isEntityLocked(activeGroup, et.name);
             return (
               <button
                 key={et.name}
                 type="button"
+                disabled={isLocked}
                 onClick={() => onEntityTypeSelect(et.name)}
-                className={`w-full min-h-[68px] flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${isSelected ? "bg-secondary-500/10 border-secondary-500/45 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10"}`}
+                className={`w-full min-h-[68px] flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${isLocked ? "cursor-not-allowed border-white/[0.06] bg-black/10 opacity-45" : isSelected ? "bg-secondary-500/10 border-secondary-500/45 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10"}`}
               >
                 <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${et.color ?? "bg-white/20"}`} />
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-semibold ${isSelected ? "text-secondary-400" : "text-white"}`}>{et.label ?? et.name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{et.desc}</p>
                 </div>
-                {isSelected && <Check size={15} className="text-secondary-400 shrink-0" />}
+                {isLocked ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500"><LockKeyhole size={12} /> Upgrade</span>
+                ) : isSelected && <Check size={15} className="text-secondary-400 shrink-0" />}
               </button>
             );
           })}
@@ -632,6 +677,11 @@ function AccountTypeStep({
                 </div>
                 <p className={`text-sm font-semibold ${isActive ? "text-secondary-400" : "text-white"}`}>{type.label}</p>
                 <p className="text-xs text-gray-500 mt-0.5 leading-snug">{type.description}</p>
+                {type.key === "Company" && (
+                  <span className="mt-2 inline-flex rounded-full border border-white/10 bg-black/10 px-2 py-1 text-[9px] font-semibold text-gray-400">
+                    {companyLevelLimit} of 6 levels available
+                  </span>
+                )}
               </button>
             );
           })}
@@ -687,19 +737,21 @@ function AccountTypeStep({
                       const name = getLevelName(type.key, lvl);
                       const colorCls = getLevelStyle(type.key, lvl);
                       const isEmpty = !name;
+                      const isLocked = !isEmpty && isLevelLocked(type.key, lvl);
                       const isSelected = isColActive && selectedLevel === lvl && !isEmpty;
                       return (
                         <div key={lvl} className="flex items-center gap-2">
                           <span className={`text-[9px] font-mono w-5 text-right shrink-0 ${isEmpty ? "text-white/10" : "text-secondary-600"}`}>L{lvl}</span>
                           <button
                             type="button"
-                            disabled={isEmpty}
+                            disabled={isEmpty || isLocked}
                             onClick={() => handleLevelClick(type.key, lvl)}
-                            className={`flex-1 h-10 rounded-xl px-3 text-xs font-medium text-left transition-all ${isEmpty ? "opacity-[0.08] cursor-default" : "cursor-pointer hover:brightness-110 hover:translate-x-0.5"} ${colorCls ?? "bg-white/5"} ${isSelected ? "ring-2 ring-secondary-300 ring-offset-2 ring-offset-[#0a1d15] shadow-lg shadow-black/20" : ""} text-white`}
+                            title={isLocked ? `${planName} includes ${companyLevelLimit} Company hierarchy ${companyLevelLimit === 1 ? "level" : "levels"}. Upgrade to unlock ${name}.` : undefined}
+                            className={`flex-1 h-10 rounded-xl px-3 text-xs font-medium text-left transition-all ${isEmpty ? "opacity-[0.08] cursor-default" : isLocked ? "cursor-not-allowed bg-white/[0.035] opacity-35 grayscale" : "cursor-pointer hover:brightness-110 hover:translate-x-0.5"} ${isLocked ? "" : colorCls ?? "bg-white/5"} ${isSelected ? "ring-2 ring-secondary-300 ring-offset-2 ring-offset-[#0a1d15] shadow-lg shadow-black/20" : ""} text-white`}
                           >
                             <span className="flex items-center justify-between gap-1">
                               <span className="truncate">{name ?? ""}</span>
-                              {isSelected && <Check size={12} className="shrink-0" strokeWidth={3} />}
+                              {isLocked ? <LockKeyhole size={11} className="shrink-0" /> : isSelected && <Check size={12} className="shrink-0" strokeWidth={3} />}
                             </span>
                           </button>
                         </div>
@@ -744,6 +796,7 @@ function RegisterForm() {
 
   const planFromUrl = searchParams.get("plan");
   const typeFromUrl = searchParams.get("type");
+  const billingFromUrl = searchParams.get("billing");
 
   const [step, setStep] = useState(() => {
     if (planFromUrl && ["Basic", "Pro", "Elite"].includes(planFromUrl)) return 2;
@@ -774,7 +827,7 @@ function RegisterForm() {
   const [isCustomPlan, setIsCustomPlan] = useState(false);
   const [customLimitsReady, setCustomLimitsReady] = useState(false);
   const [customSolution, setCustomSolution] = useState({
-    max_company_levels: 1,
+    max_company_levels: 6,
     max_departments: 4,
     max_audits: 2,
     max_checklists: 3,
@@ -800,7 +853,7 @@ function RegisterForm() {
     phone_number: "",
     password: "",
     plan_name: "Free",
-    billing_cycle: "Monthly",
+    billing_cycle: billingFromUrl === "Yearly" ? "Yearly" : "Monthly",
     timezone: "",
     promo_code: "",
   });
@@ -812,6 +865,10 @@ function RegisterForm() {
 
   const selectedCountry = countries.find((c) => c.country === formData.country);
   const dialCode = selectedCountry?.international_dialing || "";
+  const companyLevelLimit = getCompanyLevelLimit(formData.plan_name ?? "Basic", 6);
+  const selectedCompanyDepth = selectedGroup === "Company" && selectedEntityType
+    ? accountTypes.find((type) => type.key === "Company")!.entityTypes.findIndex((entity) => entity.name === selectedEntityType) + 1
+    : 0;
 
   useEffect(() => {
     countriesApi.getAll().then(setCountries);
@@ -820,6 +877,7 @@ function RegisterForm() {
   useEffect(() => {
     const plan = searchParams.get("plan");
     const type = searchParams.get("type");
+    const billing = searchParams.get("billing");
 
     if (type && ["Customer", "Company", "Audit Firm"].includes(type)) {
       const group = type as AccountGroup;
@@ -840,7 +898,7 @@ function RegisterForm() {
             const payload = JSON.parse(raw);
             sessionStorage.removeItem("custom_solution_payload");
             if (payload.customSolution) {
-              setCustomSolution(payload.customSolution);
+              setCustomSolution({ ...payload.customSolution, max_company_levels: 6 });
               setCustomLimitsReady(true);
             }
             if (payload.billing_cycle) {
@@ -854,6 +912,9 @@ function RegisterForm() {
         setFormData((prev) => ({ ...prev, plan_name: plan }));
       }
     }
+    if (billing === "Monthly" || billing === "Yearly") {
+      setFormData((prev) => ({ ...prev, billing_cycle: billing }));
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -861,6 +922,17 @@ function RegisterForm() {
       setStep(4);
     }
   }, [customLimitsReady, isCustomPlan]);
+
+  // URL parameters can preselect an entity that the chosen standard plan does
+  // not include. Reset it to the first valid Company level in that case.
+  useEffect(() => {
+    if (formData.plan_name === "Custom" || selectedGroup !== "Company") return;
+    if (selectedCompanyDepth > companyLevelLimit) {
+      const companyRoot = accountTypes.find((type) => type.key === "Company")!.entityTypes[0].name;
+      setSelectedEntityType(companyRoot);
+      setFormData((prev) => ({ ...prev, entity_type: companyRoot }));
+    }
+  }, [companyLevelLimit, formData.plan_name, selectedCompanyDepth, selectedGroup]);
 
   // Auto-sync org_email to admin email
   useEffect(() => {
@@ -905,6 +977,10 @@ function RegisterForm() {
   const handleStep2Next = () => {
     if (!selectedEntityType) {
       setError("Please select an entity type to continue.");
+      return;
+    }
+    if (formData.plan_name !== "Custom" && selectedGroup === "Company" && selectedCompanyDepth > companyLevelLimit) {
+      setError(`${formData.plan_name} allows ${companyLevelLimit} Company hierarchy ${companyLevelLimit === 1 ? "level" : "levels"}. Select an available level or upgrade your plan.`);
       return;
     }
     setError("");
@@ -1095,11 +1171,14 @@ function RegisterForm() {
           <AccountTypeStep
             selectedGroup={selectedGroup}
             selectedEntityType={selectedEntityType}
+            planName={formData.plan_name ?? "Basic"}
+            customCompanyLevelLimit={6}
             onGroupSelect={handleGroupSelect}
             onEntityTypeSelect={handleEntityTypeSelect}
             onNext={handleStep2Next}
             onBack={() => {
-              if (isCustomPlan && !customLimitsReady) setStep(1);
+              if (isCustomPlan && customLimitsReady) router.push("/custom-solution");
+              else if (isCustomPlan) setStep(1);
               else router.push("/");
             }}
             error={error}
@@ -1109,7 +1188,6 @@ function RegisterForm() {
         {/* ─── Step 3: Custom Configuration (when coming from /custom-solution without pre-filled limits) ── */}
         {step === 3 && isCustomPlan && !customLimitsReady && (() => {
           const customFeatures = [
-            { key: "max_company_levels" as const, label: "Company Levels", min: 1, max: 20, desc: "Hierarchical organizational levels" },
             { key: "max_departments" as const, label: "Departments", min: 1, max: 100, desc: "Department entities in your organization" },
             { key: "max_audits" as const, label: "Audits", min: 1, max: 100, desc: "Active audit assignments" },
             { key: "max_checklists" as const, label: "Audit Checklists", min: 1, max: 100, desc: "Reusable audit checklist templates" },
@@ -1119,7 +1197,7 @@ function RegisterForm() {
           return (
             <div className="p-5 pt-1 sm:p-8 sm:pt-2">
               <div className="mb-6 flex items-start gap-3">
-                <button type="button" onClick={() => setStep(2)} aria-label="Go back" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white">
+                <button type="button" onClick={() => setStep(2)} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6">
                   <ArrowLeft size={18} />
                 </button>
                 <div>
@@ -1198,7 +1276,7 @@ function RegisterForm() {
               <div className="mb-7 rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/10 to-transparent p-4 sm:p-5">
                 <p className="text-xs text-secondary-400 font-semibold uppercase tracking-wide mb-2">Your Custom Selection</p>
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-gray-400">Company Levels: <span className="text-white font-medium">{customSolution.max_company_levels}</span></span>
+                  <span className="text-gray-400">Company Levels: <span className="text-white font-medium">6 (all levels)</span></span>
                   <span className="text-gray-400">Departments: <span className="text-white font-medium">{customSolution.max_departments}</span></span>
                   <span className="text-gray-400">Audits: <span className="text-white font-medium">{customSolution.max_audits}</span></span>
                   <span className="text-gray-400">Checklists: <span className="text-white font-medium">{customSolution.max_checklists}</span></span>
@@ -1229,9 +1307,12 @@ function RegisterForm() {
             <div className="mb-7 flex items-start gap-3">
               <button
                 type="button"
-                onClick={() => setStep(isCustomPlan && !customLimitsReady ? 3 : 2)}
+                onClick={() => {
+                  if (isCustomPlan && customLimitsReady) router.push("/custom-solution");
+                  else setStep(isCustomPlan && !customLimitsReady ? 3 : 2);
+                }}
                 aria-label="Go back"
-                className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white"
+                className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"
               >
                 <ArrowLeft size={18} />
               </button>
@@ -1445,7 +1526,7 @@ function RegisterForm() {
                 type="button"
                 onClick={() => setStep(isCustomPlan && !customLimitsReady ? 3 : 4)}
                 aria-label="Go back"
-                className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white"
+                className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"
               >
                 <ArrowLeft size={18} />
               </button>

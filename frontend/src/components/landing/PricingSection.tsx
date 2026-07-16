@@ -6,6 +6,7 @@ import { Check, X } from "lucide-react";
 import { useState } from "react";
 import logo from "@/assets/logo/audito_logo.png";
 import Reveal from "./Reveal";
+import { PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
 
 type Plan = {
   name: string;
@@ -26,7 +27,16 @@ const PLAN_DEFS = [
 const BASIC_YEARLY_TOTAL = Math.round(99 * 11 * 0.8);
 
 const comparisonRows = [
-  { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6", "Custom"] },
+  {
+    group: "WORKSPACE MANAGEMENT",
+    feature: "Company hierarchy depth",
+    values: [
+      String(PLAN_COMPANY_LEVEL_LIMITS.Basic),
+      String(PLAN_COMPANY_LEVEL_LIMITS.Pro),
+      String(PLAN_COMPANY_LEVEL_LIMITS.Elite),
+      "Custom",
+    ],
+  },
   { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16", "Custom"] },
   { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14", "Custom"] },
   { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25", "Custom"] },
@@ -129,7 +139,9 @@ export default function PricingSection() {
     period: billingCycle === "monthly" ? "/month" : "/year",
     description: p.description,
     cta: p.cta,
-    href: p.href,
+    href: p.href.startsWith("/register")
+      ? `${p.href}&billing=${billingCycle === "yearly" ? "Yearly" : "Monthly"}`
+      : p.href,
   }));
 
   const workspaceRows = comparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
@@ -209,6 +221,9 @@ export default function PricingSection() {
           </h1>
           <p className="text-gray-400 text-sm sm:text-base max-w-2xl mx-auto">
             Choose the perfect plan for your organization. All plans include our core features.
+          </p>
+          <p className="mt-2 text-xs text-gray-500">
+            Company hierarchy depth counts Company as level 1, followed by Cluster, Factory, Unit, Department, and Section.
           </p>
         </Reveal>
 

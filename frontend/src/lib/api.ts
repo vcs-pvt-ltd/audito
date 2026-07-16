@@ -74,7 +74,7 @@ async function apiRequest<T = unknown>(
 
 export type AllEntityType =
   | "Customer" | "Buying Office" | "Supplier"
-  | "Company" | "Cluster" | "Factory" | "Unit" | "Department"
+  | "Company" | "Cluster" | "Factory" | "Unit" | "Department" | "Section"
   | "Audit Firm" | "Audit Firm Company" | "Branch" | "Audit Firm Department";
 
 export interface RegisterPayload {

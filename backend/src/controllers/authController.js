@@ -72,6 +72,18 @@ const ENTITY_CONFIG = {
 
 const VALID_ENTITY_TYPES = Object.keys(ENTITY_CONFIG);
 
+// Pricing's "Company hierarchy depth" is ordered from the Company root.
+// Customer and Audit Firm entity families have separate structures and are
+// intentionally not affected by max_company_levels.
+const COMPANY_HIERARCHY_DEPTH = {
+  'Company': 1,
+  'Cluster': 2,
+  'Factory': 3,
+  'Unit': 4,
+  'Department': 5,
+  'Section': 6
+};
+
 // Helper: get entity code from admin (now just entity_code)
 const getEntityCode = (admin) => admin.entity_code || null;
 
@@ -335,6 +347,20 @@ const register = async (req, res) => {
       );
     }
 
+    const normalizedPlanName = SubscriptionModel.normalizePlanName(plan_name);
+    const selectedCompanyDepth = COMPANY_HIERARCHY_DEPTH[entity_type];
+    if (plan_name !== 'Custom' && selectedCompanyDepth) {
+      const allowedCompanyDepth = SubscriptionModel.PLAN_LIMITS[normalizedPlanName]?.company_level
+        ?? SubscriptionModel.PLAN_LIMITS.Basic.company_level;
+      if (selectedCompanyDepth > allowedCompanyDepth) {
+        return errorResponse(
+          res,
+          `${normalizedPlanName} allows ${allowedCompanyDepth} Company hierarchy level(s). Select an available Company entity type or upgrade the plan.`,
+          403
+        );
+      }
+    }
+
     if (!isValidEmail(email)) return errorResponse(res, 'Invalid email address.', 400);
 
     // Strong password validation: min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
@@ -437,7 +463,8 @@ const register = async (req, res) => {
         org_name,
         org_email: org_email || email,
         entity_type,
-        max_company_levels: custom_solution.max_company_levels || 1,
+        // Custom plans always include all Company hierarchy levels.
+        max_company_levels: 6,
         max_departments: custom_solution.max_departments || 4,
         max_audits: custom_solution.max_audits || 2,
         max_checklists: custom_solution.max_checklists || 3,
