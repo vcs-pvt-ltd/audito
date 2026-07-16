@@ -428,7 +428,7 @@ export default function CorrectiveActionsPage() {
 
   if (isLoading) {
     return (
-      <div className="h-screen bg-transparent flex items-center justify-center">
+      <div className="min-h-full bg-transparent flex items-center justify-center px-4">
         <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -436,7 +436,7 @@ export default function CorrectiveActionsPage() {
   if (!admin || admin.role !== "auditor") return null;
 
   return (
-    <div className="h-screen bg-transparent flex">
+    <div className="h-full min-h-full bg-transparent flex">
       <div className="flex-1 flex flex-col overflow-hidden pt-16 lg:pt-0">
 
         {/* Top bar */}

@@ -250,7 +250,7 @@ export default function AuditorDashboard({ overview, admin }: { overview: Dashbo
   }, [overview.lists]);
 
   return (
-    <div className="flex flex-col xl:h-[calc(100vh-6.5rem)] gap-3 xl:overflow-hidden">
+    <div className="flex flex-col gap-3 xl:h-[calc(100dvh-6.5rem)] xl:overflow-hidden">
       
       {/* CSS Styles for react-calendar embedded nicely */}
       <style>{`

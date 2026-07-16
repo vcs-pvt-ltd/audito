@@ -87,6 +87,11 @@ export default function CapsPage() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<string>("all");
   const [q, setQ] = useState<string>("");
+  const [auditFilter, setAuditFilter] = useState<string>("all");
+  const [entityFilter, setEntityFilter] = useState<string>("all");
+  const [auditorFilter, setAuditorFilter] = useState<string>("all");
+  const [progressFilter, setProgressFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<string>("newest");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -177,23 +182,41 @@ export default function CapsPage() {
   const filtered = useMemo(() => {
     const base = filter === "all" ? caps : caps.filter(c => c.status === filter);
     const query = q.trim().toLowerCase();
-    if (!query) return base;
     return base.filter((c) => {
+      if (auditFilter !== "all" && c.audit_id !== auditFilter) return false;
+      if (entityFilter !== "all" && (c.entity_name || "") !== entityFilter) return false;
+      if (auditorFilter !== "all" && (auditorByCapId[c.cap_id] || "") !== auditorFilter) return false;
+      const progress = c.total_questions > 0 ? Math.round((c.completed_questions / c.total_questions) * 100) : 0;
+      if (progressFilter === "not_started" && progress !== 0) return false;
+      if (progressFilter === "in_progress" && (progress <= 0 || progress >= 100)) return false;
+      if (progressFilter === "completed" && progress < 100) return false;
+      if (!query) return true;
       const hay = `${c.title || ""} ${c.audit_title || ""}`.toLowerCase();
       return hay.includes(query);
     });
-  }, [caps, filter, q]);
+  }, [caps, filter, q, auditFilter, entityFilter, auditorFilter, auditorByCapId, progressFilter]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, q]);
+  }, [filter, q, auditFilter, entityFilter, auditorFilter, progressFilter, sortBy]);
 
-  const totalPages = Math.ceil(filtered.length / pageSize);
+  const auditOptions = useMemo(() => Array.from(new Map(caps.map((c) => [c.audit_id, c.audit_title || c.audit_id])).entries()), [caps]);
+  const entityOptions = useMemo(() => Array.from(new Set(caps.map((c) => c.entity_name).filter((name): name is string => Boolean(name)))).sort(), [caps]);
+  const auditorOptions = useMemo(() => Array.from(new Set(Object.values(auditorByCapId).filter((name) => name && name !== "â€”"))).sort(), [auditorByCapId]);
+  const sorted = useMemo(() => [...filtered].sort((a, b) => {
+    if (sortBy === "title") return (a.title || "").localeCompare(b.title || "");
+    if (sortBy === "progress_desc") return (b.total_questions ? b.completed_questions / b.total_questions : 0) - (a.total_questions ? a.completed_questions / a.total_questions : 0);
+    if (sortBy === "progress_asc") return (a.total_questions ? a.completed_questions / a.total_questions : 0) - (b.total_questions ? b.completed_questions / b.total_questions : 0);
+    if (sortBy === "oldest") return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+  }), [filtered, sortBy]);
+
+  const totalPages = Math.ceil(sorted.length / pageSize);
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   const counts: Record<string, number> = {
     all: caps.length,
@@ -239,7 +262,7 @@ export default function CapsPage() {
           </div>
         </div>
 
-        {/* Search */}
+        {/* Search and advanced filters */}
         {!loading && caps.length > 0 && (
           <div className="mb-6 max-w-lg">
             <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl glass border border-white/[0.06]">
@@ -254,29 +277,15 @@ export default function CapsPage() {
           </div>
         )}
 
-        {/* Filter tabs */}
         {!loading && caps.length > 0 && (
-          <div className="grid grid-cols-2 gap-2 mb-6 md:flex md:items-center md:gap-1 md:p-1 md:glass md:rounded-xl md:w-fit">
-            {(["all", "plan", "in_progress", "completed"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-4 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap border md:border-0 ${
-                  filter === f
-                    ? "bg-secondary-500/20 text-secondary-400 shadow-sm border-secondary-500/30"
-                    : "text-gray-400 hover:text-white hover:bg-white/[0.04] border-white/10"
-                }`}
-              >
-                {f === "all" ? "All" : STATUS_LABEL[f]}
-                <span
-                  className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full ${
-                    filter === f ? "bg-secondary-500/30 text-secondary-300" : "bg-white/[0.06] text-gray-500"
-                  }`}
-                >
-                  {counts[f]}
-                </span>
-              </button>
-            ))}
+          <div className="mb-5 grid gap-2.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Linked audit<select value={auditFilter} onChange={(e) => setAuditFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">All linked audits</option>{auditOptions.map(([id, title]) => <option key={id} value={id}>{title}</option>)}</select></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Entity<select value={entityFilter} onChange={(e) => setEntityFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">All entities</option>{entityOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Auditor<select value={auditorFilter} onChange={(e) => setAuditorFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">All auditors</option>{auditorOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Status<select value={filter} onChange={(e) => setFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">All statuses</option><option value="plan">Planned</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Completion<select value={progressFilter} onChange={(e) => setProgressFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">Any progress</option><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Sort by<select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="progress_desc">Most progress</option><option value="progress_asc">Least progress</option><option value="title">Title A-Z</option></select></label>
+            <button type="button" onClick={() => { setAuditFilter("all"); setEntityFilter("all"); setAuditorFilter("all"); setProgressFilter("all"); setSortBy("newest"); setFilter("all"); setQ(""); }} className="mt-5 h-10 rounded-lg border border-white/10 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.06]">Reset filters</button>
           </div>
         )}
 

@@ -34,19 +34,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const showAdminOnboardingGuide = isOnboardingFlow && admin?.role === "admin";
 
   return (
-    <div className="relative flex h-screen bg-[#06140e]/35 overflow-hidden before:pointer-events-none before:absolute before:inset-0 before:bg-[radial-gradient(circle_at_80%_0%,rgba(0,169,103,0.09),transparent_35%)]">
+    <div className="relative flex h-dvh min-h-dvh bg-[#06140e]/35 overflow-hidden before:pointer-events-none before:absolute before:inset-0 before:bg-[radial-gradient(circle_at_80%_0%,rgba(0,169,103,0.09),transparent_35%)]">
       {showAdminOnboardingGuide ? (
         /* Desktop sidebar — lg+ only */
-        <aside className="hidden lg:block w-[360px] shrink-0 border-r border-white/10 bg-primary-950/50 backdrop-blur-md overflow-hidden">
+        <aside className="hidden lg:block w-[344px] xl:w-[368px] shrink-0 border-r border-white/10 bg-primary-950/50 backdrop-blur-md overflow-hidden">
           <OnboardingGuide />
         </aside>
       ) : (
         !isOnboardingFlow && <Sidebar />
       )}
 
-      <div className="relative flex-1 flex flex-col min-h-0 bg-transparent overflow-hidden">
+      <div className="relative flex-1 flex min-w-0 flex-col min-h-0 bg-transparent overflow-hidden">
         {showAdminOnboardingGuide && <OnboardingTopProgress />}
-        <main className={`flex-1 overflow-y-auto scroll-smooth ${showAdminOnboardingGuide ? "pb-[280px] lg:pb-0" : "pb-[88px] lg:pb-0"}`}>
+        <main className={`flex-1 min-w-0 overflow-y-auto overscroll-contain scroll-smooth ${showAdminOnboardingGuide ? "pb-[228px] lg:pb-0" : "pb-[88px] lg:pb-0"}`}>
           {!isOnboardingFlow && <SubscriptionBanner />}
           {children}
         </main>

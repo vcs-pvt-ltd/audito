@@ -462,7 +462,7 @@ export default function MyAuditReportPage() {
 
   if (isLoading) {
     return (
-      <div className="h-screen bg-transparent flex items-center justify-center pt-14 lg:pt-0">
+      <div className="min-h-full bg-transparent flex items-center justify-center px-4 pt-14 lg:pt-0">
         <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -471,7 +471,7 @@ export default function MyAuditReportPage() {
 
   return (
     <div className="min-h-full bg-transparent flex flex-col">
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 pt-20 lg:pt-8 pb-12">
+      <main className="mx-auto w-full max-w-7xl flex-1 p-4 pb-28 pt-20 sm:p-6 sm:pb-28 lg:p-8 lg:pb-10 lg:pt-8">
         <div className="max-w-4xl mx-auto space-y-6">
 
           {/* ── Header ── */}

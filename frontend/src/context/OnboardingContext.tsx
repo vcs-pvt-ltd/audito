@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { authApi, auditApi, checklistApi, orgTreeApi, usersApi } from "@/lib/api";
 
@@ -180,6 +180,9 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentType = searchParams.get("type");
+  const searchKey = searchParams.toString();
   const isAdmin = admin?.role === "admin";
 
   const steps = useMemo<StepItem[]>(() => {
@@ -280,10 +283,6 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (!isActive) return;
     const stepIdx = steps.findIndex(s => {
-      const url = new URL(s.href, "http://x");
-      const sType = url.searchParams.get("type");
-      const currentType = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("type") : null;
-
       if (s.key === "entities") return pathname.startsWith("/structure/list");
       if (s.key === "entity-heads") {
         return pathname.startsWith("/users/list") && currentType !== "auditors";
@@ -300,7 +299,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         window.localStorage.setItem("audito_onboarding_step", String(stepIdx));
       }
     }
-  }, [pathname, steps, currentStep, isActive]);
+  }, [pathname, searchKey, currentType, steps, currentStep, isActive]);
 
   useEffect(() => {
     if (isActive) {
@@ -338,8 +337,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
     if (step.key === "entities") {
       const order = filteredEntityOrder;
-      const currentSlug = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("type") : null;
-      const currentIndex = order.findIndex(o => o.slug === currentSlug);
+      const currentIndex = order.findIndex(o => o.slug === currentType);
 
       if (currentIndex !== -1 && currentIndex < order.length - 1) {
         const nextSlug = order[currentIndex + 1].slug;
@@ -350,8 +348,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
     if (step.key === "entity-heads") {
       const order = filteredHeadOrder;
-      const currentSlug = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("type") : null;
-      const currentIndex = order.findIndex(o => o.slug === currentSlug);
+      const currentIndex = order.findIndex(o => o.slug === currentType);
 
       if (currentIndex !== -1 && currentIndex < order.length - 1) {
         const nextSlug = order[currentIndex + 1].slug;
@@ -368,7 +365,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
     const s = steps[next];
     if (s) router.push(`${s.href}${s.href.includes("?") ? "&" : "?"}onboarding=1`);
-  }, [currentStep, steps, router, admin?.account_type, pathname]);
+  }, [currentStep, currentType, steps, router, filteredEntityOrder, filteredHeadOrder]);
 
   const goBack = useCallback(() => {
     const step = steps[currentStep];
@@ -376,8 +373,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
     if (step.key === "entities") {
       const order = filteredEntityOrder;
-      const currentSlug = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("type") : null;
-      const currentIndex = order.findIndex(o => o.slug === currentSlug);
+      const currentIndex = order.findIndex(o => o.slug === currentType);
 
       if (currentIndex > 0) {
         const prevSlug = order[currentIndex - 1].slug;
@@ -388,8 +384,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
     if (step.key === "entity-heads") {
       const order = filteredHeadOrder;
-      const currentSlug = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("type") : null;
-      const currentIndex = order.findIndex(o => o.slug === currentSlug);
+      const currentIndex = order.findIndex(o => o.slug === currentType);
 
       if (currentIndex > 0) {
         const prevSlug = order[currentIndex - 1].slug;
@@ -426,7 +421,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
 
     router.push(`${prevStep.href}${prevStep.href.includes("?") ? "&" : "?"}onboarding=1`);
-  }, [currentStep, steps, router, admin?.account_type]);
+  }, [currentStep, currentType, steps, router, filteredEntityOrder, filteredHeadOrder]);
 
   const canGoBack = useMemo(() => {
     if (currentStep > 0) return true;
@@ -434,13 +429,12 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     // Within first step (Entities)
     if (steps[0]?.key === "entities") {
       const order = filteredEntityOrder;
-      const currentSlug = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("type") : null;
-      const currentIndex = order.findIndex(o => o.slug === currentSlug);
+      const currentIndex = order.findIndex(o => o.slug === currentType);
       return currentIndex > 0;
     }
 
     return false;
-  }, [currentStep, admin?.account_type, steps]);
+  }, [currentStep, currentType, filteredEntityOrder, steps]);
 
   const canGoNext = useMemo(() => {
     const step = steps[currentStep];
@@ -449,22 +443,20 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     // Within Entities, we can go next if there are more sub-levels
     if (step.key === "entities") {
       const order = filteredEntityOrder;
-      const currentSlug = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("type") : null;
-      const currentIndex = order.findIndex(o => o.slug === currentSlug);
+      const currentIndex = order.findIndex(o => o.slug === currentType);
       if (currentIndex !== -1 && currentIndex < order.length - 1) return true;
     }
 
     // Within Entity Heads
     if (step.key === "entity-heads") {
       const order = filteredHeadOrder;
-      const currentSlug = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("type") : null;
-      const currentIndex = order.findIndex(o => o.slug === currentSlug);
+      const currentIndex = order.findIndex(o => o.slug === currentType);
       if (currentIndex !== -1 && currentIndex < order.length - 1) return true;
     }
 
     // Standard mission navigation
     return currentStep < steps.length - 1 && canEnterStep(currentStep + 1);
-  }, [currentStep, steps, canEnterStep, pathname, admin?.account_type]);
+  }, [currentStep, currentType, steps, canEnterStep, filteredEntityOrder, filteredHeadOrder]);
 
   const openCurrentStep = useCallback(() => {
     const step = steps[currentStep];

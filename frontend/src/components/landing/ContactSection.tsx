@@ -14,6 +14,7 @@ import linkedinIcon from "@/assets/landing/icons/linkedin.png";
 import mailIcon from "@/assets/landing/icons/mail.png";
 import whatsappIcon from "@/assets/landing/icons/whatsapp.png";
 import xIcon from "@/assets/landing/icons/x.png";
+import vcmLogo from "@/assets/logo/vcm_logo.png";
 import Footer from "@/components/layout/Footer";
 import Reveal from "./Reveal";
 import { landingApi, countriesApi, type Country } from "@/lib/api";
@@ -164,7 +165,15 @@ export default function ContactSection() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-10 items-center max-w-6xl mx-auto">
 
             {/* Left: heading + social icons */}
-            <div className="contact-heading space-y-6 sm:space-y-8 text-center lg:text-left">
+            <div className="contact-heading space-y-5 sm:space-y-6 text-center lg:text-left">
+              <div className="flex justify-center lg:justify-start pb-1 sm:pb-2">
+                <Image
+                  src={vcmLogo}
+                  alt="ValueCraft Minds"
+                  className="h-auto w-36 sm:w-40 lg:w-44"
+                  sizes="(max-width: 639px) 9rem, (max-width: 1023px) 10rem, 11rem"
+                />
+              </div>
               <div>
                 <p className="text-xl sm:text-2xl lg:text-3xl text-white/90 font-medium">
                   Your Vision,

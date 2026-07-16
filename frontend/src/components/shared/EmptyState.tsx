@@ -17,7 +17,7 @@ export default function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="glass rounded-xl p-16 text-center">
+    <div className="glass rounded-2xl p-8 text-center sm:p-12 lg:p-16">
       <Icon size={40} className="text-gray-600 mx-auto mb-4" />
       <p className="text-white font-medium mb-1">{title}</p>
       {message && <p className={`text-gray-400 text-sm ${action ? "mb-6" : ""}`}>{message}</p>}

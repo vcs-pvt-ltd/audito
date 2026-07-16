@@ -9,12 +9,12 @@ const CustomSolutionModel = {
     org_email,
     entity_type,
     max_company_levels = 6,
-    max_departments = 4,
-    max_audits = 2,
-    max_checklists = 3,
-    max_auditors = 1,
-    allow_auditor_eval = false,
-    allow_company_to_company = false,
+    max_departments = 16,
+    max_audits = 14,
+    max_checklists = 25,
+    max_auditors = 15,
+    allow_auditor_eval = true,
+    allow_company_to_company = true,
   }) {
     const request_id = await generateCustomSolutionRequestId();
     await db.query(

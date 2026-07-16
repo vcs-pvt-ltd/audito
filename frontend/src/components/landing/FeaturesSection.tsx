@@ -15,13 +15,13 @@ import {
   Zap,
 } from "lucide-react";
 
-import feature1Img from "@/assets/landing/feature-1.png";
-import feature2Img from "@/assets/landing/feature-2.png";
-import feature3Img from "@/assets/landing/feature-3.png";
-import feature4Img from "@/assets/landing/feature-4.png";
-import feature5Img from "@/assets/landing/feature-5.png";
-import feature6Img from "@/assets/landing/feature-6.png";
-import feature7Img from "@/assets/landing/feature-7.png";
+import companyManagementHierarchyImg from "@/assets/landing/features/company-management-hierarchy.png";
+import departmentStructureHierarchyImg from "@/assets/landing/features/department-structure-hierarchy.png";
+import auditCapacityDashboardImg from "@/assets/landing/features/audit-capacity-dashboard.png";
+import checklistLibraryImg from "@/assets/landing/features/checklist-library.png";
+import feature5Img from "@/assets/landing/features/Auditor Seats.png";
+import feature6Img from "@/assets/landing/features/Auditor Performance Analytics.png";
+import feature7Img from "@/assets/landing/features/Cross-Company Audits.png";
 import overviewImg from "@/assets/landing/feature-main.png";
 
 import companyManagementImg from "@/assets/landing/features/company-management.png";
@@ -33,30 +33,30 @@ import crossCompanyImg from "@/assets/landing/features/cross-company.png";
 import auditorSeatsImg from "@/assets/landing/features/auditor-seats.png";
 
 const features = [
-  { id: 1, icon: Building2, title: "Company Management", layout: "left", image: feature1Img,
+  { id: 1, anchor: "company-management", icon: Building2, title: "Company Management", layout: "left", image: companyManagementHierarchyImg,
     description: "Manage audits across different company entities or organizations within the platform. This allows users to organize audits separately for each company or business unit." },
-  { id: 2, icon: PieChart, title: "Department Structure", layout: "right", image: feature2Img,
-    description: "Create and manage departments inside a company (such as Finance, HR, Operations, or Quality) to organize audits and assign responsibilities more efficiently." },
-  { id: 3, icon: Gauge, title: "Audit Capacity", layout: "left", image: feature3Img,
+  { id: 2, anchor: "department-structure", icon: PieChart, title: "Department Structure", layout: "right", image: departmentStructureHierarchyImg,
+    description: "Create and manage departments inside a company (such as HR, Operations, Quality, Warehouse) to organize audits and assign responsibilities more efficiently." },
+  { id: 3, anchor: "audit-capacity", icon: Gauge, title: "Audit Capacity", layout: "left", image: auditCapacityDashboardImg,
     description: "The total number of audits that can be conducted within the system. This controls how many audit processes or inspection cycles can be performed." },
-  { id: 4, icon: ClipboardList, title: "Number of Checklists", layout: "right", image: feature4Img,
+  { id: 4, anchor: "number-of-checklists", icon: ClipboardList, title: "Number of Checklists", layout: "right", image: checklistLibraryImg,
     description: "The number of audit templates or checklists that can be created and used to standardize audit procedures across departments or companies." },
-  { id: 5, icon: Users, title: "Auditor Seats", layout: "left", image: feature5Img,
+  { id: 5, anchor: "auditor-seats", icon: Users, title: "Auditor Seats", layout: "left", image: feature5Img,
     description: "The number of users who can perform audits within the platform. Auditors can conduct inspections, submit reports, and monitor compliance activities." },
-  { id: 6, icon: TrendingUp, title: "Auditor Performance Analytics", layout: "right", image: feature6Img,
+  { id: 6, anchor: "auditor-performance-analytics", icon: TrendingUp, title: "Auditor Performance Analytics", layout: "right", image: feature6Img,
     description: "A performance evaluation system that measures auditors based on audit results, completion quality, and compliance accuracy." },
-  { id: 7, icon: GitBranch, title: "Cross-Company Audits", layout: "left", image: feature7Img,
-    description: "Allows organizations to perform audits between companies, such as auditing suppliers, partners, or external organizations to ensure compliance and quality standards." },
+  { id: 7, anchor: "cross-company-audits", icon: GitBranch, title: "Cross-Company Audits", layout: "left", image: feature7Img,
+    description: "Allows organizations to perform audits between companies, such as suppliers, partners, or external organizations to ensure compliance and quality standards." },
 ];
 
 const overviewHighlights = [
-  { id: 1, label: "Company Management", image: companyManagementImg },
-  { id: 2, label: "Department Structure", image: departmentStructureImg },
-  { id: 3, label: "Audit Capacity", image: auditCapacityImg },
-  { id: 4, label: "Number of Checklists", image: checklistsImg },
-  { id: 5, label: "Auditor Performance Analytics", image: auditorPerformanceImg },
-  { id: 6, label: "Cross-Company Audits", image: crossCompanyImg },
-  { id: 7, label: "Auditor Seats", image: auditorSeatsImg },
+  { id: 1, label: "Company Management", target: "company-management", image: companyManagementImg },
+  { id: 2, label: "Department Structure", target: "department-structure", image: departmentStructureImg },
+  { id: 3, label: "Audit Capacity", target: "audit-capacity", image: auditCapacityImg },
+  { id: 4, label: "Number of Checklists", target: "number-of-checklists", image: checklistsImg },
+  { id: 5, label: "Auditor Performance Analytics", target: "auditor-performance-analytics", image: auditorPerformanceImg },
+  { id: 6, label: "Cross-Company Audits", target: "cross-company-audits", image: crossCompanyImg },
+  { id: 7, label: "Auditor Seats", target: "auditor-seats", image: auditorSeatsImg },
 ];
 
 export default function FeaturesSection() {
@@ -198,25 +198,28 @@ export default function FeaturesSection() {
           {features.map((feature) => {
             const Icon = feature.icon;
             const isImageLeft = feature.layout === "left";
+            const featureNumber = String(feature.id).padStart(2, "0");
 
             return (
-              <Reveal key={feature.id} variant={isImageLeft ? "left" : "right"}>
+              <section key={feature.id} id={feature.anchor} className="scroll-mt-24">
+              <Reveal variant={isImageLeft ? "left" : "right"}>
                 {/* Desktop */}
-                <div className={`hidden lg:flex items-center gap-12 xl:gap-16 2xl:gap-20 ${isImageLeft ? "flex-row" : "flex-row-reverse"}`}>
-                  <div className="flex-1">
-                    <div className="feature-img-wrap relative w-full aspect-[16/10] mx-auto max-w-xl">
+                <div className="hidden lg:grid lg:grid-cols-2 items-center gap-12 xl:gap-16 2xl:gap-20">
+                  <div className={isImageLeft ? "order-1" : "order-2"}>
+                    <div className="feature-img-wrap relative aspect-[16/10] w-full">
                       <Image src={feature.image} alt={feature.title} fill
                         sizes="(max-width: 1280px) 50vw, 40vw"
                         className="object-contain" />
                     </div>
                   </div>
-                  <div className="flex-1">
-                    <div className="feature-card glass rounded-2xl p-8 sm:p-10 w-full max-w-md xl:max-w-lg mx-auto border border-white/10">
-                      <div className="feature-icon-wrap w-14 h-14 rounded-lg bg-secondary-500/10 flex items-center justify-center mb-6">
+                  <div className={`flex ${isImageLeft ? "order-2" : "order-1"}`}>
+                    <div className={`feature-card glass w-full max-w-md rounded-2xl border border-white/10 p-7 xl:p-8 ${isImageLeft ? "ml-auto" : "mr-auto"}`}>
+                      <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Feature {featureNumber}</p>
+                      <div className="feature-icon-wrap mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-secondary-500/10">
                         <Icon size={28} className="text-secondary-400" />
                       </div>
-                      <h3 className="text-2xl xl:text-3xl font-bold text-white mb-4">{feature.title}</h3>
-                      <p className="text-gray-400 text-base xl:text-lg leading-relaxed mb-6">{feature.description}</p>
+                      <h3 className="mb-3 text-2xl font-bold text-white xl:text-[1.65rem]">{feature.title}</h3>
+                      <p className="mb-5 text-sm leading-6 text-gray-400 xl:text-[15px]">{feature.description}</p>
                       <Link href="#" className="learn-more-link inline-flex items-center gap-2 text-secondary-400 hover:text-secondary-300 transition-colors font-semibold">
                         Learn more
                         <ArrowRight size={16} className="arrow" />
@@ -226,7 +229,7 @@ export default function FeaturesSection() {
                 </div>
 
                 {/* Tablet */}
-                <div className="hidden md:flex lg:hidden items-center gap-6">
+                <div className={`hidden md:flex lg:hidden items-center gap-6 ${isImageLeft ? "flex-row" : "flex-row-reverse"}`}>
                   <div className="w-[55%] flex-shrink-0">
                     <div className="feature-img-wrap relative w-full aspect-[16/10]">
                       <Image src={feature.image} alt={feature.title} fill
@@ -236,11 +239,12 @@ export default function FeaturesSection() {
                   </div>
                   <div className="flex-1 self-center">
                     <div className="feature-card glass rounded-2xl p-6 border border-white/10">
+                      <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Feature {featureNumber}</p>
                       <div className="feature-icon-wrap w-11 h-11 rounded-lg bg-secondary-500/10 flex items-center justify-center mb-4">
                         <Icon size={22} className="text-secondary-400" />
                       </div>
                       <h3 className="text-xl font-bold text-white mb-3">{feature.title}</h3>
-                      <p className="text-gray-400 text-sm leading-relaxed mb-4">{feature.description}</p>
+                      <p className="text-gray-400 text-[13px] leading-5 mb-4">{feature.description}</p>
                       <Link href="#" className="learn-more-link inline-flex items-center gap-2 text-secondary-400 hover:text-secondary-300 transition-colors font-semibold text-sm">
                         Learn more <ArrowRight size={14} className="arrow" />
                       </Link>
@@ -255,18 +259,20 @@ export default function FeaturesSection() {
                       sizes="(max-width: 640px) 100vw, 24rem"
                       className="object-contain" />
                   </div>
-                  <div className="feature-card glass rounded-2xl p-5 border border-white/10">
+                  <div className="feature-card glass rounded-2xl p-4 sm:p-5 border border-white/10">
+                    <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Feature {featureNumber}</p>
                     <div className="feature-icon-wrap w-10 h-10 rounded-lg bg-secondary-500/10 flex items-center justify-center mb-4">
                       <Icon size={20} className="text-secondary-400" />
                     </div>
                     <h3 className="text-lg font-bold text-white mb-2">{feature.title}</h3>
-                    <p className="text-gray-400 text-sm leading-relaxed mb-4">{feature.description}</p>
+                    <p className="text-gray-400 text-[13px] leading-5 mb-4">{feature.description}</p>
                     <Link href="#" className="learn-more-link inline-flex items-center gap-2 text-secondary-400 hover:text-secondary-300 transition-colors font-semibold text-sm">
                       Learn more <ArrowRight size={14} className="arrow" />
                     </Link>
                   </div>
                 </div>
               </Reveal>
+              </section>
             );
           })}
         </div>
@@ -275,11 +281,15 @@ export default function FeaturesSection() {
   );
 }
 
-type OverviewCardProps = { id?: number; image: any; label: string; compact?: boolean };
+type OverviewCardProps = { id?: number; image: any; label: string; target: string; compact?: boolean };
 
-function OverviewCard({ image, label, compact = false }: OverviewCardProps) {
+function OverviewCard({ image, label, target, compact = false }: OverviewCardProps) {
   return (
-    <div className={`overview-card glass rounded-xl border border-secondary-400/30 backdrop-blur-sm ${compact ? "w-full px-3 py-2" : "w-[200px] px-4 py-3"}`}>
+    <a
+      href={`#${target}`}
+      aria-label={`View ${label}`}
+      className={`overview-card group block cursor-pointer rounded-xl border border-secondary-400/30 glass backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary-400 ${compact ? "w-full px-3 py-2" : "w-[200px] px-4 py-3"}`}
+    >
       <div className="flex items-center gap-3">
         <div className="flex-shrink-0">
           <Image src={image} alt={label} width={40} height={40}
@@ -289,6 +299,6 @@ function OverviewCard({ image, label, compact = false }: OverviewCardProps) {
           {label}
         </span>
       </div>
-    </div>
+    </a>
   );
 }

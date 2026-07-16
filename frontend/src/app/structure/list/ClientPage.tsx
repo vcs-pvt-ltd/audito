@@ -120,6 +120,16 @@ const ORDER_BY_ACCOUNT: Record<string, string[]> = {
   "Audit Firm": ["branch", "audit-firm-department"],
 };
 
+const FIRST_CHILD_BY_ROOT_ENTITY_TYPE: Record<string, string> = {
+  Company: "Cluster",
+  Cluster: "Factory",
+  Factory: "Unit",
+  Unit: "Department",
+  Department: "Section",
+  "Audit Firm Company": "Branch",
+  Branch: "Audit Firm Department",
+};
+
 // ─── Page Component ──────────────────────────────────────────────
 
 export default function SetupStructurePage() {
@@ -296,11 +306,13 @@ export default function SetupStructurePage() {
     admin.account_type === "Audit Firm Company" ? "Audit Firm" : admin.account_type || "";
   const canCreateEntities = config.accountTypes[0] === normalizedAccountType;
 
-  const isLimitExceeded = (() => {
-    if (!admin?.plan_limits) return false;
-    if (admin.plan_limits.department !== undefined) return entities.length >= admin.plan_limits.department;
-    return false;
-  })();
+  const usesStructurePlanLimits = normalizedAccountType === "Company" || normalizedAccountType === "Audit Firm";
+  const isFirstChildType = FIRST_CHILD_BY_ROOT_ENTITY_TYPE[admin.entity_type || ""] === config.entityTypeBody;
+  const entityLimit = usesStructurePlanLimits
+    ? (isFirstChildType ? admin.plan_limits?.company_level : admin.plan_limits?.department)
+    : undefined;
+
+  const isLimitExceeded = entityLimit !== undefined && entities.length >= entityLimit;
 
   const handleAdd = async () => {
     if (orderBlockMessage) {
@@ -311,12 +323,9 @@ export default function SetupStructurePage() {
       });
       return;
     }
-    if (admin?.plan_limits) {
-      // For non-company entity types, enforce the department quota per entity type
-      if (config.entityTypeBody !== "Company" && admin.plan_limits.department !== undefined && entities.length >= admin.plan_limits.department) {
-        setLimitModalOpen(true);
-        return;
-      }
+    if (entityLimit !== undefined && entities.length >= entityLimit) {
+      setLimitModalOpen(true);
+      return;
     }
     setEditEntity(null);
     setModalOpen(true);
@@ -411,8 +420,10 @@ export default function SetupStructurePage() {
           isOpen={limitModalOpen}
           onClose={() => setLimitModalOpen(false)}
           title="Structure Entity Limit Reached"
-          message="Your current plan has reached the maximum number of structure entities allowed across your organizational structure."
-          limit={admin?.plan_limits?.department || 0}
+          message={isFirstChildType
+            ? "Your plan has reached the first hierarchy entity capacity. Upgrade to add more entities at this level."
+            : "Your plan has reached the allowed number of this structure entity type. Upgrade to add more."}
+          limit={entityLimit || 0}
         />
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

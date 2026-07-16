@@ -5,6 +5,9 @@ import Link from "next/link";
 import { Check, X } from "lucide-react";
 import { useState } from "react";
 import logo from "@/assets/logo/audito_logo.png";
+import basicPlanHierarchy from "@/assets/landing/pricing-plans/basic-plan-hierarchy.png";
+import proPlanHierarchy from "@/assets/landing/pricing-plans/pro-plan-hierarchy.png";
+import elitePlanHierarchy from "@/assets/landing/pricing-plans/elite-plan-hierarchy.png";
 import Reveal from "./Reveal";
 import { PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
 
@@ -29,20 +32,25 @@ const BASIC_YEARLY_TOTAL = Math.round(99 * 11 * 0.8);
 const comparisonRows = [
   {
     group: "WORKSPACE MANAGEMENT",
-    feature: "Company hierarchy depth",
+    feature: "Company levels",
     values: [
       String(PLAN_COMPANY_LEVEL_LIMITS.Basic),
       String(PLAN_COMPANY_LEVEL_LIMITS.Pro),
       String(PLAN_COMPANY_LEVEL_LIMITS.Elite),
-      "Custom",
     ],
   },
-  { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16", "Custom"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14", "Custom"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25", "Custom"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15", "Custom"] },
-  { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true, true] },
-  { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true, true] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25"] },
+  { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15"] },
+  { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true] },
+  { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
+];
+
+const planHierarchyVisuals = [
+  { name: "Basic", image: basicPlanHierarchy, alt: "One company linked to four departments and one auditor", summary: "1 company · 4 departments · 1 auditor" },
+  { name: "Pro", image: proPlanHierarchy, alt: "Two companies linked to departments and three auditors", summary: "2 companies · 8 departments · 3 auditors" },
+  { name: "Elite", image: elitePlanHierarchy, alt: "Enterprise companies linked to departments and audit team", summary: "Enterprise hierarchy · 16 departments · 15 auditors" },
 ];
 
 type CardProps = { plan: Plan };
@@ -117,9 +125,6 @@ const CustomCard = ({ plan }: CardProps) => (
     <div className="flex justify-start mb-4">
       <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
       <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">{plan.name}</h3>
-    </div>
-    <div className="text-start mb-2">
-      <span className="text-4xl sm:text-5xl font-bold text-[#EECA53]">Custom</span>
     </div>
     <p className="text-sm mb-5 text-start text-gray-400">{plan.description}</p>
     <Link href={plan.href}
@@ -227,7 +232,7 @@ export default function PricingSection() {
 
         {/* Desktop comparison table */}
         <Reveal variant="up" className="hidden lg:block max-w-6xl xl:max-w-7xl mx-auto overflow-x-auto mb-8">
-          <div className="min-w-[920px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
+          <div className="min-w-[760px] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-white/5 text-secondary-400">
@@ -235,7 +240,6 @@ export default function PricingSection() {
                   <th className="px-5 py-4 text-xs font-semibold">Audito Basic</th>
                   <th className="px-5 py-4 text-xs font-semibold">Audito Pro</th>
                   <th className="px-5 py-4 text-xs font-semibold">Audito Elite</th>
-                  <th className="px-5 py-4 text-xs font-semibold">Audito Custom</th>
                 </tr>
               </thead>
               <tbody>
@@ -244,14 +248,14 @@ export default function PricingSection() {
                     <td className="px-5 py-4 text-gray-200">{row.feature}</td>
                     {row.values.map((v, i) => (
                       <td key={i} className="px-5 py-4 text-center text-white font-medium">
-                        {v === "Custom" ? <span className="text-[#EECA53] font-semibold">Custom</span> : v}
+                        {v}
                       </td>
                     ))}
                   </tr>
                 ))}
                 <tr className="border-t border-white/10 bg-white/5">
                   <td className="px-5 py-3 text-xs tracking-wide font-semibold uppercase text-secondary-400">Core Features</td>
-                  <td /><td /><td /><td />
+                  <td /><td /><td />
                 </tr>
                 {coreRows.map((row) => (
                   <tr key={row.feature} className="table-row border-t border-white/5">
@@ -276,11 +280,11 @@ export default function PricingSection() {
           {workspaceRows.map((row) => (
             <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
               <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-              <div className="grid grid-cols-4 divide-x divide-white/10">
-                {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
+              <div className="grid grid-cols-3 divide-x divide-white/10">
+                {["Basic", "Pro", "Elite"].map((name, i) => (
                   <div key={name} className="flex flex-col items-center py-3 gap-1">
                     <span className="text-[10px] text-gray-400">{name}</span>
-                    <span className={`text-sm font-semibold ${name === "Custom" ? "text-[#EECA53]" : "text-white"}`}>{row.values[i]}</span>
+                    <span className="text-sm font-semibold text-white">{row.values[i]}</span>
                   </div>
                 ))}
               </div>
@@ -290,8 +294,8 @@ export default function PricingSection() {
           {coreRows.map((row) => (
             <div key={row.feature} className="mobile-compare-card glass rounded-xl border border-white/10 overflow-hidden">
               <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-              <div className="grid grid-cols-4 divide-x divide-white/10">
-                {["Basic", "Pro", "Elite", "Custom"].map((name, i) => (
+              <div className="grid grid-cols-3 divide-x divide-white/10">
+                {["Basic", "Pro", "Elite"].map((name, i) => (
                   <div key={name} className="flex flex-col items-center py-3 gap-1">
                     <span className="text-[10px] text-gray-400">{name}</span>
                     {row.values[i]
@@ -304,6 +308,29 @@ export default function PricingSection() {
           ))}
         </div>
 
+        {/* Plan hierarchy visual guide */}
+        <Reveal variant="up" className="mb-10 max-w-6xl mx-auto">
+          <div className="mb-4 text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary-400">Plan capacity at a glance</p>
+            <p className="mt-1 text-sm text-gray-400">See how each plan scales your organization and audit team.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {planHierarchyVisuals.map((visual) => (
+              <div key={visual.name} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.025] p-3 shadow-lg shadow-black/10">
+                <Image
+                  src={visual.image}
+                  alt={visual.alt}
+                  className="aspect-square w-full rounded-xl object-cover"
+                  sizes="(min-width: 1024px) 360px, (min-width: 640px) 45vw, 92vw"
+                />
+                <div className="flex items-center justify-between gap-3 px-1 pb-1 pt-3">
+                  <p className="text-sm font-semibold text-white">{visual.name}</p>
+                  <p className="text-right text-[11px] font-medium text-secondary-300">{visual.summary}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Reveal>
 
         {/* Billing switch */}
         <div className="flex justify-center mb-8 sm:mb-10">

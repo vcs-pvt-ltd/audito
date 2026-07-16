@@ -12,6 +12,7 @@ import {
 import { useOnboarding } from "@/context/OnboardingContext";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 
 function StepStatusBadge({ state, active }: { state: "done" | "pending"; active?: boolean }) {
   if (state === "done") {
@@ -35,6 +36,7 @@ function StepStatusBadge({ state, active }: { state: "done" | "pending"; active?
 
 export default function OnboardingGuide() {
   const { admin } = useAuth();
+  const { confirm } = useUiFeedback();
   const {
     steps, currentStep, allDone, goBack, goNext,
     canGoBack, canGoNext, busy, skipOnboarding, completeOnboarding,
@@ -42,6 +44,17 @@ export default function OnboardingGuide() {
 
   const step = steps[currentStep];
   if (!step || !admin) return null;
+
+  const handleSkip = async () => {
+    const approved = await confirm({
+      title: "Skip onboarding?",
+      message: "You can return to setup later from your workspace, but your remaining onboarding steps will be closed for now.",
+      confirmText: "Skip setup",
+      cancelText: "Continue setup",
+      variant: "warning",
+    });
+    if (approved) await skipOnboarding();
+  };
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -114,7 +127,8 @@ export default function OnboardingGuide() {
         </div>
         <div className="flex items-center justify-between gap-4 pt-4 border-t border-white/5">
           <button
-            onClick={() => void skipOnboarding()}
+            onClick={() => void handleSkip()}
+            disabled={busy}
             className="text-[10px] font-bold uppercase tracking-widest text-gray-600 hover:text-gray-400 transition-colors"
           >
             Skip Setup
