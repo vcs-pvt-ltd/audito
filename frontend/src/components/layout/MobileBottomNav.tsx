@@ -73,8 +73,8 @@ export default function MobileBottomNav() {
 
   return (
     <nav
-      className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 backdrop-blur-xl px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-2"
-      style={{ background: "linear-gradient(180deg, #003F2D 0%, #002d1f 100%)" }}
+      className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 backdrop-blur-2xl px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_32px_rgba(0,0,0,0.24)]"
+      style={{ background: "linear-gradient(180deg, rgba(10,45,32,.96) 0%, rgba(5,28,19,.98) 100%)" }}
     >
       <ul className={`grid gap-1 ${items.length >= 5 ? "grid-cols-5" : "grid-cols-4"}`}>
         {items.map((item) => {
@@ -86,8 +86,8 @@ export default function MobileBottomNav() {
             <li key={item.path || item.label}>
               <Link
                 href={path || "/dashboard"}
-                className={`flex flex-col items-center justify-center rounded-lg px-1 py-2 transition-all ${isActive
-                    ? "bg-secondary-500/20 text-secondary-300"
+                className={`relative flex min-h-12 flex-col items-center justify-center rounded-xl px-1 py-2 transition-all ${isActive
+                    ? "bg-secondary-500/15 text-secondary-300"
                     : "text-gray-300 hover:text-white hover:bg-white/8"
                   }`}
               >

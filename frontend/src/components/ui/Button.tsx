@@ -7,10 +7,10 @@ type Variant = "primary" | "secondary" | "danger" | "ghost";
 type Size = "sm" | "md";
 
 const VARIANT_CLASSES: Record<Variant, string> = {
-  primary: "bg-secondary-500 text-primary-950 hover:bg-secondary-400 shadow-lg shadow-secondary-500/10",
-  secondary: "text-gray-400 border border-white/10 hover:border-white/20 hover:text-white",
-  danger: "bg-red-500/90 text-white hover:bg-red-500",
-  ghost: "text-gray-400 hover:text-white hover:bg-white/5",
+  primary: "bg-gradient-to-b from-secondary-400 to-secondary-500 text-primary-950 hover:from-secondary-300 hover:to-secondary-400 shadow-lg shadow-secondary-950/25",
+  secondary: "bg-white/[0.035] text-gray-300 border border-white/10 hover:bg-white/[0.07] hover:border-white/20 hover:text-white",
+  danger: "bg-red-500/90 text-white hover:bg-red-500 shadow-lg shadow-red-950/20",
+  ghost: "text-gray-400 hover:text-white hover:bg-white/[0.07]",
 };
 
 const SIZE_CLASSES: Record<Size, string> = {
@@ -46,7 +46,7 @@ export default function Button({
   return (
     <button
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${fullWidth ? "w-full" : ""} ${className}`}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-200 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${fullWidth ? "w-full" : ""} ${className}`}
       {...props}
     >
       {loading ? <Loader2 size={size === "sm" ? 14 : 16} className="animate-spin" /> : leftIcon}
