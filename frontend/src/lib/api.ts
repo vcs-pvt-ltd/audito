@@ -533,8 +533,9 @@ export interface AuditPayload {
   checklist_id: string;
   title: string;
   audit_type: "internal" | "external";
-    assigned_auditor_id?: string;
+  assigned_auditor_id?: string;
   assigned_firm_code?: string;
+  send_assignment_email?: boolean;
   assigned_org_tree_id?: string | null;
   budget?: number | string;
   currency?: string;
@@ -1142,7 +1143,7 @@ export interface PaymentDetails {
   billing_cycle: string;
   amount: number;
   currency: string;
-  status?: "pending" | "paid" | "failed" | "cancelled";
+  status?: "pending" | "processing" | "paid" | "failed" | "cancelled";
   payer_name?: string | null;
   payer_email?: string | null;
   org_name?: string | null;
@@ -1151,6 +1152,18 @@ export interface PaymentDetails {
   period_end?: string | null;
   paid_at?: string | null;
   created_at?: string | null;
+}
+
+export interface SavedPaymentMethod {
+  payment_method_id: string;
+  gateway: string;
+  card_brand: string | null;
+  card_last4: string | null;
+  expiry_month: number | null;
+  expiry_year: number | null;
+  is_default: number | boolean;
+  consented_at: string;
+  created_at: string;
 }
 
 export interface CustomSolutionRequest {
@@ -1236,8 +1249,10 @@ export interface RegisteredOrganization {
 export const paymentApi = {
   // Public — payment page lookup & confirmation (temporary; gateway webhook later)
   get: (code: string) => apiRequest<{ payment: PaymentDetails }>(`/payments/${code}`),
-  confirm: (code: string) =>
-    apiRequest<{ payment: PaymentDetails; credit_applied?: number; credit_applications?: { application_id: string; credit_id: string; applied_amount: number }[]; net_amount?: number }>(`/payments/${code}/confirm`, { method: "POST" }),
+  initiate: (code: string, body: { save_payment_method?: boolean } = {}) =>
+    apiRequest<{ payment: PaymentDetails; checkout: { action: string; method: "GET" | "POST"; fields: Record<string, string> } }>(`/payments/${code}/initiate`, { method: "POST", body }),
+  temporaryAccept: (code: string) =>
+    apiRequest<{ payment: PaymentDetails }>(`/payments/${code}/temporary-accept`, { method: "POST" }),
 
   // Authenticated (admin)
   checkout: (token: string, body: { plan_name: string; billing_cycle: string; purpose: "upgrade" | "renewal" }) =>
@@ -1247,6 +1262,11 @@ export const paymentApi = {
       token,
     }),
   list: (token: string) => apiRequest<{ payments: PaymentDetails[] }>("/payments", { token }),
+  listMethods: (token: string) => apiRequest<{ methods: SavedPaymentMethod[] }>("/payments/methods", { token }),
+  setDefaultMethod: (token: string, id: string) =>
+    apiRequest<{ method: SavedPaymentMethod }>(`/payments/methods/${id}/default`, { method: "POST", token }),
+  deleteMethod: (token: string, id: string) =>
+    apiRequest(`/payments/methods/${id}`, { method: "DELETE", token }),
 };
 
 // ─── Link Billing Credits API ────────────────────────────────────

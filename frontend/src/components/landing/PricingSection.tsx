@@ -222,9 +222,7 @@ export default function PricingSection() {
           <p className="text-gray-400 text-sm sm:text-base max-w-2xl mx-auto">
             Choose the perfect plan for your organization. All plans include our core features.
           </p>
-          <p className="mt-2 text-xs text-gray-500">
-            Company hierarchy depth counts Company as level 1, followed by Cluster, Factory, Unit, Department, and Section.
-          </p>
+         
         </Reveal>
 
         {/* Desktop comparison table */}

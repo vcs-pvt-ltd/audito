@@ -166,7 +166,7 @@ const createAudit = async (req, res) => {
   try {
     const {
       checklist_id, title, audit_type,
-      assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
+      assigned_auditor_id, assigned_firm_code, assigned_org_tree_id, send_assignment_email = false,
       budget, currency, num_workers, start_date, end_date, notes,
       entities  // array of { entity_code, entity_type, entity_name, org_tree_id }
     } = req.body;
@@ -242,7 +242,7 @@ const createAudit = async (req, res) => {
     if (assigned_auditor_id) {
       try {
         const auditor = await AuditorModel.findByCode(assigned_auditor_id);
-        if (auditor && auditor.email) {
+        if (send_assignment_email === true && auditor && auditor.email) {
           const auditorName = `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim();
           await sendAuditAssignedEmail(auditor.email, auditorName, created || { title, audit_type, start_date, end_date });
         }

@@ -1723,8 +1723,8 @@ function RegisterForm() {
 
               <button
                 type="submit"
-                disabled={loading}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:translate-y-0 disabled:opacity-50"
+                disabled={loading || !agreedToPrivacyPolicy}
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50"
               >
                 {loading ? <Loader2 size={18} className="animate-spin" /> : "Create Account"}
               </button>

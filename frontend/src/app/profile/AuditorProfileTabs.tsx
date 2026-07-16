@@ -269,7 +269,7 @@ function PersonalTab({ profile, accessToken, onSuccess }: any) {
 
 /* ─── Experiences Tab ─── */
 function ExperiencesTab({ experiences, accessToken, onSuccess }: any) {
-  const { confirm } = useUiFeedback();
+  const { confirm, toast } = useUiFeedback();
   const [form, setForm] = useState({ industry_sector: "", experience_type: "", company_name: "", years: "" });
   const [adding, setAdding] = useState(false);
 
@@ -286,8 +286,9 @@ function ExperiencesTab({ experiences, accessToken, onSuccess }: any) {
   const handleDelete = async (id: string) => {
     const ok = await confirm({ title: "Delete Experience", message: "Are you sure you want to delete this experience?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
-    await auditorProfileApi.deleteExperience(accessToken, id);
-    onSuccess();
+    const res = await auditorProfileApi.deleteExperience(accessToken, id);
+    if (res.success) onSuccess();
+    else toast(res.message || "Failed to delete experience.", "error");
   };
 
   return (
@@ -306,14 +307,17 @@ function ExperiencesTab({ experiences, accessToken, onSuccess }: any) {
       </AddCard>
 
       <ListContainer count={experiences.length} emptyIcon={Briefcase} emptyText="No experiences added yet.">
-        {experiences.map((ex: any) => (
-          <ItemCard key={ex.id} onDelete={() => handleDelete(ex.id)}
+        {experiences.map((ex: any) => {
+          const experienceId = ex.auditor_experience_id || ex.id;
+          return (
+          <ItemCard key={experienceId} onDelete={() => handleDelete(experienceId)}
             icon={Building2}
             title={ex.company_name}
             badge={`${ex.years} yr${ex.years === 1 ? "" : "s"}`}
             subtitle={`${ex.industry_sector || "—"} • ${ex.experience_type || "—"}`}
           />
-        ))}
+          );
+        })}
       </ListContainer>
     </div>
   );
@@ -321,7 +325,7 @@ function ExperiencesTab({ experiences, accessToken, onSuccess }: any) {
 
 /* ─── Qualifications Tab ─── */
 function QualificationsTab({ qualifications, accessToken, onSuccess }: any) {
-  const { confirm } = useUiFeedback();
+  const { confirm, toast } = useUiFeedback();
   const [form, setForm] = useState({ qualification_name: "", university_name: "", degree: "", year: "" });
   const [file, setFile] = useState<File | null>(null);
   const [adding, setAdding] = useState(false);
@@ -340,8 +344,9 @@ function QualificationsTab({ qualifications, accessToken, onSuccess }: any) {
   const handleDelete = async (id: string) => {
     const ok = await confirm({ title: "Delete Qualification", message: "Are you sure you want to delete this qualification?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
-    await auditorProfileApi.deleteQualification(accessToken, id);
-    onSuccess();
+    const res = await auditorProfileApi.deleteQualification(accessToken, id);
+    if (res.success) onSuccess();
+    else toast(res.message || "Failed to delete qualification.", "error");
   };
 
   return (
@@ -361,15 +366,18 @@ function QualificationsTab({ qualifications, accessToken, onSuccess }: any) {
       </AddCard>
 
       <ListContainer count={qualifications.length} emptyIcon={GraduationCap} emptyText="No qualifications added yet.">
-        {qualifications.map((q: any) => (
-          <ItemCard key={q.id} onDelete={() => handleDelete(q.id)}
+        {qualifications.map((q: any) => {
+          const qualificationId = q.auditor_qualification_id || q.id;
+          return (
+          <ItemCard key={qualificationId} onDelete={() => handleDelete(qualificationId)}
             icon={GraduationCap}
             title={`${q.qualification_name}${q.degree ? ` — ${q.degree}` : ""}`}
             badge={q.year}
             subtitle={q.university_name}
             link={q.certificate_path}
           />
-        ))}
+          );
+        })}
       </ListContainer>
     </div>
   );
@@ -377,7 +385,7 @@ function QualificationsTab({ qualifications, accessToken, onSuccess }: any) {
 
 /* ─── Trainings Tab ─── */
 function TrainingsTab({ trainings, accessToken, onSuccess }: any) {
-  const { confirm } = useUiFeedback();
+  const { confirm, toast } = useUiFeedback();
   const [form, setForm] = useState({ training_type: "", course_name: "", organization: "", duration: "", year: "" });
   const [file, setFile] = useState<File | null>(null);
   const [adding, setAdding] = useState(false);
@@ -396,8 +404,9 @@ function TrainingsTab({ trainings, accessToken, onSuccess }: any) {
   const handleDelete = async (id: string) => {
     const ok = await confirm({ title: "Delete Training", message: "Are you sure you want to delete this training?", confirmText: "Delete", variant: "warning" });
     if (!ok) return;
-    await auditorProfileApi.deleteTraining(accessToken, id);
-    onSuccess();
+    const res = await auditorProfileApi.deleteTraining(accessToken, id);
+    if (res.success) onSuccess();
+    else toast(res.message || "Failed to delete training.", "error");
   };
 
   return (
@@ -419,15 +428,18 @@ function TrainingsTab({ trainings, accessToken, onSuccess }: any) {
       </AddCard>
 
       <ListContainer count={trainings.length} emptyIcon={Award} emptyText="No trainings added yet.">
-        {trainings.map((t: any) => (
-          <ItemCard key={t.id} onDelete={() => handleDelete(t.id)}
+        {trainings.map((t: any) => {
+          const trainingId = t.auditor_training_id || t.id;
+          return (
+          <ItemCard key={trainingId} onDelete={() => handleDelete(trainingId)}
             icon={Award}
             title={t.course_name}
             badge={t.year}
             subtitle={`${t.training_type || "—"} • ${t.organization || "—"}${t.duration ? ` (${t.duration})` : ""}`}
             link={t.certificate_path}
           />
-        ))}
+          );
+        })}
       </ListContainer>
     </div>
   );

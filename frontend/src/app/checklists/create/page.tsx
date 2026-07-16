@@ -539,7 +539,7 @@ function AddQuestionModal({ open, entities, onClose, onAdd }: {
 function ExcelConfirmModal({ open, questions, uploadResult, treeRoot, onConfirm, onDiscard }: {
   open: boolean;
   questions: QuestionForm[];
-  uploadResult: { created_count: number; errors: string[] } | null;
+  uploadResult: { created_count: number; errors: string[]; issues: string[] } | null;
   treeRoot: TreeNode | null;
   onConfirm: (qs: QuestionForm[]) => void;
   onDiscard: () => void;
@@ -565,6 +565,14 @@ function ExcelConfirmModal({ open, questions, uploadResult, treeRoot, onConfirm,
         </>
       }
     >
+      {uploadResult?.issues?.length ? (
+        <div className="mb-4 p-3 rounded-lg bg-sky-500/10 border border-sky-500/20">
+          <p className="text-xs font-medium text-sky-300 mb-1.5">Formatting corrected or needs review:</p>
+          <ul className="space-y-0.5 max-h-24 overflow-y-auto">
+            {uploadResult.issues.map((issue, i) => <li key={i} className="text-[11px] text-sky-200/80">• {issue}</li>)}
+          </ul>
+        </div>
+      ) : null}
       {uploadResult?.errors?.length ? (
         <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
           <p className="text-xs font-medium text-amber-400 mb-1.5">Skipped rows:</p>
@@ -705,7 +713,7 @@ export default function CreateChecklistPage() {
   const [newTypeDesc, setNewTypeDesc] = useState("");
   const [creatingType, setCreatingType] = useState(false);
   const [uploadingExcel, setUploadingExcel] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{ created_count: number; errors: string[] } | null>(null);
+  const [uploadResult, setUploadResult] = useState<{ created_count: number; errors: string[]; issues: string[] } | null>(null);
   const [uploadedQuestions, setUploadedQuestions] = useState<QuestionForm[]>([]);
   const [showUploadConfirmModal, setShowUploadConfirmModal] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -905,16 +913,16 @@ export default function CreateChecklistPage() {
       const res = await checklistApi.previewQuestionsExcel(accessToken, file);
       if (!res.success) {
         const detailErrors = Array.isArray((res as { errors?: unknown }).errors) ? ((res as { errors: string[] }).errors) : [];
-        setUploadResult({ created_count: 0, errors: detailErrors });
+        setUploadResult({ created_count: 0, errors: detailErrors, issues: [] });
         throw new Error(res.message || "Failed to preview Excel.");
       }
       const payload = res.data as {
-        created_count: number; errors: string[]; items: Array<{
+        created_count: number; errors: string[]; issues: string[]; items: Array<{
           entity_code: string; org_tree_id?: string | null; entity_type: string; entity_name: string;
           question_text: string; answer_type: QuestionForm["answer_type"]; options: Array<{ option_text: string; marks: number }>;
         }>
       } | null;
-      setUploadResult(payload ? { created_count: payload.created_count, errors: payload.errors || [] } : null);
+      setUploadResult(payload ? { created_count: payload.created_count, errors: payload.errors || [], issues: payload.issues || [] } : null);
 
       let effectiveTreeRoot = treeRoot;
       let effectiveTreeEntities = treeEntities;

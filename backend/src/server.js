@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const { connectDB } = require('./config/db');
 
@@ -30,24 +31,34 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
 
+const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001'].filter(Boolean);
 const corsOptions = {
-  origin: ['http://localhost:3001','http://localhost:3000'],
+  origin(origin, callback) {
+    // Server-to-server gateway notifications do not send an Origin header.
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS origin is not allowed.'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
   credentials: true, 
   optionsSuccessStatus: 200
 };
 
+app.use(bodyParser.json({ limit: '1mb' }));
+app.use(bodyParser.urlencoded({ limit: '1mb', extended: false }));
 app.use(cors(corsOptions));
 
 app.options(/.*/, cors(corsOptions));
 
 // Serve uploaded files
-const path = require('path');
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // Health check route
