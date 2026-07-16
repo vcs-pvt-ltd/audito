@@ -25,6 +25,8 @@ function PaymentContent() {
   const { accessToken, refreshMe } = useAuth();
 
   const code = searchParams.get("code") || "";
+  const gatewayReturn = searchParams.get("gateway_return");
+  const temporaryPaymentMode = process.env.NEXT_PUBLIC_ENABLE_TEMPORARY_PAYMENT_ACCEPTANCE === "true";
 
   const [payment, setPayment] = useState<PaymentDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,6 +36,7 @@ function PaymentContent() {
   const [error, setError] = useState("");
   const [creditApplied, setCreditApplied] = useState(0);
   const [netAmount, setNetAmount] = useState<number | null>(null);
+  const [savePaymentMethod, setSavePaymentMethod] = useState(false);
 
   useEffect(() => {
     if (!code) { setNotFound(true); setLoading(false); return; }
@@ -53,23 +56,60 @@ function PaymentContent() {
     return () => { cancelled = true; };
   }, [code]);
 
+  // The browser return is display-only. The page waits for Sampath's signed
+  // server callback instead of trusting return query parameters.
+  useEffect(() => {
+    if (!gatewayReturn || !code || paid) return;
+    const timer = window.setInterval(async () => {
+      const res = await paymentApi.get(code);
+      if (res.success && res.data?.payment) {
+        setPayment(res.data.payment);
+        if (res.data.payment.status === "paid") {
+          setPaid(true);
+          window.clearInterval(timer);
+          if (accessToken) await refreshMe();
+        }
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [accessToken, code, gatewayReturn, paid, refreshMe]);
+
   const handlePay = async () => {
     setPaying(true);
     setError("");
     try {
-      const res = await paymentApi.confirm(code);
-      if (res.success && res.data?.payment) {
-        setPayment(res.data.payment);
-        setPaid(true);
-        if (res.data.credit_applied) setCreditApplied(res.data.credit_applied);
-        if (res.data.net_amount != null) setNetAmount(res.data.net_amount);
-        // Refresh the in-app session so new plan limits take effect immediately.
-        if (accessToken) await refreshMe();
+      if (temporaryPaymentMode) {
+        const res = await paymentApi.temporaryAccept(code);
+        if (res.success && res.data?.payment) {
+          setPayment(res.data.payment);
+          setPaid(res.data.payment.status === "paid");
+          if (accessToken) await refreshMe();
+        } else {
+          setError(res.message || "Could not accept the temporary test payment.");
+        }
+        return;
+      }
+
+      const res = await paymentApi.initiate(code, { save_payment_method: savePaymentMethod });
+      if (res.success && res.data?.checkout) {
+        const form = document.createElement("form");
+        form.method = res.data.checkout.method;
+        form.action = res.data.checkout.action;
+        form.style.display = "none";
+        Object.entries(res.data.checkout.fields).forEach(([name, value]) => {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
       } else {
-        setError(res.message || "Payment could not be completed.");
+        setError(res.message || "Could not start secure payment.");
       }
     } catch {
-      setError("Something went wrong while processing the payment.");
+      setError("Something went wrong while starting secure payment.");
     } finally {
       setPaying(false);
     }
@@ -227,9 +267,30 @@ function PaymentContent() {
           <div className="mt-5 rounded-lg border border-dashed border-white/15 bg-white/[0.02] p-3 mb-4">
             <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
               <Lock size={12} className="text-secondary-500 shrink-0" />
-              Payment gateway integration pending. Use the button below to simulate a successful payment.
+              {temporaryPaymentMode
+                ? "Temporary development mode is enabled. No bank payment or card data is used."
+                : "You will be redirected to Sampath Bank's secure payment page. Audito never receives or stores card details."}
             </p>
           </div>
+
+          {!temporaryPaymentMode && <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3.5 transition-colors hover:border-secondary-500/30">
+            <input
+              type="checkbox"
+              checked={savePaymentMethod}
+              onChange={(event) => setSavePaymentMethod(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-white/20 bg-transparent text-secondary-500 focus:ring-secondary-500"
+            />
+            <span>
+              <span className="block text-sm font-medium text-white">Save payment method for future renewals</span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-gray-500">
+                Sampath Bank stores your card securely. Audito stores only an encrypted payment token and masked card details.
+              </span>
+            </span>
+          </label>}
+
+          {gatewayReturn && payment.status !== "paid" && (
+            <p className="mb-4 text-center text-xs text-gray-400">Confirming your payment securely with Sampath Bank…</p>
+          )}
 
           <button
             onClick={handlePay}
@@ -237,7 +298,11 @@ function PaymentContent() {
             className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#059669] py-3 font-semibold text-white shadow-lg shadow-[#059669]/25 transition-all hover:bg-[#047A55] disabled:opacity-50"
           >
             {paying ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
-            {paying ? "Processing..." : `Pay ${formatMoney(payment.amount, payment.currency)}`}
+            {temporaryPaymentMode ? (
+              paying ? "Accepting test payment..." : `Accept Temporary Payment — ${formatMoney(payment.amount, payment.currency)}`
+            ) : (<>
+            {paying ? "Redirecting securely..." : `Continue to Sampath Bank — ${formatMoney(payment.amount, payment.currency)}`}
+            </>)}
           </button>
 
           <Link

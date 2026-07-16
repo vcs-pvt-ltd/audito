@@ -7,6 +7,7 @@ import left1 from "@/assets/landing/hero-left1.png";
 import left2 from "@/assets/landing/hero-left2.png";
 import right1 from "@/assets/landing/hero-right1.png";
 import right2 from "@/assets/landing/hero-right2.png";
+import { PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
 
 export default function HeroSection() {
   return (
@@ -138,6 +139,7 @@ export default function HeroSection() {
             Start a Free Trial
             <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform duration-200" />
           </Link>
+        
         </div>
 
         <div className="grid grid-cols-2 gap-2 px-3 pb-6">
@@ -211,6 +213,7 @@ export default function HeroSection() {
               Start a Free Trial
               <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform duration-200" />
             </Link>
+           
           </div>
 
           {/* RIGHT images */}

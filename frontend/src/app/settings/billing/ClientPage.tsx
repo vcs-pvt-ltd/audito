@@ -17,9 +17,11 @@ import {
   ShieldCheck,
   Receipt,
   BadgePercent,
+  Star,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { auditApi, checklistApi, usersApi, structureApi, paymentApi, billingCreditsApi, type PaymentDetails, type LinkBillingCredit } from "@/lib/api";
+import { auditApi, checklistApi, usersApi, structureApi, paymentApi, billingCreditsApi, type PaymentDetails, type LinkBillingCredit, type SavedPaymentMethod } from "@/lib/api";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui";
 
@@ -73,8 +75,37 @@ export default function BillingPage() {
   const [stats, setStats] = useState({ audits: 0, checklists: 0, auditors: 0, departments: 0 });
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const [payments, setPayments] = useState<PaymentDetails[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<SavedPaymentMethod[]>([]);
   const [linkCredits, setLinkCredits] = useState<LinkBillingCredit[]>([]);
   const [creditAvailable, setCreditAvailable] = useState(0);
+
+  const loadPaymentMethods = async () => {
+    if (!accessToken) return;
+    const res = await paymentApi.listMethods(accessToken);
+    if (res.success && res.data?.methods) setPaymentMethods(res.data.methods);
+  };
+
+  const handleDefaultPaymentMethod = async (methodId: string) => {
+    if (!accessToken) return;
+    const res = await paymentApi.setDefaultMethod(accessToken, methodId);
+    if (res.success) {
+      await loadPaymentMethods();
+      toast("Default payment method updated.", "success");
+    } else {
+      toast(res.message || "Could not update payment method.", "error");
+    }
+  };
+
+  const handleDeletePaymentMethod = async (methodId: string) => {
+    if (!accessToken) return;
+    const res = await paymentApi.deleteMethod(accessToken, methodId);
+    if (res.success) {
+      await loadPaymentMethods();
+      toast("Saved payment method removed.", "success");
+    } else {
+      toast(res.message || "Could not remove payment method.", "error");
+    }
+  };
 
   const handleUpgrade = async (planName: string) => {
     if (!accessToken) return;
@@ -125,6 +156,7 @@ export default function BillingPage() {
       paymentApi.list(accessToken).then((res) => {
         if (res.success && res.data?.payments) setPayments(res.data.payments);
       });
+      loadPaymentMethods();
       billingCreditsApi.list(accessToken).then((res) => {
         if (res.success && res.data) {
           setLinkCredits(res.data.credits || []);
@@ -245,9 +277,8 @@ export default function BillingPage() {
           </div>
 
           {/* Usage bars — 2 col on mobile, 5 col on md+ */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-4 sm:gap-6">
             {[
-              { label: "Company Levels", current: stats.departments, limit: admin.plan_limits?.company_level || 1, icon: Building2 },
               { label: "Audits", current: stats.audits, limit: admin.plan_limits?.audits, icon: BarChart3 },
               { label: "Checklists", current: stats.checklists, limit: admin.plan_limits?.checklists, icon: CheckCircle2 },
               { label: "Auditors", current: stats.auditors, limit: admin.plan_limits?.auditors, icon: UsersIcon },
@@ -469,6 +500,46 @@ export default function BillingPage() {
         </div>
 
         {/* ── Billing History ── */}
+        {paymentMethods.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <CreditCard size={15} className="text-secondary-400" />
+              Saved Payment Methods
+            </h2>
+            <div className="glass rounded-xl border border-white/10 overflow-hidden divide-y divide-white/[0.05]">
+              {paymentMethods.map((method) => {
+                const label = method.card_brand || "Saved payment method";
+                const suffix = method.card_last4 ? ` •••• ${method.card_last4}` : "";
+                const expiry = method.expiry_month && method.expiry_year
+                  ? `Expires ${String(method.expiry_month).padStart(2, "0")}/${method.expiry_year}`
+                  : "Securely stored by Sampath Bank";
+                return (
+                  <div key={method.payment_method_id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04]">
+                      <CreditCard size={17} className="text-secondary-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-white capitalize">{label}{suffix}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">{expiry}</p>
+                    </div>
+                    {Boolean(method.is_default) ? (
+                      <span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2 py-0.5 text-[10px] font-semibold text-secondary-300">Default</span>
+                    ) : (
+                      <button onClick={() => handleDefaultPaymentMethod(method.payment_method_id)} className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-white/5 hover:text-secondary-300" title="Set as default" aria-label="Set as default payment method">
+                        <Star size={16} />
+                      </button>
+                    )}
+                    <button onClick={() => handleDeletePaymentMethod(method.payment_method_id)} className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-red-500/10 hover:text-red-400" title="Remove saved payment method" aria-label="Remove saved payment method">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-gray-500">Card details are held by Sampath Bank. Removing a method immediately prevents its use in Audito.</p>
+          </div>
+        )}
+
         {payments.length > 0 && (
           <div>
             <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">

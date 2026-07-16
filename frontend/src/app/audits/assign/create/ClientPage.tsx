@@ -74,6 +74,7 @@ export default function AssignAuditPage() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [selectedAuditorCode, setSelectedAuditorCode] = useState("");
   const [selectedFirmCode, setSelectedFirmCode] = useState("");
+  const [sendAssignmentEmail, setSendAssignmentEmail] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
@@ -96,7 +97,7 @@ export default function AssignAuditPage() {
       if (firmRes.success && firmRes.data) setFirmCompanies(((firmRes.data as any).items || []));
       if (clRes.success && clRes.data) {
         const cl = (clRes.data as any).checklist;
-        setChecklist(cl); setTitle(cl.name); setBudget(cl.budget ? String(cl.budget) : "");
+        setChecklist(cl); setBudget(cl.budget ? String(cl.budget) : "");
         setCurrency(cl.currency || "$"); setNumWorkers(cl.num_workers ? String(cl.num_workers) : "");
       } else setDataError("Failed to load checklist.");
       if (entRes.success && entRes.data) {
@@ -151,6 +152,7 @@ export default function AssignAuditPage() {
       checklist_id: checklist.checklist_id, title: title.trim(), audit_type: auditType,
       assigned_auditor_id: auditType === "internal" ? selectedAuditorCode : undefined,
       assigned_firm_code: auditType === "external" ? selectedFirmCode : undefined,
+      send_assignment_email: auditType === "internal" && sendAssignmentEmail,
       budget: budget || undefined, currency: currency || "$", num_workers: numWorkers || undefined,
       start_date: startDate, end_date: endDate, notes: notes.trim() || undefined,
       entities: entities.filter(e => selectedKeys.has(getEntKey(e))).map(e => ({
@@ -336,6 +338,20 @@ export default function AssignAuditPage() {
                       ))
                     )}
                   </div>
+                  {auditType === "internal" && (
+                    <label className="flex items-start gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sendAssignmentEmail}
+                        onChange={(event) => setSendAssignmentEmail(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-white/20 bg-transparent text-amber-500 focus:ring-amber-500"
+                      />
+                      <span>
+                        <span className="block text-xs font-medium text-gray-300">Send assignment email to auditor</span>
+                        <span className="mt-0.5 block text-[11px] leading-relaxed text-gray-500">The auditor will receive the audit details by email.</span>
+                      </span>
+                    </label>
+                  )}
                 </div>
 
                 {/* Entities */}

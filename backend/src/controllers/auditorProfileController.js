@@ -23,7 +23,11 @@ const getProfile = async (req, res) => {
   try {
     const userCode = req.user.userCode;
 
-        const [profiles] = await db.query('SELECT * FROM auditor_profiles WHERE auditor_id = ? LIMIT 1', [userCode]);
+    const [profiles] = await db.query(
+      `SELECT auditor_profiles.*, DATE_FORMAT(date_of_birth, '%Y-%m-%d') AS date_of_birth
+       FROM auditor_profiles WHERE auditor_id = ? LIMIT 1`,
+      [userCode]
+    );
     const profile = profiles[0] || { auditor_id: userCode };
 
     const [experiences] = await db.query('SELECT * FROM auditor_experiences WHERE auditor_id = ?', [userCode]);
@@ -83,7 +87,11 @@ allowedUpdates.auditor_id = userCode;
     }
 
     // Refresh and send updated profile
-    const [updated] = await db.query('SELECT * FROM auditor_profiles WHERE auditor_id = ? LIMIT 1', [userCode]);
+    const [updated] = await db.query(
+      `SELECT auditor_profiles.*, DATE_FORMAT(date_of_birth, '%Y-%m-%d') AS date_of_birth
+       FROM auditor_profiles WHERE auditor_id = ? LIMIT 1`,
+      [userCode]
+    );
     return successResponse(res, { profile: updated[0] }, 'Profile updated successfully.');
   } catch (err) {
     console.error('updateProfile error:', err);
@@ -126,7 +134,11 @@ const updateExperience = async (req, res) => {
 const deleteExperience = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.query(`DELETE FROM auditor_experiences WHERE auditor_experience_id = ? AND auditor_id = ?`, [id, req.user.userCode]);
+    const [result] = await db.query(
+      `DELETE FROM auditor_experiences WHERE auditor_experience_id = ? AND auditor_id = ?`,
+      [id, req.user.userCode]
+    );
+    if (result.affectedRows === 0) return errorResponse(res, 'Experience not found.', 404);
     return successResponse(res, null, 'Experience deleted.');
   } catch (err) {
     console.error('deleteExperience error:', err);
@@ -176,7 +188,11 @@ const updateQualification = async (req, res) => {
 const deleteQualification = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.query(`DELETE FROM auditor_qualifications WHERE auditor_qualification_id = ? AND auditor_id = ?`, [id, req.user.userCode]);
+    const [result] = await db.query(
+      `DELETE FROM auditor_qualifications WHERE auditor_qualification_id = ? AND auditor_id = ?`,
+      [id, req.user.userCode]
+    );
+    if (result.affectedRows === 0) return errorResponse(res, 'Qualification not found.', 404);
     return successResponse(res, null, 'Qualification deleted.');
   } catch (err) {
     console.error('deleteQualification error:', err);
@@ -226,7 +242,11 @@ const updateTraining = async (req, res) => {
 const deleteTraining = async (req, res) => {
   try {
     const { id } = req.params;
-    await db.query(`DELETE FROM auditor_trainings WHERE auditor_training_id = ? AND auditor_id = ?`, [id, req.user.userCode]);
+    const [result] = await db.query(
+      `DELETE FROM auditor_trainings WHERE auditor_training_id = ? AND auditor_id = ?`,
+      [id, req.user.userCode]
+    );
+    if (result.affectedRows === 0) return errorResponse(res, 'Training not found.', 404);
     return successResponse(res, null, 'Training deleted.');
   } catch (err) {
     console.error('deleteTraining error:', err);

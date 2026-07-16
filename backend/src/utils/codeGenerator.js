@@ -132,6 +132,8 @@ const generateOrganizationLinkId = () => generateTableId('organization_links', '
 const generateLinkBillingCreditId = () => generateTableId('link_billing_credits', 'link_billing_credit_id', 'LBC', 5);
 const generateLinkCreditApplicationId = () => generateTableId('link_credit_applications', 'link_credit_application_id', 'LCA', 5);
 const generateCustomSolutionRequestId = () => generateTableId('custom_solution_requests', 'request_id', 'CSR', 6);
+const generatePaymentGatewayEventId = () => generateTableId('payment_gateway_events', 'payment_gateway_event_id', 'PGE', 6);
+const generatePaymentMethodId = () => generateTableId('payment_methods', 'payment_method_id', 'PM', 6);
 
 module.exports = {
   generateTableId,
@@ -164,6 +166,7 @@ module.exports = {
   generateCapResponseId,
   generateCorrectiveActionId,
   generateOrgTreeId,
+  generateAuditorProfileId,
   generateTrainingId,
   generateFieldVisitId,
   generateEvaluationPaperId,
@@ -191,4 +194,6 @@ module.exports = {
   generateLinkBillingCreditId,
   generateLinkCreditApplicationId,
   generateCustomSolutionRequestId,
+  generatePaymentGatewayEventId,
+  generatePaymentMethodId,
 };

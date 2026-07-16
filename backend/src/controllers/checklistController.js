@@ -37,7 +37,7 @@ const path = require('path');
 const fs = require('fs');
 const { getAccessibleEntityCodes } = require('../utils/accessHelper');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
-const { findDuplicateName } = require('../utils/nameNormalizer');
+const { normalizeEntityName, findDuplicateName } = require('../utils/nameNormalizer');
 const { generateChecklistTypeId, generateChecklistId, generateChecklistQuestionId, generateChecklistQuestionOptionId } = require('../utils/codeGenerator');
 
 const VALID_ANSWER_TYPES = ['free_text', 'single_option', 'multiple_options', 'dropdown'];
@@ -600,6 +600,120 @@ const ANSWER_TYPE_MAP = {
   'dropdown': 'dropdown',
 };
 
+const ANSWER_TYPE_LABELS = {
+  free_text: 'FreeText',
+  single_option: 'SingleOption',
+  multiple_options: 'MultipleOptions',
+  dropdown: 'Dropdown',
+};
+
+function levenshteinDistance(left, right) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= right.length; j++) {
+      current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1));
+    }
+    for (let j = 0; j <= right.length; j++) previous[j] = current[j];
+  }
+  return previous[right.length];
+}
+
+/**
+ * Cleans harmless spreadsheet formatting and reports every correction. It
+ * deliberately rejects ambiguous values instead of guessing a score or label.
+ */
+function normalizeTemplateAnswer({ answerTypeRaw, answerOptionsRaw, answerPointsRaw }) {
+  const errors = [];
+  const issues = [];
+  const rawType = String(answerTypeRaw || '').trim();
+  const typeKey = rawType.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const answer_type = ANSWER_TYPE_MAP[typeKey];
+
+  if (!answer_type) {
+    const candidates = Object.entries(ANSWER_TYPE_LABELS)
+      .map(([value, label]) => ({ value, label, distance: levenshteinDistance(typeKey, label.toLowerCase()) }))
+      .sort((a, b) => a.distance - b.distance);
+    const suggestion = candidates[0] && candidates[0].distance <= 3 ? ` Did you mean "${candidates[0].label}"?` : '';
+    errors.push(`Invalid answer_type "${answerTypeRaw}". Use FreeText, SingleOption, Dropdown, or MultipleOptions.${suggestion}`);
+    return { errors, issues, answer_type: null, options: [] };
+  }
+
+  if (rawType !== ANSWER_TYPE_LABELS[answer_type]) {
+    issues.push(`answer_type "${answerTypeRaw}" was normalized to "${ANSWER_TYPE_LABELS[answer_type]}".`);
+  }
+
+  const optionsValue = String(answerOptionsRaw || '');
+  const pointsValue = String(answerPointsRaw || '');
+  if (answer_type === 'free_text') {
+    if (optionsValue.trim() || pointsValue.trim()) {
+      issues.push('answer_options and answer_points were ignored because FreeText questions do not use options.');
+    }
+    return { errors, issues, answer_type, options: [] };
+  }
+
+  if (!optionsValue.trim()) errors.push('answer_options is required for this answer_type.');
+  if (!pointsValue.trim()) errors.push('answer_points is required for this answer_type.');
+  if (errors.length) return { errors, issues, answer_type, options: [] };
+
+  const optionParts = optionsValue.split(',');
+  const pointParts = pointsValue.split(',');
+  if (optionParts.length !== pointParts.length) {
+    errors.push('answer_options and answer_points must have the same number of comma-separated entries.');
+    return { errors, issues, answer_type, options: [] };
+  }
+  if (optionParts.length < 2) {
+    errors.push('At least 2 answer_options are required.');
+    return { errors, issues, answer_type, options: [] };
+  }
+
+  const options = [];
+  const seenOptions = new Set();
+  for (let index = 0; index < optionParts.length; index++) {
+    const original = optionParts[index];
+    let text = original.trim().replace(/\s+/g, ' ');
+    if (!text) {
+      errors.push(`answer_options entry ${index + 1} is empty. Remove leading, trailing, or repeated commas.`);
+      continue;
+    }
+    if (/^(['"])(.*)\1$/.test(text)) {
+      text = text.slice(1, -1).trim();
+      issues.push(`answer_options entry ${index + 1} had surrounding quotes removed.`);
+    }
+    if (!text) {
+      errors.push(`answer_options entry ${index + 1} is empty after formatting was removed.`);
+      continue;
+    }
+    if (text !== original) issues.push(`answer_options entry ${index + 1} had extra whitespace normalized.`);
+    if (/^[^a-z0-9]/i.test(text) || /[^a-z0-9]$/i.test(text)) {
+      issues.push(`answer_options entry ${index + 1} starts or ends with a symbol; review it before importing.`);
+    }
+    const duplicateKey = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (seenOptions.has(duplicateKey)) errors.push(`answer_options entry ${index + 1} duplicates another option after normalization.`);
+    seenOptions.add(duplicateKey);
+
+    const originalPoint = pointParts[index];
+    const compactPoint = originalPoint.trim();
+    const pointsMatch = compactPoint.match(/^(\d+(?:\.\d+)?)\s*(?:points?|pts?)?$/i);
+    if (!pointsMatch) {
+      errors.push(`answer_points entry ${index + 1} must be a number from 0 to 10 (for example, 5 or 2.5).`);
+      continue;
+    }
+    const marks = Number(pointsMatch[1]);
+    if (marks < 0 || marks > 10) {
+      errors.push(`answer_points entry ${index + 1} must be between 0 and 10.`);
+      continue;
+    }
+    if (compactPoint !== pointsMatch[1]) issues.push(`answer_points entry ${index + 1} was normalized to "${pointsMatch[1]}".`);
+    options.push({ option_text: text, marks });
+  }
+
+  if (errors.length) return { errors, issues, answer_type, options: [] };
+  const total = options.reduce((sum, option) => sum + option.marks, 0);
+  if (Math.abs(total - 10) > 0.01) errors.push(`answer_points must sum to 10 (got ${total.toFixed(2)}).`);
+  return { errors, issues, answer_type, options };
+}
+
 /**
  * Builds all org entity data needed for template generation and upload parsing.
  *
@@ -761,16 +875,53 @@ function buildStructurePaths(typeOrder, entityTypeMap, entityNameMap, childrenMa
   return paths;
 }
 
+function cleanImportedEntityName(value) {
+  let cleaned = String(value || '').trim().replace(/\s+/g, ' ');
+  if (/^(['"])(.*)\1$/.test(cleaned)) cleaned = cleaned.slice(1, -1).trim();
+  return cleaned;
+}
+
+function closestEntitySuggestion(entities, typedName) {
+  const normalizedTyped = normalizeEntityName(typedName);
+  const ranked = entities
+    .map(entity => ({ entity, distance: levenshteinDistance(normalizedTyped, normalizeEntityName(entity.name)) }))
+    .sort((a, b) => a.distance - b.distance);
+  const closest = ranked[0];
+  const maximumDistance = Math.max(2, Math.floor(normalizedTyped.length * 0.25));
+  return closest && closest.distance <= maximumDistance ? closest.entity.name : null;
+}
+
+/** Finds a safe exact/normalized entity-name match without guessing typos. */
+function matchImportedEntityName(entities, typedName, entityType, issues) {
+  const cleaned = cleanImportedEntityName(typedName);
+  const exactInsensitive = entities.filter(entity => entity.name.toLowerCase() === cleaned.toLowerCase());
+  const normalized = exactInsensitive.length
+    ? exactInsensitive
+    : entities.filter(entity => normalizeEntityName(entity.name) === normalizeEntityName(cleaned));
+
+  // A final safe fallback accepts decorative characters only at the outside;
+  // internal symbols such as R&D and Plant-A remain significant.
+  const edgeStripped = cleaned.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '');
+  const matches = normalized.length
+    ? normalized
+    : edgeStripped && edgeStripped !== cleaned
+      ? entities.filter(entity => normalizeEntityName(entity.name) === normalizeEntityName(edgeStripped))
+      : [];
+
+  if (matches.length && matches.every(entity => entity.name !== typedName)) {
+    const names = [...new Set(matches.map(entity => entity.name))].join(' / ');
+    issues.push(`${entityType} name "${typedName}" was matched to the saved name "${names}" after formatting normalization.`);
+  }
+  return { matches, suggestion: matches.length ? null : closestEntitySuggestion(entities, cleaned) };
+}
+
 /**
  * Resolves entity_code + entity_type from a row's filled hierarchy column values.
- *
- * entityCols = [{ type: 'Buying Office', name: 'Head BO' }, { type: 'Company', name: 'Main Factory' }, ...]
- *   — ordered by typeOrder, includes empty (name='') entries
- *
- * Resolution: finds the target entity by walking top-down through the tree,
- * matching entity names at each level. The deepest non-empty level is the target.
+ * It accepts safe formatting differences (case, whitespace, leading zeroes,
+ * outer quotes/symbols) and records them; spelling is never guessed.
  */
 function resolveEntityFromHierarchy(entityCols, entityByType, childrenMap, childrenEdgeMap, entityTypeMap, entityNameMap) {
+  const issues = [];
   const filled = entityCols.filter(c => c.name.trim());
   if (filled.length === 0) {
     return { error: 'No entity level filled in. Enter the entity name in the appropriate column.' };
@@ -779,16 +930,16 @@ function resolveEntityFromHierarchy(entityCols, entityByType, childrenMap, child
   // Resolve candidates top-down
   const firstFilled = filled[0];
   const firstLevelEntities = entityByType[firstFilled.type] || [];
-  let candidates = firstLevelEntities
-    .filter(e => e.name.toLowerCase() === firstFilled.name.toLowerCase())
-    .map(e => e.code);
+  const firstMatch = matchImportedEntityName(firstLevelEntities, firstFilled.name, firstFilled.type, issues);
+  let candidates = firstMatch.matches.map(entity => entity.code);
 
   // Track the edge id that leads to the current candidate.
   // For the first filled level (root-level entity), there is no incoming edge.
   let candidateEdgeIds = candidates.map(() => null);
 
   if (candidates.length === 0) {
-    return { error: `"${firstFilled.name}" not found in ${firstFilled.type} entities. Check the Company Structure sheet.` };
+    const suggestion = firstMatch.suggestion ? ` Did you mean "${firstMatch.suggestion}"?` : '';
+    return { error: `"${firstFilled.name}" not found in ${firstFilled.type} entities. Check the Company Structure sheet.${suggestion}` };
   }
 
   for (let i = 1; i < filled.length; i++) {
@@ -796,21 +947,24 @@ function resolveEntityFromHierarchy(entityCols, entityByType, childrenMap, child
     const nextCandidates = [];
     const nextEdgeIds = [];
     for (const parentCode of candidates) {
-      for (const childCode of (childrenMap[parentCode] || [])) {
-        if (
-          entityTypeMap[childCode] === col.type &&
-          (entityNameMap[childCode] || '').toLowerCase() === col.name.toLowerCase()
-        ) {
-          if (!nextCandidates.includes(childCode)) {
-            nextCandidates.push(childCode);
-            const edgeRow = (childrenEdgeMap[parentCode] || []).find(x => x.child_code === childCode);
-            nextEdgeIds.push(edgeRow ? edgeRow.edge_id : null);
-          }
+      const childEntities = (childrenMap[parentCode] || [])
+        .filter(childCode => entityTypeMap[childCode] === col.type)
+        .map(childCode => ({ code: childCode, name: entityNameMap[childCode] || childCode }));
+      const childMatch = matchImportedEntityName(childEntities, col.name, col.type, issues);
+      for (const child of childMatch.matches) {
+        if (!nextCandidates.includes(child.code)) {
+          nextCandidates.push(child.code);
+          const edgeRow = (childrenEdgeMap[parentCode] || []).find(x => x.child_code === child.code);
+          nextEdgeIds.push(edgeRow ? edgeRow.edge_id : null);
         }
       }
     }
     if (nextCandidates.length === 0) {
-      return { error: `"${col.name}" not found as a ${col.type} under "${filled[i - 1].name}".` };
+      const possibleChildren = candidates.flatMap(parentCode => (childrenMap[parentCode] || []))
+        .filter(childCode => entityTypeMap[childCode] === col.type)
+        .map(childCode => ({ code: childCode, name: entityNameMap[childCode] || childCode }));
+      const suggestion = closestEntitySuggestion(possibleChildren, cleanImportedEntityName(col.name));
+      return { error: `"${col.name}" not found as a ${col.type} under "${filled[i - 1].name}".${suggestion ? ` Did you mean "${suggestion}"?` : ''}` };
     }
     candidates = nextCandidates;
     candidateEdgeIds = nextEdgeIds;
@@ -821,7 +975,7 @@ function resolveEntityFromHierarchy(entityCols, entityByType, childrenMap, child
     return { error: `Multiple "${last.name}" ${last.type} entities found. Fill in more hierarchy levels to disambiguate.` };
   }
 
-  return { code: candidates[0], type: entityTypeMap[candidates[0]], org_tree_id: candidateEdgeIds[0] ?? null };
+  return { code: candidates[0], type: entityTypeMap[candidates[0]], org_tree_id: candidateEdgeIds[0] ?? null, issues };
 }
 
 const downloadExcelTemplate = async (req, res) => {
@@ -1060,7 +1214,7 @@ const uploadQuestionsExcel = async (req, res) => {
       // Build entity column values for this row (ordered by typeOrder position)
       const entityCols = entityColIndices.map(({ idx, type }) => ({
         type,
-        name: String(row[idx] || '').trim()
+        name: String(row[idx] || '')
       }));
 
       const resolved = resolveEntityFromHierarchy(
@@ -1073,36 +1227,14 @@ const uploadQuestionsExcel = async (req, res) => {
 
       const { code: entity_code, type: entity_type, org_tree_id } = resolved;
 
-      // Normalize answer type
-      const normalizedType = answer_type_raw.toLowerCase().replace(/[\s_-]+/g, '');
-      const answer_type = ANSWER_TYPE_MAP[normalizedType] || ANSWER_TYPE_MAP[answer_type_raw.toLowerCase()];
-      if (!answer_type) {
-        errors.push(`Row ${rowNum}: Invalid answer_type "${answer_type_raw}". Use: FreeText, SingleOption, Dropdown, MultipleOptions.`);
+      const normalizedAnswer = normalizeTemplateAnswer({
+        answerTypeRaw: answer_type_raw,
+        answerOptionsRaw: answer_opts_str,
+        answerPointsRaw: answer_pts_str,
+      });
+      if (normalizedAnswer.errors.length) {
+        errors.push(...normalizedAnswer.errors.map(issue => `Row ${rowNum}: ${issue}`));
         continue;
-      }
-
-      // Parse options
-      const options = [];
-      if (answer_type !== 'free_text') {
-        const optTexts = answer_opts_str.split(',').map(s => s.trim()).filter(Boolean);
-        const optPoints = answer_pts_str.split(',').map(s => parseFloat(s.trim()));
-
-        if (optTexts.length === 0) {
-          errors.push(`Row ${rowNum}: answer_options is required for answer_type "${answer_type_raw}".`);
-          continue;
-        }
-        if (optTexts.length !== optPoints.filter(n => !isNaN(n)).length) {
-          errors.push(`Row ${rowNum}: answer_options and answer_points must have the same number of entries.`);
-          continue;
-        }
-        for (let o = 0; o < optTexts.length; o++) {
-          options.push({ option_text: optTexts[o], marks: isNaN(optPoints[o]) ? 0 : optPoints[o] });
-        }
-        const sum = options.reduce((s, o) => s + o.marks, 0);
-        if (Math.abs(sum - 10) > 0.01) {
-          errors.push(`Row ${rowNum}: answer_points must sum to 10 (got ${sum.toFixed(2)}).`);
-          continue;
-        }
       }
 
       parsedRows.push({
@@ -1111,8 +1243,8 @@ const uploadQuestionsExcel = async (req, res) => {
         org_tree_id: org_tree_id ?? null,
         entity_type,
         question_text,
-        answer_type,
-        options
+        answer_type: normalizedAnswer.answer_type,
+        options: normalizedAnswer.options
       });
     }
 
@@ -1198,6 +1330,7 @@ const previewQuestionsExcel = async (req, res) => {
       await buildOrgEntityMaps(req.user.entityCode, req.user.entityType);
 
     const errors = [];
+    const issues = [];
     const items = [];
 
     for (let i = 0; i < dataRows.length; i++) {
@@ -1216,7 +1349,7 @@ const previewQuestionsExcel = async (req, res) => {
 
       const entityCols = entityColIndices.map(({ idx, type }) => ({
         type,
-        name: String(row[idx] || '').trim()
+        name: String(row[idx] || '')
       }));
 
       const resolved = resolveEntityFromHierarchy(
@@ -1229,35 +1362,17 @@ const previewQuestionsExcel = async (req, res) => {
 
       const { code: entity_code, type: entity_type, org_tree_id } = resolved;
 
-      const normalizedType = answer_type_raw.toLowerCase().replace(/[\s_-]+/g, '');
-      const answer_type = ANSWER_TYPE_MAP[normalizedType] || ANSWER_TYPE_MAP[answer_type_raw.toLowerCase()];
-      if (!answer_type) {
-        errors.push(`Row ${rowNum}: Invalid answer_type "${answer_type_raw}". Use: FreeText, SingleOption, Dropdown, MultipleOptions.`);
+      const normalizedAnswer = normalizeTemplateAnswer({
+        answerTypeRaw: answer_type_raw,
+        answerOptionsRaw: answer_opts_str,
+        answerPointsRaw: answer_pts_str,
+      });
+      if (normalizedAnswer.errors.length) {
+        errors.push(...normalizedAnswer.errors.map(issue => `Row ${rowNum}: ${issue}`));
         continue;
       }
-
-      const options = [];
-      if (answer_type !== 'free_text') {
-        const optTexts = answer_opts_str.split(',').map(s => s.trim()).filter(Boolean);
-        const optPoints = answer_pts_str.split(',').map(s => parseFloat(s.trim()));
-
-        if (optTexts.length === 0) {
-          errors.push(`Row ${rowNum}: answer_options is required for answer_type "${answer_type_raw}".`);
-          continue;
-        }
-        if (optTexts.length !== optPoints.filter(n => !isNaN(n)).length) {
-          errors.push(`Row ${rowNum}: answer_options and answer_points must have the same number of entries.`);
-          continue;
-        }
-        for (let o = 0; o < optTexts.length; o++) {
-          options.push({ option_text: optTexts[o], marks: isNaN(optPoints[o]) ? 0 : optPoints[o] });
-        }
-        const sum = options.reduce((s, o) => s + o.marks, 0);
-        if (Math.abs(sum - 10) > 0.01) {
-          errors.push(`Row ${rowNum}: answer_points must sum to 10 (got ${sum.toFixed(2)}).`);
-          continue;
-        }
-      }
+      issues.push(...(resolved.issues || []).map(issue => `Row ${rowNum}: ${issue}`));
+      issues.push(...normalizedAnswer.issues.map(issue => `Row ${rowNum}: ${issue}`));
 
       items.push({
         entity_code,
@@ -1265,14 +1380,15 @@ const previewQuestionsExcel = async (req, res) => {
         entity_type,
         entity_name: entityNameMap[entity_code] || entity_code,
         question_text,
-        answer_type,
-        options,
+        answer_type: normalizedAnswer.answer_type,
+        options: normalizedAnswer.options,
       });
     }
 
     return successResponse(res, {
       created_count: items.length,
       errors,
+      issues,
       items,
     }, 'Excel parsed.');
   } catch (err) {

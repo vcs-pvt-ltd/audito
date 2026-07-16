@@ -8,7 +8,7 @@ const CustomSolutionModel = {
     org_name,
     org_email,
     entity_type,
-    max_company_levels = 1,
+    max_company_levels = 6,
     max_departments = 4,
     max_audits = 2,
     max_checklists = 3,

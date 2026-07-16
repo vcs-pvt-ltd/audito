@@ -1,6 +1,15 @@
 const { db } = require('../config/db');
 const SubscriptionModel = require('../models/SubscriptionModel');
 
+const COMPANY_HIERARCHY_DEPTH = {
+  Company: 1,
+  Cluster: 2,
+  Factory: 3,
+  Unit: 4,
+  Department: 5,
+  Section: 6
+};
+
 // Enforcement uses the lenient limits lookup (getLimits), which falls back to
 // Basic when the organization has no currently-live subscription. This matches
 // the "downgraded to Basic limits" behaviour shown in the UI and the plan_limits
@@ -16,6 +25,25 @@ const LimitsEnforcer = {
    */
   async checkStructureLimits(rootEntityCode, entityType) {
     const limits = await SubscriptionModel.getLimits(rootEntityCode);
+
+    // max_company_levels is a hierarchy-depth limit, not a count of records.
+    // The registered Company root is depth 1; each entity type below it adds
+    // one level. For independently registered sub-entities, depth is measured
+    // relative to that entity so their root still counts as level 1.
+    const requestedDepth = COMPANY_HIERARCHY_DEPTH[entityType];
+    if (requestedDepth) {
+      const [adminRows] = await db.query(
+        'SELECT entity_type FROM admins WHERE entity_code = ? LIMIT 1',
+        [rootEntityCode]
+      );
+      const rootDepth = COMPANY_HIERARCHY_DEPTH[adminRows[0]?.entity_type];
+      if (rootDepth) {
+        const relativeDepth = requestedDepth - rootDepth + 1;
+        if (relativeDepth > limits.company_level) {
+          return `Plan Limit Reached: Your current plan allows ${limits.company_level} Company hierarchy level(s). Upgrade to create ${entityType}.`;
+        }
+      }
+    }
 
     if (entityType === 'Department') {
       const [[{ count: compDeptCount }]] = await db.query(
