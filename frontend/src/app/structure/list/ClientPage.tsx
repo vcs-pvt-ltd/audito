@@ -12,7 +12,7 @@ import EntityTable, {
 import AddEditEntityModal, {
   type EntityFormData,
 } from "@/components/structure/AddEditEntityModal";
-import { Plus, RefreshCw, Pencil, Trash2, Search, Crown, Lock, Building2 } from "lucide-react";
+import { Plus, RefreshCw, Pencil, Trash2, Search, Crown, Lock, Building2, Info } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
@@ -425,6 +425,7 @@ export default function SetupStructurePage() {
             : "Your plan has reached the allowed number of this structure entity type. Upgrade to add more."}
           limit={entityLimit || 0}
         />
+       
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -452,7 +453,17 @@ export default function SetupStructurePage() {
             )}
           </div>
         </div>
-
+ <div className="mb-6 flex gap-3 rounded-2xl border border-secondary-500/25 bg-gradient-to-r from-secondary-500/[0.13] via-secondary-500/[0.06] to-transparent p-4 sm:items-center sm:p-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-secondary-500/25 bg-secondary-500/15 text-secondary-300">
+            <Info size={19} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">One {config.label.toLowerCase()} entry is enough</p>
+            <p className="mt-1 text-sm leading-relaxed text-gray-300">
+              Create each {config.label.toLowerCase()} once, then use that same entity in multiple places when you set up your organization structure. There&apos;s no need to add duplicate names.
+            </p>
+          </div>
+        </div>
         {orderBlockMessage && (
           <div className="mb-5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
             <p className="text-sm text-amber-200">{orderBlockMessage}</p>

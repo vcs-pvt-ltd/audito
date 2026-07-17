@@ -313,6 +313,7 @@ export default function PaymentsPage() {
         />
       ) : (
         <>
+          <div className="hidden md:block">
           <Table>
             <THead>
                             <Th>Invoice</Th>
@@ -362,6 +363,22 @@ export default function PaymentsPage() {
               ))}
             </TBody>
           </Table>
+          </div>
+          <div className="space-y-3 md:hidden">
+            {paginated.map((p) => (
+              <article key={p.transaction_id} className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] shadow-lg shadow-black/10">
+                <div className="flex items-start justify-between gap-3 p-4">
+                  <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">{p.invoice_number || "Payment transaction"}</p><h2 className="mt-1 truncate text-sm font-semibold text-white">{p.org_name_resolved || p.org_name || "Organization"}</h2><p className="mt-1 truncate text-xs text-gray-400">{p.admin_first_name ? `${p.admin_first_name} ${p.admin_last_name || ""}` : p.admin_email || "No admin"}</p></div>
+                  <div className="flex shrink-0 flex-col items-end gap-2"><StatusBadge status={p.status} /><span className="text-sm font-semibold text-white">{p.currency} {Number(p.amount).toLocaleString()}</span></div>
+                </div>
+                <div className="grid grid-cols-2 gap-px border-y border-white/[0.08] bg-white/[0.08] text-xs">
+                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Plan</p><div className="mt-1"><PlanBadge plan={p.plan_name} /></div></div>
+                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Billing</p><p className="mt-1 truncate text-gray-200">{p.billing_cycle || "—"}</p></div>
+                  <div className="col-span-2 min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Account · date</p><p className="mt-1 truncate text-gray-200">{p.entity_type || "—"} · {new Date(p.created_at).toLocaleDateString()}</p></div>
+                </div>
+              </article>
+            ))}
+          </div>
           <TablePagination
             currentPage={currentPage}
             totalPages={totalPages}

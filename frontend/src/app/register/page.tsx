@@ -676,6 +676,7 @@ function AccountTypeStep({
 }) {
   const activeGroup = selectedGroup ?? "Customer";
   const activeConfig = accountTypes.find((t) => t.key === activeGroup)!;
+  const shouldShowEntryPrices = planName !== "Custom";
 
   const isEntityLocked = (group: AccountGroup, entityName: AllEntityType) =>
     !canRegisterEntityType(planName, group, entityName);
@@ -771,7 +772,7 @@ function AccountTypeStep({
                   <p className={`text-sm font-semibold ${isSelected ? "text-secondary-400" : "text-white"}`}>{et.label ?? et.name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{et.desc}</p>
                 </div>
-                {ENTITY_ENTRY_PRICE_LABELS[et.name] && <span className="self-end text-[10px] font-semibold text-secondary-300">{ENTITY_ENTRY_PRICE_LABELS[et.name]}</span>}
+                {shouldShowEntryPrices && ENTITY_ENTRY_PRICE_LABELS[et.name] && <span className="self-end text-[10px] font-semibold text-secondary-300">{ENTITY_ENTRY_PRICE_LABELS[et.name]}</span>}
                 {isLocked ? (
                   <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500"><LockKeyhole size={12} /> Upgrade</span>
                 ) : isSelected && <Check size={15} className="text-secondary-400 shrink-0" />}
@@ -848,7 +849,7 @@ function AccountTypeStep({
                               <span className="truncate">{name ?? ""}</span>
                               {isLocked ? <LockKeyhole size={11} className="shrink-0" /> : isSelected && <Check size={12} className="shrink-0" strokeWidth={3} />}
                             </span>
-                            {ENTITY_ENTRY_PRICE_LABELS[name as AllEntityType] && <span className="absolute bottom-1 right-2 text-[9px] font-semibold text-secondary-200">{ENTITY_ENTRY_PRICE_LABELS[name as AllEntityType]}</span>}
+                            {shouldShowEntryPrices && ENTITY_ENTRY_PRICE_LABELS[name as AllEntityType] && <span className="absolute bottom-1 right-2 text-[9px] font-semibold text-secondary-200">{ENTITY_ENTRY_PRICE_LABELS[name as AllEntityType]}</span>}
                           </button>
                         </div>
                       );
@@ -1037,12 +1038,6 @@ function RegisterForm() {
       setFormData((prev) => ({ ...prev, billing_cycle: billing }));
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    if (isCustomPlan && customLimitsReady && step < 4) {
-      setStep(4);
-    }
-  }, [customLimitsReady, isCustomPlan]);
 
   // Keep the selected entry type valid when the selected plan changes.
   useEffect(() => {
@@ -1427,8 +1422,7 @@ function RegisterForm() {
               <button
                 type="button"
                 onClick={() => {
-                  if (isCustomPlan && customLimitsReady) router.push("/custom-solution");
-                  else setStep(isCustomPlan && !customLimitsReady ? 3 : 2);
+                  setStep(isCustomPlan && !customLimitsReady ? 3 : 2);
                 }}
                 aria-label="Go back"
                 className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"

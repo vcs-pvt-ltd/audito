@@ -135,7 +135,7 @@ export default function OrganizationsPage() {
             className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 transition-all"
           />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex flex-wrap gap-2">
           {([
             { key: "all" as const, label: "All", count: orgs.length },
             { key: "active" as const, label: "Active", count: activeCount },
@@ -173,6 +173,7 @@ export default function OrganizationsPage() {
         />
       ) : (
         <>
+          <div className="hidden md:block">
           <Table>
             <THead>
               <Th>Organization</Th>
@@ -232,6 +233,26 @@ export default function OrganizationsPage() {
               ))}
             </TBody>
           </Table>
+          </div>
+          <div className="space-y-3 md:hidden">
+            {paginated.map((org) => (
+              <article key={org.root_entity_code} className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] shadow-lg shadow-black/10">
+                <div className="flex items-start justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary-400">{org.account_type || "Organization"}</p>
+                    <h2 className="mt-1 truncate text-sm font-semibold text-white">{org.org_name || org.entity_type || "Unnamed organization"}</h2>
+                    <p className="mt-1 truncate text-xs text-gray-400">{org.first_name ? `${org.first_name} ${org.last_name || ""}` : "No admin assigned"}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-2"><PlanBadge plan={org.plan_name} />{org.is_active ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400"><CheckCircle2 size={10} /> Active</span> : <span className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400"><XCircle size={10} /> Inactive</span>}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-px border-y border-white/[0.08] bg-white/[0.08] text-xs">
+                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Billing</p><p className="mt-1 truncate text-gray-200">{org.billing_cycle || "—"}</p></div>
+                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Registered</p><p className="mt-1 truncate text-gray-200">{new Date(org.created_at).toLocaleDateString()}</p></div>
+                  {org.email && <div className="col-span-2 min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Admin email</p><p className="mt-1 truncate text-gray-200">{org.email}</p></div>}
+                </div>
+              </article>
+            ))}
+          </div>
           <TablePagination
             currentPage={currentPage}
             totalPages={totalPages}

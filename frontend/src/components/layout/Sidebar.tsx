@@ -470,6 +470,8 @@ export default function Sidebar() {
   const notifPopupRef = useRef<HTMLDivElement | null>(null);
   const [popupPos, setPopupPos] = useState<{ left: number; top: number } | null>(null);
   const [hasCompanyLink, setHasCompanyLink] = useState(false);
+  const canAccessNotices = admin?.role !== "admin" && admin?.role !== "audito_admin";
+  const canUseNotificationPanel = admin?.role !== "admin";
 
   useEffect(() => {
     if (!accessToken || admin?.entity_type !== "Supplier") { setHasCompanyLink(false); return; }
@@ -526,7 +528,7 @@ export default function Sidebar() {
   }, [notificationsOpen]);
 
   const loadNotices = async () => {
-    if (!accessToken || admin?.role === "admin") return;
+    if (!accessToken || !canAccessNotices) return;
     setLoadingNotices(true);
     try {
       const res = await noticeApi.getMyNotices(accessToken);
@@ -537,8 +539,11 @@ export default function Sidebar() {
   };
 
   useEffect(() => {
-    if (accessToken && admin?.role !== "admin") void loadNotices();
-  }, [accessToken, admin?.role]);
+    if (accessToken && canAccessNotices) void loadNotices();
+    else {
+      setNotices([]);
+    }
+  }, [accessToken, canAccessNotices]);
 
   const updateNoticeState = async (action: "read" | "unread" | "delete", n: any) => {
     if (!accessToken || !n?.id) return;
@@ -607,7 +612,7 @@ export default function Sidebar() {
         </button>
         <Image src={auditoLogo} alt="Audito" width={90} height={20} className="h-5 ml-3" />
         <div className="ml-auto flex items-center gap-1">
-          <button ref={mobileNotifButtonRef}
+          {canUseNotificationPanel && <button ref={mobileNotifButtonRef}
             onClick={async () => {
               setNotificationsOpen((p) => {
                 const next = !p;
@@ -615,7 +620,7 @@ export default function Sidebar() {
                   const rect = mobileNotifButtonRef.current.getBoundingClientRect();
                   setPopupPos({ left: Math.max(10, rect.left - 260), top: rect.bottom + 8 });
                 }
-                if (!p && notices.length === 0) void loadNotices();
+                if (!p && notices.length === 0 && canAccessNotices) void loadNotices();
                 return next;
               });
             }}
@@ -625,7 +630,7 @@ export default function Sidebar() {
             {notices.some((n) => !(n as any).is_read) && (
               <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-primary-950" />
             )}
-          </button>
+          </button>}
           <Link href="/profile" className="h-9 w-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-all">
             {/* Show profile image or fallback icon in mobile header */}
             {(admin as any).profile_image
@@ -649,11 +654,13 @@ export default function Sidebar() {
         <div className={`h-16 flex items-center border-b border-white/10 ${collapsed ? "px-2 justify-center" : "px-5 justify-between"}`}>
           <div className="flex items-center gap-2">
             {!collapsed && (
-              <Link href={admin?.role === "audito_admin" ? "/admin-panel/dashboard" : "/dashboard"}><Image src={auditoLogo} alt="Audito" width={90} height={20} className="h-6" /></Link>
+              <Link href={admin?.role === "audito_admin" ? "/admin-panel/dashboard" : "/dashboard"} aria-label="Go to dashboard">
+                <Image src={auditoLogo} alt="Audito" width={90} height={20} className="h-6 w-auto object-contain" />
+              </Link>
             )}
           </div>
           <div className="flex items-center gap-1">
-            {!collapsed && (
+            {!collapsed && canUseNotificationPanel && (
               <button ref={desktopNotifButtonRef}
                 onClick={async () => {
                   setNotificationsOpen((p) => {
@@ -662,7 +669,7 @@ export default function Sidebar() {
                       const rect = desktopNotifButtonRef.current.getBoundingClientRect();
                       setPopupPos({ left: rect.left, top: rect.bottom + 8 });
                     }
-                    if (!p && notices.length === 0) void loadNotices();
+                    if (!p && notices.length === 0 && canAccessNotices) void loadNotices();
                     return next;
                   });
                 }}
@@ -803,7 +810,7 @@ export default function Sidebar() {
       </aside>
 
       {/* Notifications inbox */}
-      {notificationsOpen && typeof document !== "undefined" && createPortal(
+      {canUseNotificationPanel && notificationsOpen && typeof document !== "undefined" && createPortal(
         <div ref={notifPopupRef}
           style={{ position: "fixed", left: popupPos?.left ?? 8, top: popupPos?.top ?? 8 }}
           className="z-[9999] flex w-[min(24rem,calc(100vw-1rem))] max-h-[min(34rem,calc(100dvh-5rem))] flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-[#08251a]/[0.98] shadow-2xl shadow-black/50 backdrop-blur-2xl">
@@ -822,7 +829,7 @@ export default function Sidebar() {
           {loadingNotices ? (
             <div className="flex min-h-44 flex-1 flex-col items-center justify-center gap-2 text-sm text-gray-400"><Loader2 size={20} className="animate-spin text-secondary-400" /> Loading notifications…</div>
           ) : notices.length === 0 ? (
-            <div className="flex min-h-44 flex-1 flex-col items-center justify-center px-6 text-center"><div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.03] text-gray-500"><Inbox size={20} /></div><p className="text-sm font-medium text-gray-300">No notifications yet</p><p className="mt-1 text-xs leading-5 text-gray-500">Updates relevant to your workspace will appear here.</p></div>
+            <div className="flex min-h-44 flex-1 flex-col items-center justify-center px-6 text-center"><div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.03] text-gray-500"><Inbox size={20} /></div><p className="text-sm font-medium text-gray-300">No notifications yet</p><p className="mt-1 text-xs leading-5 text-gray-500">{admin?.role === "audito_admin" ? "Platform updates and account alerts will appear here." : "Updates relevant to your workspace will appear here."}</p></div>
           ) : (
             <div className="flex-1 space-y-2 overflow-y-auto p-2.5 overscroll-contain">
               {notices.map((n, i) => (

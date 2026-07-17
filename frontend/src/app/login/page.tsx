@@ -5,7 +5,7 @@ import Image from "next/image";
 import auditoLogo from "../../assets/logo/audito_logo.png";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff, Loader2, CheckCircle, ArrowLeft } from "lucide-react";
+import { Eye, EyeOff, Loader2, CheckCircle, ArrowLeft, Clock3, Mail, X } from "lucide-react";
 import { useAuth, type SubscriptionStatus } from "@/context/AuthContext";
 import { type PaymentDetails } from "@/lib/api";
 import SubscriptionExpiredModal from "@/components/auth/SubscriptionExpiredModal";
@@ -22,6 +22,7 @@ function LoginForm() {
   const [error, setError] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
   const [expiredModal, setExpiredModal] = useState<{ open: boolean; subscription?: SubscriptionStatus | null; payment?: PaymentDetails | null }>({ open: false });
+  const [customPlanPendingModal, setCustomPlanPendingModal] = useState(false);
 
   useEffect(() => {
     if (searchParams.get("registered") === "true") {
@@ -53,6 +54,8 @@ function LoginForm() {
         router.push(`/payment?code=${res.payment.payment_code}`);
       } else if (res.subscriptionExpired) {
         setExpiredModal({ open: true, subscription: res.subscription, payment: res.payment });
+      } else if (res.customSolutionPending) {
+        setCustomPlanPendingModal(true);
       } else {
         setError(res.message || "Login failed.");
       }
@@ -71,6 +74,39 @@ function LoginForm() {
           payment={expiredModal.payment}
           onClose={() => setExpiredModal({ open: false })}
         />
+      )}
+      {customPlanPendingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary-950/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="custom-plan-review-title">
+          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-secondary-500/25 bg-[#053B36] p-6 shadow-2xl shadow-black/40 sm:p-8">
+            <button
+              type="button"
+              onClick={() => setCustomPlanPendingModal(false)}
+              aria-label="Close"
+              className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <X size={18} />
+            </button>
+            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-secondary-500/25 bg-secondary-500/15 text-secondary-300">
+              <Clock3 size={23} />
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Custom solution</p>
+            <h2 id="custom-plan-review-title" className="mt-2 text-2xl font-semibold tracking-tight text-white">Your custom plan is under review</h2>
+            <p className="mt-3 text-sm leading-relaxed text-gray-300">
+              We are reviewing your selected capacity and preparing tailored pricing. We&apos;ll email you as soon as your custom plan is ready to continue.
+            </p>
+            <div className="mt-5 flex items-start gap-3 rounded-2xl border border-white/10 bg-black/10 p-4 text-sm text-gray-300">
+              <Mail size={17} className="mt-0.5 shrink-0 text-secondary-400" />
+              <p>Use the email address registered for this workspace for the next update and payment link.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCustomPlanPendingModal(false)}
+              className="mt-6 flex min-h-11 w-full items-center justify-center rounded-xl bg-secondary-500 px-4 py-3 text-sm font-semibold text-primary-950 transition-colors hover:bg-secondary-400"
+            >
+              Back to sign in
+            </button>
+          </div>
+        </div>
       )}
 
 

@@ -249,7 +249,7 @@ export default function PromoCodesPage() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+      <div className="mb-6 flex flex-wrap gap-2">
         {(["all", "active", "inactive"] as const).map((f) => (
           <button
             key={f}
@@ -285,6 +285,7 @@ export default function PromoCodesPage() {
         />
       ) : (
         <>
+          <div className="hidden md:block">
           <Table>
             <THead>
               <Th>Code</Th>
@@ -381,6 +382,19 @@ export default function PromoCodesPage() {
               })}
             </TBody>
           </Table>
+          </div>
+          <div className="space-y-3 md:hidden">
+            {pageItems.map((promo) => {
+              const status = getStatus(promo);
+              return (
+                <article key={promo.promo_code_id} className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] shadow-lg shadow-black/10">
+                  <div className="flex items-start justify-between gap-3 p-4"><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">Promo code</p><p className="mt-1 truncate font-mono text-sm font-bold tracking-wider text-white">{promo.code}</p></div>{status.type === "active" ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400"><CheckCircle2 size={10} /> Active</span> : <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400"><XCircle size={10} /> {status.label}</span>}</div>
+                  <div className="grid grid-cols-2 gap-px border-y border-white/[0.08] bg-white/[0.08] text-xs"><div className="bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Discount</p><p className="mt-1 font-semibold text-secondary-300">{promo.discount_percentage}% off</p></div><div className="bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Expires</p><p className="mt-1 truncate text-gray-200">{promo.expires_at ? new Date(promo.expires_at).toLocaleDateString() : "Never"}</p></div></div>
+                  <div className="flex flex-wrap justify-end gap-2 p-3"><IconButton onClick={() => handleCopy(promo.code, promo.promo_code_id)} tone="secondary" size="sm" title="Copy Promo Code">{copiedId === promo.promo_code_id ? <Check size={14} className="text-emerald-400" /> : <Copy size={12} />}</IconButton>{status.type === "active" && <IconButton onClick={() => handleDeactivate(promo.promo_code_id)} disabled={deactivatingId === promo.promo_code_id || deletingId === promo.promo_code_id} tone="warning" title="Deactivate Promo Code">{deactivatingId === promo.promo_code_id ? <Loader2 size={16} className="animate-spin text-amber-500" /> : <Ban size={16} />}</IconButton>}<IconButton onClick={() => handleDelete(promo.promo_code_id)} disabled={deactivatingId === promo.promo_code_id || deletingId === promo.promo_code_id} tone="danger" title="Delete Promo Code">{deletingId === promo.promo_code_id ? <Loader2 size={16} className="animate-spin text-red-500" /> : <Trash2 size={16} />}</IconButton></div>
+                </article>
+              );
+            })}
+          </div>
 
           <TablePagination
             currentPage={currentPage}
