@@ -70,7 +70,7 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string; role?: string; subscriptionExpired?: boolean; subscription?: SubscriptionStatus; paymentRequired?: boolean; payment?: PaymentDetails | null }>;
+  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string; role?: string; subscriptionExpired?: boolean; subscription?: SubscriptionStatus; paymentRequired?: boolean; customSolutionPending?: boolean; payment?: PaymentDetails | null }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
   switchAccount: (targetRole: string, password?: string) => Promise<{ success: boolean; message?: string; needsPassword?: boolean }>;
@@ -163,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (payload: LoginPayload) => {
       const res = await authApi.login(payload) as {
         success: boolean;
-        data?: { admin?: Admin; accounts?: AccountInfo[]; subscription?: SubscriptionStatus; subscription_expired?: boolean; payment_required?: boolean; payment?: PaymentDetails | null; tokens?: { accessToken: string; refreshToken: string } };
+        data?: { admin?: Admin; accounts?: AccountInfo[]; subscription?: SubscriptionStatus; subscription_expired?: boolean; payment_required?: boolean; custom_solution_pending?: boolean; payment?: PaymentDetails | null; tokens?: { accessToken: string; refreshToken: string } };
         message?: string;
       };
       // Expired plan: backend returns success with a flag (no tokens). Block the
@@ -174,6 +174,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Registration payment never completed: block sign-in and send to payment.
       if (res.success && res.data?.payment_required) {
         return { success: false, message: res.message, paymentRequired: true, payment: res.data.payment ?? null };
+      }
+      // Custom registrations wait for an Audito admin to set the tailored
+      // price. Do not establish a session until that review is complete.
+      if (res.success && res.data?.custom_solution_pending) {
+        return { success: false, message: res.message, customSolutionPending: true };
       }
       if (res.success && res.data?.admin && res.data?.tokens) {
         loginPasswordRef.current = payload.password;

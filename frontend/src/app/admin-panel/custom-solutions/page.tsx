@@ -152,7 +152,7 @@ export default function CustomSolutionsPage() {
   if (isLoading || (!admin || admin.role !== "audito_admin")) return <Loading />;
 
   return (
-    <div className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="space-y-6 p-5 pt-20 lg:p-8 lg:pt-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Custom Solutions</h1>
@@ -196,6 +196,7 @@ export default function CustomSolutionsPage() {
         />
       ) : (
         <>
+          <div className="hidden md:block">
           <Table>
             <THead>
               <Th>Organization</Th>
@@ -247,6 +248,19 @@ export default function CustomSolutionsPage() {
               ))}
             </TBody>
           </Table>
+          </div>
+          <div className="space-y-3 md:hidden">
+            {paginated.map((req) => (
+              <article key={req.request_id} className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] shadow-lg shadow-black/10">
+                <div className="flex items-start justify-between gap-3 p-4">
+                  <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary-400">Custom solution</p><h2 className="mt-1 truncate text-sm font-semibold text-white">{req.org_name}</h2><p className="mt-1 truncate text-xs text-gray-400">{req.org_email}</p></div>
+                  <StatusBadge status={req.status} />
+                </div>
+                <div className="grid grid-cols-2 gap-px border-y border-white/[0.08] bg-white/[0.08] text-xs"><div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Account type</p><p className="mt-1 truncate text-gray-200">{req.entity_type}</p></div><div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Requested</p><p className="mt-1 truncate text-gray-200">{new Date(req.created_at).toLocaleDateString()}</p></div></div>
+                <div className="flex justify-end gap-2 p-3"><IconButton size="sm" tone="secondary" onClick={() => setSelectedReq(req)} aria-label="View details"><Eye size={14} /></IconButton>{req.status === "pending" && <IconButton size="sm" tone="info" onClick={() => openPriceModal(req)} aria-label="Assign price"><DollarSign size={14} /></IconButton>}</div>
+              </article>
+            ))}
+          </div>
           <TablePagination
             currentPage={currentPage}
             totalPages={totalPages}

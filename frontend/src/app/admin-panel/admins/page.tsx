@@ -257,7 +257,7 @@ export default function AdminsPage() {
             Search
           </Button>
         </form>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex flex-wrap gap-2">
           {([
             { key: "all", label: "All", count: admins.length },
             { key: "active", label: "Active", count: activeCount },
@@ -298,6 +298,7 @@ export default function AdminsPage() {
         />
       ) : (
         <>
+          <div className="hidden md:block">
           <Table>
             <THead>
               <Th>Name</Th>
@@ -377,6 +378,16 @@ export default function AdminsPage() {
               ))}
             </TBody>
           </Table>
+          </div>
+          <div className="space-y-3 md:hidden">
+            {pageItems.map((adm) => (
+              <article key={adm.admin_id} className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] shadow-lg shadow-black/10">
+                <div className="flex items-start justify-between gap-3 p-4"><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">Platform administrator</p><h2 className="mt-1 truncate text-sm font-semibold text-white">{adm.first_name} {adm.last_name}</h2><p className="mt-1 truncate text-xs text-gray-400">{adm.email}</p></div>{adm.is_active ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400"><CheckCircle2 size={10} /> Active</span> : <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400"><XCircle size={10} /> Inactive</span>}</div>
+                <div className="grid grid-cols-2 gap-px border-y border-white/[0.08] bg-white/[0.08] text-xs"><div className="bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Created</p><p className="mt-1 text-gray-200">{new Date(adm.created_at).toLocaleDateString()}</p></div><div className="bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Verification</p>{adm.is_verified ? <p className="mt-1 text-emerald-400">Verified</p> : <p className="mt-1 text-amber-400">Pending</p>}</div></div>
+                <div className="flex justify-end gap-2 p-3"><IconButton onClick={() => handleToggleStatus(adm.admin_id)} disabled={togglingId === adm.admin_id || deletingId === adm.admin_id || adm.admin_id === admin?.id} tone={adm.is_active ? "warning" : "info"} title={adm.is_active ? "Deactivate Admin" : "Activate Admin"}>{togglingId === adm.admin_id ? <Loader2 size={16} className="animate-spin text-amber-500" /> : <XCircle size={16} />}</IconButton><IconButton onClick={() => handleDelete(adm.admin_id)} disabled={togglingId === adm.admin_id || deletingId === adm.admin_id || adm.admin_id === admin?.id} tone="danger" title="Delete Admin">{deletingId === adm.admin_id ? <Loader2 size={16} className="animate-spin text-red-500" /> : <Trash2 size={16} />}</IconButton></div>
+              </article>
+            ))}
+          </div>
 
           <TablePagination
             currentPage={currentPage}

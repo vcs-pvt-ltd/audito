@@ -13,6 +13,7 @@ import {
   GitBranch,
   ArrowRight,
   Zap,
+  PlayCircle,
 } from "lucide-react";
 
 import companyManagementHierarchyImg from "@/assets/landing/features/company-management-hierarchy.png";
@@ -139,6 +140,14 @@ export default function FeaturesSection() {
           box-shadow: 0 0 20px rgba(0,212,146,0.15);
           transform: scale(1.08) rotate(3deg);
         }
+
+        .feature-video-frame {
+          box-shadow: 0 28px 70px rgba(0,0,0,0.38), 0 0 0 1px rgba(0,212,146,0.08);
+        }
+        .feature-video-frame video {
+          display: block;
+          background: #031d19;
+        }
       `}</style>
 
       <div className="relative z-10 max-w-7xl 2xl:max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8 w-full">
@@ -154,6 +163,40 @@ export default function FeaturesSection() {
             <br />
             <span className="features-gradient-text">Modern Audit Management</span>
           </h3>
+        </Reveal>
+
+        {/* Product video preview */}
+        <Reveal variant="zoom" delay={45} className="mb-14 sm:mb-20">
+          <section aria-labelledby="features-video-title" className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.07] via-white/[0.035] to-secondary-500/[0.07] p-4 shadow-2xl shadow-black/20 sm:p-6 lg:p-8">
+            <div className="grid items-center gap-7 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] lg:gap-10">
+              <div className="px-1 sm:px-2">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-secondary-500/25 bg-secondary-500/10 px-3 py-1.5 text-xs font-semibold text-secondary-300">
+                  <PlayCircle size={15} />
+                  Product walkthrough
+                </div>
+                <h4 id="features-video-title" className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                  See Audito in action
+                </h4>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-gray-400 sm:text-[15px]">
+                  Follow the complete workflow—from structuring your organization to completing audits, tracking actions, and sharing clear reports.
+                </p>
+                <p className="mt-5 text-xs font-medium text-secondary-300">Press play to preview the Audito experience.</p>
+              </div>
+
+              <div className="feature-video-frame overflow-hidden rounded-2xl border border-white/10">
+                <video
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="aspect-video w-full object-cover"
+                  aria-label="Audito product explainer video"
+                >
+                  <source src="/videos/audito-product-explainer.mp4" type="video/mp4" />
+                  Your browser does not support embedded video.
+                </video>
+              </div>
+            </div>
+          </section>
         </Reveal>
 
         {/* Overview image + floating cards */}
