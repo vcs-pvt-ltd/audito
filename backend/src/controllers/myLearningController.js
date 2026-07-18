@@ -21,6 +21,7 @@ const listMyTrainings = async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT a.training_assignment_id AS assignment_id, a.status AS status, a.assigned_at, a.completed_at,
+              a.watched_seconds, a.last_position_seconds, a.is_watching,
               t.training_id, t.title, t.platform, t.video_url, t.description, t.duration_minutes
        FROM training_assignments a
        JOIN trainings t ON a.training_id = t.training_id
@@ -36,15 +37,90 @@ const listMyTrainings = async (req, res) => {
   }
 };
 
+const MAX_PROGRESS_WINDOW_SECONDS = 45;
+
+const saveTrainingProgress = async (req, res) => {
+  try {
+    if (!ensureAuditor(req, res)) return;
+
+    const { assignmentId } = req.params;
+    const { action, playback_position_seconds } = req.body;
+    if (!['start', 'heartbeat', 'pause'].includes(action)) {
+      return errorResponse(res, 'Invalid training progress action.', 400);
+    }
+
+    const [rows] = await db.query(
+      `SELECT a.training_assignment_id, a.status, a.watched_seconds, a.is_watching, a.watch_started_at,
+              t.duration_minutes
+       FROM training_assignments a
+       JOIN trainings t ON t.training_id = a.training_id
+       WHERE a.training_assignment_id = ? AND a.auditor_id = ? LIMIT 1`,
+      [assignmentId, req.user.userCode]
+    );
+    if (!rows.length) return errorResponse(res, 'Training assignment not found or unauthorized.', 404);
+
+    const assignment = rows[0];
+    const durationSeconds = Math.max(0, Number(assignment.duration_minutes || 0) * 60);
+    const position = Math.max(0, Math.floor(Number(playback_position_seconds) || 0));
+    const currentlyWatching = Boolean(assignment.is_watching);
+    const startedAt = assignment.watch_started_at ? new Date(assignment.watch_started_at) : null;
+    const elapsed = currentlyWatching && startedAt && !Number.isNaN(startedAt.getTime())
+      ? Math.min(MAX_PROGRESS_WINDOW_SECONDS, Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000)))
+      : 0;
+    const nextWatched = durationSeconds > 0
+      ? Math.min(durationSeconds, Number(assignment.watched_seconds || 0) + elapsed)
+      : Number(assignment.watched_seconds || 0) + elapsed;
+    const shouldWatch = action !== 'pause' && assignment.status !== 'completed';
+
+    await db.query(
+      `UPDATE training_assignments
+       SET watched_seconds = ?,
+           last_position_seconds = ?,
+           is_watching = ?,
+           watch_started_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END,
+           last_watched_at = CURRENT_TIMESTAMP
+       WHERE training_assignment_id = ? AND auditor_id = ?`,
+      [nextWatched, position, shouldWatch ? 1 : 0, shouldWatch ? 1 : 0, assignmentId, req.user.userCode]
+    );
+
+    return successResponse(res, {
+      watched_seconds: nextWatched,
+      required_seconds: durationSeconds,
+      is_watching: shouldWatch,
+    }, 'Training progress saved.');
+  } catch (err) {
+    console.error('saveTrainingProgress error:', err);
+    return errorResponse(res, 'Failed to save training progress.', 500);
+  }
+};
+
 const completeTraining = async (req, res) => {
   try {
     if (!ensureAuditor(req, res)) return;
 
     const { assignmentId } = req.params;
 
+    const [rows] = await db.query(
+      `SELECT a.status, a.watched_seconds, t.duration_minutes
+       FROM training_assignments a
+       JOIN trainings t ON t.training_id = a.training_id
+       WHERE a.training_assignment_id = ? AND a.auditor_id = ? LIMIT 1`,
+      [assignmentId, req.user.userCode]
+    );
+    if (!rows.length) return errorResponse(res, 'Training assignment not found or unauthorized.', 404);
+
+    const requiredSeconds = Math.max(0, Number(rows[0].duration_minutes || 0) * 60);
+    const watchedSeconds = Number(rows[0].watched_seconds || 0);
+    if (requiredSeconds > 0 && watchedSeconds < requiredSeconds) {
+      return errorResponse(res, `Continue watching for ${Math.ceil((requiredSeconds - watchedSeconds) / 60)} more minute(s) before marking this training complete.`, 409);
+    }
+    if (requiredSeconds === 0 && watchedSeconds === 0) {
+      return errorResponse(res, 'Start the training before marking it complete.', 409);
+    }
+
     const [result] = await db.query(
       `UPDATE training_assignments
-       SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+       SET status = 'completed', completed_at = CURRENT_TIMESTAMP, is_watching = 0, watch_started_at = NULL
        WHERE training_assignment_id = ? AND auditor_id = ?`,
       [assignmentId, req.user.userCode]
     );
@@ -117,8 +193,16 @@ const listMyEvaluationPapers = async (req, res) => {
   try {
     if (!ensureAuditor(req, res)) return;
 
+    // A timed attempt cannot be resumed once its server-calculated deadline has passed.
+    await db.query(
+      `UPDATE evaluation_assignments
+       SET status = 'expired'
+       WHERE auditor_id = ? AND status = 'in_progress' AND expires_at IS NOT NULL AND expires_at <= NOW()`,
+      [req.user.userCode]
+    );
+
     const [rows] = await db.query(
-      `SELECT a.evaluation_assignment_id AS assignment_id, a.status AS status, a.assigned_at, a.due_date,
+      `SELECT a.evaluation_assignment_id AS assignment_id, a.status AS status, a.assigned_at, a.started_at, a.expires_at, a.due_date,
               p.evaluation_paper_id AS paper_id, p.title, p.description, p.time_limit_minutes, p.pass_marks,
               (SELECT COUNT(*) FROM evaluation_questions q WHERE q.paper_id = p.evaluation_paper_id) AS question_count,
               att.submitted_at AS last_submitted_at, att.score AS last_score, att.max_score AS last_max_score
@@ -143,6 +227,73 @@ const listMyEvaluationPapers = async (req, res) => {
   }
 };
 
+const startMyEvaluationPaper = async (req, res) => {
+  try {
+    if (!ensureAuditor(req, res)) return;
+
+    const { paperId } = req.params;
+    const [rows] = await db.query(
+      `SELECT a.evaluation_assignment_id AS assignment_id, a.status, a.due_date, a.started_at, a.expires_at,
+              p.time_limit_minutes
+       FROM evaluation_assignments a
+       JOIN evaluation_papers p ON p.evaluation_paper_id = a.paper_id
+       WHERE a.paper_id = ? AND a.auditor_id = ? AND p.is_active = 1
+       LIMIT 1`,
+      [paperId, req.user.userCode]
+    );
+
+    if (!rows.length) return errorResponse(res, 'Evaluation paper assignment not found.', 404);
+    const assignment = rows[0];
+    if (assignment.status === 'submitted') return errorResponse(res, 'You have already submitted this evaluation paper.', 409);
+    if (assignment.status === 'expired') return errorResponse(res, 'The time limit for this evaluation paper has ended.', 409);
+    if (assignment.due_date && new Date() > new Date(assignment.due_date)) {
+      return errorResponse(res, 'The closing date for this evaluation paper has passed.', 409);
+    }
+
+    const durationMinutes = Math.max(0, Number(assignment.time_limit_minutes || 0));
+    if (durationMinutes > 0 && !assignment.started_at) {
+      await db.query(
+        `UPDATE evaluation_assignments
+         SET status = 'in_progress', started_at = NOW(), expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE)
+         WHERE evaluation_assignment_id = ? AND auditor_id = ? AND status = 'assigned'`,
+        [durationMinutes, assignment.assignment_id, req.user.userCode]
+      );
+    } else if (!assignment.started_at) {
+      await db.query(
+        `UPDATE evaluation_assignments SET status = 'in_progress', started_at = NOW()
+         WHERE evaluation_assignment_id = ? AND auditor_id = ? AND status = 'assigned'`,
+        [assignment.assignment_id, req.user.userCode]
+      );
+    }
+
+    const [timingRows] = await db.query(
+      `SELECT status, expires_at,
+              CASE WHEN expires_at IS NULL THEN NULL ELSE GREATEST(0, TIMESTAMPDIFF(SECOND, NOW(), expires_at)) END AS remaining_seconds
+       FROM evaluation_assignments
+       WHERE evaluation_assignment_id = ? AND auditor_id = ? LIMIT 1`,
+      [assignment.assignment_id, req.user.userCode]
+    );
+    const timing = timingRows[0];
+    if (timing.expires_at && Number(timing.remaining_seconds) <= 0) {
+      await db.query(
+        `UPDATE evaluation_assignments SET status = 'expired'
+         WHERE evaluation_assignment_id = ? AND auditor_id = ? AND status = 'in_progress' AND expires_at <= NOW()`,
+        [assignment.assignment_id, req.user.userCode]
+      );
+      return errorResponse(res, 'The time limit for this evaluation paper has ended.', 409);
+    }
+
+    return successResponse(res, {
+      assignment_status: timing.status,
+      expires_at: timing.expires_at,
+      remaining_seconds: timing.remaining_seconds == null ? null : Number(timing.remaining_seconds),
+    }, 'Evaluation paper started.');
+  } catch (err) {
+    console.error('startMyEvaluationPaper error:', err);
+    return errorResponse(res, 'Failed to start evaluation paper.', 500);
+  }
+};
+
 const getMyEvaluationPaper = async (req, res) => {
   try {
     if (!ensureAuditor(req, res)) return;
@@ -151,7 +302,7 @@ const getMyEvaluationPaper = async (req, res) => {
 
     // Check assignment
     const [assignments] = await db.query(
-      `SELECT evaluation_assignment_id AS id, due_date, status FROM evaluation_assignments
+      `SELECT evaluation_assignment_id AS id, due_date, status, started_at, expires_at FROM evaluation_assignments
        WHERE paper_id = ? AND auditor_id = ? LIMIT 1`,
       [paperId, req.user.userCode]
     );
@@ -176,7 +327,7 @@ const getMyEvaluationPaper = async (req, res) => {
 
     // Get questions
     const [questions] = await db.query(
-      `SELECT evaluation_question_id AS id, question_text, marks, sort_order
+      `SELECT evaluation_question_id AS id, question_text, answer_type, marks, sort_order
        FROM evaluation_questions
        WHERE paper_id = ?
        ORDER BY sort_order ASC, evaluation_question_id ASC`,
@@ -201,7 +352,7 @@ const getMyEvaluationPaper = async (req, res) => {
     const mappedQuestions = questions.map((q) => {
       return {
         ...q,
-        answer_type: 'single_option', // Evaluation paper questions are MCQ Single Option
+        answer_type: q.answer_type || 'single_option',
         options: options.filter((o) => o.question_id === q.id),
       };
     });
@@ -211,6 +362,8 @@ const getMyEvaluationPaper = async (req, res) => {
         ...papers[0],
         due_date: assignment.due_date,
         assignment_status: assignment.status,
+        started_at: assignment.started_at,
+        expires_at: assignment.expires_at,
       },
       questions: mappedQuestions,
     });
@@ -225,7 +378,7 @@ const submitMyEvaluationPaper = async (req, res) => {
     if (!ensureAuditor(req, res)) return;
 
     const { paperId } = req.params;
-    const { answers } = req.body; // Array of { question_id, selected_option_id }
+    const { answers } = req.body; // Array of { question_id, selected_option_id | selected_option_ids }
 
     if (!Array.isArray(answers)) {
       return errorResponse(res, 'answers must be an array.', 400);
@@ -233,7 +386,7 @@ const submitMyEvaluationPaper = async (req, res) => {
 
     // Check assignment
     const [assignments] = await db.query(
-      `SELECT evaluation_assignment_id AS id, due_date FROM evaluation_assignments
+      `SELECT evaluation_assignment_id AS id, due_date, status, expires_at FROM evaluation_assignments
        WHERE paper_id = ? AND auditor_id = ? LIMIT 1`,
       [paperId, req.user.userCode]
     );
@@ -244,24 +397,39 @@ const submitMyEvaluationPaper = async (req, res) => {
 
     const assignment = assignments[0];
 
+    if (assignment.status === 'submitted') return errorResponse(res, 'You have already submitted this evaluation paper.', 409);
+    if (assignment.status === 'expired') return errorResponse(res, 'The time limit for this evaluation paper has ended.', 409);
+
     // Check closing date
     if (assignment.due_date && new Date() > new Date(assignment.due_date)) {
       return errorResponse(res, 'The closing date for this evaluation paper has passed. Submission is no longer allowed.', 400);
     }
 
+    if (assignment.expires_at && new Date() >= new Date(assignment.expires_at)) {
+      await db.query(
+        `UPDATE evaluation_assignments SET status = 'expired'
+         WHERE evaluation_assignment_id = ? AND auditor_id = ? AND status = 'in_progress' AND expires_at <= NOW()`,
+        [assignment.id, req.user.userCode]
+      );
+      return errorResponse(res, 'The time limit for this evaluation paper has ended.', 409);
+    }
+
     // Get paper
     const [papers] = await db.query(
-      `SELECT evaluation_paper_id AS id, pass_marks FROM evaluation_papers WHERE evaluation_paper_id = ? AND is_active = 1 LIMIT 1`,
+      `SELECT evaluation_paper_id AS id, pass_marks, time_limit_minutes FROM evaluation_papers WHERE evaluation_paper_id = ? AND is_active = 1 LIMIT 1`,
       [paperId]
     );
     if (papers.length === 0) {
       return errorResponse(res, 'Evaluation paper not found.', 404);
     }
     const paper = papers[0];
+    if (Number(paper.time_limit_minutes || 0) > 0 && assignment.status !== 'in_progress') {
+      return errorResponse(res, 'Start the timed evaluation paper before submitting it.', 409);
+    }
 
     // Get all questions and correct options
     const [questions] = await db.query(
-      `SELECT evaluation_question_id AS id, marks FROM evaluation_questions WHERE paper_id = ?`,
+      `SELECT evaluation_question_id AS id, answer_type, marks FROM evaluation_questions WHERE paper_id = ?`,
       [paperId]
     );
 
@@ -283,25 +451,28 @@ const submitMyEvaluationPaper = async (req, res) => {
 
     for (const q of questions) {
       const ans = answers.find((a) => String(a.question_id) === String(q.id));
-      const selectedOptionId = ans ? String(ans.selected_option_id) : null;
+      const allowsMultiple = q.answer_type === 'multiple_options';
+      const selectedOptionIds = allowsMultiple
+        ? [...new Set(Array.isArray(ans?.selected_option_ids) ? ans.selected_option_ids.map(String) : [])]
+        : (ans?.selected_option_id ? [String(ans.selected_option_id)] : []);
+      const selectedOptionId = selectedOptionIds[0] || null;
 
       let isCorrect = 0;
       let marksAwarded = 0;
 
-      if (selectedOptionId) {
-        const opt = allOptions.find((o) => String(o.id) === selectedOptionId && String(o.question_id) === String(q.id));
-        if (opt) {
-          marksAwarded = Number(opt.marks || 0);
-          if (marksAwarded === Number(q.marks)) {
-            isCorrect = 1;
-          }
-          totalScore += marksAwarded;
+      const validOptions = allOptions.filter((o) => selectedOptionIds.includes(String(o.id)) && String(o.question_id) === String(q.id));
+      if (validOptions.length > 0) {
+        marksAwarded = validOptions.reduce((sum, opt) => sum + Number(opt.marks || 0), 0);
+        if (marksAwarded === Number(q.marks)) {
+          isCorrect = 1;
         }
+        totalScore += marksAwarded;
       }
 
       processedAnswers.push({
         question_id: q.id,
         selected_option_id: selectedOptionId,
+        selected_option_ids: allowsMultiple ? JSON.stringify(selectedOptionIds) : null,
         is_correct: isCorrect,
         marks_awarded: marksAwarded,
       });
@@ -331,24 +502,36 @@ const submitMyEvaluationPaper = async (req, res) => {
     attemptId,
     ans.question_id,
     ans.selected_option_id,
+    ans.selected_option_ids,
     ans.is_correct,
     ans.marks_awarded,
   ]);
 
   await connection.query(
-    `INSERT INTO evaluation_answers (evaluation_answer_id, attempt_id, question_id, selected_option_id, is_correct, marks_awarded)
+    `INSERT INTO evaluation_answers (evaluation_answer_id, attempt_id, question_id, selected_option_id, selected_option_ids, is_correct, marks_awarded)
      VALUES ?`,
     [answerValues]
   );
 }
 
-      // Update assignment status to 'submitted'
-      await connection.query(
+      // Claim the assignment before committing results so a late request cannot submit after expiry.
+      const [assignmentUpdate] = await connection.query(
         `UPDATE evaluation_assignments
          SET status = 'submitted'
-         WHERE evaluation_assignment_id = ?`,
-        [assignment.id]
+         WHERE evaluation_assignment_id = ? AND auditor_id = ?
+           AND status IN ('assigned', 'in_progress')
+           AND (expires_at IS NULL OR expires_at > NOW())`,
+        [assignment.id, req.user.userCode]
       );
+      if (assignmentUpdate.affectedRows === 0) {
+        await connection.rollback();
+        await db.query(
+          `UPDATE evaluation_assignments SET status = 'expired'
+           WHERE evaluation_assignment_id = ? AND auditor_id = ? AND status = 'in_progress' AND expires_at <= NOW()`,
+          [assignment.id, req.user.userCode]
+        );
+        return errorResponse(res, 'The time limit for this evaluation paper has ended.', 409);
+      }
 
       await connection.commit();
 
@@ -372,10 +555,12 @@ const submitMyEvaluationPaper = async (req, res) => {
 
 module.exports = {
   listMyTrainings,
+  saveTrainingProgress,
   completeTraining,
   listMyFieldVisits,
   completeFieldVisit,
   listMyEvaluationPapers,
+  startMyEvaluationPaper,
   getMyEvaluationPaper,
   submitMyEvaluationPaper,
 };

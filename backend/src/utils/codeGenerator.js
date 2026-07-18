@@ -134,6 +134,7 @@ const generateLinkCreditApplicationId = () => generateTableId('link_credit_appli
 const generateCustomSolutionRequestId = () => generateTableId('custom_solution_requests', 'request_id', 'CSR', 6);
 const generatePaymentGatewayEventId = () => generateTableId('payment_gateway_events', 'payment_gateway_event_id', 'PGE', 6);
 const generatePaymentMethodId = () => generateTableId('payment_methods', 'payment_method_id', 'PM', 6);
+const generateNotificationId = () => generateTableId('user_notifications', 'notification_id', 'NOTI', 5);
 
 module.exports = {
   generateTableId,
@@ -196,4 +197,5 @@ module.exports = {
   generateCustomSolutionRequestId,
   generatePaymentGatewayEventId,
   generatePaymentMethodId,
+  generateNotificationId,
 };

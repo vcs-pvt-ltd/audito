@@ -28,12 +28,14 @@ router.post('/trainings', ctrl.createTraining);
 router.put('/trainings/:id', ctrl.updateTraining);
 router.delete('/trainings/:id', ctrl.deleteTraining);
 router.post('/trainings/:id/assign', ctrl.assignTraining);
+router.delete('/trainings/:id/assignments/:assignmentId', ctrl.deleteTrainingAssignment);
 
 router.get('/field-visits', ctrl.listFieldVisits);
 router.post('/field-visits', ctrl.createFieldVisit);
 router.put('/field-visits/:id', ctrl.updateFieldVisit);
 router.delete('/field-visits/:id', ctrl.deleteFieldVisit);
 router.post('/field-visits/:id/assign', ctrl.assignFieldVisit);
+router.delete('/field-visits/:id/assignments/:assignmentId', ctrl.deleteFieldVisitAssignment);
 
 router.get('/evaluation-papers', ctrl.listEvaluationPapers);
 router.post('/evaluation-papers', ctrl.createEvaluationPaper);
@@ -44,5 +46,6 @@ router.get('/evaluation-papers/excel-template', ctrl.downloadEvaluationExcelTemp
 router.post('/evaluation-papers/questions/preview-upload', upload.single('questions_file'), ctrl.previewEvaluationQuestionsExcel);
 router.post('/evaluation-papers/:id/questions/upload', upload.single('questions_file'), ctrl.uploadEvaluationQuestionsExcel);
 router.post('/evaluation-papers/:id/assign', ctrl.assignEvaluationPaper);
+router.delete('/evaluation-papers/:id/assignments/:assignmentId', ctrl.deleteEvaluationAssignment);
 
 module.exports = router;

@@ -199,6 +199,51 @@ const sendAuditAssignedEmail = async (toEmail, auditorName, audit) => {
 };
 
 /**
+ * Send a learning-assignment email without exposing any assessment content.
+ */
+const sendLearningAssignmentEmail = async (toEmail, auditorName, assignment) => {
+  const escapeHtml = (value) => String(value || '').replace(/[&<>'"]/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+  }[char]));
+  const safeName = escapeHtml(auditorName || 'Auditor');
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const learningUrl = `${baseUrl}/learning`;
+  const typeLabel = escapeHtml(assignment.type || 'Learning item');
+  const assignmentTitle = escapeHtml(assignment.title);
+  const dueDate = escapeHtml(assignment.dueDate);
+
+  const { html, attachments } = getEmailTemplate({
+    title: `${typeLabel} Assigned`,
+    subtitle: 'A new learning activity is ready for you',
+    content: `
+      <p style="color: #333; font-size: 16px;">Hi ${safeName},</p>
+      <p style="color: #555; font-size: 14px; line-height: 1.6;">
+        You have been assigned a new ${typeLabel.toLowerCase()} on Audito.
+      </p>
+      <div style="background-color: #f8f8f8; padding: 16px 18px; border-radius: 8px; margin: 18px 0;">
+        <p style="margin: 0; color: #999; font-size: 12px;">${typeLabel}</p>
+        <p style="margin: 5px 0 0; color: #00374B; font-size: 15px; font-weight: 700;">${assignmentTitle}</p>
+        ${dueDate ? `<p style="margin: 10px 0 0; color: #555; font-size: 13px;">Due date: <strong>${dueDate}</strong></p>` : ''}
+      </div>
+      <div style="text-align: center; margin: 26px 0;">
+        <a href="${learningUrl}"
+           style="background-color: #12B572; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block;">
+          Open Learning Centre
+        </a>
+      </div>
+    `,
+  });
+
+  await transporter.sendMail({
+    from: `"Audito" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: `Audito - ${typeLabel} Assigned`,
+    html,
+    attachments,
+  });
+};
+
+/**
  * Send contact form submission to team/admin and thank you to the user
  */
 const sendContactEmail = async ({ name, email, company, phone, country, message }) => {
@@ -366,6 +411,7 @@ module.exports = {
   sendLinkRequestEmail,
   sendOtpEmail,
   sendAuditAssignedEmail,
+  sendLearningAssignmentEmail,
   sendContactEmail,
   sendContactReplyEmail,
   sendCustomSolutionPriceEmail,

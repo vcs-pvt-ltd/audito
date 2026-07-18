@@ -31,7 +31,7 @@ interface Auditor {
 }
 
 interface Assignment {
-  assignment_id: number;
+  assignment_id: string;
   assigned_at: string;
   completed_at?: string | null;
   assignment_status: "assigned" | "completed";
@@ -45,6 +45,85 @@ interface Assignment {
 
 const inputClass = "w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/30 transition-all";
 
+const isDirectVideo = (url: string) => /\.(mp4|webm|ogg|mov)(?:[?#].*)?$/i.test(url);
+
+const getVideoEmbedUrl = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes("youtu.be")) return `https://www.youtube.com/embed/${parsed.pathname.slice(1)}?rel=0&playsinline=1`;
+    if (parsed.hostname.includes("youtube.com")) {
+      const id = parsed.searchParams.get("v") || parsed.pathname.split("/").filter(Boolean).pop();
+      return id ? `https://www.youtube.com/embed/${id}?rel=0&playsinline=1` : url;
+    }
+    if (parsed.hostname.includes("vimeo.com") && !parsed.hostname.includes("player.")) {
+      const id = parsed.pathname.split("/").filter(Boolean).pop();
+      return id ? `https://player.vimeo.com/video/${id}` : url;
+    }
+    if (parsed.hostname.includes("loom.com")) {
+      const id = parsed.pathname.split("/").filter(Boolean).pop();
+      return id ? `https://www.loom.com/embed/${id}` : url;
+    }
+    if (parsed.hostname.includes("wistia.com") || parsed.hostname.includes("wi.st")) {
+      const match = parsed.pathname.match(/(?:medias|embed\/medias)\/([^/?#]+)/);
+      return match ? `https://fast.wistia.net/embed/medias/${match[1]}` : url;
+    }
+    if (parsed.hostname.includes("drive.google.com")) {
+      const match = parsed.pathname.match(/\/d\/([^/]+)/);
+      return match ? `https://drive.google.com/file/d/${match[1]}/preview` : url;
+    }
+    if (parsed.hostname.includes("streamable.com")) {
+      const id = parsed.pathname.split("/").filter(Boolean).pop();
+      return id ? `https://streamable.com/e/${id}` : url;
+    }
+    if (parsed.hostname.includes("dailymotion.com") || parsed.hostname.includes("dai.ly")) {
+      const id = parsed.hostname.includes("dai.ly") ? parsed.pathname.slice(1) : parsed.pathname.split("/").filter(Boolean).pop();
+      return id ? `https://www.dailymotion.com/embed/video/${id}` : url;
+    }
+    if (parsed.hostname.includes("vidyard.com")) {
+      const id = parsed.pathname.split("/").filter(Boolean).pop();
+      return id ? `https://play.vidyard.com/${id}.html` : url;
+    }
+  } catch { /* Keep the configured video URL. */ }
+  return url;
+};
+
+function TrainingPreviewModal({ training, onClose }: { training: Training | null; onClose: () => void }) {
+  if (!training) return null;
+  const directVideo = isDirectVideo(training.video_url);
+
+  return (
+    <Modal
+      open={Boolean(training)}
+      onClose={onClose}
+      size="xl"
+      title={training.title}
+      description={`${training.platform || "Training video"}${training.duration_minutes ? ` · ${training.duration_minutes} minute${training.duration_minutes === 1 ? "" : "s"}` : ""}`}
+      bodyPadded={false}
+    >
+      <div className="aspect-video w-full overflow-hidden bg-black">
+        {directVideo ? (
+          <video src={training.video_url} controls playsInline className="h-full w-full" />
+        ) : (
+          <iframe
+            title={`Preview: ${training.title}`}
+            src={getVideoEmbedUrl(training.video_url)}
+            className="h-full w-full border-0"
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            allowFullScreen
+          />
+        )}
+      </div>
+      {!directVideo && (
+        <div className="flex items-center justify-between gap-3 border-t border-white/10 bg-white/[0.02] px-5 py-3 text-xs text-gray-400">
+          <span>Having trouble with this provider?</span>
+          <a href={training.video_url} target="_blank" rel="noreferrer" className="shrink-0 font-semibold text-secondary-400 hover:text-secondary-300">Open original video</a>
+        </div>
+      )}
+      {training.description && <div className="border-t border-white/10 px-5 py-4 text-sm leading-6 text-gray-400">{training.description}</div>}
+    </Modal>
+  );
+}
+
 function AssignModal({
   open,
   onClose,
@@ -53,10 +132,11 @@ function AssignModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onAssign: (codes: string[]) => Promise<void>;
+  onAssign: (codes: string[], sendEmail: boolean) => Promise<boolean>;
   auditors: Auditor[];
 }) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [sendEmail, setSendEmail] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const selectedCodes = useMemo(
@@ -65,7 +145,7 @@ function AssignModal({
   );
 
   useEffect(() => {
-    if (!open) setSelected({});
+    if (!open) { setSelected({}); setSendEmail(true); }
   }, [open]);
 
   return (
@@ -98,6 +178,11 @@ function AssignModal({
           )}
         </div>
 
+        <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 cursor-pointer">
+          <input type="checkbox" checked={sendEmail} onChange={(event) => setSendEmail(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0 cursor-pointer" />
+          <span><span className="block text-sm font-medium text-white">Send assignment email</span><span className="block mt-0.5 text-xs text-gray-500">Auditors will always receive an in-app notification.</span></span>
+        </label>
+
         <div className="flex gap-3 pt-2">
           <Button variant="secondary" fullWidth onClick={onClose}>Cancel</Button>
           <Button
@@ -106,9 +191,9 @@ function AssignModal({
             disabled={selectedCodes.length === 0}
             onClick={async () => {
               setLoading(true);
-              await onAssign(selectedCodes);
+              const assigned = await onAssign(selectedCodes, sendEmail);
               setLoading(false);
-              onClose();
+              if (assigned) onClose();
             }}
           >
             {loading ? "Assigning..." : `Assign (${selectedCodes.length})`}
@@ -124,11 +209,13 @@ function ViewAssignmentsModal({
   onClose,
   assignments,
   title,
+  onDelete,
 }: {
   open: boolean;
   onClose: () => void;
   assignments: Assignment[];
   title: string;
+  onDelete: (assignment: Assignment) => Promise<void>;
 }) {
   return (
     <Modal
@@ -147,6 +234,7 @@ function ViewAssignmentsModal({
                   <th className="px-4 py-3 text-gray-400 font-medium">Auditor</th>
                   <th className="px-4 py-3 text-gray-400 font-medium text-center">Status</th>
                   <th className="px-4 py-3 text-gray-400 font-medium text-right">Date</th>
+                  <th className="px-4 py-3 text-gray-400 font-medium text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -171,12 +259,17 @@ function ViewAssignmentsModal({
                       <td className="px-4 py-4 text-right">
                         <p className="text-xs text-gray-400">{a.assigned_at ? new Date(a.assigned_at).toLocaleDateString() : "—"}</p>
                       </td>
+                      <td className="px-4 py-4 text-right">
+                        {isCompleted ? <span className="text-[10px] text-gray-500">Locked</span> : (
+                          <button onClick={() => onDelete(a)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Remove pending assignment"><Trash2 size={15} /></button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
                 {assignments.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-20 text-center text-gray-500 italic">No assignments yet.</td>
+                    <td colSpan={5} className="py-20 text-center text-gray-500 italic">No assignments yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -198,6 +291,7 @@ export default function AuditFirmTrainingsPage() {
 
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignTrainingId, setAssignTrainingId] = useState<string | null>(null);
+  const [previewTraining, setPreviewTraining] = useState<Training | null>(null);
 
   const [viewAssignmentsId, setViewAssignmentsId] = useState<string | null>(null);
   const [viewAssignmentsOpen, setViewAssignmentsOpen] = useState(false);
@@ -287,6 +381,24 @@ export default function AuditFirmTrainingsPage() {
     }
   };
 
+  const handleAssignmentDelete = async (assignment: Assignment) => {
+    if (!accessToken || !viewAssignmentsId || assignment.assignment_status !== "assigned") return;
+    const ok = await confirm({
+      title: "Remove Assignment",
+      message: `Remove the pending training assignment for ${assignment.auditor_first_name} ${assignment.auditor_last_name}?`,
+      confirmText: "Remove",
+      variant: "warning",
+    });
+    if (!ok) return;
+    const res = await auditFirmLearningApi.deleteTrainingAssignment(accessToken, viewAssignmentsId, assignment.assignment_id);
+    if (res.success) {
+      toast("Pending training assignment removed.", "success");
+      await load();
+    } else {
+      toast(res.message || "Failed to remove training assignment.", "error");
+    }
+  };
+
   return (
     <div className="p-6 lg:p-8 pt-20 lg:pt-8 space-y-6 overflow-y-auto h-full">
       {/* Header */}
@@ -360,7 +472,6 @@ export default function AuditFirmTrainingsPage() {
                 <THead>
                   <Th align="center" className="w-12">#</Th>
                   <Th className="w-[40%]">Title</Th>
-                  <Th className="w-[15%]">Organization</Th>
                   <Th className="w-28">Platform</Th>
                   <Th align="center" className="w-24">Duration</Th>
                   <Th align="center" className="w-20">Assigned</Th>
@@ -380,16 +491,7 @@ export default function AuditFirmTrainingsPage() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          {t.entity_name ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
-                              <Building2 size={12} className="text-gray-500 shrink-0" />
-                              <span className="truncate max-w-[120px]">{t.entity_name}</span>
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-600">—</span>
-                          )}
-                        </td>
+                       
                         <td className="px-4 py-4">
                           <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] text-gray-300">
                             {t.platform || "Video"}
@@ -408,15 +510,13 @@ export default function AuditFirmTrainingsPage() {
                         </td>
                         <td className="px-4 py-4 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <a
-                              href={t.video_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all font-medium text-xs"
-                              title="Watch Link"
+                            <button
+                              onClick={() => setPreviewTraining(t)}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all"
+                              title="Preview training"
                             >
                                <Play size={15} />
-                            </a>
+                            </button>
                             <button
                               onClick={() => {
                                 setViewAssignmentsId(t.training_id);
@@ -491,14 +591,13 @@ export default function AuditFirmTrainingsPage() {
                   </div>
 
                   <div className="mt-3 flex items-center justify-end gap-1 pt-3 border-t border-white/5">
-                      <a
-                        href={t.video_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-2 rounded-lg text-gray-400 hover:text-secondary-400"
+                      <button
+                        onClick={() => setPreviewTraining(t)}
+                        className="p-2 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10"
+                        title="Preview training"
                       >
                         <Play size={15} />
-                      </a>
+                      </button>
                       <button
                         onClick={() => {
                           setViewAssignmentsId(t.training_id);
@@ -554,10 +653,16 @@ export default function AuditFirmTrainingsPage() {
         open={assignOpen}
         onClose={() => setAssignOpen(false)}
         auditors={auditors}
-        onAssign={async (codes) => {
-          if (!accessToken || !assignTrainingId) return;
-          await auditFirmLearningApi.assignTraining(accessToken, assignTrainingId, codes);
+        onAssign={async (codes, sendEmail) => {
+          if (!accessToken || !assignTrainingId) return false;
+          const res = await auditFirmLearningApi.assignTraining(accessToken, assignTrainingId, codes, sendEmail);
+          if (!res.success) {
+            toast(res.message || "Failed to assign training.", "error");
+            return false;
+          }
+          toast(`Training assigned to ${codes.length} auditor${codes.length === 1 ? "" : "s"}.`, "success");
           await load();
+          return true;
         }}
       />
 
@@ -566,7 +671,10 @@ export default function AuditFirmTrainingsPage() {
         onClose={() => setViewAssignmentsOpen(false)}
         assignments={filteredAssignments}
         title={selectedTraining?.title || ""}
+        onDelete={handleAssignmentDelete}
       />
+
+      <TrainingPreviewModal training={previewTraining} onClose={() => setPreviewTraining(null)} />
     </div>
   );
 }

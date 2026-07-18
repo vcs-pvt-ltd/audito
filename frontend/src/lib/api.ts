@@ -894,6 +894,12 @@ export const timezonesApi = {
         seen.add(tz.timezone_value);
         return true;
       })
+      .map((tz) => ({
+        ...tz,
+        timezone_value: String(tz.timezone_value),
+        timezone_label: String(tz.timezone_label || tz.timezone_value),
+        timezone_offset: String(tz.timezone_offset || ""),
+      }))
       .sort((a, b) => a.timezone_label.localeCompare(b.timezone_label));
   },
 };
@@ -929,6 +935,7 @@ export const settingsApi = {
 
 export const noticeApi = {
   getMyNotices: (token: string) => apiRequest<{ notices: unknown[] }>('/notices', { token }),
+  markAllRead: (token: string) => apiRequest('/notices/read-all', { method: 'PATCH', token }),
   markRead: (token: string, id: string) =>
     apiRequest(`/notices/${id}/read`, { method: 'PATCH', token }),
   markUnread: (token: string, id: string) =>
@@ -1042,14 +1049,16 @@ export const learningApi = {
   createTraining: (token: string, body: Record<string, any>) => apiRequest('/learning/trainings', { method: 'POST', body, token }),
   updateTraining: (token: string, id: string, body: Record<string, any>) => apiRequest(`/learning/trainings/${id}`, { method: 'PUT', body, token }),
   deleteTraining: (token: string, id: string) => apiRequest(`/learning/trainings/${id}`, { method: 'DELETE', token }),
-  assignTraining: (token: string, id: string, auditor_codes: string[]) => apiRequest(`/learning/trainings/${id}/assign`, { method: 'POST', body: { auditor_codes }, token }),
+  assignTraining: (token: string, id: string, auditor_codes: string[], send_assignment_email = true) => apiRequest(`/learning/trainings/${id}/assign`, { method: 'POST', body: { auditor_codes, send_assignment_email }, token }),
+  deleteTrainingAssignment: (token: string, id: string, assignmentId: string) => apiRequest(`/learning/trainings/${id}/assignments/${assignmentId}`, { method: 'DELETE', token }),
 
   // Field visits
   listFieldVisits: (token: string) => apiRequest('/learning/field-visits', { token }),
   createFieldVisit: (token: string, body: Record<string, any>) => apiRequest('/learning/field-visits', { method: 'POST', body, token }),
   updateFieldVisit: (token: string, id: string, body: Record<string, any>) => apiRequest(`/learning/field-visits/${id}`, { method: 'PUT', body, token }),
   deleteFieldVisit: (token: string, id: string) => apiRequest(`/learning/field-visits/${id}`, { method: 'DELETE', token }),
-  assignFieldVisit: (token: string, id: string, auditor_codes: string[]) => apiRequest(`/learning/field-visits/${id}/assign`, { method: 'POST', body: { auditor_codes }, token }),
+  assignFieldVisit: (token: string, id: string, auditor_codes: string[], send_assignment_email = true) => apiRequest(`/learning/field-visits/${id}/assign`, { method: 'POST', body: { auditor_codes, send_assignment_email }, token }),
+  deleteFieldVisitAssignment: (token: string, id: string, assignmentId: string) => apiRequest(`/learning/field-visits/${id}/assignments/${assignmentId}`, { method: 'DELETE', token }),
 
   // Evaluation papers
   listEvaluationPapers: (token: string) => apiRequest('/learning/evaluation-papers', { token }),
@@ -1099,7 +1108,8 @@ export const learningApi = {
     });
     return res.json();
   },
-  assignEvaluationPaper: (token: string, id: string, auditor_codes: string[], due_date?: string) => apiRequest(`/learning/evaluation-papers/${id}/assign`, { method: 'POST', body: { auditor_codes, due_date }, token }),
+  assignEvaluationPaper: (token: string, id: string, auditor_codes: string[], due_date?: string, send_assignment_email = true) => apiRequest(`/learning/evaluation-papers/${id}/assign`, { method: 'POST', body: { auditor_codes, due_date, send_assignment_email }, token }),
+  deleteEvaluationAssignment: (token: string, id: string, assignmentId: string) => apiRequest(`/learning/evaluation-papers/${id}/assignments/${assignmentId}`, { method: 'DELETE', token }),
 };
 
 // Backward-compatible alias for existing imports; can be removed after UI refactor.
@@ -1108,6 +1118,8 @@ export const auditFirmLearningApi = learningApi;
 export const myLearningApi = {
   // Trainings
   myTrainings: (token: string) => apiRequest('/my-learning/trainings', { token }),
+  saveTrainingProgress: (token: string, assignmentId: string, action: "start" | "heartbeat" | "pause", playback_position_seconds = 0) =>
+    apiRequest(`/my-learning/trainings/${assignmentId}/progress`, { method: 'POST', body: { action, playback_position_seconds }, token }),
   completeTraining: (token: string, assignmentId: string) => apiRequest(`/my-learning/trainings/${assignmentId}/complete`, { method: 'POST', token }),
 
   // Field visits
@@ -1117,6 +1129,7 @@ export const myLearningApi = {
   // Evaluation papers
   myEvaluationPapers: (token: string) => apiRequest('/my-learning/evaluation-papers', { token }),
   getEvaluationPaper: (token: string, paperId: string) => apiRequest(`/my-learning/evaluation-papers/${paperId}`, { token }),
+  startEvaluationPaper: (token: string, paperId: string) => apiRequest(`/my-learning/evaluation-papers/${paperId}/start`, { method: 'POST', token }),
   submitEvaluationPaper: (
     token: string,
     paperId: string,

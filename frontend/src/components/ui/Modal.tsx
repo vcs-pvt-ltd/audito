@@ -22,6 +22,8 @@ export interface ModalProps {
   icon?: React.ReactNode;
   size?: Size;
   footer?: React.ReactNode;
+  /** Optional compact actions rendered in the modal header before the close button. */
+  headerActions?: React.ReactNode;
   hideClose?: boolean;
   /** Apply default padding to the body. Set false when the body manages its own layout. */
   bodyPadded?: boolean;
@@ -40,6 +42,7 @@ export default function Modal({
   icon,
   size = "md",
   footer,
+  headerActions,
   hideClose = false,
   bodyPadded = true,
   children,
@@ -62,11 +65,14 @@ export default function Modal({
                 {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}
               </div>
             </div>
-            {!hideClose && (
-              <IconButton onClick={onClose} aria-label="Close" className="shrink-0">
-                <X size={20} />
-              </IconButton>
-            )}
+            <div className="flex shrink-0 items-center gap-2">
+              {headerActions}
+              {!hideClose && (
+                <IconButton onClick={onClose} aria-label="Close">
+                  <X size={20} />
+                </IconButton>
+              )}
+            </div>
           </div>
         )}
 

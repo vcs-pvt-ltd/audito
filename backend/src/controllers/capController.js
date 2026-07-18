@@ -23,6 +23,7 @@ const AuditModel = require('../models/AuditModel');
 const EntityHeadModel = require('../models/EntityHeadModel');
 const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
+const NotificationModel = require('../models/NotificationModel');
 const { db } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const {
@@ -36,6 +37,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { generateAuditId, generateCapId, generateCapEntityProgressIds, generateCapResponseId, generateCapResponseEvidenceId } = require('../utils/codeGenerator');
+const { MAX_EVIDENCE_BYTES, getEvidenceMediaType, getEvidencePolicy } = require('../utils/evidencePolicy');
 
 const ENTITY_TABLE_MAP = {
   'Customer': { table: 'customers', codeField: 'cust_code' },
@@ -69,6 +71,47 @@ const fileFilter = (req, file, cb) => {
 };
 
 const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 1024 } });
+
+async function notifyCapCreated({ capId, capTitle, audit, entities, parentCapId, creator }) {
+  const type = parentCapId ? 'sub_cap_created' : 'cap_created';
+  const label = parentCapId ? 'Sub-CAP' : 'CAP';
+  const message = `${label} "${capTitle}" has been created for audit "${audit.title || audit.audit_code || audit.audit_id}".`;
+  const createdByEntityCode = audit.created_by || creator?.entityCode || null;
+  const recipients = new Map();
+
+  // Notify the workspace admin who owns the source audit.
+  const auditAdmin = audit.created_by ? await AdminModel.findByEntityCode(audit.created_by) : null;
+  if (auditAdmin?.admin_id) recipients.set(`admin:${auditAdmin.admin_id}`, { userCode: auditAdmin.admin_id, role: 'admin' });
+  else if (creator?.role === 'admin' && creator.userCode) recipients.set(`admin:${creator.userCode}`, { userCode: creator.userCode, role: 'admin' });
+
+  // Notify every active entity head responsible for a CAP target. Fall back to entity-code assignments
+  // where a target is not represented by an organization-tree node.
+  const orgTreeIds = [...new Set((entities || []).map((entity) => entity.org_tree_id).filter(Boolean))];
+  const heads = await EntityHeadModel.findByOrgTreeIds(orgTreeIds);
+  const headCodes = new Set(heads.map((head) => head.entity_head_id));
+  for (const entityCode of [...new Set((entities || []).map((entity) => entity.entity_code).filter(Boolean))]) {
+    const entityHeads = await EntityHeadModel.findByEntityCode(entityCode);
+    for (const head of entityHeads) {
+      if (!headCodes.has(head.entity_head_id)) heads.push(head);
+    }
+  }
+  for (const head of heads) {
+    if (head?.entity_head_id) recipients.set(`entity_head:${head.entity_head_id}`, { userCode: head.entity_head_id, role: 'entity_head' });
+  }
+
+  for (const recipient of recipients.values()) {
+    await NotificationModel.createIfNotExists({
+      recipient_user_code: recipient.userCode,
+      recipient_role: recipient.role,
+      created_by_entity_code: createdByEntityCode,
+      type,
+      title: `${label} Created`,
+      message,
+      audit_id: audit.audit_id,
+      notification_key: `${type}:${capId}:${recipient.role}:${recipient.userCode}`,
+    });
+  }
+}
 
 // ── POST /api/caps ────────────────────────────────────────────────
 /**
@@ -135,6 +178,19 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
         throw seedErr;
       }
       await CapModel.updateCapStatus(cap_id, 'plan');
+      try {
+        const subCapEntities = await CapModel.getCapEntities(cap_id);
+        await notifyCapCreated({
+          capId: cap_id,
+          capTitle: title || 'Sub-CAP',
+          audit,
+          entities: subCapEntities,
+          parentCapId,
+          creator: req.user,
+        });
+      } catch (notificationError) {
+        console.error('notifySubCapCreated error:', notificationError);
+      }
       return successResponse(res, { cap_id, parent_cap_id: parentCapId }, 'Sub-CAP plan created successfully.');
     }
 
@@ -148,28 +204,45 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
       return errorResponse(res, 'No corrective actions found for this audit.', 400);
     }
 
-    // 1. Identify all targeted entity instances (expand generic ones if needed)
+    // 1. Identify all targeted entity instances (expand generic ones if needed).
+    // CAP assignment entities must retain the organization-tree edge ID. Entity
+    // codes can be reused at different locations in an organization, so the code
+    // by itself is not a safe instance identifier.
+    const [auditEntityInstances] = await db.query(
+      `SELECT entity_code, org_tree_id, entity_type
+         FROM audit_assignment_entities
+        WHERE audit_id = ? AND is_active = 1`,
+      [audit_id]
+    );
+    const auditInstancesByEntity = new Map();
+    for (const instance of auditEntityInstances) {
+      if (!auditInstancesByEntity.has(instance.entity_code)) {
+        auditInstancesByEntity.set(instance.entity_code, []);
+      }
+      auditInstancesByEntity.get(instance.entity_code).push(instance);
+    }
+
     const entityInstanceMap = new Map();
     for (const ca of correctiveActions) {
-      if (ca.org_tree_id) {
-        const k = `${ca.entity_code}__${ca.org_tree_id}`;
+      const correctiveActionOrgTreeId = ca.org_tree_id ?? ca.assigned_org_tree_id ?? null;
+      const matchingAuditInstances = auditInstancesByEntity.get(ca.entity_code) || [];
+
+      if (correctiveActionOrgTreeId !== null && correctiveActionOrgTreeId !== undefined && correctiveActionOrgTreeId !== '') {
+        const k = `${ca.entity_code}__${correctiveActionOrgTreeId}`;
         if (!entityInstanceMap.has(k)) {
-          const [entRows] = await db.query(
-            `SELECT entity_type FROM audit_assignment_entities WHERE audit_id = ? AND entity_code = ? AND org_tree_id = ? LIMIT 1`,
-            [audit_id, ca.entity_code, ca.org_tree_id]
+          const matchedInstance = matchingAuditInstances.find(
+            (instance) => String(instance.org_tree_id ?? '') === String(correctiveActionOrgTreeId)
           );
           entityInstanceMap.set(k, {
             entity_code: ca.entity_code,
-            org_tree_id: ca.org_tree_id,
-            entity_type: entRows[0]?.entity_type || '',
+            org_tree_id: correctiveActionOrgTreeId,
+            entity_type: matchedInstance?.entity_type || '',
           });
         }
       } else {
-        const [allInstances] = await db.query(
-          `SELECT DISTINCT entity_code, org_tree_id, entity_type FROM audit_assignment_entities WHERE audit_id = ? AND entity_code = ? AND is_active = 1`,
-          [audit_id, ca.entity_code]
-        );
-        for (const inst of allInstances) {
+        // Older corrective actions can lack an edge ID. Expand them to every
+        // matching audit entity instance, preserving each instance's org_tree_id.
+        for (const inst of matchingAuditInstances) {
           const k = `${inst.entity_code}__${inst.org_tree_id ?? 'null'}`;
           if (!entityInstanceMap.has(k)) {
             entityInstanceMap.set(k, {
@@ -208,6 +281,19 @@ const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 
 
     // New CAP starts in plan, then moves to in_progress once responses begin.
     await CapModel.updateCapStatus(cap_id, 'plan');
+
+    try {
+      await notifyCapCreated({
+        capId: cap_id,
+        capTitle: title || `CAP for ${audit.audit_code}`,
+        audit,
+        entities,
+        parentCapId: null,
+        creator: req.user,
+      });
+    } catch (notificationError) {
+      console.error('notifyCapCreated error:', notificationError);
+    }
 
     return successResponse(res, { cap_id }, 'CAP plan created successfully.');
   } catch (err) {
@@ -343,6 +429,7 @@ const getCapDetail = async (req, res) => {
     const isCreator = req.user.role === 'admin' && cap.created_by === req.user.userCode;
     // Auditor: if they were assigned to the original audit
     const audit = await AuditModel.findById(cap.audit_id);
+    cap.evidence_policy = await getEvidencePolicy(audit?.created_by);
     const isAuditor = req.user.role === 'auditor' && audit?.assigned_auditor_id === req.user.userCode;
     const scopeIds = req.user.role === 'entity_head'
       ? await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId)
@@ -716,18 +803,31 @@ const createFollowUpAudit = async (req, res) => {
 const uploadCapEvidence = async (req, res) => {
   try {
     const { id } = req.params;
-    const { response_id, file_type } = req.body;
+    const { response_id } = req.body;
 
     if (!req.file) return errorResponse(res, 'No file uploaded.', 400);
     if (!response_id) return errorResponse(res, 'response_id is required.', 400);
 
-    const relativePath = `/uploads/cap-evidence/${req.file.filename}`;
+    const discardUploadedFile = () => {
+      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    };
+    const cap = await CapModel.getCapById(id);
+    if (!cap) {
+      discardUploadedFile();
+      return errorResponse(res, 'CAP not found.', 404);
+    }
+    const audit = await AuditModel.findById(cap.audit_id);
+    if (req.user.role === 'auditor' && audit?.assigned_auditor_id !== req.user.userCode) {
+      discardUploadedFile();
+      return errorResponse(res, 'Not authorized to upload evidence for this CAP.', 403);
+    }
+
     const responseId = response_id;
     const capId = id;
     
     // Auth check
     const [rows] = await db.query(
-      `SELECT cr.cap_response_id
+      `SELECT cr.cap_response_id, cq.org_tree_id
          FROM cap_responses cr
          JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id
         WHERE cr.cap_response_id = ? AND cq.cap_id = ?
@@ -735,13 +835,38 @@ const uploadCapEvidence = async (req, res) => {
       [responseId, capId]
     );
     if (!rows.length) {
+      discardUploadedFile();
       return errorResponse(res, 'CAP response not found for this CAP.', 404);
     }
+    if (req.user.role === 'entity_head') {
+      const scopeIds = await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId);
+      if (rows[0].org_tree_id == null || !scopeIds.includes(rows[0].org_tree_id)) {
+        discardUploadedFile();
+        return errorResponse(res, 'Not authorized to upload evidence for this CAP response.', 403);
+      }
+    }
+
+    const mediaType = getEvidenceMediaType(req.file.mimetype);
+    const evidencePolicy = await getEvidencePolicy(audit?.created_by);
+    if (!mediaType || !evidencePolicy.allowed_media_types.includes(mediaType)) {
+      discardUploadedFile();
+      return errorResponse(res, `${evidencePolicy.plan_name} plan allows image evidence only.`, 403);
+    }
+    if (req.file.size > MAX_EVIDENCE_BYTES) {
+      discardUploadedFile();
+      return errorResponse(res, 'Evidence file must be 2MB or less.', 400);
+    }
+    if ((await CapModel.getEvidence(responseId)).length > 0) {
+      discardUploadedFile();
+      return errorResponse(res, 'Only one evidence file is allowed for each response.', 409);
+    }
+
+    const relativePath = `/uploads/cap-evidence/${req.file.filename}`;
 
     const evidenceId = await CapModel.addEvidence({
       cap_response_evidence_id: await generateCapResponseEvidenceId(),
       cap_response_id: responseId,
-      file_type: file_type || 'image',
+      file_type: mediaType,
       file_path: relativePath,
       file_name: req.file.originalname,
       file_size: req.file.size,
@@ -752,6 +877,7 @@ const uploadCapEvidence = async (req, res) => {
       res,
       {
         id: evidenceId,
+        file_type: mediaType,
         file_path: relativePath,
         file_name: req.file.originalname,
         file_size: req.file.size,

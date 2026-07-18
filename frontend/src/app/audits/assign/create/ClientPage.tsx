@@ -74,7 +74,7 @@ export default function AssignAuditPage() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [selectedAuditorCode, setSelectedAuditorCode] = useState("");
   const [selectedFirmCode, setSelectedFirmCode] = useState("");
-  const [sendAssignmentEmail, setSendAssignmentEmail] = useState(false);
+  const [sendAssignmentEmail, setSendAssignmentEmail] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 

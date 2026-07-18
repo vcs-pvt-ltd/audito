@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import CompleteAuditModal, { EntityProgress } from "@/components/audit/CompleteAuditModal";
 import { Button, IconButton } from "@/components/ui";
+import ChecklistMediaPreview from "@/components/checklist/ChecklistMediaPreview";
 
 // --- Components ---
 
@@ -266,6 +267,14 @@ function MyAuditDetailsContent() {
                     <p className="text-xs text-gray-400 leading-relaxed italic">{audit.notes}</p>
                   </div>
                 )}
+                {audit.checklist_media_path && (
+                  <div className="text-left">
+                    <ChecklistMediaPreview
+                      mediaPath={audit.checklist_media_path}
+                      label="Checklist reference"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -332,7 +341,7 @@ function MyAuditDetailsContent() {
               className={`w-full glass rounded-3xl p-6 border transition-all flex flex-col items-center justify-center text-center group border-white/10 hover:border-secondary-500/30 cursor-pointer`}
             >
               <ClipboardList size={32} className={`${isCompleted ? "text-gray-500 group-hover:text-secondary-400" : "text-gray-700"} mb-2 transition-colors`} />
-              <h4 className={`text-[10px] font-bold uppercase tracking-widest transition-colors ${isCompleted ? "text-gray-400 group-hover:text-white" : "text-gray-600"}`}>CAP Actions</h4>
+              <h4 className={`text-[10px] font-bold uppercase tracking-widest transition-colors ${isCompleted ? "text-gray-400 group-hover:text-white" : "text-gray-600"}`}>Corrective Actions</h4>
               <p className="text-[10px] text-gray-600 mt-2">
                 {isCompleted ? "Manage findings & resolutions" : "Available after completion"}
               </p>

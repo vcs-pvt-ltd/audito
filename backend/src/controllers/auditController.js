@@ -248,21 +248,23 @@ const createAudit = async (req, res) => {
         }
 
         await NotificationModel.createIfNotExists({
-          auditor_id: assigned_auditor_id,
+          recipient_user_code: assigned_auditor_id,
+          recipient_role: 'auditor',
           created_by_entity_code: req.user.entityCode,
           type: 'audit_assigned',
           title: 'New Audit Assigned',
-          message: `${audit_code} assigned${title ? `: ${title}` : ''}. Start: ${start_date}`,
+          message: `You have been assigned${title ? `: ${title}` : ' a new audit'}. Start: ${start_date}`,
           audit_id: id,
           notify_date: null,
           notification_key: `audit_assigned:${id}:${assigned_auditor_id}`,
         });
         await NotificationModel.createIfNotExists({
-          auditor_id: assigned_auditor_id,
+          recipient_user_code: assigned_auditor_id,
+          recipient_role: 'auditor',
           created_by_entity_code: req.user.entityCode,
           type: 'audit_start',
           title: 'Audit Start Reminder',
-          message: `${audit_code} starts today${title ? `: ${title}` : ''}.`,
+          message: `${title ? `: ${title}` : ''} starts today.`,
           audit_id: id,
           notify_date: start_date,
           notification_key: `audit_start:${id}:${assigned_auditor_id}:${start_date}`,
@@ -474,26 +476,28 @@ const updateAudit = async (req, res) => {
         }
 
         await NotificationModel.createIfNotExists({
-          auditor_id: assigned_auditor_id,
+          recipient_user_code: assigned_auditor_id,
+          recipient_role: 'auditor',
           created_by_entity_code: audit.created_by,
           type: 'audit_assigned',
           title: 'New Audit Assigned',
-          message: `${(updated && updated.audit_code) || audit.audit_code || `AUD-${id}`} assigned${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''}. Start: ${(updated && updated.start_date) || audit.start_date}`,
+          message: `assigned${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''}. Start: ${(updated && updated.start_date) || audit.start_date}`,
           audit_id: id,
           notify_date: null,
           notification_key: `audit_assigned:${id}:${assigned_auditor_id}`,
         });
         await NotificationModel.createIfNotExists({
-          auditor_id: assigned_auditor_id,
+          recipient_user_code: assigned_auditor_id,
+          recipient_role: 'auditor',
           created_by_entity_code: audit.created_by,
           type: 'audit_start',
           title: 'Audit Start Reminder',
-          message: `${(updated && updated.audit_code) || audit.audit_code || `AUD-${id}`} starts today${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''}.`,
+          message: `${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''} starts today.`,
           audit_id: id,
           notify_date: (updated && updated.start_date) || audit.start_date || null,
           notification_key: `audit_start:${id}:${assigned_auditor_id}:${(updated && updated.start_date) || audit.start_date || ''}`,
         });
-        await NotificationModel.deleteByAuditForOtherAuditors(id, assigned_auditor_id);
+        await NotificationModel.deleteByAuditForOtherRecipients(id, assigned_auditor_id);
       } catch (e) {
         console.error('sendAuditAssignedEmail error:', e);
       }
@@ -576,26 +580,28 @@ const updateAudit = async (req, res) => {
         }
 
         await NotificationModel.createIfNotExists({
-          auditor_id: nextAssignedAuditor,
+          recipient_user_code: nextAssignedAuditor,
+          recipient_role: 'auditor',
           created_by_entity_code: audit.created_by,
           type: 'audit_assigned',
           title: 'New Audit Assigned',
-          message: `${(updated && updated.audit_code) || audit.audit_code || `AUD-${id}`} assigned${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''}. Start: ${(updated && updated.start_date) || audit.start_date}`,
+          message: `You have been assigned${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ' a new audit'}. Start: ${(updated && updated.start_date) || audit.start_date}`,
           audit_id: id,
           notify_date: null,
           notification_key: `audit_assigned:${id}:${nextAssignedAuditor}`,
         });
         await NotificationModel.createIfNotExists({
-          auditor_id: nextAssignedAuditor,
+          recipient_user_code: nextAssignedAuditor,
+          recipient_role: 'auditor',
           created_by_entity_code: audit.created_by,
           type: 'audit_start',
           title: 'Audit Start Reminder',
-          message: `${(updated && updated.audit_code) || audit.audit_code || `AUD-${id}`} starts today${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''}.`,
+          message: `${(updated && updated.title) || audit.title ? `: ${(updated && updated.title) || audit.title}` : ''} starts today.`,
           audit_id: id,
           notify_date: (updated && updated.start_date) || audit.start_date || null,
           notification_key: `audit_start:${id}:${nextAssignedAuditor}:${(updated && updated.start_date) || audit.start_date || ''}`,
         });
-        await NotificationModel.deleteByAuditForOtherAuditors(id, nextAssignedAuditor);
+        await NotificationModel.deleteByAuditForOtherRecipients(id, nextAssignedAuditor);
       } catch (e) {
         console.error('sendAuditAssignedEmail error:', e);
       }

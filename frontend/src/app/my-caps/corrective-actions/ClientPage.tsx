@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { capApi } from "@/lib/api";
 import {
   AlertCircle,
@@ -118,12 +119,13 @@ function pruneTreeByEntitiesWithItems(node: TreeNode, entityKeys: Set<string>): 
 // ─── Entity Node ──────────────────────────────────────────────────
 
 function EntityNode({
-  node, depth, itemsByEntity, assignments, onChange,
+  node, depth, itemsByEntity, assignments, onChange, showDueDateErrors,
 }: {
   node: TreeNode; depth: number;
   itemsByEntity: Record<string, SubCapRequiredItem[]>;
   assignments: Record<string, { due_date: string }>;
   onChange: (responseId: string, patch: Partial<{ due_date: string }>) => void;
+  showDueDateErrors: boolean;
 }) {
   const entityKey = `${node.code}__${(node as any).edge_id ?? "null"}`;
   const entityItems = itemsByEntity[entityKey] || [];
@@ -195,22 +197,21 @@ function EntityNode({
               {entityItems.map((it, idx) => {
                 const a = assignments[it.response_id] || { due_date: "" };
                 const head = it.responsible_entity_head;
+                const dueDateMissing = showDueDateErrors && !a.due_date;
                 return (
                   <div key={it.response_id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
                     <div className="flex items-center gap-2 px-3 py-2.5 bg-orange-500/[0.04] border-b border-orange-500/[0.08]">
                       <span className="shrink-0 w-5 h-5 rounded-md bg-orange-500/15 border border-orange-500/20 flex items-center justify-center text-orange-400 text-[10px] font-bold">
                         {idx + 1}
                       </span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-orange-500/70 flex items-center gap-1">
-                        <AlertCircle size={10} /> Q{it.order_index}
-                      </span>
+                                           <p className="text-sm text-gray-200 leading-relaxed">{it.question_text}</p>
+
                       <span className="ml-auto text-[9px] font-bold text-orange-500/50 uppercase tracking-widest px-1.5 py-0.5 rounded bg-orange-500/5 border border-orange-500/10">
                         Sub-CAP Required
                       </span>
                     </div>
 
                     <div className="p-3 sm:p-4 space-y-3">
-                      <p className="text-sm text-gray-200 leading-relaxed">{it.question_text}</p>
 
                       {it.ca_description && (
                         <div className="flex gap-2 px-3 py-2.5 rounded-lg bg-orange-500/[0.05] border border-orange-500/[0.12]">
@@ -255,9 +256,11 @@ function EntityNode({
                               type="date"
                               value={a.due_date}
                               onChange={e => onChange(it.response_id, { due_date: e.target.value })}
-                              className="w-full pl-8 pr-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-secondary-500/40 focus:ring-1 focus:ring-secondary-500/20 transition-all"
+                              aria-invalid={dueDateMissing}
+                              className={`w-full rounded-lg border bg-white/[0.05] py-2 pl-8 pr-3 text-xs text-white transition-all focus:outline-none focus:ring-1 ${dueDateMissing ? "border-red-500/60 focus:border-red-400 focus:ring-red-500/20" : "border-white/10 focus:border-secondary-500/40 focus:ring-secondary-500/20"}`}
                             />
                           </div>
+                          {dueDateMissing && <p className="mt-1.5 text-[11px] font-medium text-red-400">Due date is required.</p>}
                         </div>
                       </div>
                     </div>
@@ -271,7 +274,7 @@ function EntityNode({
             <EntityNode
               key={`${child.code}__${(child as any).edge_id ?? "null"}`}
               node={child} depth={depth + 1}
-              itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange}
+              itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange} showDueDateErrors={showDueDateErrors}
             />
           ))}
         </div>
@@ -284,6 +287,7 @@ function EntityNode({
 
 export default function CapCorrectiveActionsPage() {
   const { admin, accessToken, isLoading } = useAuth();
+  const { toast } = useUiFeedback();
   const router = useRouter();
   const searchParams = useSearchParams();
   const capId = searchParams.get("id") as string;
@@ -301,7 +305,8 @@ export default function CapCorrectiveActionsPage() {
   const [subCapTitle, setSubCapTitle] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
+  const [validationError, setValidationError] = useState("");
+  const [showDueDateErrors, setShowDueDateErrors] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -316,6 +321,11 @@ export default function CapCorrectiveActionsPage() {
     }
     return map;
   }, [items]);
+
+  const missingDueDateCount = useMemo(
+    () => items.filter((item) => !assignments[item.response_id]?.due_date).length,
+    [assignments, items]
+  );
 
   const load = useCallback(async () => {
     if (!accessToken || !capId) return;
@@ -333,8 +343,10 @@ export default function CapCorrectiveActionsPage() {
       }
 
       if (subCapsRes.success && subCapsRes.data) {
-        const subCapsData = subCapsRes.data as { caps?: (SubCapSummary & { parent_cap_id?: number | null })[] };
-        const subs = (subCapsData.caps || []).filter(c => c.parent_cap_id === Number(capId));
+        const subCapsData = subCapsRes.data as { caps?: (SubCapSummary & { parent_cap_id?: string | null })[] };
+        const subs = (subCapsData.caps || []).filter(
+          (subCap) => String(subCap.parent_cap_id ?? "") === String(capId)
+        );
         setExistingSubCap(subs[0] || null);
       }
 
@@ -373,14 +385,20 @@ export default function CapCorrectiveActionsPage() {
   useEffect(() => { load(); }, [load]);
 
   const onChange = (responseId: string, patch: Partial<{ due_date: string }>) => {
+    setValidationError("");
     setAssignments(prev => ({ ...prev, [responseId]: { due_date: prev[responseId]?.due_date || "", ...patch } }));
   };
 
   const handleSave = async () => {
     if (!accessToken) return;
+    if (missingDueDateCount > 0) {
+      setShowDueDateErrors(true);
+      setValidationError("Due date is required for every corrective action.");
+      return;
+    }
     setSaving(true);
     setError("");
-    setToast("");
+    setValidationError("");
     const actions = items.map(it => ({
       response_id: String(it.response_id),
       entity_code: it.entity_code,
@@ -391,18 +409,19 @@ export default function CapCorrectiveActionsPage() {
     const res = await capApi.saveCorrectiveActions(accessToken, capId, actions);
     setSaving(false);
     if (res.success) {
-      setToast("Corrective actions saved.");
+      setShowDueDateErrors(false);
+      toast("Corrective actions saved.", "success");
       setSaved(true);
-      setTimeout(() => setToast(""), 4000);
       await load();
     } else {
       setError(res.message || "Failed to save.");
+      toast(res.message || "Failed to save corrective actions.", "error");
     }
   };
 
   const handleCreateSubCap = async () => {
     if (!accessToken || !cap) return;
-    if (!subCapTitle.trim()) { setError("Please enter a Sub-CAP title."); return; }
+    if (!subCapTitle.trim()) { toast("Please enter a Sub-CAP title.", "error"); return; }
     setCreatingSubCap(true);
     setError("");
     const res = await capApi.create(accessToken, { audit_id: String(cap.audit_id), parent_cap_id: cap.cap_id, title: subCapTitle.trim() });
@@ -410,9 +429,11 @@ export default function CapCorrectiveActionsPage() {
     if (res.success && res.data) {
       setShowCreateSubCapModal(false);
       setSubCapTitle("");
+      toast("Sub-CAP created successfully.", "success");
       router.push(`/my-caps/details?id=${(res.data as { cap_id: number }).cap_id}`);
     } else {
       setError(res.message || "Failed to create Sub-CAP.");
+      toast(res.message || "Failed to create Sub-CAP.", "error");
     }
   };
 
@@ -444,35 +465,6 @@ export default function CapCorrectiveActionsPage() {
             </div>
           </div>
 
-          {items.length > 0 && (
-            <div className="hidden sm:flex items-center gap-2 shrink-0">
-              {toast && (
-                <span className="hidden sm:flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
-                  <CheckCircle2 size={12} /> Saved
-                </span>
-              )}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleSave}
-                disabled={saving}
-                loading={saving}
-                leftIcon={<Save size={13} />}
-              >
-                <span className="hidden sm:inline">Save</span>
-              </Button>
-              {saved && !existingSubCap && (
-                <Button
-                  size="sm"
-                  onClick={() => { setSubCapTitle(cap?.title ? `Sub-CAP: ${cap.title}` : ""); setShowCreateSubCapModal(true); }}
-                  disabled={creatingSubCap}
-                  leftIcon={<PlusCircle size={13} />}
-                >
-                  <span className="hidden sm:inline">Create Sub-CAP</span>
-                </Button>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Content */}
@@ -490,14 +482,6 @@ export default function CapCorrectiveActionsPage() {
         ) : (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 lg:pb-6">
             <div className="max-w-4xl mx-auto space-y-3">
-
-              {/* Mobile toast */}
-              {toast && (
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 sm:hidden">
-                  <CheckCircle2 size={13} className="shrink-0" />
-                  <span className="text-xs">{toast}</span>
-                </div>
-              )}
 
               {/* Existing Sub-CAP banner */}
               {existingSubCap && (
@@ -518,6 +502,12 @@ export default function CapCorrectiveActionsPage() {
                 </div>
               )}
 
+              {validationError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+                  {validationError}
+                </div>
+              )}
+
               {/* Unsaved notice */}
               {!saved && items.length > 0 && (
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-orange-500/10 border border-orange-500/20">
@@ -535,10 +525,10 @@ export default function CapCorrectiveActionsPage() {
               ) : tree ? (
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.01] p-3 sm:p-4 space-y-1">
                   {ENTITY_TYPE_COLORS[tree.entity_type] ? (
-                    <EntityNode node={tree} depth={0} itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange} />
+                    <EntityNode node={tree} depth={0} itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange} showDueDateErrors={showDueDateErrors} />
                   ) : (
                     (tree.children ?? []).map((child, idx) => (
-                      <EntityNode key={`${child.code}-${idx}`} node={child} depth={0} itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange} />
+                      <EntityNode key={`${child.code}-${idx}`} node={child} depth={0} itemsByEntity={itemsByEntity} assignments={assignments} onChange={onChange} showDueDateErrors={showDueDateErrors} />
                     ))
                   )}
                 </div>
@@ -548,12 +538,13 @@ export default function CapCorrectiveActionsPage() {
                 </div>
               )}
 
-              {/* Mobile action buttons */}
+              {/* Actions */}
               {items.length > 0 && (
-                <div className="flex gap-2 pt-2 sm:hidden pb-4">
+                <div className="flex flex-col gap-2 border-t border-white/[0.08] pt-4 pb-4 sm:flex-row sm:items-center sm:justify-end">
                   <Button
                     variant="secondary"
                     fullWidth
+                    className="sm:w-auto"
                     onClick={handleSave}
                     disabled={saving}
                     loading={saving}
@@ -564,6 +555,7 @@ export default function CapCorrectiveActionsPage() {
                   {saved && !existingSubCap && (
                     <Button
                       fullWidth
+                      className="sm:w-auto"
                       onClick={() => { setSubCapTitle(cap?.title ? `Sub-CAP: ${cap.title}` : ""); setShowCreateSubCapModal(true); }}
                       disabled={creatingSubCap}
                       leftIcon={<PlusCircle size={14} />}

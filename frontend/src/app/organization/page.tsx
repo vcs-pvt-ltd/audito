@@ -326,7 +326,7 @@ function OrgCard({
         {onRemove && (
           <button
             onClick={onRemove}
-            className="absolute top-2 right-2 p-1 rounded-lg opacity-70 group-hover/card:opacity-100 text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
+            className="absolute top-2 right-2 rounded-lg border border-red-500/20 bg-red-500/10 p-1 text-red-400 transition-all hover:border-red-400/45 hover:bg-red-500/20 hover:text-red-300"
             title="Remove"
           >
             <Trash2 size={11} />

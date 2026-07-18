@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { checklistApi, orgTreeApi, type QuestionPayload, type QuestionOption } from "@/lib/api";
 import { Button, IconButton, Modal, Input, Textarea } from "@/components/ui";
+import ChecklistMediaPreview from "@/components/checklist/ChecklistMediaPreview";
 
 import {
   ChevronLeft,
@@ -665,7 +666,7 @@ function ExcelTreeEntityNode({ node, questions }: { node: TreeNode; questions: Q
 
 // ─── Main Page ────────────────────────────────────────────────────
 
-export default function CreateChecklistPage() {
+export default function CreateChecklistPage({ readOnly = false }: { readOnly?: boolean }) {
   const { admin, accessToken, isLoading } = useAuth();
   const { toast } = useUiFeedback();
   const router = useRouter();
@@ -1028,7 +1029,12 @@ export default function CreateChecklistPage() {
                     </button>
                   )}
                 </div>
-                <input ref={mediaRef} type="file" accept="image/*,application/pdf,video/mp4,video/webm" className="hidden"
+                {formData.media_path && !uploadingMedia && (
+                  <div className="mt-3">
+                    <ChecklistMediaPreview mediaPath={formData.media_path} fileName={mediaFileName} label="Uploaded reference" />
+                  </div>
+                )}
+                <input ref={mediaRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" className="hidden"
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file || !accessToken) return;
@@ -1041,7 +1047,7 @@ export default function CreateChecklistPage() {
                     setUploadingMedia(false);
                     if (mediaRef.current) mediaRef.current.value = "";
                   }} />
-                <p className="mt-1.5 text-xs text-gray-600 flex items-center gap-1"><Info size={11} /> Upload an image, PDF, or video as reference material.</p>
+                <p className="mt-1.5 text-xs text-gray-600 flex items-center gap-1"><Info size={11} /> Upload an image, document, video, or audio file as reference material.</p>
               </div>
             </div>
           </div>
@@ -1056,10 +1062,12 @@ export default function CreateChecklistPage() {
                 <FieldLabel label="Checklist Type" required />
                 <p className="text-[11px] text-gray-500 mb-2">Categorize this checklist</p>
                 <div className="mt-auto flex gap-2">
-                  <select value={formData.checklist_type_id} onChange={e => setForm("checklist_type_id", e.target.value)} className={`${inputCls} flex-1`}>
-                    <option value="">Select type...</option>
-                    {checklistTypes.map(t => <option key={t.checklist_type_id} value={t.checklist_type_id}>{t.name}</option>)}
-                  </select>
+                  <div className="flex-1 overflow-hidden rounded-lg border border-white/10 bg-white/5 transition-all focus-within:border-secondary-500/50 focus-within:ring-1 focus-within:ring-secondary-500/20">
+                    <select value={formData.checklist_type_id} onChange={e => setForm("checklist_type_id", e.target.value)} className="w-full bg-transparent px-3.5 py-2.5 text-sm text-white outline-none">
+                      <option value="">Select type...</option>
+                      {checklistTypes.map(t => <option key={t.checklist_type_id} value={t.checklist_type_id}>{t.name}</option>)}
+                    </select>
+                  </div>
                   <button onClick={() => setShowTypeModal(true)} className="p-2.5 rounded-lg bg-secondary-500/10 text-secondary-400 border border-secondary-500/20 hover:bg-secondary-500/20 transition-all" title="Create New Type">
                     <Plus size={16} />
                   </button>
@@ -1103,8 +1111,8 @@ export default function CreateChecklistPage() {
               <div className="flex flex-col">
                 <FieldLabel label="Number of Workers" />
                 <p className="text-[11px] text-gray-500 mb-2">Required headcount to complete</p>
-                <div className="mt-auto">
-                  <input type="number" min="1" step="1" value={formData.num_workers} onChange={e => setForm("num_workers", e.target.value)} placeholder="e.g. 5" className={inputCls} />
+                <div className="mt-auto overflow-hidden rounded-lg border border-white/10 bg-white/5 transition-all focus-within:border-secondary-500/50 focus-within:ring-1 focus-within:ring-secondary-500/20">
+                  <input type="number" min="1" step="1" value={formData.num_workers} onChange={e => setForm("num_workers", e.target.value)} placeholder="e.g. 5" className="w-full bg-transparent px-3.5 py-2.5 text-sm text-white placeholder-gray-500 outline-none" />
                 </div>
               </div>
             </div>
@@ -1325,7 +1333,7 @@ export default function CreateChecklistPage() {
             >
               Next
             </Button>
-          ) : (
+          ) : !readOnly ? (
             <Button
               leftIcon={saving ? undefined : <Save size={16} />}
               loading={saving}
@@ -1333,7 +1341,7 @@ export default function CreateChecklistPage() {
             >
               {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Checklist"}
             </Button>
-          )}
+          ) : null}
         </div>
 
         {/* Modals */}

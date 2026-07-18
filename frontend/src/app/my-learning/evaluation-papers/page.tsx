@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { myLearningApi } from "@/lib/api";
 import { ArrowRight, ClipboardList, RefreshCw, Search } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
@@ -11,7 +12,7 @@ import { Button, IconButton, Table, THead, Th } from "@/components/ui";
 
 interface MyPaper {
   assignment_id: number;
-  assignment_status: "assigned" | "submitted";
+  assignment_status: "assigned" | "in_progress" | "submitted" | "expired";
   assigned_at: string;
   due_date?: string | null;
   paper_id: number;
@@ -27,6 +28,7 @@ interface MyPaper {
 
 export default function MyEvaluationPapersPage() {
   const { admin, accessToken, isLoading } = useAuth();
+  const { confirm } = useUiFeedback();
   const router = useRouter();
 
   const [items, setItems] = useState<MyPaper[]>([]);
@@ -62,6 +64,18 @@ export default function MyEvaluationPapersPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
+
+  const handleStart = async (paper: MyPaper) => {
+    const accepted = await confirm({
+      title: paper.assignment_status === "in_progress" ? "Continue Evaluation" : "Start Evaluation",
+      message: paper.assignment_status === "in_progress"
+        ? "Continue this evaluation using the remaining time? The timer cannot be paused."
+        : "Starting this evaluation begins its timer. The timer continues after refreshes and cannot be paused.",
+      confirmText: paper.assignment_status === "in_progress" ? "Continue" : "Start now",
+      variant: "warning",
+    });
+    if (accepted) router.push(`/my-learning/evaluation-papers/details?id=${paper.paper_id}`);
+  };
 
   const filtered = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -144,7 +158,8 @@ export default function MyEvaluationPapersPage() {
           <div className="hidden md:block">
             <Table className="text-left table-fixed">
               <THead>
-                <Th className="w-[50%]">Paper Details</Th>
+                <Th className="w-[40%]">Paper Details</Th>
+                <Th align="center" className="w-28">Due Date</Th>
                 <Th align="center" className="w-24">Status</Th>
                 <Th align="center" className="w-20">Questions</Th>
                 <Th align="center" className="w-28">Result</Th>
@@ -157,15 +172,19 @@ export default function MyEvaluationPapersPage() {
                     <tr key={p.assignment_id} className="hover:bg-white/[0.01] transition-colors group">
                       <td className="px-6 py-5">
                         <p className="text-sm font-bold text-white group-hover:text-secondary-400 transition-colors tracking-tight">{p.title}</p>
-                        {p.due_date && (
-                          <p className="text-[10px] text-gray-500 mt-1">Due: {new Date(p.due_date).toLocaleDateString()}</p>
-                        )}
+                      </td>
+                      <td className="px-4 py-5 text-center">
+                        <span className="text-xs text-gray-400">{p.due_date ? new Date(p.due_date).toLocaleDateString() : "No deadline"}</span>
                       </td>
                       <td className="px-6 py-5 text-center">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider border ${
-                          p.assignment_status === 'submitted' 
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                          p.assignment_status === 'submitted'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : p.assignment_status === 'expired'
+                              ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                              : p.assignment_status === 'in_progress'
+                                ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                         }`}>
                           {p.assignment_status}
                         </span>
@@ -194,10 +213,12 @@ export default function MyEvaluationPapersPage() {
                       <td className="px-6 py-5 text-right">
                         {p.assignment_status === "submitted" ? (
                           <span className="text-xs font-bold text-gray-600 tracking-widest px-4 py-2">Completed</span>
+                        ) : p.assignment_status === "expired" ? (
+                          <span className="text-xs font-bold text-red-400/70 tracking-widest px-4 py-2">Time ended</span>
                         ) : (
                           <Button size="sm" rightIcon={<ArrowRight size={14} strokeWidth={3} />}
-                            onClick={() => router.push(`/my-learning/evaluation-papers/details?id=${p.paper_id}`)}>
-                            Start
+                            onClick={() => void handleStart(p)}>
+                            {p.assignment_status === "in_progress" ? "Continue" : "Start"}
                           </Button>
                         )}
                       </td>
@@ -222,9 +243,13 @@ export default function MyEvaluationPapersPage() {
                       </p>
                     </div>
                     <span className={`shrink-0 text-[9px] font-black tracking-widest px-2 py-1 rounded-full border ${
-                      p.assignment_status === 'submitted' 
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      p.assignment_status === 'submitted'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        : p.assignment_status === 'expired'
+                          ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                          : p.assignment_status === 'in_progress'
+                            ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                     }`}>
                       {p.assignment_status}
                     </span>
@@ -249,10 +274,14 @@ export default function MyEvaluationPapersPage() {
                     <div className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-center text-xs font-black text-gray-500 tracking-widest">
                       Completed
                     </div>
+                  ) : p.assignment_status === "expired" ? (
+                    <div className="w-full py-3 rounded-xl border border-red-500/20 bg-red-500/10 text-center text-xs font-black tracking-widest text-red-400">
+                      Time ended
+                    </div>
                   ) : (
                     <Button fullWidth rightIcon={<ArrowRight size={16} strokeWidth={3} />}
-                      onClick={() => router.push(`/my-learning/evaluation-papers/details?id=${p.paper_id}`)}>
-                      Start Attempt
+                      onClick={() => void handleStart(p)}>
+                      {p.assignment_status === "in_progress" ? "Continue Attempt" : "Start Attempt"}
                     </Button>
                   )}
                 </div>

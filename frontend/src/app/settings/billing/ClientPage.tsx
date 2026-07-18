@@ -13,7 +13,6 @@ import {
   CreditCard,
   CheckCircle2,
   ArrowRight,
-  Zap,
   ShieldCheck,
   Receipt,
   BadgePercent,
@@ -34,8 +33,6 @@ const COMPARISON_ROWS = [
   { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true] },
   { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
 ];
-
-const BASIC_YEARLY_TOTAL = Math.round(99 * 11 * 0.8);
 
 const PLANS = [
   {
@@ -78,6 +75,10 @@ export default function BillingPage() {
   const [paymentMethods, setPaymentMethods] = useState<SavedPaymentMethod[]>([]);
   const [linkCredits, setLinkCredits] = useState<LinkBillingCredit[]>([]);
   const [creditAvailable, setCreditAvailable] = useState(0);
+
+  useEffect(() => {
+    if (subscription?.billing_cycle === "Yearly") setBillingCycle("yearly");
+  }, [subscription?.billing_cycle]);
 
   const loadPaymentMethods = async () => {
     if (!accessToken) return;
@@ -184,6 +185,12 @@ export default function BillingPage() {
   const workspaceRows = visibleRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
   const coreRows = visibleRows.filter((r) => r.group === "CORE FEATURES");
   const planCols = visiblePlans.length;
+  const selectedBillingCycle = billingCycle === "yearly" ? "Yearly" : "Monthly";
+  const activeBillingCycle = subscription?.billing_cycle === "Yearly" ? "Yearly" : "Monthly";
+  const subscriptionEndsOn = subscription?.end_date
+    ? new Date(subscription.end_date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+    : null;
+  const isCurrentPlanExpired = Boolean(subscription?.is_expired);
 
   if (isLoading) {
     return (
@@ -247,8 +254,8 @@ export default function BillingPage() {
     >
       Yearly
       {billingCycle !== "yearly" && (
-        <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-emerald-500 text-primary-950 text-[8px] font-bold rounded-full">
-          -20%
+        <span className="absolute -top-2 -right-3 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold text-primary-950">
+          SAVE 20%
         </span>
       )}
     </button>
@@ -266,15 +273,26 @@ export default function BillingPage() {
                 <ShieldCheck className="text-emerald-400" size={18} />
               </div>
               <div>
-                <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Active Plan</p>
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">{isCurrentPlanExpired ? "Subscription expired" : "Active plan"}</p>
                 <h2 className="text-lg font-bold text-white">{currentPlan.name}</h2>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2 py-0.5 text-[10px] font-semibold text-secondary-300">{activeBillingCycle}</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${isCurrentPlanExpired ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"}`}>{isCurrentPlanExpired ? "Action needed" : "Active"}</span>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Zap size={12} className="text-secondary-400" />
-              <span className="text-xs text-gray-400">Next billing: Aug 24</span>
+            <div className="rounded-xl border border-white/[0.08] bg-black/10 px-3.5 py-2.5 sm:text-right">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{isCurrentPlanExpired ? "Ended" : "Renews on"}</p>
+              <p className={`mt-0.5 text-sm font-semibold ${isCurrentPlanExpired ? "text-red-300" : "text-white"}`}>{subscriptionEndsOn || "No renewal date"}</p>
             </div>
           </div>
+
+          {billingCycle === "yearly" && activeBillingCycle !== "Yearly" && !isCurrentPlanExpired && (
+            <div className="mb-5 flex flex-col gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.07] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div><p className="text-sm font-semibold text-emerald-300">Save 20% with yearly billing</p><p className="mt-0.5 text-xs text-emerald-100/55">Choose your current plan below to move your next payment to an annual cycle.</p></div>
+              <span className="shrink-0 text-xs font-bold text-emerald-300">12 months · one payment</span>
+            </div>
+          )}
 
           {/* Usage bars — 2 col on mobile, 5 col on md+ */}
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -325,13 +343,15 @@ export default function BillingPage() {
           >
             {visiblePlans.map((plan) => {
               const isCurrent = currentPlan.name === plan.name;
-              const isBasicYearly = false;
-              const price = plan.name === "Basic" && billingCycle === "yearly"
-                ? BASIC_YEARLY_TOTAL
-                : billingCycle === "monthly" ? plan.priceMonthly : Math.round(plan.priceMonthly * 12 * 0.8);
+              const price = plan.priceMonthly === 0 ? 0 : billingCycle === "monthly" ? plan.priceMonthly : Math.round(plan.priceMonthly * 12 * 0.8);
               const period = billingCycle === "monthly" ? "/mo" : "/year";
-              const priceLabel = plan.name === "Basic" ? `$${price}` : `$${price}`;
-              const periodLabel = plan.name === "Basic" && billingCycle === "yearly" ? "/year" : (plan.name === "Basic" ? "/month" : period);
+              const periodLabel = price === 0 ? "included" : period;
+              const canMoveToYearly = isCurrent && !isCurrentPlanExpired && selectedBillingCycle === "Yearly" && activeBillingCycle !== "Yearly";
+              const canRenewCurrent = isCurrent && isCurrentPlanExpired;
+              const canCheckout = !isCurrent || canMoveToYearly || canRenewCurrent;
+              const actionLabel = isCurrent
+                ? canRenewCurrent ? "Renew plan" : canMoveToYearly ? "Move to yearly billing" : "Current plan"
+                : subscription?.is_expired ? "Renew with this plan" : "Upgrade";
 
               return (
                 <div
@@ -355,31 +375,31 @@ export default function BillingPage() {
 
                   <div className={`mb-5 ${plan.textColor || "text-white"}`}>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-3xl font-bold">${price}</span>
+                      <span className="text-3xl font-bold">{price === 0 ? "Free" : `$${price}`}</span>
                       <span className="text-xs opacity-60">{periodLabel}</span>
                     </div>
-                    {plan.name === "Basic" && (
-                      <p className="text-[10px] opacity-50 mt-0.5">{billingCycle === "yearly" ? "$79.20/mo after 1st month free" : "$99/mo from 2nd month"}</p>
+                    {price > 0 && billingCycle === "yearly" && (
+                      <p className="text-[10px] opacity-60 mt-0.5">${Math.round(price / 12)}/mo when billed annually</p>
                     )}
                   </div>
 
                   <button
-                    disabled={isCurrent || checkingOut !== null}
+                    disabled={!canCheckout || checkingOut !== null}
                     onClick={() => handleUpgrade(plan.name)}
-                    className={`mt-auto w-full py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap- ${
-                      isCurrent
+                    className={`mt-auto flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-semibold transition-all ${
+                      !canCheckout
                         ? "bg-white/10 text-white/40 cursor-default border border-white/10"
-                        : plan.name === "Elite"
+                        : plan.name === "Elite" || canMoveToYearly || canRenewCurrent
                         ? "bg-secondary-500 text-primary-950 hover:bg-secondary-400"
                         : "bg-white/10 hover:bg-white/20 text-white border border-white/10"
-                    } ${checkingOut !== null && !isCurrent ? "opacity-60 cursor-wait" : ""}`}
+                    } ${checkingOut !== null && canCheckout ? "opacity-60 cursor-wait" : ""}`}
                   >
                     {checkingOut === plan.name ? (
                       <Loader2 size={14} className="animate-spin" />
                     ) : (
                       <>
-                        {isCurrent ? "Current Plan" : subscription?.is_expired ? "Renew" : "Upgrade"}
-                        {!isCurrent && <ArrowRight size={14} />}
+                        {actionLabel}
+                        {canCheckout && <ArrowRight size={14} />}
                       </>
                     )}
                   </button>

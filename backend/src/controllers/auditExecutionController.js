@@ -32,6 +32,7 @@ const {
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { MAX_EVIDENCE_BYTES, getEvidenceMediaType, getEvidencePolicy } = require('../utils/evidencePolicy');
 
 const ENTITY_TABLE_MAP = {
   'Customer': { table: 'customers', codeField: 'cust_code' },
@@ -212,6 +213,8 @@ const getCorrectiveActions = async (req, res) => {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
+    audit.evidence_policy = await getEvidencePolicy(audit.created_by);
+
     const [items, corrective_actions, tree] = await Promise.all([
       AuditExecutionModel.listCapRequiredItems(id),
       AuditExecutionModel.listCorrectiveActionsByAudit(id),
@@ -356,6 +359,8 @@ const getAuditDetail = async (req, res) => {
     if (req.user.role === 'entity_head' && !auditEntitiesInScope(audit.entities, scopeIds)) {
       return errorResponse(res, 'Not authorized.', 403);
     }
+
+    audit.evidence_policy = await getEvidencePolicy(audit.created_by);
 
     // Resolve entity names
     if (audit.entities?.length > 0) {
@@ -610,16 +615,53 @@ const getEntityResponses = async (req, res) => {
 const uploadEvidence = async (req, res) => {
   try {
     const { id } = req.params;
-    const { response_id, file_type } = req.body;
+    const { response_id } = req.body;
 
     if (!req.file) return errorResponse(res, 'No file uploaded.', 400);
     if (!response_id) return errorResponse(res, 'response_id is required.', 400);
+
+    const discardUploadedFile = () => {
+      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    };
+    const audit = await AuditModel.findById(id);
+    if (!audit) {
+      discardUploadedFile();
+      return errorResponse(res, 'Audit not found.', 404);
+    }
+    if (audit.assigned_auditor_id !== req.user.userCode) {
+      discardUploadedFile();
+      return errorResponse(res, 'Not authorized to upload evidence for this audit.', 403);
+    }
+
+    const [responseRows] = await db.query(
+      `SELECT audit_response_id FROM audit_responses WHERE audit_response_id = ? AND audit_id = ? LIMIT 1`,
+      [response_id, id]
+    );
+    if (!responseRows.length) {
+      discardUploadedFile();
+      return errorResponse(res, 'Audit response not found for this audit.', 404);
+    }
+
+    const mediaType = getEvidenceMediaType(req.file.mimetype);
+    const evidencePolicy = await getEvidencePolicy(audit.created_by);
+    if (!mediaType || !evidencePolicy.allowed_media_types.includes(mediaType)) {
+      discardUploadedFile();
+      return errorResponse(res, `${evidencePolicy.plan_name} plan allows image evidence only.`, 403);
+    }
+    if (req.file.size > MAX_EVIDENCE_BYTES) {
+      discardUploadedFile();
+      return errorResponse(res, 'Evidence file must be 2MB or less.', 400);
+    }
+    if ((await AuditExecutionModel.getEvidence(response_id)).length > 0) {
+      discardUploadedFile();
+      return errorResponse(res, 'Only one evidence file is allowed for each response.', 409);
+    }
 
     const relativePath = `/uploads/evidence/${req.file.filename}`;
     const evidenceId = await AuditExecutionModel.addEvidence({
       audit_evidence_id: await generateAuditEvidenceId(),
       audit_response_id: response_id,
-      file_type: file_type || 'image',
+      file_type: mediaType,
       file_path: relativePath,
       file_name: req.file.originalname,
       file_size: req.file.size,
@@ -628,6 +670,7 @@ const uploadEvidence = async (req, res) => {
 
     return successResponse(res, {
       id: evidenceId,
+      file_type: mediaType,
       file_path: relativePath,
       file_name: req.file.originalname,
       file_size: req.file.size,

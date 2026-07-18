@@ -49,7 +49,7 @@ const AuditModel = {
   async findById(audit_id) {
     const [rows] = await db.query(
       `SELECT aa.*, c.name AS checklist_name,
-              c.time_period_value, c.time_period_unit,
+              c.time_period_value, c.time_period_unit, c.media_path AS checklist_media_path,
               c.budget AS checklist_budget, c.currency AS checklist_currency, c.num_workers AS checklist_num_workers
        FROM audit_assignments aa
        LEFT JOIN checklists c ON c.checklist_id = aa.checklist_id

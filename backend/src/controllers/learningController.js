@@ -4,6 +4,7 @@ const { getAccessibleEntityCodes, resolveEntityNames } = require('../utils/acces
 const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
 const NotificationModel = require('../models/NotificationModel');
+const { sendLearningAssignmentEmail } = require('../services/emailService');
 const { findDuplicateName } = require('../utils/nameNormalizer');
 const {
   generateTrainingId, generateFieldVisitId, generateEvaluationPaperId, generateEvaluationQuestionId,
@@ -180,7 +181,7 @@ const assignTraining = async (req, res) => {
     if (!ensureAdmin(req, res)) return;
 
     const { id } = req.params;
-    const { auditor_codes } = req.body;
+    const { auditor_codes, send_assignment_email = true } = req.body;
     if (!Array.isArray(auditor_codes) || auditor_codes.length === 0) {
       return errorResponse(res, 'auditor_codes must be a non-empty array.', 400);
     }
@@ -200,7 +201,8 @@ await db.query(
 
     await Promise.all(auditor_codes.map((code) =>
       NotificationModel.createIfNotExists({
-        auditor_id: String(code),
+        recipient_user_code: String(code),
+        recipient_role: 'auditor',
         created_by_entity_code: req.user.entityCode,
         type: 'training_assigned',
         title: 'Training Assigned',
@@ -209,10 +211,51 @@ await db.query(
       })
     ));
 
+    if (send_assignment_email !== false) {
+      const auditorPlaceholders = auditor_codes.map(() => '?').join(',');
+      const [auditors] = await db.query(
+        `SELECT auditor_id, first_name, last_name, email FROM auditors WHERE auditor_id IN (${auditorPlaceholders})`,
+        auditor_codes.map(String)
+      );
+      const results = await Promise.allSettled(auditors.filter((auditor) => auditor.email).map((auditor) =>
+        sendLearningAssignmentEmail(auditor.email, `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim(), {
+          type: 'Training', title: trainingTitle,
+        })
+      ));
+      results.filter((result) => result.status === 'rejected').forEach((result) =>
+        console.error('Training assignment email failed:', result.reason)
+      );
+    }
+
     return successResponse(res, null, 'Training assigned.');
   } catch (err) {
     console.error('assignTraining error:', err);
     return errorResponse(res, 'Failed to assign training.', 500);
+  }
+};
+
+const deleteTrainingAssignment = async (req, res) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+
+    const { id, assignmentId } = req.params;
+    const [rows] = await db.query(
+      `SELECT a.status
+       FROM training_assignments a
+       JOIN trainings t ON t.training_id = a.training_id
+       WHERE a.training_assignment_id = ? AND a.training_id = ? AND t.entity_code = ? LIMIT 1`,
+      [assignmentId, id, req.user.entityCode]
+    );
+    if (rows.length === 0) return errorResponse(res, 'Training assignment not found.', 404);
+    if (rows[0].status !== 'assigned') {
+      return errorResponse(res, 'Only pending training assignments can be removed.', 409);
+    }
+
+    await db.query('DELETE FROM training_assignments WHERE training_assignment_id = ?', [assignmentId]);
+    return successResponse(res, null, 'Training assignment removed.');
+  } catch (err) {
+    console.error('deleteTrainingAssignment error:', err);
+    return errorResponse(res, 'Failed to remove training assignment.', 500);
   }
 };
 
@@ -418,7 +461,7 @@ const assignFieldVisit = async (req, res) => {
     if (!ensureAdmin(req, res)) return;
 
     const { id } = req.params;
-    const { auditor_codes } = req.body;
+    const { auditor_codes, send_assignment_email = true } = req.body;
     if (!Array.isArray(auditor_codes) || auditor_codes.length === 0) {
       return errorResponse(res, 'auditor_codes must be a non-empty array.', 400);
     }
@@ -438,7 +481,8 @@ await db.query(
 
     await Promise.all(auditor_codes.map((code) =>
       NotificationModel.createIfNotExists({
-        auditor_id: String(code),
+        recipient_user_code: String(code),
+        recipient_role: 'auditor',
         created_by_entity_code: req.user.entityCode,
         type: 'field_visit_assigned',
         title: 'Field Visit Assigned',
@@ -447,10 +491,51 @@ await db.query(
       })
     ));
 
+    if (send_assignment_email !== false) {
+      const auditorPlaceholders = auditor_codes.map(() => '?').join(',');
+      const [auditors] = await db.query(
+        `SELECT auditor_id, first_name, last_name, email FROM auditors WHERE auditor_id IN (${auditorPlaceholders})`,
+        auditor_codes.map(String)
+      );
+      const results = await Promise.allSettled(auditors.filter((auditor) => auditor.email).map((auditor) =>
+        sendLearningAssignmentEmail(auditor.email, `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim(), {
+          type: 'Field Visit', title: visitTitle,
+        })
+      ));
+      results.filter((result) => result.status === 'rejected').forEach((result) =>
+        console.error('Field visit assignment email failed:', result.reason)
+      );
+    }
+
     return successResponse(res, null, 'Field visit assigned.');
   } catch (err) {
     console.error('assignFieldVisit error:', err);
     return errorResponse(res, 'Failed to assign field visit.', 500);
+  }
+};
+
+const deleteFieldVisitAssignment = async (req, res) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+
+    const { id, assignmentId } = req.params;
+    const [rows] = await db.query(
+      `SELECT a.status
+       FROM field_visit_assignments a
+       JOIN field_visits v ON v.field_visit_id = a.field_visit_id
+       WHERE a.field_visit_assignment_id = ? AND a.field_visit_id = ? AND v.entity_code = ? LIMIT 1`,
+      [assignmentId, id, req.user.entityCode]
+    );
+    if (rows.length === 0) return errorResponse(res, 'Field visit assignment not found.', 404);
+    if (rows[0].status !== 'assigned') {
+      return errorResponse(res, 'Only pending field visit assignments can be removed.', 409);
+    }
+
+    await db.query('DELETE FROM field_visit_assignments WHERE field_visit_assignment_id = ?', [assignmentId]);
+    return successResponse(res, null, 'Field visit assignment removed.');
+  } catch (err) {
+    console.error('deleteFieldVisitAssignment error:', err);
+    return errorResponse(res, 'Failed to remove field visit assignment.', 500);
   }
 };
 
@@ -1049,7 +1134,7 @@ const assignEvaluationPaper = async (req, res) => {
     if (!ensureAdmin(req, res)) return;
 
     const { id } = req.params;
-    const { auditor_codes, due_date } = req.body;
+    const { auditor_codes, due_date, send_assignment_email = true } = req.body;
 
     if (!Array.isArray(auditor_codes) || auditor_codes.length === 0) {
       return errorResponse(res, 'auditor_codes must be a non-empty array.', 400);
@@ -1070,7 +1155,8 @@ await db.query(
 
     await Promise.all(auditor_codes.map((code) =>
       NotificationModel.createIfNotExists({
-        auditor_id: String(code),
+        recipient_user_code: String(code),
+        recipient_role: 'auditor',
         created_by_entity_code: req.user.entityCode,
         type: 'evaluation_assigned',
         title: 'Evaluation Paper Assigned',
@@ -1079,10 +1165,52 @@ await db.query(
       })
     ));
 
+    if (send_assignment_email !== false) {
+      const auditorPlaceholders = auditor_codes.map(() => '?').join(',');
+      const [auditors] = await db.query(
+        `SELECT auditor_id, first_name, last_name, email FROM auditors WHERE auditor_id IN (${auditorPlaceholders})`,
+        auditor_codes.map(String)
+      );
+      const dueDate = due_date ? String(due_date).replace('T', ' ').slice(0, 10) : null;
+      const results = await Promise.allSettled(auditors.filter((auditor) => auditor.email).map((auditor) =>
+        sendLearningAssignmentEmail(auditor.email, `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim(), {
+          type: 'Evaluation Paper', title: paperTitle, dueDate,
+        })
+      ));
+      results.filter((result) => result.status === 'rejected').forEach((result) =>
+        console.error('Evaluation assignment email failed:', result.reason)
+      );
+    }
+
     return successResponse(res, null, 'Evaluation paper assigned.');
   } catch (err) {
     console.error('assignEvaluationPaper error:', err);
     return errorResponse(res, 'Failed to assign evaluation paper.', 500);
+  }
+};
+
+const deleteEvaluationAssignment = async (req, res) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+
+    const { id, assignmentId } = req.params;
+    const [rows] = await db.query(
+      `SELECT a.status
+       FROM evaluation_assignments a
+       JOIN evaluation_papers p ON p.evaluation_paper_id = a.paper_id
+       WHERE a.evaluation_assignment_id = ? AND a.paper_id = ? AND p.entity_code = ? LIMIT 1`,
+      [assignmentId, id, req.user.entityCode]
+    );
+    if (rows.length === 0) return errorResponse(res, 'Evaluation paper assignment not found.', 404);
+    if (rows[0].status !== 'assigned') {
+      return errorResponse(res, 'Only pending evaluation paper assignments can be removed.', 409);
+    }
+
+    await db.query('DELETE FROM evaluation_assignments WHERE evaluation_assignment_id = ?', [assignmentId]);
+    return successResponse(res, null, 'Evaluation paper assignment removed.');
+  } catch (err) {
+    console.error('deleteEvaluationAssignment error:', err);
+    return errorResponse(res, 'Failed to remove evaluation paper assignment.', 500);
   }
 };
 
@@ -1092,17 +1220,20 @@ module.exports = {
   updateTraining,
   deleteTraining,
   assignTraining,
+  deleteTrainingAssignment,
   listFieldVisits,
   createFieldVisit,
   updateFieldVisit,
   deleteFieldVisit,
   assignFieldVisit,
+  deleteFieldVisitAssignment,
   listEvaluationPapers,
   createEvaluationPaper,
   updateEvaluationPaper,
   deleteEvaluationPaper,
   setEvaluationQuestions,
   assignEvaluationPaper,
+  deleteEvaluationAssignment,
   downloadEvaluationExcelTemplate,
   previewEvaluationQuestionsExcel,
   uploadEvaluationQuestionsExcel,
