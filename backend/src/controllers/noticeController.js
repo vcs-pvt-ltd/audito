@@ -107,22 +107,25 @@ exports.deleteNotice = async (req, res) => {
 
 exports.getMyNotices = async (req, res) => {
   try {
-    // Keep admin notices visible to auditors by materializing per-auditor rows.
-    const manualNotices = await NoticeModel.getNoticesForAuditor(req.user.createdByEntityCode, req.user.userCode);
-    for (const n of manualNotices || []) {
-      await NotificationModel.createIfNotExists({
-        auditor_id: req.user.userCode,
-        created_by_entity_code: req.user.createdByEntityCode,
-        type: 'notice',
-        title: n.title || 'Notice',
-        message: n.message || '',
-        audit_id: null,
-        notify_date: n.notice_date || null,
-        notification_key: `notice:${n.notice_id}:${req.user.userCode}`,
-      });
+    // Existing admin notices target auditors; the inbox itself supports every role.
+    if (req.user.role === 'auditor') {
+      const manualNotices = await NoticeModel.getNoticesForAuditor(req.user.createdByEntityCode, req.user.userCode);
+      for (const n of manualNotices || []) {
+        await NotificationModel.createIfNotExists({
+          recipient_user_code: req.user.userCode,
+          recipient_role: 'auditor',
+          created_by_entity_code: req.user.createdByEntityCode,
+          type: 'notice',
+          title: n.title || 'Notice',
+          message: n.message || '',
+          audit_id: null,
+          notify_date: n.notice_date || null,
+          notification_key: `notice:${n.notice_id}:${req.user.userCode}`,
+        });
+      }
     }
 
-    const notices = await NotificationModel.listForAuditor(req.user.createdByEntityCode, req.user.userCode);
+    const notices = await NotificationModel.listForUser(req.user.userCode, req.user.role);
 
     return successResponse(res, { notices });
   } catch (error) {
@@ -134,7 +137,8 @@ exports.getMyNotices = async (req, res) => {
 exports.markMyNotificationRead = async (req, res) => {
   try {
     const { id } = req.params;
-    await NotificationModel.markReadStateForAuditor(id, req.user.userCode, true);
+    const updated = await NotificationModel.markReadStateForUser(id, req.user.userCode, req.user.role, true);
+    if (!updated) return errorResponse(res, 'Notification not found.', 404);
     return successResponse(res, null, 'Marked as read.');
   } catch (error) {
     console.error('Error marking notification as read:', error);
@@ -142,10 +146,20 @@ exports.markMyNotificationRead = async (req, res) => {
   }
 };
 
+exports.markAllMyNotificationsRead = async (req, res) => {
+  try {
+    await NotificationModel.markAllReadForUser(req.user.userCode, req.user.role);
+    return successResponse(res, null, 'All notifications marked as read.');
+  } catch (error) {
+    console.error('Error marking all notifications as read:', error);
+    return errorResponse(res, 'Failed to mark all notifications as read.', 500);
+  }
+};
+
 exports.markMyNotificationUnread = async (req, res) => {
   try {
     const { id } = req.params;
-    await NotificationModel.markReadStateForAuditor(id, req.user.userCode, false);
+    await NotificationModel.markReadStateForUser(id, req.user.userCode, req.user.role, false);
     return successResponse(res, null, 'Marked as unread.');
   } catch (error) {
     console.error('Error marking notification as unread:', error);
@@ -156,7 +170,8 @@ exports.markMyNotificationUnread = async (req, res) => {
 exports.deleteMyNotification = async (req, res) => {
   try {
     const { id } = req.params;
-    await NotificationModel.deleteForAuditor(id, req.user.userCode);
+    const deleted = await NotificationModel.deleteForUser(id, req.user.userCode, req.user.role);
+    if (!deleted) return errorResponse(res, 'Notification not found.', 404);
     return successResponse(res, null, 'Notification deleted.');
   } catch (error) {
     console.error('Error deleting notification:', error);

@@ -581,6 +581,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                 <THead>
                     <Th className="w-10">#</Th>
                     <Th>Title</Th>
+                    {workflowType === "cap" && <Th>Source Audit</Th>}
                     <Th align="center">Status</Th>
                     <Th>Progress</Th>
                     {workflowType === "cap" && (
@@ -627,11 +628,15 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                         <Td>
                           <div className="flex flex-col gap-0.5">
                             <p className="text-white font-medium">{item.title}</p>
-                            {workflowType === "cap" && item.audit_code && (
-                              <p className="text-[11px] text-gray-500">Linked audit: <span className="font-medium text-gray-400">{item.audit_code}</span></p>
-                            )}
                           </div>
                         </Td>
+                        {workflowType === "cap" && (
+                          <Td>
+                            <p className="max-w-56 truncate text-sm text-gray-300" title={item.audit_title || ""}>
+                              {item.audit_title || "Source audit unavailable"}
+                            </p>
+                          </Td>
+                        )}
                         <Td>
                           <div className={`flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full w-fit mx-auto border text-[10px] font-bold uppercase tracking-wider ${STATUS_BADGE[displayStatus] || STATUS_BADGE["plan"]}`}>
                             {STATUS_ICON[displayStatus]}
@@ -718,7 +723,11 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                       <div className="flex-1 min-w-0">
                         <p className="text-[10px] text-gray-500 mb-1">#{itemIndex}</p>
                         <h3 className="text-sm font-bold text-white line-clamp-2 leading-tight mb-2">{item.title}</h3>
-                        {workflowType === "cap" && item.audit_code && <p className="mb-2 truncate text-[10px] font-medium text-gray-500">Linked audit: {item.audit_code}</p>}
+                        {workflowType === "cap" && (
+                          <p className="mb-2 truncate text-[10px] font-medium text-gray-500">
+                            Source audit: {item.audit_title || "Source audit unavailable"}
+                          </p>
+                        )}
                         <div className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider w-fit ${STATUS_BADGE[displayStatus] || STATUS_BADGE["plan"]}`}>
                           {STATUS_ICON[displayStatus]}
                           {displayStatus.replace("_", " ")}

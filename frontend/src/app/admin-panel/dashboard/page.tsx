@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { adminApi, type AdminDashboardStats } from "@/lib/api";
+import Loading from "@/components/shared/Loading";
 import {
-  ShieldCheck, Mail, Tag, Puzzle, Building2, Loader2, RefreshCw,
+  ShieldCheck, Mail, Tag, Puzzle, Building2, RefreshCw,
   ArrowRight, CreditCard, BarChart3, ChevronDown,
 } from "lucide-react";
 import {
@@ -90,6 +91,7 @@ export default function AuditoAdminDashboard() {
   }, [period, loadStats]);
 
   if (isLoading || (!admin || admin.role !== "audito_admin")) return null;
+  if (loading && !stats) return <Loading />;
 
   const c = stats?.counts;
   const charts = stats?.charts;
@@ -108,11 +110,7 @@ export default function AuditoAdminDashboard() {
   return (
     <div className="min-h-screen p-5 pt-20 lg:p-8 lg:pt-8">
 
-      {loading && !stats ? (
-        <div className="flex items-center justify-center py-32">
-          <Loader2 size={32} className="animate-spin text-secondary-400" />
-        </div>
-      ) : !stats ? (
+      {!stats ? (
         <div className="text-center py-32 text-gray-500">Failed to load dashboard data.</div>
       ) : (
         <div className="space-y-6">

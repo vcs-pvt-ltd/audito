@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, Save, Clock, Search, Check, ChevronDown, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
@@ -18,7 +19,9 @@ export default function TimeZoneSettingsPage() {
 
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, width: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const fetchTimezones = async () => {
@@ -26,8 +29,19 @@ export default function TimeZoneSettingsPage() {
     setFetchError(false);
     try {
       const data = await timezonesApi.getAll();
-      setTimezones(data);
-      if (data.length === 0) setFetchError(true);
+      // The shared timezone source can contain records with a missing label or
+      // offset. Normalize them before rendering so one incomplete record does
+      // not break the searchable dropdown.
+      const normalized = data
+        .filter((tz) => Boolean(tz?.timezone_value))
+        .map((tz) => ({
+          ...tz,
+          timezone_value: String(tz.timezone_value),
+          timezone_label: String(tz.timezone_label || tz.timezone_value),
+          timezone_offset: String(tz.timezone_offset || ""),
+        }));
+      setTimezones(normalized);
+      if (normalized.length === 0) setFetchError(true);
     } catch {
       setTimezones([]);
       setFetchError(true);
@@ -57,7 +71,9 @@ export default function TimeZoneSettingsPage() {
   // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      const clickedTrigger = dropdownRef.current?.contains(e.target as Node);
+      const clickedMenu = menuRef.current?.contains(e.target as Node);
+      if (!clickedTrigger && !clickedMenu) {
         setOpen(false);
         setSearch("");
       }
@@ -69,6 +85,25 @@ export default function TimeZoneSettingsPage() {
   // Focus search when dropdown opens
   useEffect(() => {
     if (open) setTimeout(() => searchRef.current?.focus(), 50);
+  }, [open]);
+
+  // The settings shell scrolls independently from the browser window. Render
+  // the menu in a portal and keep it aligned with its trigger so it can never
+  // be clipped when the page has been scrolled.
+  useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const rect = dropdownRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuPosition({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    document.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      document.removeEventListener("scroll", updatePosition, true);
+    };
   }, [open]);
 
   const handleSave = async () => {
@@ -101,9 +136,9 @@ export default function TimeZoneSettingsPage() {
   const selected = timezones.find(tz => tz.timezone_value === selectedTz);
 
   const filtered = timezones.filter(tz =>
-    tz.timezone_label.toLowerCase().includes(search.toLowerCase()) ||
-    tz.timezone_value.toLowerCase().includes(search.toLowerCase()) ||
-    tz.timezone_offset.toLowerCase().includes(search.toLowerCase())
+    tz.timezone_label.toLowerCase().includes(search.trim().toLowerCase()) ||
+    tz.timezone_value.toLowerCase().includes(search.trim().toLowerCase()) ||
+    tz.timezone_offset.toLowerCase().includes(search.trim().toLowerCase())
   );
 
   if (!admin) return null;
@@ -159,6 +194,9 @@ export default function TimeZoneSettingsPage() {
               <button
                 type="button"
                 onClick={() => { setOpen(v => !v); setSearch(""); }}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                aria-controls="timezone-options"
                 className="w-full flex items-center gap-3 px-3.5 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-secondary-500/50 focus:ring-1 focus:ring-secondary-500/20 transition-all hover:border-white/20"
               >
                 {selected ? (
@@ -176,8 +214,12 @@ export default function TimeZoneSettingsPage() {
               </button>
 
               {/* Dropdown */}
-              {open && (
-                <div className="absolute z-50 mt-1 w-full bg-primary-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+              {open && typeof document !== "undefined" && createPortal(
+                <div
+                  ref={menuRef}
+                  style={{ top: menuPosition.top, left: menuPosition.left, width: menuPosition.width }}
+                  className="fixed z-[70] overflow-hidden rounded-xl border border-white/10 bg-primary-900 shadow-2xl"
+                >
                   {/* Search input */}
                   <div className="p-2.5 border-b border-white/[0.06] flex items-center gap-2">
                     <Search size={14} className="text-gray-500 shrink-0 ml-1" />
@@ -197,17 +239,20 @@ export default function TimeZoneSettingsPage() {
                   </div>
 
                   {/* Results */}
-                  <div className="overflow-y-auto max-h-60">
+                  <div id="timezone-options" role="listbox" className="max-h-60 overflow-y-auto overscroll-contain">
                     {filtered.length === 0 ? (
                       <div className="px-4 py-6 text-center text-sm text-gray-500">No timezones found</div>
                     ) : (
                       filtered.map(tz => {
                         const active = tz.timezone_value === selectedTz;
                         return (
-                          <div
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={active}
                             key={tz.timezone_value}
                             onClick={() => { setSelectedTz(tz.timezone_value); setOpen(false); setSearch(""); }}
-                            className={`flex items-center gap-3 px-3.5 py-2.5 cursor-pointer transition-colors ${
+                            className={`flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors ${
                               active ? "bg-secondary-500/15 text-secondary-400" : "text-white hover:bg-white/[0.05]"
                             }`}
                           >
@@ -219,7 +264,7 @@ export default function TimeZoneSettingsPage() {
                               {tz.timezone_offset}
                             </span>
                             {active && <Check size={14} className="text-secondary-400 shrink-0" />}
-                          </div>
+                          </button>
                         );
                       })
                     )}
@@ -229,7 +274,8 @@ export default function TimeZoneSettingsPage() {
                   <div className="px-3.5 py-2 border-t border-white/[0.06] text-[11px] text-gray-600">
                     {filtered.length} of {timezones.length} timezones
                   </div>
-                </div>
+                </div>,
+                document.body
               )}
             </div>
 

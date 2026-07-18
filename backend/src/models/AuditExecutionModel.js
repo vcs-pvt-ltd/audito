@@ -135,7 +135,11 @@ const AuditExecutionModel = {
 
   async getEvidence(audit_response_id) {
     const [rows] = await db.query(
-      'SELECT * FROM audit_evidence WHERE audit_response_id = ? ORDER BY created_at',
+      `SELECT audit_evidence_id AS id, audit_evidence_id, audit_response_id, file_type,
+              file_path, file_name, file_size, uploaded_by, created_at
+         FROM audit_evidence
+        WHERE audit_response_id = ?
+        ORDER BY created_at`,
       [audit_response_id]
     );
     return rows;
@@ -143,7 +147,7 @@ const AuditExecutionModel = {
 
   async getEvidenceByAudit(audit_id) {
     const [rows] = await db.query(
-      `SELECT e.* FROM audit_evidence e
+      `SELECT e.*, e.audit_evidence_id AS id FROM audit_evidence e
        INNER JOIN audit_responses r ON r.audit_response_id = e.audit_response_id
        WHERE r.audit_id = ?
        ORDER BY e.audit_response_id, e.created_at`,

@@ -103,13 +103,24 @@ export default function CreateTrainingPage() {
             />
           </div>
 
-          <div className="md:col-span-2">
+          <div>
             <Input
               label="Video URL"
               required
               placeholder="https://www.youtube.com/watch?v=..."
               value={form.video_url}
               onChange={(e) => setForm((p) => ({ ...p, video_url: e.target.value }))}
+            />
+          </div>
+          
+          <div>
+            <Input
+              label="Duration (minutes)"
+              required
+              type="number"
+              placeholder="e.g. 45"
+              value={form.duration_minutes}
+              onChange={(e) => setForm((p) => ({ ...p, duration_minutes: e.target.value }))}
             />
           </div>
 
@@ -124,16 +135,6 @@ export default function CreateTrainingPage() {
             />
           </div>
 
-          <div>
-            <Input
-              label="Duration (minutes)"
-              required
-              type="number"
-              placeholder="e.g. 45"
-              value={form.duration_minutes}
-              onChange={(e) => setForm((p) => ({ ...p, duration_minutes: e.target.value }))}
-            />
-          </div>
         </div>
 
         {error && (

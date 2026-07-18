@@ -136,15 +136,6 @@ function subtreeHasQuestions(node: TreeNode | null, questionsByKey: Record<strin
   return (node.children || []).some((c) => subtreeHasQuestions(c, questionsByKey));
 }
 
-function findNodeByEdgeId(node: TreeNode, edgeId: string | null): TreeNode | null {
-  if (String(node.edge_id ?? "") === String(edgeId ?? "")) return node;
-  for (const c of node.children || []) {
-    const f = findNodeByEdgeId(c, edgeId);
-    if (f) return f;
-  }
-  return null;
-}
-
 function ProgressRing({ pct, size = 48 }: { pct: number; size?: number }) {
   const clamped = Math.max(0, Math.min(100, pct));
   const radius = (size - 8) / 2;
@@ -474,7 +465,7 @@ export default function ClientPage() {
   }, [responses]);
 
   const [stepHistory, setStepHistory] = useState<
-    ({ mode: "cards"; parentCode: string | null; parentEdgeId?: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
+    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
   >([{ mode: "cards", parentCode: null }]);
 
   if (isLoading) {
@@ -595,18 +586,6 @@ export default function ClientPage() {
                 return tree ? walk(tree) : null;
               };
 
-              const findInTreeExact = (code: string, edgeId: string | null): TreeNode | null => {
-                const walk = (n: TreeNode): TreeNode | null => {
-                  if (n.code === code && String(n.edge_id ?? "") === String(edgeId ?? "")) return n;
-                  for (const c of n.children || []) {
-                    const f = walk(c);
-                    if (f) return f;
-                  }
-                  return null;
-                };
-                return tree ? walk(tree) : null;
-              };
-
               const breadcrumbNodes: { label: string; goTo: () => void }[] = [];
               if (!isRoot) {
                 const seen = new Set<string>();
@@ -624,18 +603,16 @@ export default function ClientPage() {
 
               const navigateNode = (nd: TreeNode) => {
                 const code = nd.code;
-                const edgeId = nd.edge_id != null ? String(nd.edge_id) : null;
+                const edgeId = nd.edge_id ?? null;
                 const hasQ = (questionsByKey[progressKey(code, edgeId)]?.length || 0) > 0;
                 const hasKids = (nd.children ?? []).some((c) => subtreeHasQuestions(c, questionsByKey));
-                if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: code, parentEdgeId: edgeId }]);
+                if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: code }]);
                 else setStepHistory((h) => [...h, { mode: "questions", entityCode: code, orgTreeId: edgeId }]);
               };
 
               if (step.mode === "cards") {
-                const parent = step.parentCode
-                  ? (step.parentEdgeId != null ? findInTreeExact(step.parentCode, step.parentEdgeId) : findInTree(step.parentCode))
-                  : tree;
-                const rawCards = parent
+                const parent = step.parentCode ? findInTree(step.parentCode) : tree;
+                const cards = parent
                   ? (step.parentCode === null
                     ? ([parent].filter((n) => subtreeHasQuestions(n, questionsByKey))
                       .length
@@ -643,14 +620,6 @@ export default function ClientPage() {
                       : (parent.children || []).filter((c) => subtreeHasQuestions(c, questionsByKey)))
                     : (parent.children || []).filter((c) => subtreeHasQuestions(c, questionsByKey)))
                   : [];
-                const cards = (() => {
-                  const seen = new Set<string>();
-                  return rawCards.filter((c) => {
-                    if (seen.has(c.code)) return false;
-                    seen.add(c.code);
-                    return true;
-                  });
-                })();
 
                 return (
                   <div className="space-y-5">
@@ -687,16 +656,17 @@ export default function ClientPage() {
                 );
               }
 
-              const node = step.orgTreeId != null
-                ? findNodeByEdgeId(tree, step.orgTreeId)
-                : findInTreeExact(step.entityCode, null) || findInTree(step.entityCode);
+              const node = findInTree(step.entityCode);
               const entityCode = step.entityCode;
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
               const qs = getQuestionsForNode({ code: entityCode, edge_id: edgeId }, questionsByKey)
                 .slice()
                 .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
-              const nodeChildren = node ? (node.children || []) : [];
-              const hasChildrenWithQuestions = nodeChildren.some(c => subtreeHasQuestions(c, questionsByKey));
+              // Next is only a drill-down action. A leaf entity has nowhere further
+              // to navigate, so it must not offer a Next button.
+              const hasChildrenWithQuestions = (node?.children || []).some((child) =>
+                subtreeHasQuestions(child, questionsByKey)
+              );
 
               return (
                 <div className="space-y-5">
@@ -739,7 +709,10 @@ export default function ClientPage() {
                     </button>
                     {hasChildrenWithQuestions && (
                       <button
-                        onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode, parentEdgeId: edgeId }])}
+                        onClick={() => setStepHistory(h => [...h, {
+                          mode: "cards",
+                          parentCode: entityCode,
+                        }])}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
                       >
                         Next <ChevronRight size={14} />

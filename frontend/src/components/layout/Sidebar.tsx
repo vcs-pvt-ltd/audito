@@ -12,7 +12,7 @@ import { noticeApi, linksApi } from "@/lib/api";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
   ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
-  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Check, Trash2, Inbox,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Trash2, Inbox,
 } from "lucide-react";
 
 // ─── Avatar helper (mirrors profile page) ────────────────────────
@@ -470,8 +470,27 @@ export default function Sidebar() {
   const notifPopupRef = useRef<HTMLDivElement | null>(null);
   const [popupPos, setPopupPos] = useState<{ left: number; top: number } | null>(null);
   const [hasCompanyLink, setHasCompanyLink] = useState(false);
-  const canAccessNotices = admin?.role !== "admin" && admin?.role !== "audito_admin";
-  const canUseNotificationPanel = admin?.role !== "admin";
+  const canAccessNotices = Boolean(admin);
+  const canUseNotificationPanel = Boolean(admin);
+  const isNotificationRead = (notice: any) => notice?.is_read === true || notice?.is_read === 1 || notice?.is_read === "1";
+  const unreadNotificationCount = useMemo(
+    () => notices.filter((notice) => !isNotificationRead(notice)).length,
+    [notices]
+  );
+  const getNotificationId = (notice: any) => String(notice?.notification_id || notice?.auditor_notification_id || notice?.id || "");
+  const getNotificationTarget = (notice: any) => {
+    if (notice?.type === "audit_assigned" || notice?.type === "audit_start") {
+      if (admin?.role === "admin" || admin?.role === "audito_admin") return "/audits";
+      return notice.audit_id ? `/my-audits/details?id=${encodeURIComponent(String(notice.audit_id))}` : "/my-audits";
+    }
+    if (notice?.type === "training_assigned") return "/my-learning/trainings";
+    if (notice?.type === "field_visit_assigned") return "/my-learning/field-visits";
+    if (notice?.type === "evaluation_assigned") return "/my-learning/evaluation-papers";
+    if (notice?.type === "cap_created" || notice?.type === "sub_cap_created") {
+      return admin?.role === "admin" || admin?.role === "audito_admin" ? "/caps" : "/my-caps";
+    }
+    return "/dashboard";
+  };
 
   useEffect(() => {
     if (!accessToken || admin?.entity_type !== "Supplier") { setHasCompanyLink(false); return; }
@@ -545,20 +564,55 @@ export default function Sidebar() {
     }
   }, [accessToken, canAccessNotices]);
 
-  const updateNoticeState = async (action: "read" | "unread" | "delete", n: any) => {
-    if (!accessToken || !n?.id) return;
+  const openNotifications = async (button: HTMLButtonElement | null, alignRight = false) => {
+    if (notificationsOpen) {
+      setNotificationsOpen(false);
+      return;
+    }
+
+    if (button) {
+      const rect = button.getBoundingClientRect();
+      setPopupPos({ left: alignRight ? Math.max(10, rect.right - 384) : rect.left, top: rect.bottom + 8 });
+    }
+    setNotificationsOpen(true);
+
+    if (!accessToken || !canAccessNotices) return;
+    setLoadingNotices(true);
     try {
-      if (action === "read") {
-        await noticeApi.markRead(accessToken, n.id);
-        setNotices((prev) => prev.map((x) => x.id === n.id ? { ...x, is_read: true } : x));
-      } else if (action === "unread") {
-        await noticeApi.markUnread(accessToken, n.id);
-        setNotices((prev) => prev.map((x) => x.id === n.id ? { ...x, is_read: false } : x));
-      } else {
-        await noticeApi.deleteMine(accessToken, n.id);
-        setNotices((prev) => prev.filter((x) => x.id !== n.id));
+      const res = await noticeApi.getMyNotices(accessToken);
+      const nextNotices = res.success && res.data ? res.data.notices || [] : [];
+      setNotices(nextNotices);
+    } catch {
+      setNotices([]);
+    } finally {
+      setLoadingNotices(false);
+    }
+  };
+
+  const updateNoticeState = async (action: "delete", n: any) => {
+    const notificationId = getNotificationId(n);
+    if (!accessToken || !notificationId) return;
+    try {
+      const result = await noticeApi.deleteMine(accessToken, notificationId);
+      if (result.success) {
+        setNotices((prev) => prev.filter((notice) => getNotificationId(notice) !== notificationId));
       }
-    } catch { /* no-op */ }
+    } catch { void loadNotices(); }
+  };
+
+  const handleNotificationClick = async (notice: any) => {
+    const notificationId = getNotificationId(notice);
+    if (accessToken && notificationId && !isNotificationRead(notice)) {
+      setNotices((prev) => prev.map((item) => getNotificationId(item) === notificationId ? { ...item, is_read: true } : item));
+      try {
+        const result = await noticeApi.markRead(accessToken, notificationId);
+        if (!result.success) void loadNotices();
+      } catch {
+        void loadNotices();
+      }
+    }
+    setNotificationsOpen(false);
+    router.push(getNotificationTarget(notice));
   };
 
   const navKey = resolveNavKey(admin?.role ?? "", admin?.account_type);
@@ -613,22 +667,15 @@ export default function Sidebar() {
         <Image src={auditoLogo} alt="Audito" width={90} height={20} className="h-5 ml-3" />
         <div className="ml-auto flex items-center gap-1">
           {canUseNotificationPanel && <button ref={mobileNotifButtonRef}
-            onClick={async () => {
-              setNotificationsOpen((p) => {
-                const next = !p;
-                if (next && mobileNotifButtonRef.current) {
-                  const rect = mobileNotifButtonRef.current.getBoundingClientRect();
-                  setPopupPos({ left: Math.max(10, rect.left - 260), top: rect.bottom + 8 });
-                }
-                if (!p && notices.length === 0 && canAccessNotices) void loadNotices();
-                return next;
-              });
-            }}
-            className="h-9 w-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-all relative"
+            onClick={() => void openNotifications(mobileNotifButtonRef.current, true)}
+            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 transition-all hover:bg-white/5 hover:text-white"
+            aria-label={unreadNotificationCount > 0 ? `Notifications, ${unreadNotificationCount} unread` : "Notifications"}
           >
             <Bell size={18} />
-            {notices.some((n) => !(n as any).is_read) && (
-              <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-primary-950" />
+            {unreadNotificationCount > 0 && (
+              <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-primary-950 bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
+                {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+              </span>
             )}
           </button>}
           <Link href="/profile" className="h-9 w-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-all">
@@ -662,22 +709,15 @@ export default function Sidebar() {
           <div className="flex items-center gap-1">
             {!collapsed && canUseNotificationPanel && (
               <button ref={desktopNotifButtonRef}
-                onClick={async () => {
-                  setNotificationsOpen((p) => {
-                    const next = !p;
-                    if (next && desktopNotifButtonRef.current) {
-                      const rect = desktopNotifButtonRef.current.getBoundingClientRect();
-                      setPopupPos({ left: rect.left, top: rect.bottom + 8 });
-                    }
-                    if (!p && notices.length === 0 && canAccessNotices) void loadNotices();
-                    return next;
-                  });
-                }}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors relative"
+                onClick={() => void openNotifications(desktopNotifButtonRef.current)}
+                className="hidden h-10 w-10 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/5 hover:text-white lg:flex relative"
+                aria-label={unreadNotificationCount > 0 ? `Notifications, ${unreadNotificationCount} unread` : "Notifications"}
               >
                 <Bell size={17} />
-                {notices.some((n) => !(n as any).is_read) && (
-                  <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-primary-950" />
+                {unreadNotificationCount > 0 && (
+                  <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-primary-950 bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
+                    {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                  </span>
                 )}
               </button>
             )}
@@ -813,8 +853,8 @@ export default function Sidebar() {
       {canUseNotificationPanel && notificationsOpen && typeof document !== "undefined" && createPortal(
         <div ref={notifPopupRef}
           style={{ position: "fixed", left: popupPos?.left ?? 8, top: popupPos?.top ?? 8 }}
-          className="z-[9999] flex w-[min(24rem,calc(100vw-1rem))] max-h-[min(34rem,calc(100dvh-5rem))] flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-[#08251a]/[0.98] shadow-2xl shadow-black/50 backdrop-blur-2xl">
-          <div className="border-b border-white/[0.08] bg-gradient-to-r from-secondary-500/[0.13] to-transparent px-4 py-3.5">
+          className="z-[9999] flex w-[min(24rem,calc(100vw-1rem))] max-h-[min(27rem,calc(100dvh-5rem))] flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-[#08251a]/[0.98] shadow-2xl shadow-black/50 backdrop-blur-2xl">
+          <div className="border-b border-white/[0.08] bg-gradient-to-r from-secondary-500/[0.13] to-transparent px-4 py-2.5">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-secondary-400/20 bg-secondary-500/15 text-secondary-300"><Bell size={16} /></div>
@@ -833,22 +873,25 @@ export default function Sidebar() {
           ) : (
             <div className="flex-1 space-y-2 overflow-y-auto p-2.5 overscroll-contain">
               {notices.map((n, i) => (
-                <article key={`${(n as any).id || i}`} className={`relative overflow-hidden rounded-xl border p-3 transition-colors ${(n as any).is_read ? "border-white/[0.06] bg-white/[0.02]" : "border-secondary-400/20 bg-secondary-500/[0.07]"}`}>
-                  {!(n as any).is_read && <span className="absolute inset-y-0 left-0 w-0.5 bg-secondary-400" />}
+                <article
+                  key={getNotificationId(n) || i}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => void handleNotificationClick(n)}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void handleNotificationClick(n); } }}
+                  className={`relative cursor-pointer overflow-hidden rounded-xl border p-2.5 transition-colors hover:border-secondary-400/35 hover:bg-white/[0.05] ${isNotificationRead(n) ? "border-white/[0.06] bg-white/[0.02]" : "border-secondary-400/20 bg-secondary-500/[0.07]"}`}
+                >
+                  {!isNotificationRead(n) && <span className="absolute inset-y-0 left-0 w-0.5 bg-secondary-400" />}
                   <div className="flex gap-2.5">
-                    <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${(n as any).is_read ? "bg-gray-600" : "bg-secondary-400 shadow-[0_0_8px_rgba(251,191,36,0.65)]"}`} />
+                    <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isNotificationRead(n) ? "bg-gray-600" : "bg-secondary-400 shadow-[0_0_8px_rgba(251,191,36,0.65)]"}`} />
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm font-semibold leading-5 text-white">{(n as any).title || "Notification"}</h3>
                       {(n as any).message && (n as any).message !== (n as any).title && <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-400">{(n as any).message}</p>}
-                      {(n as any).created_at && <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-500">{new Date((n as any).created_at).toLocaleString()}</p>}
                     </div>
                   </div>
-                  <div className="mt-3 flex items-center gap-2 pl-4">
-                    <button onClick={() => void updateNoticeState((n as any).is_read ? "unread" : "read", n)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] font-medium text-gray-300 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white">
-                      <Check size={12} /> {(n as any).is_read ? "Mark unread" : "Mark read"}
-                    </button>
-                    <button onClick={() => void updateNoticeState("delete", n)}
+                  <div className="mt-2 flex items-center justify-between gap-3 pl-4">
+                    <p className="min-w-0 text-[10px] font-medium uppercase tracking-[0.08em] text-gray-500">{(n as any).created_at ? new Date((n as any).created_at).toLocaleString() : ""}</p>
+                    <button onClick={(event) => { event.stopPropagation(); void updateNoticeState("delete", n); }}
                       aria-label="Delete notification" title="Delete notification"
                       className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-red-500/20 text-red-300 transition hover:border-red-400/50 hover:bg-red-500/10 hover:text-red-200">
                       <Trash2 size={12} />

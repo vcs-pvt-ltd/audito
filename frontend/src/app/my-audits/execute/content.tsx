@@ -63,6 +63,7 @@ interface QuestionCardProps {
   entityCode: string;
   orgTreeId: string | null;
   accessToken: string;
+  allowRichMedia: boolean;
   onSaved: () => Promise<void>;
   onDirtyChange?: (questionId: number, dirty: boolean) => void;
   isOpen?: boolean;
@@ -151,6 +152,7 @@ interface AuditDetail {
   entities: AuditEntity[];
   entity_questions: EntityQuestion[];
   entity_progress: EntityProgress[];
+  evidence_policy?: { plan_name?: string; allow_rich_media?: boolean };
 }
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -242,6 +244,7 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     entityCode,
     orgTreeId,
     accessToken,
+    allowRichMedia,
     onSaved,
     onDirtyChange,
     isOpen,
@@ -387,6 +390,10 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
   const handleFileUpload = async (file: File): Promise<boolean> => {
     if (evidence.length >= 1) {
       setEvidenceErr("Only one evidence can be uploaded per question.");
+      return false;
+    }
+    if (!file.type.startsWith("image/") && !allowRichMedia) {
+      setEvidenceErr("Your plan allows image evidence only.");
       return false;
     }
     setEvidenceErr("");
@@ -771,7 +778,8 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
           uploading={uploading}
           error={evidenceErr}
           view={viewEvidence}
-          onClearView={() => setViewEvidence(null)}
+          onClearView={evidence.length === 0 ? () => setViewEvidence(null) : undefined}
+          allowRichMedia={allowRichMedia}
         />
       </div>}
     </div>
@@ -1304,6 +1312,7 @@ export default function MyAuditExecutePage() {
                             entityCode={entityCode}
                             orgTreeId={orgTreeIdForKey}
                             accessToken={accessToken!}
+                            allowRichMedia={!!audit?.evidence_policy?.allow_rich_media}
                             onSaved={refreshResponses}
                             onDirtyChange={handleDirtyChange}
                             isOpen={openQuestionId === q.id}

@@ -60,8 +60,7 @@ export default function ChecklistsPage() {
 
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("active");
-  const [repeatFilter, setRepeatFilter] = useState<string>("all");
+  const [createdAtFilter, setCreatedAtFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("newest");
 
   // Pagination state
@@ -107,22 +106,28 @@ export default function ChecklistsPage() {
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
     return checklists.filter((c) => {
-      if (statusFilter === "active" && !c.is_active) return false;
-      if (statusFilter === "inactive" && c.is_active) return false;
       if (typeFilter !== "all" && (c.checklist_type_name || "") !== typeFilter) return false;
-      const repeats = Boolean(c.repeat_duration_value && c.repeat_duration_unit);
-      if (repeatFilter === "repeating" && !repeats) return false;
-      if (repeatFilter === "one_time" && repeats) return false;
+      if (createdAtFilter !== "all") {
+        const createdAt = new Date(c.created_at).getTime();
+        if (!Number.isFinite(createdAt)) return false;
+        const now = new Date();
+        if (createdAtFilter === "today") {
+          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+          if (createdAt < startOfToday) return false;
+        }
+        if (createdAtFilter === "last_7_days" && createdAt < now.getTime() - 7 * 24 * 60 * 60 * 1000) return false;
+        if (createdAtFilter === "last_30_days" && createdAt < now.getTime() - 30 * 24 * 60 * 60 * 1000) return false;
+      }
       if (!query) return true;
       const hay = `${c.name || ""} ${c.description || ""} ${c.checklist_type_name || ""}`.toLowerCase();
       return hay.includes(query);
     });
-  }, [checklists, q, typeFilter, statusFilter, repeatFilter]);
+  }, [checklists, q, typeFilter, createdAtFilter]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [q, typeFilter, statusFilter, repeatFilter, sortBy]);
+  }, [q, typeFilter, createdAtFilter, sortBy]);
 
   const sorted = useMemo(() => [...filtered].sort((a, b) => {
     if (sortBy === "name") return (a.name || "").localeCompare(b.name || "");
@@ -249,16 +254,15 @@ export default function ChecklistsPage() {
         {/* Filters */}
         {!loading && checklists.length > 0 && (
           <div className="glass mb-5 rounded-2xl p-3 sm:p-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
-              <label className="grid gap-1 text-[11px] font-medium text-gray-400 sm:col-span-2 lg:col-span-3 xl:col-span-2">Search
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+              <label className="grid gap-1 text-[11px] font-medium text-gray-400 sm:col-span-2 xl:col-span-5">Search
                 <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, description, or type..." className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-secondary-500/40" /></div>
               </label>
-              <label className="grid gap-1 text-[11px] font-medium text-gray-400">Type<select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="all">All types</option>{typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
-              <label className="grid gap-1 text-[11px] font-medium text-gray-400">Status<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All statuses</option></select></label>
-              <label className="grid gap-1 text-[11px] font-medium text-gray-400">Schedule<select value={repeatFilter} onChange={(e) => setRepeatFilter(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="all">Any schedule</option><option value="repeating">Repeating</option><option value="one_time">One-time</option></select></label>
-              <label className="grid gap-1 text-[11px] font-medium text-gray-400">Sort by<select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A-Z</option><option value="most_used">Most used</option></select></label>
-              <button type="button" onClick={() => { setQ(""); setTypeFilter("all"); setStatusFilter("active"); setRepeatFilter("all"); setSortBy("newest"); }} className="mt-5 h-10 rounded-lg border border-white/10 px-3 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.06]">Reset</button>
-              <div className="text-xs text-gray-500 sm:col-span-2 lg:col-span-3 xl:col-span-7">Showing <span className="font-medium text-gray-300">{filtered.length}</span> of {checklists.length} checklists</div>
+              <label className="grid gap-1 text-[11px] font-medium text-gray-400 xl:col-span-2">Type<select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="all">All types</option>{typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
+              <label className="grid gap-1 text-[11px] font-medium text-gray-400 xl:col-span-2">Created at<select value={createdAtFilter} onChange={(e) => setCreatedAtFilter(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="all">Any time</option><option value="today">Today</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></label>
+              <label className="grid gap-1 text-[11px] font-medium text-gray-400 xl:col-span-2">Sort by<select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 bg-white/[0.03] border border-white/10 rounded-lg px-3 text-sm text-gray-200 focus:outline-none focus:border-secondary-500/40"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A-Z</option><option value="most_used">Most used</option></select></label>
+              <button type="button" onClick={() => { setQ(""); setTypeFilter("all"); setCreatedAtFilter("all"); setSortBy("newest"); }} className="h-10 self-end rounded-lg border border-white/10 px-3 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.06] xl:col-span-1">Reset</button>
+              <div className="text-xs text-gray-500 sm:col-span-2 xl:col-span-12">Showing <span className="font-medium text-gray-300">{filtered.length}</span> of {checklists.length} checklists</div>
             </div>
           </div>
         )}
@@ -283,7 +287,7 @@ export default function ChecklistsPage() {
           <EmptyState
             icon={ClipboardList}
             title="No checklists match your filters"
-            message="Try adjusting search/type/status."
+            message="Try adjusting the search, type, or created-at filter."
           />
         ) : (
           <>
@@ -293,6 +297,7 @@ export default function ChecklistsPage() {
                 <Th className="w-12">#</Th>
                 <Th>Name</Th>
                 <Th>Type</Th>
+                <Th>Created At</Th>
                 <Th>Time Period</Th>
                 <Th>Repeat</Th>
                 <Th>Budget</Th>
@@ -327,6 +332,7 @@ export default function ChecklistsPage() {
                           <span className="text-gray-600">—</span>
                         )}
                       </td>
+                      <td className="px-4 py-3 text-xs text-gray-400">{cl.created_at ? new Date(cl.created_at).toLocaleDateString() : "—"}</td>
                       <td className="px-4 py-3 text-gray-300">
                         {cl.time_period_value && cl.time_period_unit
                           ? `${cl.time_period_value} ${cl.time_period_unit}`
@@ -454,6 +460,10 @@ export default function ChecklistsPage() {
                       <div className="col-span-2 rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
                         <p className="text-gray-500">Assigned Audits</p>
                         <p className="text-gray-300 mt-0.5 truncate">{auditCount}</p>
+                      </div>
+                      <div className="col-span-2 rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
+                        <p className="text-gray-500">Created At</p>
+                        <p className="text-gray-300 mt-0.5 truncate">{cl.created_at ? new Date(cl.created_at).toLocaleDateString() : "-"}</p>
                       </div>
                     </div>
 

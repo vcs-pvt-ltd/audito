@@ -317,7 +317,6 @@ export default function CapsPage() {
                 <THead>
                   <Th className="w-10">#</Th>
                   <Th>CAP</Th>
-                  <Th>Organization</Th>
                   <Th>Auditor</Th>
                   <Th>Status</Th>
                   <Th>Progress</Th>
@@ -349,16 +348,7 @@ export default function CapsPage() {
                             <p className="text-white font-medium truncate">{cap.title}</p>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
-                          {cap.entity_name ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
-                              <Building2 size={12} className="text-gray-500 shrink-0" />
-                              <span className="truncate max-w-[150px]">{cap.entity_name}</span>
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-600">—</span>
-                          )}
-                        </td>
+                        
                         <td className="px-4 py-3">
                           <span className="text-sm text-gray-300">
                             {auditorByCapId[cap.cap_id] ?? "—"}

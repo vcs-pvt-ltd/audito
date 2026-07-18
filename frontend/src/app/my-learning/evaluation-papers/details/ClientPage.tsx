@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { myLearningApi } from "@/lib/api";
-import { ArrowLeft, CheckCircle2, Circle, Loader2, Clock, AlertTriangle, Trophy } from "lucide-react";
+import Loading from "@/components/shared/Loading";
+import { ArrowLeft, CheckCircle2, CheckSquare, Circle, Clock, AlertTriangle, Square, Trophy } from "lucide-react";
 
 interface Paper {
   id: number;
@@ -16,6 +17,8 @@ interface Paper {
   pass_marks?: number | null;
   due_date?: string | null;
   assignment_status?: string;
+  started_at?: string | null;
+  expires_at?: string | null;
 }
 
 interface Option {
@@ -49,7 +52,7 @@ interface ResultState {
 
 export default function EvaluationPaperAttemptPage() {
   const { admin, accessToken, isLoading } = useAuth();
-  const { alert } = useUiFeedback();
+  const { alert, confirm } = useUiFeedback();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -58,6 +61,7 @@ export default function EvaluationPaperAttemptPage() {
   const [paper, setPaper] = useState<Paper | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({});
+  const answersRef = useRef<Record<string, AnswerState>>({});
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -102,7 +106,21 @@ export default function EvaluationPaperAttemptPage() {
       return;
     }
 
-    setPaper(d.paper);
+    if (d.paper.assignment_status === "expired") {
+      setError("The time limit for this evaluation paper has ended.");
+      setLoading(false);
+      return;
+    }
+
+    const startRes = await myLearningApi.startEvaluationPaper(accessToken, paperId);
+    if (!startRes.success || !startRes.data) {
+      setError(startRes.message || "Unable to start this evaluation paper.");
+      setLoading(false);
+      return;
+    }
+    const timing = startRes.data as { assignment_status?: string; expires_at?: string | null; remaining_seconds?: number | null };
+
+    setPaper({ ...d.paper, assignment_status: timing.assignment_status, expires_at: timing.expires_at });
     setQuestions(d.questions || []);
 
     const initial: Record<string, AnswerState> = {};
@@ -114,9 +132,10 @@ export default function EvaluationPaperAttemptPage() {
       else initial[key] = { answer_type: t || "single_option", selected_option_id: null } as AnswerState;
     });
     setAnswers(initial);
+    answersRef.current = initial;
 
-    if (d.paper.time_limit_minutes && d.paper.time_limit_minutes > 0) {
-      setTimeLeftSeconds(d.paper.time_limit_minutes * 60);
+    if (typeof timing.remaining_seconds === "number") {
+      setTimeLeftSeconds(Math.max(0, timing.remaining_seconds));
       setTimerActive(true);
     }
 
@@ -129,17 +148,31 @@ export default function EvaluationPaperAttemptPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, paperId]);
 
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
   const handleSubmit = async (isAutoSubmit = false) => {
     if (!accessToken) return;
+    if (!isAutoSubmit) {
+      const accepted = await confirm({
+        title: "Submit Evaluation Paper",
+        message: "Submit your answers now? You cannot change them after submission.",
+        confirmText: "Submit paper",
+        variant: "warning",
+      });
+      if (!accepted) return;
+    }
     setSubmitting(true);
     setResult(null);
     setTimerActive(false);
 
     try {
-      const payloadAnswers = Object.entries(answers).map(([qid, a]) => {
+      const payloadAnswers = Object.entries(answersRef.current).map(([qid, a]) => {
         if (a.answer_type === "free_text") return { question_id: qid, answer_text: a.answer_text };
         if (a.answer_type === "multiple_options") return { question_id: qid, selected_option_ids: a.selected_option_ids.map(String) };
-        return { question_id: qid, selected_option_id: a.selected_option_id != null ? String(a.selected_option_id) : null };
+        const selectedOptionId = "selected_option_id" in a ? a.selected_option_id : null;
+        return { question_id: qid, selected_option_id: selectedOptionId != null ? String(selectedOptionId) : null };
       });
 
       const res = await myLearningApi.submitEvaluationPaper(accessToken, paperId, payloadAnswers);
@@ -151,7 +184,7 @@ export default function EvaluationPaperAttemptPage() {
           await alert({ title: "Time Limit Reached", message: "Your attempt has been automatically submitted.", variant: "warning" });
         }
       } else {
-        setError(res.message || "Submit failed.");
+        setError(res.message || "Submit failed. The paper may have expired.");
       }
     } catch (e: any) {
       setError(e.message || "An unexpected error occurred during submission.");
@@ -189,13 +222,7 @@ export default function EvaluationPaperAttemptPage() {
     return <div className="p-6 pt-20 lg:pt-8 text-gray-300">Only auditors can access this page.</div>;
   }
 
-  if (loading) {
-    return (
-      <div className="p-6 lg:p-8 pt-20 lg:pt-8 text-gray-400 flex items-center gap-2">
-        <Loader2 size={16} className="animate-spin" /> Loading...
-      </div>
-    );
-  }
+  if (loading) return <Loading />;
 
   if (error) {
     return (
@@ -257,7 +284,7 @@ export default function EvaluationPaperAttemptPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 pt-20 lg:pt-8 space-y-6 overflow-y-auto">
+    <div className="mx-auto max-w-5xl space-y-6 overflow-y-auto p-4 pt-20 sm:p-6 lg:p-8 lg:pt-8">
       <div className="flex items-center justify-between gap-4">
         <div>
           <button onClick={() => router.push("/my-learning/evaluation-papers")} className="text-gray-300 hover:text-white inline-flex items-center gap-2 text-sm">
@@ -293,28 +320,28 @@ export default function EvaluationPaperAttemptPage() {
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {questions.map((q, idx) => (
-          <div key={q.question_id ?? q.id} className="glass border border-white/10 rounded-2xl p-5">
+          <div key={q.question_id ?? q.id} className="glass rounded-2xl border border-white/10 p-4 sm:p-5">
             <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-white font-semibold">Q{idx + 1}. {q.question_text}</p>
-                <p className="text-xs text-gray-500 mt-1">Marks: {q.marks}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold leading-6 text-white">Q{idx + 1}. {q.question_text}</p>
               </div>
+              <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-gray-400">{q.marks} marks</span>
             </div>
 
             {q.answer_type === "free_text" ? (
-              <div className="mt-4">
+              <div className="mt-4 max-w-3xl">
                 <textarea
                   value={(() => { const a = answers[q.question_id ?? String(q.id)]; if (a && a.answer_type === "free_text" && "answer_text" in a) return a.answer_text; return ""; })()}
                   onChange={(e) => setAnswers((p) => ({ ...p, [q.question_id ?? String(q.id)]: { answer_type: "free_text", answer_text: e.target.value } }))}
-                  className="w-full min-h-[120px] px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-secondary-500/50 transition-colors"
+                  className="min-h-28 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-gray-500 transition-colors focus:border-secondary-500/50 focus:outline-none"
                   placeholder="Type your answer..."
                 />
                 <p className="text-xs text-gray-500 mt-2">This question is not auto-scored.</p>
               </div>
             ) : q.answer_type === "multiple_options" ? (
-              <div className="mt-4 space-y-2">
+              <div className="mt-4 grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-2">
                 {q.options.map((o) => {
                   const qKey = q.question_id ?? String(q.id);
                   const current = answers[qKey];
@@ -328,9 +355,9 @@ export default function EvaluationPaperAttemptPage() {
                         const next = checked ? ids.filter((x) => x !== o.id) : [...ids, o.id];
                         return { ...p, [qKey]: { answer_type: "multiple_options", selected_option_ids: next } };
                       })}
-                      className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-2 ${checked ? "border-secondary-500/60 bg-secondary-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
+                      className={`flex min-h-12 w-full items-start gap-2 rounded-xl border p-3 text-left transition-all ${checked ? "border-secondary-500/60 bg-secondary-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
                     >
-                      {checked ? <CheckCircle2 size={16} className="text-secondary-400 mt-0.5" /> : <Circle size={16} className="text-gray-500 mt-0.5" />}
+                      {checked ? <CheckSquare size={16} className="text-secondary-400 mt-0.5" /> : <Square size={16} className="text-gray-500 mt-0.5" />}
                       <span className="text-sm text-gray-200">
                         {o.option_text}
                         {typeof o.marks === "number" ? <span className="text-xs text-gray-500"> {`(+${o.marks})`}</span> : null}
@@ -339,17 +366,33 @@ export default function EvaluationPaperAttemptPage() {
                   );
                 })}
               </div>
+            ) : q.answer_type === "dropdown" ? (
+              <div className="mt-4 max-w-md">
+                <label className="sr-only" htmlFor={`answer-${q.question_id ?? q.id}`}>Select an answer</label>
+                <select
+                  id={`answer-${q.question_id ?? q.id}`}
+                  value={(() => { const current = answers[q.question_id ?? String(q.id)]; return current && "selected_option_id" in current ? current.selected_option_id || "" : ""; })()}
+                  onChange={(event) => setAnswers((current) => ({
+                    ...current,
+                    [q.question_id ?? String(q.id)]: { answer_type: "dropdown", selected_option_id: event.target.value || null },
+                  }))}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-secondary-500/50"
+                >
+                  <option value="" className="bg-primary-950">Select an answer</option>
+                  {q.options.map((option) => <option key={option.id} value={option.id} className="bg-primary-950">{option.option_text}</option>)}
+                </select>
+              </div>
             ) : (
-              <div className="mt-4 space-y-2">
+              <div className="mt-4 grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-2">
                 {q.options.map((o) => {
                   const qKey = q.question_id ?? String(q.id);
                   const current = answers[qKey];
-                  const selectedId = current && (current.answer_type === "single_option" || current.answer_type === "dropdown") ? current.selected_option_id : null;
+                  const selectedId = current && current.answer_type === "single_option" ? current.selected_option_id : null;
                   const checked = selectedId === o.id;
                   return (
                     <button key={o.id} type="button"
-                      onClick={() => setAnswers((p) => ({ ...p, [qKey]: { answer_type: q.answer_type, selected_option_id: o.id } as AnswerState }))}
-                      className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-2 ${checked ? "border-secondary-500/60 bg-secondary-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
+                      onClick={() => setAnswers((p) => ({ ...p, [qKey]: { answer_type: "single_option", selected_option_id: o.id } }))}
+                      className={`flex min-h-12 w-full items-start gap-2 rounded-xl border p-3 text-left transition-all ${checked ? "border-secondary-500/60 bg-secondary-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
                     >
                       {checked ? <CheckCircle2 size={16} className="text-secondary-400 mt-0.5" /> : <Circle size={16} className="text-gray-500 mt-0.5" />}
                       <span className="text-sm text-gray-200">

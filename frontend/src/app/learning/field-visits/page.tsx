@@ -33,7 +33,7 @@ interface Auditor {
 }
 
 interface Assignment {
-  assignment_id: number;
+  assignment_id: string;
   assigned_at: string;
   check_in_time?: string | null;
   check_out_time?: string | null;
@@ -52,9 +52,10 @@ interface Assignment {
 function AssignModal({
   open, onClose, onAssign, auditors,
 }: {
-  open: boolean; onClose: () => void; onAssign: (codes: string[]) => Promise<void>; auditors: Auditor[];
+  open: boolean; onClose: () => void; onAssign: (codes: string[], sendEmail: boolean) => Promise<boolean>; auditors: Auditor[];
 }) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [sendEmail, setSendEmail] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const selectedCodes = useMemo(
@@ -62,7 +63,7 @@ function AssignModal({
     [selected]
   );
 
-  useEffect(() => { if (!open) setSelected({}); }, [open]);
+  useEffect(() => { if (!open) { setSelected({}); setSendEmail(true); } }, [open]);
 
   return (
     <Modal open={open} onClose={onClose} size="md" title="Assign Visit">
@@ -80,13 +81,17 @@ function AssignModal({
             </label>
           ))}
         </div>
+        <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 cursor-pointer">
+          <input type="checkbox" checked={sendEmail} onChange={(event) => setSendEmail(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0 cursor-pointer" />
+          <span><span className="block text-sm font-medium text-white">Send assignment email</span><span className="block mt-0.5 text-xs text-gray-500">Auditors will always receive an in-app notification.</span></span>
+        </label>
         <div className="flex gap-3 pt-2">
           <Button variant="secondary" fullWidth onClick={onClose}>Cancel</Button>
           <Button
             fullWidth
             loading={loading}
             disabled={selectedCodes.length === 0}
-            onClick={async () => { setLoading(true); await onAssign(selectedCodes); setLoading(false); onClose(); }}
+            onClick={async () => { setLoading(true); const assigned = await onAssign(selectedCodes, sendEmail); setLoading(false); if (assigned) onClose(); }}
           >
             {loading ? "Assigning..." : `Assign (${selectedCodes.length})`}
           </Button>
@@ -97,9 +102,9 @@ function AssignModal({
 }
 
 function ViewAssignmentsModal({
-  open, onClose, assignments, title,
+  open, onClose, assignments, title, onDelete,
 }: {
-  open: boolean; onClose: () => void; assignments: Assignment[]; title: string;
+  open: boolean; onClose: () => void; assignments: Assignment[]; title: string; onDelete: (assignment: Assignment) => Promise<void>;
 }) {
   return (
     <Modal
@@ -118,6 +123,7 @@ function ViewAssignmentsModal({
                   <th className="px-4 py-3 text-gray-400 font-medium">Auditor</th>
                   <th className="px-4 py-3 text-gray-400 font-medium text-center">Status</th>
                   <th className="px-4 py-3 text-gray-400 font-medium text-right">Activity</th>
+                  <th className="px-4 py-3 text-gray-400 font-medium text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -132,12 +138,17 @@ function ViewAssignmentsModal({
                       </td>
                       <td className="px-4 py-4 text-center">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] border ${isCompleted ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
-                          {isCompleted ? "Completed" : "Active"}
+                          {isCompleted ? "Completed" : "Pending"}
                         </span>
                       </td>
                       <td className="px-4 py-4 text-right">
                         <p className="text-[10px] text-gray-400">IN: {a.check_in_time ? new Date(a.check_in_time).toLocaleDateString() : "—"}</p>
                         {a.check_out_time && <p className="text-[10px] text-green-400">OUT: {new Date(a.check_out_time).toLocaleDateString()}</p>}
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        {isCompleted ? <span className="text-[10px] text-gray-500">Locked</span> : (
+                          <button onClick={() => onDelete(a)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Remove pending assignment"><Trash2 size={15} /></button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -225,6 +236,15 @@ export default function AuditFirmFieldVisitsPage() {
     else toast(res.message || "Failed to delete field visit.", "error");
   };
 
+  const handleAssignmentDelete = async (assignment: Assignment) => {
+    if (!accessToken || !viewAssignmentsId || assignment.assignment_status !== "assigned") return;
+    const ok = await confirm({ title: "Remove Assignment", message: `Remove the pending field visit assignment for ${assignment.auditor_first_name} ${assignment.auditor_last_name}?`, confirmText: "Remove", variant: "warning" });
+    if (!ok) return;
+    const res = await auditFirmLearningApi.deleteFieldVisitAssignment(accessToken, viewAssignmentsId, assignment.assignment_id);
+    if (res.success) { toast("Pending field visit assignment removed.", "success"); await load(); }
+    else toast(res.message || "Failed to remove field visit assignment.", "error");
+  };
+
   return (
     <div className="p-6 lg:p-8 pt-20 lg:pt-8 space-y-6 overflow-y-auto h-full">
       {/* Header */}
@@ -288,7 +308,6 @@ export default function AuditFirmFieldVisitsPage() {
                 <THead>
                   <Th align="center" className="w-10">#</Th>
                   <Th>Title</Th>
-                  <Th>Organization</Th>
                   <Th>Location</Th>
                   <Th align="center">Schedule</Th>
                   <Th align="center">Assigned</Th>
@@ -305,17 +324,6 @@ export default function AuditFirmFieldVisitsPage() {
                         <td className="px-4 py-4">
                           <p className="text-white font-medium">{v.title}</p>
                           {v.notes && <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{v.notes}</p>}
-                        </td>
-
-                        <td className="px-4 py-4">
-                          {v.entity_name ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
-                              <Building2 size={12} className="text-gray-500 shrink-0" />
-                              <span className="truncate max-w-[120px]">{v.entity_name}</span>
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-600">—</span>
-                          )}
                         </td>
 
                         {/* Location — no wrapper div with min-w */}
@@ -433,10 +441,13 @@ export default function AuditFirmFieldVisitsPage() {
         open={assignOpen}
         onClose={() => setAssignOpen(false)}
         auditors={auditors}
-        onAssign={async (codes) => {
-          if (!accessToken || !assignVisitId) return;
-          await auditFirmLearningApi.assignFieldVisit(accessToken, assignVisitId, codes);
+        onAssign={async (codes, sendEmail) => {
+          if (!accessToken || !assignVisitId) return false;
+          const res = await auditFirmLearningApi.assignFieldVisit(accessToken, assignVisitId, codes, sendEmail);
+          if (!res.success) { toast(res.message || "Failed to assign field visit.", "error"); return false; }
+          toast(`Field visit assigned to ${codes.length} auditor${codes.length === 1 ? "" : "s"}.`, "success");
           await load();
+          return true;
         }}
       />
 
@@ -445,6 +456,7 @@ export default function AuditFirmFieldVisitsPage() {
         onClose={() => setViewAssignmentsOpen(false)}
         assignments={filteredAssignments}
         title={selectedVisit?.title || ""}
+        onDelete={handleAssignmentDelete}
       />
     </div>
   );

@@ -16,6 +16,7 @@ import {
   X,
   Check,
   Tag,
+  Search,
 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
@@ -124,6 +125,7 @@ export default function ChecklistTypesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<ChecklistType | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -148,11 +150,21 @@ export default function ChecklistTypesPage() {
     fetchTypes();
   }, [fetchTypes]);
 
-  const totalPages = Math.ceil(types.length / pageSize);
+  const filteredTypes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return types;
+    return types.filter((type) => `${type.name} ${type.description || ""}`.toLowerCase().includes(query));
+  }, [types, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  const totalPages = Math.ceil(filteredTypes.length / pageSize);
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return types.slice(start, start + pageSize);
-  }, [types, currentPage, pageSize]);
+    return filteredTypes.slice(start, start + pageSize);
+  }, [filteredTypes, currentPage, pageSize]);
 
   const handleSubmit = async (data: ChecklistTypePayload) => {
     if (!accessToken) return;
@@ -232,6 +244,20 @@ export default function ChecklistTypesPage() {
           </div>
         </div>
 
+        {!loading && types.length > 0 && (
+          <div className="mb-6 max-w-lg">
+            <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+              <Search size={14} className="text-gray-500" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search checklist types..."
+                className="w-full bg-transparent text-sm text-gray-200 outline-none placeholder:text-gray-600"
+              />
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         {loading ? (
           <div className="flex items-center justify-center py-24">
@@ -252,6 +278,12 @@ export default function ChecklistTypesPage() {
               </button>
             )}
           />
+        ) : filteredTypes.length === 0 ? (
+          <div className="glass rounded-xl p-16 text-center">
+            <Search size={36} className="mx-auto mb-4 text-gray-600" />
+            <p className="font-medium text-white">No matching checklist types</p>
+            <p className="mt-1 text-sm text-gray-400">Try a different name or description.</p>
+          </div>
         ) : (
           <>
             <div className="hidden md:block">
@@ -260,7 +292,7 @@ export default function ChecklistTypesPage() {
                   <Th className="w-12">#</Th>
                   <Th>Name</Th>
                   <Th>Description</Th>
-                  <Th>Status</Th>
+                  <Th>Created At</Th>
                   <Th align="right">Actions</Th>
                 </THead>
                 <TBody>
@@ -273,17 +305,7 @@ export default function ChecklistTypesPage() {
                         <Td className="text-gray-400 max-w-xs">
                           <span className="line-clamp-2">{t.description || "—"}</span>
                         </Td>
-                        <Td>
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              t.is_active
-                                ? "bg-secondary-500/15 text-secondary-400"
-                                : "bg-red-500/15 text-red-400"
-                            }`}
-                          >
-                            {t.is_active ? "Active" : "Inactive"}
-                          </span>
-                        </Td>
+                        <Td className="text-gray-400 text-xs">{new Date(t.created_at).toLocaleDateString()}</Td>
                         <Td align="right">
                           <div className="flex items-center justify-end gap-1">
                             <IconButton tone="secondary" onClick={() => { setEditItem(t); setModalOpen(true); }} title="Edit">
@@ -322,16 +344,8 @@ export default function ChecklistTypesPage() {
                         <h3 className="text-sm font-semibold text-white truncate">{t.name}</h3>
                         <p className="text-xs text-gray-400 mt-1 line-clamp-2">{t.description || "-"}</p>
                       </div>
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          t.is_active
-                            ? "bg-secondary-500/15 text-secondary-400"
-                            : "bg-red-500/15 text-red-400"
-                        }`}
-                      >
-                        {t.is_active ? "Active" : "Inactive"}
-                      </span>
                     </div>
+                    <p className="mt-3 text-xs text-gray-500">Created {new Date(t.created_at).toLocaleDateString()}</p>
                     <div className="mt-3 flex items-center justify-end gap-1">
                       <IconButton size="md" tone="secondary" onClick={() => { setEditItem(t); setModalOpen(true); }} title="Edit">
                         <Pencil size={15} />
@@ -359,7 +373,7 @@ export default function ChecklistTypesPage() {
               currentPage={currentPage}
               totalPages={totalPages}
               pageSize={pageSize}
-              totalItems={types.length}
+              totalItems={filteredTypes.length}
               onPageChange={setCurrentPage}
               onPageSizeChange={setPageSize}
             />

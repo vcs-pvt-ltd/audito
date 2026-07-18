@@ -213,10 +213,11 @@ const CapModel = {
       throw err;
     }
 
+    const { generateCorrectiveActionId } = require('../utils/codeGenerator');
     const parentCAs = await this.getCapCorrectiveActions(parent_cap_id);
     const caByCapResponseId = {};
     for (const ca of parentCAs) {
-      if (ca.cap_response_id) caByCapResponseId[ca.cap_response_id] = ca;
+      if (ca.response_id) caByCapResponseId[ca.response_id] = ca;
     }
 
     const entityInstanceMap = new Map();
@@ -249,7 +250,7 @@ const CapModel = {
       }
 
       const saved = caByCapResponseId[it.response_id];
-      const corrective_action_id = `CA-SUB-${sub_cap_id}-${it.response_id}-${Date.now()}`;
+      const corrective_action_id = await generateCorrectiveActionId();
       await db.query(
         `INSERT INTO corrective_actions
            (corrective_action_id, audit_id, audit_response_id, cap_response_id, entity_code, checklist_question_id, org_tree_id, due_date, created_by)
@@ -259,7 +260,7 @@ const CapModel = {
           audit_id,
           it.response_id,
           it.entity_code,
-          it.checklist_question_id,
+          it.question_id,
           orgTreeId,
           saved?.due_date || null,
           created_by,
@@ -270,7 +271,7 @@ const CapModel = {
         corrective_action_id,
         entity_code: it.entity_code,
         org_tree_id: orgTreeId,
-        checklist_question_id: it.checklist_question_id,
+        checklist_question_id: it.question_id,
       });
     }
 
@@ -590,7 +591,11 @@ const CapModel = {
 
   async getEvidence(cap_response_id) {
     const [rows] = await db.query(
-      `SELECT * FROM cap_response_evidence WHERE cap_response_id = ?`,
+      `SELECT cap_response_evidence_id AS id, cap_response_evidence_id, cap_response_id,
+              file_type, file_path, file_name, file_size, uploaded_by, created_at
+         FROM cap_response_evidence
+        WHERE cap_response_id = ?
+        ORDER BY created_at`,
       [cap_response_id]
     );
     return rows;
@@ -646,7 +651,10 @@ const CapModel = {
 
   async getCapCorrectiveActions(cap_id) {
     const [rows] = await db.query(
-      `SELECT * FROM corrective_actions WHERE cap_response_id IN (
+      `SELECT corrective_action_id AS id, cap_response_id AS response_id,
+              entity_code, checklist_question_id AS question_id, org_tree_id,
+              due_date, created_at, updated_at
+         FROM corrective_actions WHERE cap_response_id IN (
          SELECT cr.cap_response_id FROM cap_responses cr JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id WHERE cq.cap_id = ?
        )`,
       [cap_id]
@@ -657,9 +665,21 @@ const CapModel = {
   async saveCapCorrectiveActions(cap_id, actions, created_by) {
     const [[cap]] = await db.query(`SELECT audit_id FROM caps WHERE cap_id = ?`, [cap_id]);
     const audit_id = cap.audit_id;
+    const { generateCorrectiveActionId } = require('../utils/codeGenerator');
 
     for (const a of actions) {
-      const corrective_action_id = `CA-CAP-${cap_id}-${a.response_id}`;
+      // CAP and response codes are both long; combining them exceeds the
+      // corrective_actions.corrective_action_id VARCHAR(20) limit. Reuse the
+      // existing corrective action for this CAP response, or generate the
+      // standard compact CA ID for a new record.
+      const [existing] = await db.query(
+        `SELECT corrective_action_id
+           FROM corrective_actions
+          WHERE cap_response_id = ?
+          LIMIT 1`,
+        [a.response_id]
+      );
+      const corrective_action_id = existing[0]?.corrective_action_id || await generateCorrectiveActionId();
       await db.query(
          `INSERT INTO corrective_actions 
            (corrective_action_id, audit_id, audit_response_id, cap_response_id, entity_code, checklist_question_id, org_tree_id, due_date, created_by)
@@ -673,7 +693,7 @@ const CapModel = {
           a.response_id, // cap_response_id
           a.entity_code, 
           a.checklist_question_id || a.question_id, 
-          a.assigned_org_tree_id || null, 
+          a.assigned_org_tree_id ?? null, 
           a.due_date || null, 
           created_by
         ]
@@ -874,6 +894,13 @@ const CapModel = {
 
     for (const e of entities) {
       const ek = `${e.entity_code}__${e.org_tree_id ?? 'null'}`;
+      // A root entity can be audited before an organization structure exists.
+      // It has no organization_tree edge, so NULL is the correct instance ID.
+      // The returned tree root already represents it; adding it as its own child
+      // creates a duplicate node and makes the preview's Next navigation loop.
+      const isUnlinkedRootEntity = e.entity_code === rootCode && (e.org_tree_id === null || e.org_tree_id === undefined);
+      if (isUnlinkedRootEntity) continue;
+
       if (!codesInTree.has(ek)) {
         rootChildren.push({
           code: e.entity_code,

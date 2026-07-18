@@ -110,7 +110,7 @@ export default function AuditsPage() {
   const [q, setQ] = useState("");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
-  const [progressFilter, setProgressFilter] = useState<string>("all");
+  const [createdAtFilter, setCreatedAtFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("newest");
 
   // Pagination state
@@ -153,20 +153,27 @@ export default function AuditsPage() {
         const aEnd = String(a.end_date).slice(0, 10);
         if (aEnd > toDate) return false;
       }
-      const progress = Number(a.progress_pct || 0);
-      if (progressFilter === "not_started" && progress !== 0) return false;
-      if (progressFilter === "in_progress" && (progress <= 0 || progress >= 100)) return false;
-      if (progressFilter === "completed" && progress < 100) return false;
+      if (createdAtFilter !== "all") {
+        const createdAt = new Date(a.created_at).getTime();
+        if (!Number.isFinite(createdAt)) return false;
+        const now = new Date();
+        if (createdAtFilter === "today") {
+          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+          if (createdAt < startOfToday) return false;
+        }
+        if (createdAtFilter === "last_7_days" && createdAt < now.getTime() - 7 * 24 * 60 * 60 * 1000) return false;
+        if (createdAtFilter === "last_30_days" && createdAt < now.getTime() - 30 * 24 * 60 * 60 * 1000) return false;
+      }
       if (!query) return true;
       const hay = `${a.title || ""} ${a.checklist_name || ""}`.toLowerCase();
       return hay.includes(query);
     });
-  }, [audits, filter, q, fromDate, toDate, progressFilter]);
+  }, [audits, filter, q, fromDate, toDate, createdAtFilter]);
 
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, q, fromDate, toDate, progressFilter, sortBy]);
+  }, [filter, q, fromDate, toDate, createdAtFilter, sortBy]);
 
   const sorted = useMemo(() => [...filtered].sort((a, b) => {
     if (sortBy === "title") return (a.title || "").localeCompare(b.title || "");
@@ -336,13 +343,14 @@ export default function AuditsPage() {
 
         {/* Search and advanced filters */}
         {!loading && audits.length > 0 && (
-          <div className="mb-5 grid gap-2.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <label className="grid gap-1 text-[11px] font-medium text-gray-400 sm:col-span-2 lg:col-span-3 xl:col-span-1">Search<div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search audits or checklists..." className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-gray-200 placeholder:text-gray-600 outline-none focus:border-secondary-500/40" /></div></label>
+          <div className="mb-5 grid gap-2.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400 sm:col-span-2 lg:col-span-2 xl:col-span-2">Search<div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search audits or checklists..." className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-gray-200 placeholder:text-gray-600 outline-none focus:border-secondary-500/40" /></div></label>
             <label className="grid gap-1 text-[11px] font-medium text-gray-400">Status<select value={filter} onChange={(e) => setFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">All statuses</option><option value="plan">Planned</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
-            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Progress<select value={progressFilter} onChange={(e) => setProgressFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">Any progress</option><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></label>
+            <label className="grid gap-1 text-[11px] font-medium text-gray-400">Created at<select value={createdAtFilter} onChange={(e) => setCreatedAtFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="all">Any time</option><option value="today">Today</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></label>
             <label className="grid gap-1 text-[11px] font-medium text-gray-400">Starts after<input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200 [color-scheme:dark]" /></label>
             <label className="grid gap-1 text-[11px] font-medium text-gray-400">Ends before<input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200 [color-scheme:dark]" /></label>
             <label className="grid gap-1 text-[11px] font-medium text-gray-400">Sort by<select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-gray-200"><option value="newest">Newest first</option><option value="start_soonest">Start date</option><option value="end_soonest">End date</option><option value="progress_desc">Most progress</option><option value="title">Title A-Z</option></select></label>
+            <button type="button" onClick={() => { setQ(""); setFilter("all"); setCreatedAtFilter("all"); setFromDate(""); setToDate(""); setSortBy("newest"); }} className="h-10 self-end rounded-lg border border-white/10 px-3 text-xs font-semibold text-gray-300 transition hover:bg-white/[0.06]">Reset</button>
           </div>
         )}
 
@@ -383,6 +391,7 @@ export default function AuditsPage() {
                   <Th className="w-12">#</Th>
                   <Th>Audit</Th>
                   <Th>Type</Th>
+                  <Th>Created At</Th>
                   <Th>Start Date</Th>
                   <Th>End Date</Th>
                   <Th>Budget</Th>
@@ -415,6 +424,7 @@ export default function AuditsPage() {
                             {AUDIT_TYPE_LABEL[a.audit_type] || a.audit_type}
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(a.created_at)}</td>
                         <td className="px-4 py-3 text-gray-300">
                           {fmtDate(a.start_date)}
                         </td>

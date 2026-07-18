@@ -27,7 +27,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ClipboardList,
+  ClipboardCheck,
   Save,
   Building2,
   FileText,
@@ -48,6 +48,7 @@ interface Cap {
   cap_id: string;
   title: string;
   status: string;
+  evidence_policy?: { plan_name?: string; allow_rich_media?: boolean };
 }
 
 interface CapQuestionOption {
@@ -174,6 +175,7 @@ interface CapQuestionCardProps {
   capId: string;
   entityCode: string;
   accessToken: string;
+  allowRichMedia: boolean;
   onSaved: () => Promise<void>;
   onDirtyChange?: (questionId: string, dirty: boolean) => void;
   isOpen?: boolean;
@@ -188,6 +190,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
     capId,
     entityCode,
     accessToken,
+    allowRichMedia,
     onSaved,
     onDirtyChange,
     isOpen,
@@ -329,6 +332,14 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
 
   const handleFileUpload = async (file: File): Promise<boolean> => {
     setEvidenceErr("");
+    if (evidence.length >= 1) {
+      setEvidenceErr("Only one evidence file is allowed for each response.");
+      return false;
+    }
+    if (!file.type.startsWith("image/") && !allowRichMedia) {
+      setEvidenceErr("Your plan allows image evidence only.");
+      return false;
+    }
     if (file.size > MAX_EVIDENCE_BYTES) {
       setEvidenceErr(`File size must be 2MB or less. Selected: ${fmtFileSize(file.size)}`);
       return false;
@@ -378,6 +389,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
       return true;
     }
     setUploading(false);
+    setEvidenceErr(res?.message || "Evidence upload failed.");
     return false;
   };
 
@@ -702,7 +714,8 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
           uploading={uploading}
           error={evidenceErr}
           view={viewEvidence}
-          onClearView={() => setViewEvidence(null)}
+          onClearView={evidence.length === 0 ? () => setViewEvidence(null) : undefined}
+          allowRichMedia={allowRichMedia}
         />
       </div>}
     </div>
@@ -921,16 +934,21 @@ export default function MyCapExecutePage() {
               <ArrowLeft size={14} />
             </IconButton>
             <div className="min-w-0">
-              <h1 className="text-sm font-bold text-white truncate flex items-center gap-2"><ClipboardList size={15} className="text-secondary-400" />{cap?.title || "CAP Execution"}</h1>
+              <h1 className="text-sm font-bold text-white truncate flex items-center gap-2">
+                <ClipboardCheck size={16} className="text-amber-400 shrink-0" />
+                {cap?.title || "CAP Execution"}
+              </h1>
             </div>
           </div>
           <div className="flex items-center gap-4 shrink-0">
-
-            <div className="hidden md:block text-right">
-              <span className="text-[11px] font-medium text-gray-400">{answeredQ} / {totalQ} questions</span>
-              <div className="w-28 h-1.5 bg-white/10 rounded-full mt-1 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-blue-500 to-secondary-400 transition-all duration-300" style={{ width: `${overallPct}%` }} />
+            <div className="hidden md:flex items-center gap-3">
+              <div className="text-right">
+                <span className="text-xs text-gray-400">{answeredQ}/{totalQ} questions</span>
+                <div className="w-32 h-1.5 bg-white/10 rounded-full overflow-hidden mt-1">
+                  <div className="h-full bg-gradient-to-r from-blue-500 to-secondary-400 rounded-full transition-all" style={{ width: `${overallPct}%` }} />
+                </div>
               </div>
+              <span className="text-sm font-bold text-white">{overallPct}%</span>
             </div>
           </div>
         </div>
@@ -940,7 +958,7 @@ export default function MyCapExecutePage() {
         ) : error ? (
           <div className="flex-1 flex items-center justify-center p-6"><div className="glass rounded-xl p-8 text-center max-w-sm"><AlertCircle size={32} className="text-red-400 mx-auto mb-3" /><p className="text-red-400 text-sm">{error}</p></div></div>
         ) : (
-          <div ref={contentRef} className="flex-1 overflow-y-auto p-4 pb-28 md:p-8 md:pb-8 lg:pb-6">
+          <div ref={contentRef} className="flex-1 overflow-y-auto p-4 pb-28 sm:p-6 sm:pb-28 lg:pb-6">
             {(() => {
               const step = stepHistory[stepHistory.length - 1];
               if (!prunedTree) return <p className="text-gray-500 text-center mt-10">Entity tree unavailable.</p>;
@@ -1021,7 +1039,7 @@ export default function MyCapExecutePage() {
                       </nav>
                     )}
 
-                    <div className="flex items-center gap-2 text-sm text-gray-400 mb-6">
+                    <div className="hidden">
                       <div className="flex items-center gap-1.5">
                         <Building2 size={16} className="text-secondary-400" />
                         <span className="font-semibold text-white">{prunedTree?.name || "Root"}</span>
@@ -1030,7 +1048,7 @@ export default function MyCapExecutePage() {
                       <span>Select an entity to respond to CAP</span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {cards.map((n: any, idx) => (
                         <EntityCard
                           key={`${n.code}__${n.edge_id ?? "null"}`}
@@ -1083,9 +1101,9 @@ export default function MyCapExecutePage() {
               });
 
               return (
-                <div className="max-w-4xl mx-auto pb-24">
-                  {/* Breadcrumb */}
-                  <nav className="flex items-center gap-1.5 flex-wrap mb-5 text-xs">
+                <div className="max-w-4xl mx-auto">
+                  <div className="flex items-start justify-between gap-3 mb-5">
+                    <nav className="flex items-center gap-1.5 flex-wrap text-xs">
                     <button
                       onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
                       className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
@@ -1100,30 +1118,21 @@ export default function MyCapExecutePage() {
                             {bc.label}
                           </button>
                         ) : (
-                          <span className="text-secondary-400 font-medium">{bc.label}</span>
+                          <span className="text-white font-medium">{bc.label}</span>
                         )}
                       </span>
                     ))}
-                  </nav>
-
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${ENTITY_TYPE_COLORS[entityNode?.entity_type || ""] || "bg-gray-500/20 text-gray-400"}`}>
-                          {entityNode?.entity_type || "Entity"}
-                        </span>
-                        <h2 className="text-lg font-bold text-white">{entityNode?.name || entityCode}</h2>
-                      </div>
-                      <p className="text-xs text-gray-500">Respond to all required corrective actions below</p>
-                    </div>
-                    {hasUnsaved && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
-                        Unsaved changes
-                      </span>
-                    )}
+                    </nav>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-2 mb-6">
+                    {hasUnsaved && (
+                      <div className="flex justify-end">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          Unsaved changes
+                        </span>
+                      </div>
+                    )}
                     {questionsForEntity.map((q) => {
                       const resp = responses[q.cap_question_id]?.[0];
                       return (
@@ -1135,6 +1144,7 @@ export default function MyCapExecutePage() {
                           capId={capId}
                           entityCode={entityCode}
                           accessToken={accessToken!}
+                          allowRichMedia={!!cap?.evidence_policy?.allow_rich_media}
                           onSaved={load}
                           onDirtyChange={handleDirtyChange}
                           isOpen={openQuestionId === q.cap_question_id}
@@ -1144,41 +1154,48 @@ export default function MyCapExecutePage() {
                     })}
                   </div>
 
-                  {/* Navigation bar */}
-                  <div className="bottom-0 left-0 right-0 lg:left-0 z-30 p-4 backdrop-blur-md border-t border-white/5">
-                    <div className="max-w-4xl mx-auto flex items-center justify-between">
-                      <Button
-                        variant="secondary"
-                        onClick={() => setStepHistory((h) => h.slice(0, -1))}
-                        leftIcon={<ArrowLeft size={14} />}
+                  {questionsForEntity.length === 0 && children.length === 0 && (
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-8 text-center mb-6">
+                      <HelpCircle size={28} className="text-gray-600 mx-auto mb-2" />
+                      <p className="text-gray-500 text-sm">No corrective actions for this entity.</p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-4 mt-4 border-t border-white/[0.06]">
+                    <button
+                      onClick={() => setStepHistory((h) => h.length > 1 ? h.slice(0, -1) : h)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all"
+                    >
+                      <ArrowLeft size={14} /> Back
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          const ok = await saveAllDirty();
+                          if (!ok) toast("Failed to save response.", "error");
+                          else toast("All changes saved.", "success");
+                        }}
+                        disabled={!hasUnsaved}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all border ${
+                          !hasUnsaved
+                            ? "bg-white/5 text-gray-600 border-white/10 cursor-not-allowed"
+                            : "bg-secondary-500/15 text-secondary-300 border-secondary-500/30 hover:bg-secondary-500/25"
+                        }`}
                       >
-                        Back
-                      </Button>
+                        <Save size={14} /> Save
+                      </button>
 
-                      <div className="flex items-center gap-2">
-                        <Button
-                          onClick={async () => {
-                            const ok = await saveAllDirty();
-                            if (!ok) toast("Failed to save response.", "error");
-                            else toast("All changes saved.", "success");
+                      {hasNextQuestionEntities && (
+                        <button
+                          onClick={() => {
+                            setStepHistory((h) => [...h, { mode: "cards", parentCode: entityCode }]);
                           }}
-                          disabled={!hasUnsaved}
-                          leftIcon={<Save size={14} />}
+                          className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all shadow-lg shadow-secondary-500/20 bg-secondary-500 text-white hover:bg-secondary-600"
                         >
-                          Save Changes
-                        </Button>
-
-                        {hasNextQuestionEntities && (
-                          <button
-                            onClick={() => {
-                              setStepHistory((h) => [...h, { mode: "cards", parentCode: entityCode }]);
-                            }}
-                            className="flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all shadow-lg shadow-secondary-500/20 bg-primary-800 text-white border border-white/10 hover:bg-primary-700"
-                          >
-                            Next <ChevronRight size={14} />
-                          </button>
-                        )}
-                      </div>
+                          Next <ChevronRight size={14} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -22,6 +22,7 @@ export default function EvidenceModal({
   error,
   view,
   onClearView,
+  allowRichMedia = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -34,6 +35,7 @@ export default function EvidenceModal({
     title?: string;
   } | null;
   onClearView?: () => void;
+  allowRichMedia?: boolean;
 }) {
   const [tab, setTab] = useState<"upload" | "photo" | "video" | "audio">("upload");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -67,6 +69,7 @@ export default function EvidenceModal({
 
   useEffect(() => {
     if (!open) return;
+    if (!allowRichMedia && (tab === "video" || tab === "audio")) setTab("upload");
     setLocalErr("");
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl("");
@@ -114,7 +117,7 @@ export default function EvidenceModal({
     };
 
     start();
-  }, [tab, open, stopStream]);
+  }, [tab, open, stopStream, allowRichMedia]);
 
   const processImage = async (file: File): Promise<File> => {
     return new Promise((resolve) => {
@@ -194,6 +197,14 @@ export default function EvidenceModal({
   const pickFile = async (f?: File) => {
     setLocalErr("");
     if (!f) return;
+    if (!f.type.startsWith("image/") && !allowRichMedia) {
+      setLocalErr("Your plan allows image evidence only.");
+      return;
+    }
+    if (!/^(image|video|audio)\//.test(f.type)) {
+      setLocalErr("Please choose an image, video, or audio file.");
+      return;
+    }
     
     let fileToUpload = f;
     if (f.type.startsWith("image/")) {
@@ -360,11 +371,11 @@ export default function EvidenceModal({
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-4 gap-2">
+              <div className={`grid ${allowRichMedia ? "grid-cols-4" : "grid-cols-2"} gap-2`}>
                 {tabBtn("upload", "Upload", <Upload size={14} />)}
                 {tabBtn("photo", "Capture", <Camera size={14} />)}
-                {tabBtn("video", "Video", <Video size={14} />)}
-                {tabBtn("audio", "Audio", <Mic size={14} />)}
+                {allowRichMedia && tabBtn("video", "Video", <Video size={14} />)}
+                {allowRichMedia && tabBtn("audio", "Audio", <Mic size={14} />)}
               </div>
 
               {tab === "upload" && (
@@ -372,7 +383,7 @@ export default function EvidenceModal({
                   <input
                     ref={fileRef}
                     type="file"
-                    accept="image/*,video/*,audio/*"
+                    accept={allowRichMedia ? "image/*,video/*,audio/*" : "image/*"}
                     className="hidden"
                     onChange={async (e) => {
                       const f = e.target.files?.[0];
@@ -391,11 +402,13 @@ export default function EvidenceModal({
                     Choose file
                   </button>
 
-                  <p className="text-[11px] text-gray-600">Supported: image, video, audio</p>
+                  <p className="text-[11px] text-gray-600">
+                    Supported: {allowRichMedia ? "image, video, audio" : "image"}
+                  </p>
                 </div>
               )}
 
-          {(tab === "photo" || tab === "video") && (
+          {(tab === "photo" || (allowRichMedia && tab === "video")) && (
             <div className="space-y-3">
               <div className="rounded-xl overflow-hidden border border-white/10 bg-black/40">
                 <video ref={videoRef} playsInline muted className="w-full h-64 object-cover" />
@@ -454,7 +467,7 @@ export default function EvidenceModal({
             </div>
           )}
 
-          {tab === "audio" && (
+          {allowRichMedia && tab === "audio" && (
             <div className="space-y-3">
               <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-4">
                 <div className="flex items-center justify-between">

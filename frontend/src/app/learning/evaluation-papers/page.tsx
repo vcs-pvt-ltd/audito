@@ -54,10 +54,11 @@ interface Auditor {
 function AssignModal({
   open, onClose, onAssign, auditors,
 }: {
-  open: boolean; onClose: () => void; onAssign: (codes: string[], dueDate: string) => Promise<void>; auditors: Auditor[];
+  open: boolean; onClose: () => void; onAssign: (codes: string[], dueDate: string, sendEmail: boolean) => Promise<boolean>; auditors: Auditor[];
 }) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [dueDate, setDueDate] = useState("");
+  const [sendEmail, setSendEmail] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const selectedCodes = useMemo(
@@ -66,7 +67,7 @@ function AssignModal({
   );
 
   useEffect(() => {
-    if (!open) { setSelected({}); setDueDate(""); }
+    if (!open) { setSelected({}); setDueDate(""); setSendEmail(true); }
   }, [open]);
 
   return (
@@ -87,13 +88,17 @@ function AssignModal({
             </label>
           ))}
         </div>
+        <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 cursor-pointer">
+          <input type="checkbox" checked={sendEmail} onChange={(event) => setSendEmail(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-white/10 bg-black/20 text-secondary-500 focus:ring-0 cursor-pointer" />
+          <span><span className="block text-sm font-medium text-white">Send assignment email</span><span className="block mt-0.5 text-xs text-gray-500">Auditors will always receive an in-app notification.</span></span>
+        </label>
         <div className="flex gap-3 pt-2">
           <Button variant="secondary" fullWidth onClick={onClose}>Cancel</Button>
           <Button
             fullWidth
             loading={loading}
             disabled={selectedCodes.length === 0 || !dueDate}
-            onClick={async () => { setLoading(true); await onAssign(selectedCodes, dueDate); setLoading(false); onClose(); }}
+            onClick={async () => { setLoading(true); const assigned = await onAssign(selectedCodes, dueDate, sendEmail); setLoading(false); if (assigned) onClose(); }}
           >
             {loading ? "Assigning..." : `Assign (${selectedCodes.length})`}
           </Button>
@@ -104,9 +109,9 @@ function AssignModal({
 }
 
 function ViewAssignmentsModal({
-  open, onClose, assignments, title,
+  open, onClose, assignments, title, onDelete,
 }: {
-  open: boolean; onClose: () => void; assignments: Assignment[]; title: string;
+  open: boolean; onClose: () => void; assignments: Assignment[]; title: string; onDelete: (assignment: Assignment) => Promise<void>;
 }) {
   return (
     <Modal
@@ -126,6 +131,7 @@ function ViewAssignmentsModal({
                   <th className="px-4 py-3 text-gray-400 font-medium text-center">Status</th>
                   <th className="px-4 py-3 text-gray-400 font-medium text-center">Score</th>
                   <th className="px-4 py-3 text-gray-400 font-medium text-right">Activity</th>
+                  <th className="px-4 py-3 text-gray-400 font-medium text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -161,6 +167,11 @@ function ViewAssignmentsModal({
                       <td className="px-4 py-4 text-right">
                         <p className="text-[10px] text-gray-400">Due: {a.due_date ? new Date(a.due_date).toLocaleDateString() : "—"}</p>
                         {a.submitted_at && <p className="text-[10px] text-blue-400 font-medium">Sub: {new Date(a.submitted_at).toLocaleDateString()}</p>}
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        {isSubmitted ? <span className="text-[10px] text-gray-500">Locked</span> : (
+                          <button onClick={() => onDelete(a)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Remove pending assignment"><Trash2 size={15} /></button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -245,6 +256,15 @@ export default function AuditFirmEvaluationPapersPage() {
     else toast(res.message || "Failed to delete evaluation paper.", "error");
   };
 
+  const handleAssignmentDelete = async (assignment: Assignment) => {
+    if (!accessToken || !viewAssignmentsId || assignment.assignment_status !== "assigned") return;
+    const ok = await confirm({ title: "Remove Assignment", message: `Remove the pending evaluation paper assignment for ${assignment.auditor_first_name} ${assignment.auditor_last_name}?`, confirmText: "Remove", variant: "warning" });
+    if (!ok) return;
+    const res = await auditFirmLearningApi.deleteEvaluationAssignment(accessToken, viewAssignmentsId, assignment.assignment_id);
+    if (res.success) { toast("Pending evaluation paper assignment removed.", "success"); await load(); }
+    else toast(res.message || "Failed to remove evaluation paper assignment.", "error");
+  };
+
   return (
     <div className="p-6 lg:p-8 pt-20 lg:pt-8 space-y-6 overflow-y-auto h-full">
       {/* Header */}
@@ -324,7 +344,6 @@ export default function AuditFirmEvaluationPapersPage() {
                 <THead>
                   <Th align="center" className="w-10">#</Th>
                   <Th>Paper Name</Th>
-                  <Th>Organization</Th>
                   <Th align="center" className="w-24">Questions</Th>
                   <Th align="center" className="w-24">Pass %</Th>
                   <Th align="center" className="w-24">Time</Th>
@@ -343,16 +362,7 @@ export default function AuditFirmEvaluationPapersPage() {
                           <p className="text-white font-medium">{p.title}</p>
                         </td>
 
-                        <td className="px-4 py-4">
-                          {p.entity_name ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
-                              <Building2 size={12} className="text-gray-500 shrink-0" />
-                              <span className="truncate max-w-[120px]">{p.entity_name}</span>
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-600">—</span>
-                          )}
-                        </td>
+                       
 
                         <td className="px-4 py-4 text-center text-gray-400">{p.question_count ?? 0}</td>
                         <td className="px-4 py-4 text-center">
@@ -457,10 +467,13 @@ export default function AuditFirmEvaluationPapersPage() {
         open={assignOpen}
         onClose={() => setAssignOpen(false)}
         auditors={auditors}
-        onAssign={async (codes, dueDate) => {
-          if (!accessToken || !assignPaperId) return;
-          await auditFirmLearningApi.assignEvaluationPaper(accessToken, assignPaperId, codes, dueDate || undefined);
+        onAssign={async (codes, dueDate, sendEmail) => {
+          if (!accessToken || !assignPaperId) return false;
+          const res = await auditFirmLearningApi.assignEvaluationPaper(accessToken, assignPaperId, codes, dueDate || undefined, sendEmail);
+          if (!res.success) { toast(res.message || "Failed to assign evaluation paper.", "error"); return false; }
+          toast(`Evaluation paper assigned to ${codes.length} auditor${codes.length === 1 ? "" : "s"}.`, "success");
           await load();
+          return true;
         }}
       />
 
@@ -469,6 +482,7 @@ export default function AuditFirmEvaluationPapersPage() {
         onClose={() => setViewAssignmentsOpen(false)}
         assignments={filteredAssignments}
         title={selectedPaper?.title || ""}
+        onDelete={handleAssignmentDelete}
       />
 
       <LimitReachedModal

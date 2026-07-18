@@ -44,20 +44,27 @@ const upload = multer({
   },
 });
 
-// Multer for media files (images, PDFs, etc.)
+// Multer for checklist reference media (images, documents, video, and audio).
 const mediaUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
-      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp',
       'application/pdf',
-      'video/mp4', 'video/webm',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'video/mp4', 'video/webm', 'video/quicktime',
+      'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/flac',
     ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('File type not allowed. Accepted: images, PDFs, videos.'));
+      cb(new Error('File type not allowed. Accepted: images, documents, videos, and audio files.'));
     }
   },
 });

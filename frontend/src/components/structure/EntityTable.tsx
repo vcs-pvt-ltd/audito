@@ -16,6 +16,7 @@ export interface EntityRow {
   in_tree?: boolean;
   parent_code?: string | null;
   parent_name?: string | null;
+  created_at?: string | null;
 }
 
 interface EntityTableProps {
@@ -55,7 +56,7 @@ export default function EntityTable({
         {parentLabel && <Th>{parentLabel}</Th>}
         <Th>Email</Th>
         <Th>Country</Th>
-        <Th>Status</Th>
+        <Th>Created At</Th>
         <Th align="right">Actions</Th>
       </THead>
       <TBody>
@@ -70,16 +71,8 @@ export default function EntityTable({
             )}
             <Td className="text-gray-400">{entity.email || "—"}</Td>
             <Td className="text-gray-400">{entity.country || "—"}</Td>
-            <Td>
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                  entity.is_active !== false
-                    ? "bg-primary-500/15 text-primary-400"
-                    : "bg-red-500/15 text-red-400"
-                }`}
-              >
-                {entity.is_active !== false ? "Active" : "Inactive"}
-              </span>
+            <Td className="text-gray-400 text-xs">
+              {entity.created_at ? new Date(entity.created_at).toLocaleDateString() : "—"}
             </Td>
             <Td align="right">
               <div className="flex items-center justify-end gap-1">
