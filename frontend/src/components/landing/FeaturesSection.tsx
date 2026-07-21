@@ -16,48 +16,40 @@ import {
   PlayCircle,
 } from "lucide-react";
 
-import companyManagementHierarchyImg from "@/assets/landing/features/company-management-hierarchy.png";
+import companyManagementHierarchyImg from "@/assets/landing/features/company-layer-management-hierarchy.png";
 import departmentStructureHierarchyImg from "@/assets/landing/features/department-structure-hierarchy.png";
-import auditCapacityDashboardImg from "@/assets/landing/features/audit-capacity-dashboard.png";
+import auditCapacityDashboardImg from "@/assets/landing/features/number-of-audits-workflow.png";
 import checklistLibraryImg from "@/assets/landing/features/checklist-library.png";
-import feature5Img from "@/assets/landing/features/Auditor Seats.png";
+import feature5Img from "@/assets/landing/features/Auditor Management.png";
 import feature6Img from "@/assets/landing/features/Auditor Performance Analytics.png";
 import feature7Img from "@/assets/landing/features/Cross-Company Audits.png";
 import overviewImg from "@/assets/landing/feature-main.png";
 
-import companyManagementImg from "@/assets/landing/features/company-management.png";
-import departmentStructureImg from "@/assets/landing/features/department-structure.png";
-import auditCapacityImg from "@/assets/landing/features/audit-capacity.png";
-import checklistsImg from "@/assets/landing/features/checklists.png";
-import auditorPerformanceImg from "@/assets/landing/features/auditor-performance.png";
-import crossCompanyImg from "@/assets/landing/features/cross-company.png";
-import auditorSeatsImg from "@/assets/landing/features/auditor-seats.png";
-
 const features = [
-  { id: 1, anchor: "company-management", icon: Building2, title: "Company Management", layout: "left", image: companyManagementHierarchyImg,
+  { id: 1, anchor: "company-layer-management", icon: Building2, title: "Company Layer Management", layout: "left", image: companyManagementHierarchyImg,
     description: "Manage audits across different company entities or organizations within the platform. This allows users to organize audits separately for each company or business unit." },
   { id: 2, anchor: "department-structure", icon: PieChart, title: "Department Structure", layout: "right", image: departmentStructureHierarchyImg,
-    description: "Create and manage departments inside a company (such as HR, Operations, Quality, Warehouse) to organize audits and assign responsibilities more efficiently." },
-  { id: 3, anchor: "audit-capacity", icon: Gauge, title: "Audit Capacity", layout: "left", image: auditCapacityDashboardImg,
+    description: "Create and manage multiple departments and department heads inside a company (such as HR, Operations, Quality, Warehouse) to organize audits and assign responsibilities more efficiently." },
+  { id: 3, anchor: "number-of-audits", icon: Gauge, title: "Number Of Audits", layout: "left", image: auditCapacityDashboardImg,
     description: "The total number of audits that can be conducted within the system. This controls how many audit processes or inspection cycles can be performed." },
-  { id: 4, anchor: "number-of-checklists", icon: ClipboardList, title: "Number of Checklists", layout: "right", image: checklistLibraryImg,
+  { id: 4, anchor: "different-types-of-auditss", icon: ClipboardList, title: "Different Types of Audits", layout: "right", image: checklistLibraryImg,
     description: "The number of audit templates or checklists that can be created and used to standardize audit procedures across departments or companies." },
-  { id: 5, anchor: "auditor-seats", icon: Users, title: "Auditor Seats", layout: "left", image: feature5Img,
-    description: "The number of users who can perform audits within the platform. Auditors can conduct inspections, submit reports, and monitor compliance activities." },
+  { id: 5, anchor: "auditor-management", icon: Users, title: "Auditor Management", layout: "left", image: feature5Img,
+    description: "The number of auditors who can perform audits within the platform. Auditors can conduct inspections, submit reports, and monitor corrective actions taken." },
   { id: 6, anchor: "auditor-performance-analytics", icon: TrendingUp, title: "Auditor Performance Analytics", layout: "right", image: feature6Img,
-    description: "A performance evaluation system that measures auditors based on audit results, completion quality, and compliance accuracy." },
+    description: "A performance evaluation system that measures auditors based on audit results, completion quality, time and compliance accuracy." },
   { id: 7, anchor: "cross-company-audits", icon: GitBranch, title: "Cross-Company Audits", layout: "left", image: feature7Img,
     description: "Allows organizations to perform audits between companies, such as suppliers, partners, or external organizations to ensure compliance and quality standards." },
 ];
 
 const overviewHighlights = [
-  { id: 1, label: "Company Management", target: "company-management", image: companyManagementImg },
-  { id: 2, label: "Department Structure", target: "department-structure", image: departmentStructureImg },
-  { id: 3, label: "Audit Capacity", target: "audit-capacity", image: auditCapacityImg },
-  { id: 4, label: "Number of Checklists", target: "number-of-checklists", image: checklistsImg },
-  { id: 5, label: "Auditor Performance Analytics", target: "auditor-performance-analytics", image: auditorPerformanceImg },
-  { id: 6, label: "Cross-Company Audits", target: "cross-company-audits", image: crossCompanyImg },
-  { id: 7, label: "Auditor Seats", target: "auditor-seats", image: auditorSeatsImg },
+  { id: 1, label: "Company Layer Management", target: "company-layer-management", icon: Building2, tone: "emerald" },
+  { id: 2, label: "Department Structure", target: "department-structure", icon: PieChart, tone: "violet" },
+  { id: 3, label: "Number Of Audits", target: "number-of-audits", icon: Gauge, tone: "amber" },
+  { id: 4, label: "Different Types of Audits", target: "different-types-of-auditss", icon: ClipboardList, tone: "pink" },
+  { id: 5, label: "Auditor Performance Analytics", target: "auditor-performance-analytics", icon: TrendingUp, tone: "blue" },
+  { id: 6, label: "Cross-Company Audits", target: "cross-company-audits", icon: GitBranch, tone: "orange" },
+  { id: 7, label: "Auditor Management", target: "auditor-management", icon: Users, tone: "teal" },
 ];
 
 export default function FeaturesSection() {
@@ -75,6 +67,11 @@ export default function FeaturesSection() {
         @keyframes badgePulse {
           0%, 100% { box-shadow: 0 0 0 0 rgba(0,212,146,0); }
           50%       { box-shadow: 0 0 0 6px rgba(0,212,146,0.08); }
+        }
+        @keyframes overviewJump {
+          0%, 82%, 100% { translate: 0 0; }
+          88% { translate: 0 -5px; }
+          94% { translate: 0 -1px; }
         }
 
         .features-gradient-text {
@@ -96,21 +93,36 @@ export default function FeaturesSection() {
         }
 
         .feature-img-wrap {
+          overflow: hidden;
+          border: 1px solid rgba(0, 212, 146, 0.18);
+          border-radius: 1.5rem;
+          background: linear-gradient(145deg, rgba(0, 212, 146, 0.1), rgba(3, 29, 25, 0.72));
           transition: transform 0.4s cubic-bezier(0.34,1.2,0.64,1), filter 0.3s ease;
-          filter: drop-shadow(0 16px 32px rgba(0,0,0,0.4));
+          box-shadow: 0 18px 42px rgba(0,0,0,0.34), inset 0 0 0 1px rgba(255,255,255,0.025);
         }
         .feature-img-wrap:hover {
           transform: scale(1.025) translateY(-3px);
-          filter: drop-shadow(0 24px 48px rgba(0,0,0,0.5)) brightness(1.04);
+          filter: brightness(1.04);
+          box-shadow: 0 24px 52px rgba(0,0,0,0.48), 0 0 28px rgba(0,212,146,0.08);
         }
 
         .overview-card {
           transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s ease, border-color 0.25s ease;
+          animation: overviewJump 5.6s cubic-bezier(0.34,1.25,0.64,1) infinite;
         }
+        .overview-card-2 { animation-duration: 4.7s; animation-timing-function: ease-in-out; }
+        .overview-card-3 { animation-duration: 6.1s; }
+        .overview-card-4 { animation-duration: 5.2s; animation-timing-function: ease-in-out; }
+        .overview-card-5 { animation-duration: 6.5s; }
+        .overview-card-6 { animation-duration: 4.9s; animation-timing-function: ease-in-out; }
+        .overview-card-7 { animation-duration: 5.8s; }
         .overview-card:hover {
           transform: translateY(-4px) scale(1.03);
           box-shadow: 0 12px 30px rgba(0,0,0,0.3), 0 0 16px rgba(0,212,146,0.12);
           border-color: rgba(0,212,146,0.4) !important;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .overview-card { animation: none; }
         }
 
         .features-badge {
@@ -201,23 +213,30 @@ export default function FeaturesSection() {
 
         {/* Overview image + floating cards */}
         <Reveal variant="zoom" delay={80} className="mb-14 sm:mb-20 relative">
-          <div className="relative flex justify-center overflow-visible py-15">
+          <div className="relative flex min-h-[23rem] items-center justify-center overflow-visible py-12 sm:min-h-[28rem] lg:min-h-[31rem] xl:min-h-[34rem]">
             <Image src={overviewImg} alt="Features Overview"
-              className="w-full max-w-2xl xl:max-w-3xl h-auto translate-y-10 object-contain rounded-2xl drop-shadow-2xl transition-transform duration-500 hover:scale-[1.01]"
+              className="relative z-10 h-auto w-full max-w-lg object-contain drop-shadow-2xl transition-transform duration-500 hover:scale-[1.01] sm:max-w-xl lg:max-w-2xl"
             />
-            <div className="hidden lg:flex absolute left-1/2 top-[1%] -translate-x-1/2 z-20 items-center gap-6">
+          
+            <div className="hidden lg:block absolute left-[1%] top-[15%] z-20">
               <OverviewCard {...overviewHighlights[0]} />
+            </div>
+            <div className="hidden lg:block absolute left-[3%] top-[45%] z-20">
               <OverviewCard {...overviewHighlights[1]} />
+            </div>
+            <div className="hidden lg:block absolute left-[11%] bottom-[8%] z-20">
               <OverviewCard {...overviewHighlights[2]} />
+            </div>
+            <div className="hidden lg:block absolute right-[1%] top-[15%] z-20">
               <OverviewCard {...overviewHighlights[3]} />
             </div>
-            <div className="hidden lg:block absolute left-[8%] bottom-[60%] z-20">
+            <div className="hidden lg:block absolute right-[3%] top-[45%] z-20">
               <OverviewCard {...overviewHighlights[4]} />
             </div>
-            <div className="hidden lg:block absolute right-[10%] bottom-[60%] z-20">
+            <div className="hidden lg:block absolute right-[11%] bottom-[8%] z-20">
               <OverviewCard {...overviewHighlights[5]} />
             </div>
-            <div className="hidden lg:block absolute right-[15%] bottom-[40%] z-20">
+            <div className="hidden lg:block absolute left-1/2 bottom-[-1%] z-20 -translate-x-1/2">
               <OverviewCard {...overviewHighlights[6]} />
             </div>
           </div>
@@ -252,7 +271,7 @@ export default function FeaturesSection() {
                     <div className="feature-img-wrap relative aspect-[16/10] w-full">
                       <Image src={feature.image} alt={feature.title} fill
                         sizes="(max-width: 1280px) 50vw, 40vw"
-                        className="object-contain" />
+                        className="object-cover" />
                     </div>
                   </div>
                   <div className={`flex ${isImageLeft ? "order-2" : "order-1"}`}>
@@ -277,7 +296,7 @@ export default function FeaturesSection() {
                     <div className="feature-img-wrap relative w-full aspect-[16/10]">
                       <Image src={feature.image} alt={feature.title} fill
                         sizes="55vw"
-                        className="object-contain" />
+                        className="object-cover" />
                     </div>
                   </div>
                   <div className="flex-1 self-center">
@@ -300,7 +319,7 @@ export default function FeaturesSection() {
                   <div className="feature-img-wrap relative w-full max-w-sm mx-auto aspect-[16/10]">
                     <Image src={feature.image} alt={feature.title} fill
                       sizes="(max-width: 640px) 100vw, 24rem"
-                      className="object-contain" />
+                      className="object-cover" />
                   </div>
                   <div className="feature-card glass rounded-2xl p-4 sm:p-5 border border-white/10">
                     <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Feature {featureNumber}</p>
@@ -324,23 +343,38 @@ export default function FeaturesSection() {
   );
 }
 
-type OverviewCardProps = { id?: number; image: any; label: string; target: string; compact?: boolean };
+const overviewToneClasses: Record<string, { icon: string; glow: string; arrow: string }> = {
+  emerald: { icon: "border-emerald-300/30 bg-emerald-400/15 text-emerald-200", glow: "from-emerald-300/25", arrow: "text-emerald-200" },
+  violet: { icon: "border-violet-300/30 bg-violet-400/15 text-violet-200", glow: "from-violet-300/25", arrow: "text-violet-200" },
+  amber: { icon: "border-amber-300/30 bg-amber-400/15 text-amber-200", glow: "from-amber-300/25", arrow: "text-amber-200" },
+  pink: { icon: "border-pink-300/30 bg-pink-400/15 text-pink-200", glow: "from-pink-300/25", arrow: "text-pink-200" },
+  blue: { icon: "border-blue-300/30 bg-blue-400/15 text-blue-200", glow: "from-blue-300/25", arrow: "text-blue-200" },
+  orange: { icon: "border-orange-300/30 bg-orange-400/15 text-orange-200", glow: "from-orange-300/25", arrow: "text-orange-200" },
+  teal: { icon: "border-teal-300/30 bg-teal-400/15 text-teal-200", glow: "from-teal-300/25", arrow: "text-teal-200" },
+};
 
-function OverviewCard({ image, label, target, compact = false }: OverviewCardProps) {
+type OverviewCardProps = { id?: number; label: string; target: string; icon: any; tone: string; compact?: boolean };
+
+function OverviewCard({ id, label, target, icon: Icon, tone, compact = false }: OverviewCardProps) {
+  const colors = overviewToneClasses[tone] ?? overviewToneClasses.emerald;
+
   return (
     <a
-      href={`#${target}`}
-      aria-label={`View ${label}`}
-      className={`overview-card group block cursor-pointer rounded-xl border border-secondary-400/30 glass backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary-400 ${compact ? "w-full px-3 py-2" : "w-[200px] px-4 py-3"}`}
+     href={`#${target}`}
+     aria-label={`View ${label}`}
+     className={`overview-card overview-card-${id} group block cursor-pointer rounded-xl border border-white/10 bg-gradient-to-br from-white/[0.12] to-white/[0.03] shadow-lg shadow-black/20 backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary-400 ${compact ? "w-full px-3 py-2" : "w-[176px] px-3 py-2.5"}`}
     >
       <div className="flex items-center gap-3">
-        <div className="flex-shrink-0">
-          <Image src={image} alt={label} width={40} height={40}
-            className="w-10 h-10 object-cover rounded-lg transition-transform duration-300 group-hover:scale-110" />
+        <div className={`relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border ${colors.icon}`}>
+          <div className={`absolute inset-0 bg-gradient-to-br ${colors.glow} to-transparent`} />
+          <Icon size={19} className="relative" strokeWidth={2.25} />
         </div>
-        <span className={`text-gray-400 font-medium leading-snug ${compact ? "text-xs" : "text-sm"}`}>
-          {label}
-        </span>
+        <div className="min-w-0 flex-1">
+          <span className={`block font-semibold leading-snug text-white ${compact ? "text-xs" : "text-[12px]"}`}>
+            {label}
+          </span>
+        </div>
+        <ArrowRight size={14} className={`flex-shrink-0 opacity-0 transition-all duration-200 group-hover:translate-x-0.5 group-hover:opacity-100 ${colors.arrow}`} />
       </div>
     </a>
   );

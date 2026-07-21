@@ -129,12 +129,19 @@ function VerifyEmailContent() {
               >
                 Continue to Payment <ArrowRight size={18} />
               </Link>
+            ) : customSolutionPending ? (
+              <Link
+                href="/"
+                className="w-full flex items-center justify-center gap-2 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold px-6 py-3 rounded-xl transition-colors"
+              >
+                Return to Home <ArrowRight size={18} />
+              </Link>
             ) : (
               <Link
                 href="/login"
                 className="w-full flex items-center justify-center gap-2 bg-secondary-500 hover:bg-secondary-600 text-primary-950 font-semibold px-6 py-3 rounded-xl transition-colors"
               >
-                {customSolutionPending ? "Go to Login" : "Proceed to Login"} <ArrowRight size={18} />
+                Proceed to Login <ArrowRight size={18} />
               </Link>
             )}
           </div>

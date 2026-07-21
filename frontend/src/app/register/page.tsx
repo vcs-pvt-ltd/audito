@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo } from "react";
+import { useState, useEffect, Suspense, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -20,19 +20,24 @@ import {
   Tag,
   X,
   Crown,
-  Sparkles,
   LockKeyhole,
+  ImagePlus,
 } from "lucide-react";
 import Image from "next/image";
 import logo from "@/assets/logo/audito_logo.png";
 import {
   authApi,
   countriesApi,
+  plansApi,
   type Country,
+  type PlanCatalog,
+  type PromotionCampaign,
   type RegisterPayload,
   type AllEntityType,
 } from "@/lib/api";
 import { canRegisterEntityType, CUSTOM_PLAN_MINIMUM_LIMITS, PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
+import OrganizationLogoCropModal from "@/components/organization/OrganizationLogoCropModal";
+import { type OrganizationLogoCrop } from "@/lib/organizationLogo";
 
 /* ─── Country Code → IANA Timezone Map ──────────────────────────── */
 
@@ -112,15 +117,15 @@ const accountTypes: AccountTypeConfig[] = [
     key: "Customer",
     label: "Customers",
     icon: Building2,
-    description: "Buyers and regional offices",
+    description: "For buyer, buying-office, and supplier workspaces",
     entityTypes: [
-      { name: "Customer", level: 7, color: "bg-secondary-500", desc: "Top-level buyer organization" },
-      { name: "Buying Office", level: 6, color: "bg-secondary-500/80", desc: "Regional buying offices" },
-      { name: "Supplier", level: 5, color: "bg-secondary-500/60", desc: "Suppliers under buying office" },
+      { name: "Customer", level: 7, color: "bg-secondary-500", desc: "Best for a main buyer managing its supplier network." },
+      { name: "Buying Office", level: 6, color: "bg-secondary-500/80", desc: "For a regional office that manages local suppliers." },
+      { name: "Supplier", level: 5, color: "bg-secondary-500/60", desc: "For a supplier completing customer audits and actions." },
     ],
     highlightLevels: [7, 6, 5],
     detail: {
-      desc: "Top-level enterprise entity managing the entire global audit ecosystem and compliance policies.",
+      desc: "Set up buyer and supplier audit operations.",
       capabilities: [
         { icon: Globe, label: "Manage global supplier audits" },
         { icon: ShieldCheck, label: "Control compliance across regions" },
@@ -132,17 +137,17 @@ const accountTypes: AccountTypeConfig[] = [
     key: "Company",
     label: "Company",
     icon: LayoutGrid,
-    description: "Manufacturing & operations",
+    description: "For company operations, sites, and departments",
     entityTypes: [
-      { name: "Company", level: 5, color: "bg-primary-400", desc: "Top-level company entity" },
-      { name: "Cluster", level: 4, color: "bg-primary-400/80", desc: "Regional or product clusters" },
-      { name: "Factory", level: 3, color: "bg-primary-400/60", desc: "Manufacturing factories" },
-      { name: "Unit", level: 2, color: "bg-primary-400/40", desc: "Operational units within factories" },
-      { name: "Department", level: 1, color: "bg-primary-400/30", desc: "Departments within units" },
+      { name: "Company", level: 5, color: "bg-primary-400", desc: "Best for the main organization that owns the workspace." },
+      { name: "Cluster", level: 4, color: "bg-primary-400/80", desc: "For a group of companies, regions, or business units." },
+      { name: "Factory", level: 3, color: "bg-primary-400/60", desc: "For one manufacturing or operating site." },
+      { name: "Unit", level: 2, color: "bg-primary-400/40", desc: "For an operational unit inside a factory." },
+      { name: "Department", level: 1, color: "bg-primary-400/30", desc: "For a department-level audit workspace." },
     ],
     highlightLevels: [6, 5, 4, 3, 2, 1],
     detail: {
-      desc: "Manufacturing or service company managing multi-level operations, factories, and departments.",
+      desc: "Set up your company structure for audits.",
       capabilities: [
         { icon: LayoutGrid, label: "Multi-level org structure" },
         { icon: ShieldCheck, label: "Factory & unit management" },
@@ -154,15 +159,15 @@ const accountTypes: AccountTypeConfig[] = [
     key: "Audit Firm",
     label: "Audit Firms",
     icon: User,
-    description: "Firms, branches and teams",
+    description: "For audit firms, branches, and specialist teams",
     entityTypes: [
-      { name: "Audit Firm Company", label: "Company", level: 5, color: "bg-accent-500", desc: "Audit firm organization" },
-      { name: "Branch", level: 4, color: "bg-accent-500/80", desc: "Audit firm branch / office" },
-      { name: "Audit Firm Department", label: "Department", level: 3, color: "bg-accent-500/60", desc: "Department within branch" },
+      { name: "Audit Firm Company", label: "Company", level: 5, color: "bg-accent-500", desc: "Best for the main audit-firm workspace." },
+      { name: "Branch", level: 4, color: "bg-accent-500/80", desc: "For a branch that manages local audit teams." },
+      { name: "Audit Firm Department", label: "Department", level: 3, color: "bg-accent-500/60", desc: "For a specialist audit department or team." },
     ],
     highlightLevels: [5, 4, 3],
     detail: {
-      desc: "Independent audit firm providing compliance services across branches and departments.",
+      desc: "Set up your audit firm, branches, and teams.",
       capabilities: [
         { icon: User, label: "Manage audit teams" },
         { icon: Globe, label: "Multi-branch operations" },
@@ -181,9 +186,11 @@ const ENTITY_ENTRY_PRICE_LABELS: Partial<Record<AllEntityType, string>> = {
   "Buying Office": "$599",
   Supplier: "$299",
   Cluster: "$199",
-  Branch: "$199",
+  Factory: "$99",
+  Branch: "$599",
   Company: "$299",
-  "Audit Firm Company": "$299",
+  "Audit Firm Company": "$999",
+  "Audit Firm Department": "$299",
 };
 
 const CUSTOM_CONFIGURATION_FEATURES = [
@@ -226,6 +233,12 @@ function getLevelName(group: AccountGroup, level: number): string | null {
   const config = accountTypes.find((t) => t.key === group)!;
   const et = config.entityTypes.find((e) => e.level === level);
   return et ? (et.label ?? et.name) : null;
+}
+
+/** Returns the stored entity type for a hierarchy level (not its display label). */
+function getLevelEntityType(group: AccountGroup, level: number): AllEntityType | null {
+  const config = accountTypes.find((t) => t.key === group)!;
+  return config.entityTypes.find((e) => e.level === level)?.name ?? null;
 }
 
 /* ─── Input Component ────────────────────────────────────────────── */
@@ -283,8 +296,6 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
 
 /* ─── Plan Selection Step ──────────────────────────────────────── */
 
-const BASIC_YEARLY_TOTAL = Math.round(99 * 11 * 0.8);
-
 function PlanSelectionStep({
   selectedPlan,
   billingCycle,
@@ -299,6 +310,7 @@ function PlanSelectionStep({
   onPromoCodeChange,
   onValidatePromo,
   onRemovePromo,
+  planCatalog,
 }: {
   selectedPlan: string;
   billingCycle: "Monthly" | "Yearly";
@@ -313,17 +325,19 @@ function PlanSelectionStep({
   onPromoCodeChange: (value: string) => void;
   onValidatePromo: () => void;
   onRemovePromo: () => void;
+  planCatalog: PlanCatalog | null;
 }) {
   const router = useRouter();
   const isYearly = billingCycle === "Yearly";
+  const yearlyDiscount = Number(planCatalog?.plans[0]?.yearly_discount_percent ?? 20);
 
-  const plans = [
+  const basePlans = [
     {
       key: "Basic",
       name: "Basic",
-      price: isYearly ? `$${BASIC_YEARLY_TOTAL}` : "$0",
-      period: isYearly ? "/year" : "/month",
-      subtitle: isYearly ? "1st month free, then $79.20/mo" : "1st month free, then $99/mo",
+      price: "$99",
+      period: "/month",
+      subtitle: "First month free, then $99/month",
       desc: "Perfect for trying out Audito",
       color: "from-[#378745]/40 to-[#1D4226]/40",
       textColor: "text-white",
@@ -360,6 +374,51 @@ function PlanSelectionStep({
       textColor: "text-[#EECA53]",
     },
   ];
+  const plans = [
+    ...basePlans,
+    ...(planCatalog?.plans || [])
+      .filter((plan) => !["Basic", "Pro", "Elite"].includes(plan.plan_name))
+      .map((plan) => ({
+        key: plan.plan_name,
+        name: plan.display_name || plan.plan_name,
+        price: "$0",
+        period: "/month",
+        subtitle: null,
+        desc: plan.description || "A flexible Audito plan",
+        color: "from-[#173b36] to-[#0a2522]",
+        textColor: "text-white",
+      })),
+  ];
+  const displayPlans = plans.map((plan) => {
+    const config = planCatalog?.plans.find((item) => item.plan_name === plan.key);
+    if (!config) return { ...plan, isActive: true };
+    const monthly = Number(config.monthly_price);
+    const yearly = Math.round(monthly * 12 * (1 - Number(config.yearly_discount_percent) / 100));
+    const displayMonthly = Math.round(monthly);
+    const isBasic = plan.key === "Basic";
+    const listAmount = isBasic || !isYearly ? displayMonthly : yearly;
+    const campaign = !isBasic ? (planCatalog?.active_promotions || [])
+      .filter((offer) => offer.applies_to_registration && offer.plans.some((eligible) => eligible.plan_name === plan.key && (eligible.billing_cycle === "Any" || eligible.billing_cycle === (isYearly ? "Yearly" : "Monthly"))))
+      .reduce<PromotionCampaign | null>((best, offer) => {
+        const savings = offer.discount_type === "percentage" ? listAmount * Number(offer.discount_value) / 100 : Number(offer.discount_value);
+        const bestSavings = !best ? 0 : best.discount_type === "percentage" ? listAmount * Number(best.discount_value) / 100 : Number(best.discount_value);
+        return savings > bestSavings ? offer : best;
+      }, null) : null;
+    const campaignDiscount = campaign ? Math.min(listAmount, campaign.discount_type === "percentage" ? Math.round(listAmount * Number(campaign.discount_value) / 100) : Math.round(Number(campaign.discount_value))) : 0;
+    const finalAmount = listAmount - campaignDiscount;
+    return {
+      ...plan,
+      price: `$${finalAmount.toLocaleString()}`,
+      period: isBasic || !isYearly ? "/month" : "/year",
+      originalPrice: campaign ? `$${listAmount.toLocaleString()}` : undefined,
+      campaignLabel: campaign ? `${campaign.discount_type === "percentage" ? `${campaign.discount_value}% off` : `$${campaign.discount_value} off`} · ${campaign.name}` : undefined,
+      campaignEndsAt: campaign?.ends_at,
+      subtitle: isBasic ? `First month free, then $${displayMonthly.toLocaleString()}/month` : isYearly && Number(config.yearly_discount_percent) > 0 ? `Save ${config.yearly_discount_percent}% yearly` : null,
+      isActive: config.is_active,
+    };
+  });
+  const selectedPlanConfig = planCatalog?.plans.find((plan) => plan.plan_name === selectedPlan);
+  const isSelectedPlanAvailable = selectedPlan === "Custom" || selectedPlanConfig?.is_active !== false;
 
   const comparisonRows = [
     {
@@ -378,8 +437,13 @@ function PlanSelectionStep({
     { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true] },
     { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
   ];
-  const workspaceRows = comparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
-  const coreRows = comparisonRows.filter((r) => r.group === "CORE FEATURES");
+  const renderedComparisonRows = comparisonRows.map((row) => {
+    if (!planCatalog) return row;
+    const values = planCatalog.plans.map((plan) => row.feature === "Company levels" ? String(plan.max_company_levels) : row.feature === "Departments" ? String(plan.max_departments) : row.feature === "Number of Audits" ? String(plan.max_audits) : row.feature === "Audit Checklists" ? String(plan.max_checklists) : row.feature === "Number of Auditors" ? String(plan.max_auditors) : row.feature === "Auditor Evaluation System" ? !!plan.allow_auditor_eval : !!plan.allow_company_to_company);
+    return { ...row, values };
+  });
+  const workspaceRows = renderedComparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
+  const coreRows = renderedComparisonRows.filter((r) => r.group === "CORE FEATURES");
 
   return (
     <div className="p-5 pt-1 sm:p-8 sm:pt-2">
@@ -447,17 +511,18 @@ function PlanSelectionStep({
             <button
               key={cycle}
               type="button"
+              disabled={selectedPlan === "Basic" && cycle === "Yearly"}
               onClick={() => onBillingCycleChange(cycle)}
               className={`relative min-w-24 px-5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
                 billingCycle === cycle
                   ? "bg-secondary-500 text-primary-950 shadow"
                   : "text-gray-400 hover:text-white"
-              }`}
+              } disabled:cursor-not-allowed disabled:opacity-40`}
             >
               {cycle}
               {cycle === "Yearly" && billingCycle !== "Yearly" && (
                 <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-emerald-500 text-primary-950 text-[8px] font-bold rounded-full">
-                  -20%
+                  -{yearlyDiscount}%
                 </span>
               )}
             </button>
@@ -501,18 +566,20 @@ function PlanSelectionStep({
 
       {/* Plan cards */}
       <div className="mb-7 grid grid-cols-1 gap-4 sm:grid-cols-4">
-        {plans.map((plan) => {
+        {displayPlans.map((plan) => {
           const isSelected = selectedPlan === plan.key;
+          const campaignPlan = plan as typeof plan & { campaignLabel?: string; campaignEndsAt?: string; originalPrice?: string };
           return (
             <button
               key={plan.key}
               type="button"
+              disabled={plan.isActive === false}
               onClick={() => onPlanSelect(plan.key)}
-              className={`relative min-h-[180px] text-left rounded-2xl p-5 border transition-all duration-200 ${
+              className={`relative flex min-h-[180px] flex-col text-left rounded-2xl p-5 border transition-all duration-200 ${
                 isSelected
                   ? `bg-gradient-to-br ${plan.color} border-secondary-400/60 ring-2 ring-secondary-400 ring-offset-2 ring-offset-[#0b2118] shadow-xl shadow-black/20`
                   : `bg-gradient-to-br ${plan.color} border-white/10 hover:-translate-y-0.5 hover:border-white/20 hover:shadow-lg hover:shadow-black/15`
-              }`}
+              } disabled:cursor-not-allowed disabled:opacity-45`}
             >
               {plan.badge && (
                 <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[9px] font-bold rounded-full uppercase tracking-wide whitespace-nowrap">
@@ -521,7 +588,7 @@ function PlanSelectionStep({
               )}
               <div className="flex items-center gap-2 mb-3">
                 {plan.key === "Custom" ? (
-                  <Sparkles size={18} className="text-[#EECA53]" />
+                  <Image src={logo} alt="Audito" className="h-auto w-16 object-contain" />
                 ) : plan.key === "Elite" ? (
                   <Crown size={18} className="text-white" />
                 ) : (
@@ -531,15 +598,19 @@ function PlanSelectionStep({
               </div>
               {plan.price && (
                 <div className="mb-2">
+                  {campaignPlan.campaignLabel && <p className={`mb-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${plan.key === "Pro" ? "border-[#062D27]/15 bg-[#062D27]/10 text-[#062D27]" : "border-secondary-400/25 bg-secondary-500/15 text-secondary-200"}`}>{campaignPlan.campaignLabel}</p>}
+                  {campaignPlan.originalPrice && <span className={`mr-1.5 text-sm font-medium line-through ${plan.textColor} opacity-45`}>{campaignPlan.originalPrice}</span>}
                   <span className={`text-2xl font-bold ${plan.textColor}`}>{plan.price}</span>
                   {plan.period && <span className={`ml-1 text-xs ${plan.textColor} opacity-60`}>{plan.period}</span>}
                 </div>
               )}
+              {campaignPlan.campaignEndsAt && <p className={`mb-1 text-[10px] ${plan.textColor} opacity-60`}>Offer ends {new Date(campaignPlan.campaignEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>}
               {plan.subtitle && (
                 <p className="text-[11px] text-secondary-400 font-medium mb-1">{plan.subtitle}</p>
               )}
               <p className={`text-xs ${plan.textColor} opacity-60`}>{plan.desc}</p>
-              <div className={`mt-3 w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? "border-secondary-400 bg-secondary-400" : "border-white/20"}`}>
+              {plan.isActive === false && <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-red-300">Currently unavailable</p>}
+              <div className={`mt-auto w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? "border-secondary-400 bg-secondary-400" : "border-white/20"}`}>
                 {isSelected && <Check size={11} className="text-primary-950" />}
               </div>
             </button>
@@ -549,6 +620,8 @@ function PlanSelectionStep({
 
       {(["Pro", "Elite"] as const).includes(selectedPlan as "Pro" | "Elite") && (
         <PromoCodePanel
+          planName={selectedPlan as "Pro" | "Elite"}
+          billingCycle={billingCycle}
           promoCode={promoCode}
           promoDiscount={promoDiscount}
           promoLoading={promoLoading}
@@ -556,6 +629,8 @@ function PlanSelectionStep({
           onPromoCodeChange={onPromoCodeChange}
           onValidate={onValidatePromo}
           onRemove={onRemovePromo}
+          baseMonthlyPrice={Number(selectedPlanConfig?.monthly_price ?? (selectedPlan === "Pro" ? 199 : 299))}
+          yearlyDiscountPercent={Number(selectedPlanConfig?.yearly_discount_percent ?? 20)}
         />
       )}
 
@@ -568,7 +643,8 @@ function PlanSelectionStep({
       <button
         type="button"
         onClick={onNext}
-        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px"
+        disabled={!isSelectedPlanAvailable}
+        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
       >
         Continue Setup
         <ArrowRight size={18} />
@@ -585,6 +661,8 @@ function PlanSelectionStep({
 /* ─── Step 2: Account Type + Hierarchy ────────────────────── */
 
 function PromoCodePanel({
+  planName,
+  billingCycle,
   promoCode,
   promoDiscount,
   promoLoading,
@@ -592,7 +670,11 @@ function PromoCodePanel({
   onPromoCodeChange,
   onValidate,
   onRemove,
+  baseMonthlyPrice,
+  yearlyDiscountPercent,
 }: {
+  planName: "Pro" | "Elite";
+  billingCycle: "Monthly" | "Yearly";
   promoCode: string;
   promoDiscount: number | null;
   promoLoading: boolean;
@@ -600,7 +682,20 @@ function PromoCodePanel({
   onPromoCodeChange: (value: string) => void;
   onValidate: () => void;
   onRemove: () => void;
+  baseMonthlyPrice?: number;
+  yearlyDiscountPercent?: number;
 }) {
+  const effectiveMonthlyPrice = baseMonthlyPrice ?? (planName === "Pro" ? 199 : 299);
+  const effectiveYearlyDiscount = yearlyDiscountPercent ?? 20;
+  const originalAmount = billingCycle === "Yearly"
+    ? Math.round(effectiveMonthlyPrice * 12 * (1 - effectiveYearlyDiscount / 100))
+    : Math.round(effectiveMonthlyPrice);
+  const discountedAmount = promoDiscount === null
+    ? null
+    : Math.max(0, Math.round(originalAmount * (1 - promoDiscount / 100)));
+  const savings = discountedAmount === null ? null : Math.round(originalAmount - discountedAmount);
+  const formatAmount = (amount: number) => `$${Math.round(amount).toLocaleString()}`;
+
   return (
     <section className="mb-6 rounded-2xl border border-white/[0.1] bg-white/[0.03] p-4 sm:p-5">
       <div className="flex items-start gap-3">
@@ -612,9 +707,16 @@ function PromoCodePanel({
       </div>
 
       {promoDiscount !== null ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-2.5">
-          <p className="flex items-center gap-2 text-sm font-medium text-emerald-200"><CheckCircle2 size={16} /> {promoDiscount}% discount applied</p>
-          <button type="button" onClick={onRemove} className="text-xs font-semibold text-emerald-300 transition hover:text-white">Remove code</button>
+        <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.08] p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-sm font-medium text-emerald-200"><CheckCircle2 size={16} /> {promoDiscount}% discount applied</p>
+            <button type="button" onClick={onRemove} className="text-xs font-semibold text-emerald-300 transition hover:text-white">Remove code</button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 border-t border-emerald-400/15 pt-3 sm:grid-cols-3">
+            <div><p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-100/50">Original</p><p className="mt-0.5 text-sm text-emerald-50/70 line-through">{formatAmount(originalAmount)}</p></div>
+            <div><p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-100/50">You save</p><p className="mt-0.5 text-sm font-semibold text-emerald-300">{formatAmount(savings ?? 0)}</p></div>
+            <div className="col-span-2 sm:col-span-1 sm:text-right"><p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-100/50">New price</p><p className="mt-0.5 text-xl font-bold text-white">{formatAmount(discountedAmount ?? originalAmount)} <span className="text-[10px] font-medium text-emerald-100/60">/{billingCycle === "Yearly" ? "year" : "month"}</span></p></div>
+          </div>
         </div>
       ) : (
         <div className="mt-4">
@@ -633,19 +735,33 @@ function PromoCodeStep({
   planName,
   billingCycle,
   onNext,
+  onBack,
+  planCatalog,
   ...promoProps
 }: {
   planName: "Pro" | "Elite";
   billingCycle: "Monthly" | "Yearly";
   onNext: () => void;
+  onBack: () => void;
+  planCatalog: PlanCatalog | null;
 } & React.ComponentProps<typeof PromoCodePanel>) {
+  const config = planCatalog?.plans.find((plan) => plan.plan_name === planName);
   return (
     <div className="p-5 pt-1 sm:p-8 sm:pt-2">
       <div className="mb-6">
+        <button type="button" onClick={onBack} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6">
+          <ArrowLeft size={18} />
+        </button>
         <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Apply a promo code</h3>
         <p className="mt-1 text-sm leading-relaxed text-gray-400">Your {planName} {billingCycle.toLowerCase()} plan is selected. A promo code is optional and can be applied before you continue.</p>
       </div>
-      <PromoCodePanel {...promoProps} />
+      <PromoCodePanel
+        planName={planName}
+        billingCycle={billingCycle}
+        baseMonthlyPrice={Number(config?.monthly_price ?? (planName === "Pro" ? 199 : 299))}
+        yearlyDiscountPercent={Number(config?.yearly_discount_percent ?? 20)}
+        {...promoProps}
+      />
       <button type="button" onClick={onNext} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px">
         Continue to account type <ArrowRight size={18} />
       </button>
@@ -658,6 +774,7 @@ function AccountTypeStep({
   selectedEntityType,
   planName,
   customCompanyLevelLimit,
+  entryPriceLabels,
   onGroupSelect,
   onEntityTypeSelect,
   onNext,
@@ -668,6 +785,7 @@ function AccountTypeStep({
   selectedEntityType: AllEntityType | null;
   planName: string;
   customCompanyLevelLimit: number;
+  entryPriceLabels: Partial<Record<AllEntityType, string>>;
   onGroupSelect: (g: AccountGroup) => void;
   onEntityTypeSelect: (e: AllEntityType) => void;
   onNext: () => void;
@@ -676,7 +794,9 @@ function AccountTypeStep({
 }) {
   const activeGroup = selectedGroup ?? "Customer";
   const activeConfig = accountTypes.find((t) => t.key === activeGroup)!;
-  const shouldShowEntryPrices = planName !== "Custom";
+  // Prices remain visible even when a level is unavailable for the selected
+  // plan, so customers can see the available entry-point pricing.
+  const shouldShowEntryPrices = () => true;
 
   const isEntityLocked = (group: AccountGroup, entityName: AllEntityType) =>
     !canRegisterEntityType(planName, group, entityName);
@@ -720,7 +840,7 @@ function AccountTypeStep({
         </button>
         <div>
           <h3 className="text-xl sm:text-2xl font-semibold tracking-tight text-white">Choose your account type</h3>
-          <p className="mt-1 text-sm leading-relaxed text-gray-400">Select the organization that best represents your workspace, then choose where it sits in the hierarchy.</p>
+          <p className="mt-1 text-sm leading-relaxed text-gray-400">Select your organization type and starting level.</p>
         </div>
       </div>
 
@@ -772,7 +892,7 @@ function AccountTypeStep({
                   <p className={`text-sm font-semibold ${isSelected ? "text-secondary-400" : "text-white"}`}>{et.label ?? et.name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{et.desc}</p>
                 </div>
-                {shouldShowEntryPrices && ENTITY_ENTRY_PRICE_LABELS[et.name] && <span className="self-end text-[10px] font-semibold text-secondary-300">{ENTITY_ENTRY_PRICE_LABELS[et.name]}</span>}
+                {shouldShowEntryPrices() && entryPriceLabels[et.name] && <span className="self-end text-[10px] font-semibold text-secondary-300">{entryPriceLabels[et.name]}</span>}
                 {isLocked ? (
                   <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500"><LockKeyhole size={12} /> Upgrade</span>
                 ) : isSelected && <Check size={15} className="text-secondary-400 shrink-0" />}
@@ -831,6 +951,7 @@ function AccountTypeStep({
                   <div key={type.key} className="flex flex-col gap-1.5">
                     {ALL_LEVELS.map((lvl) => {
                       const name = getLevelName(type.key, lvl);
+                      const entityType = getLevelEntityType(type.key, lvl);
                       const colorCls = getLevelStyle(type.key, lvl);
                       const isEmpty = !name;
                       const isLocked = !isEmpty && isLevelLocked(type.key, lvl);
@@ -843,13 +964,13 @@ function AccountTypeStep({
                             disabled={isEmpty || isLocked}
                             onClick={() => handleLevelClick(type.key, lvl)}
                             title={isLocked ? `${planName} does not include ${name} as a workspace entry type. Choose an available type or upgrade the plan.` : undefined}
-                            className={`relative flex-1 h-10 rounded-xl px-3 text-xs font-medium text-left transition-all ${isEmpty ? "opacity-[0.08] cursor-default" : isLocked ? "cursor-not-allowed bg-white/[0.035] opacity-35 grayscale" : "cursor-pointer hover:brightness-110 hover:translate-x-0.5"} ${isLocked ? "" : colorCls ?? "bg-white/5"} ${isSelected ? "ring-2 ring-secondary-300 ring-offset-2 ring-offset-[#0a1d15] shadow-lg shadow-black/20" : ""} text-white`}
+                            className={`relative flex-1 h-10 rounded-xl px-3 text-xs font-medium text-left transition-all ${isEmpty ? "cursor-default opacity-[0.08]" : isLocked ? "cursor-not-allowed bg-white/[0.035] text-gray-400" : "cursor-pointer text-white hover:brightness-110 hover:translate-x-0.5"} ${isLocked ? "" : colorCls ?? "bg-white/5"} ${isSelected ? "ring-2 ring-secondary-300 ring-offset-2 ring-offset-[#0a1d15] shadow-lg shadow-black/20" : ""}`}
                           >
                             <span className="flex items-center justify-between gap-1">
                               <span className="truncate">{name ?? ""}</span>
                               {isLocked ? <LockKeyhole size={11} className="shrink-0" /> : isSelected && <Check size={12} className="shrink-0" strokeWidth={3} />}
                             </span>
-                            {shouldShowEntryPrices && ENTITY_ENTRY_PRICE_LABELS[name as AllEntityType] && <span className="absolute bottom-1 right-2 text-[9px] font-semibold text-secondary-200">{ENTITY_ENTRY_PRICE_LABELS[name as AllEntityType]}</span>}
+                            {entityType && shouldShowEntryPrices() && entryPriceLabels[entityType] && <span className="absolute bottom-1 right-2 text-[9px] font-semibold text-secondary-200">{entryPriceLabels[entityType]}</span>}
                           </button>
                         </div>
                       );
@@ -874,7 +995,7 @@ function AccountTypeStep({
                 <p className="text-base font-semibold text-white">{selectedEntity?.label ?? selectedEntity?.name ?? activeConfig.label}</p>
                 {selectedEntity && <span className="rounded-full border border-white/10 bg-black/10 px-2 py-0.5 text-[10px] font-medium text-gray-400">Level {selectedEntity.level}</span>}
               </div>
-              <p className="mt-1 text-xs leading-relaxed text-gray-400">{activeConfig.detail.desc}</p>
+              <p className="mt-1 text-xs leading-relaxed text-gray-400">{selectedEntity?.desc ?? activeConfig.detail.desc}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 sm:max-w-[46%] sm:justify-end">
@@ -931,7 +1052,7 @@ function RegisterForm() {
 
   const [step, setStep] = useState(() => {
     if (isPricingPromoPlan) return 1;
-    if (planFromUrl && ["Basic", "Pro", "Elite"].includes(planFromUrl)) return 2;
+    if (planFromUrl && planFromUrl !== "Custom") return 2;
     if (planFromUrl === "Custom") return 2;
     return 1;
   });
@@ -980,18 +1101,43 @@ function RegisterForm() {
     billing_cycle: billingFromUrl === "Yearly" ? "Yearly" : "Monthly",
     timezone: "",
     promo_code: "",
+    organization_logo: null,
   });
 
   const [countries, setCountries] = useState<Country[]>([]);
   const [countrySearch, setCountrySearch] = useState("");
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [agreedToPrivacyPolicy, setAgreedToPrivacyPolicy] = useState(false);
+  const organizationLogoInputRef = useRef<HTMLInputElement>(null);
+  const [organizationLogoCrop, setOrganizationLogoCrop] = useState<OrganizationLogoCrop>("wide");
+  const [organizationLogoFile, setOrganizationLogoFile] = useState<File | null>(null);
+  const [checkingRegistrationEmail, setCheckingRegistrationEmail] = useState(false);
+  const [planCatalog, setPlanCatalog] = useState<PlanCatalog | null>(null);
 
   const selectedCountry = countries.find((c) => c.country === formData.country);
   const dialCode = selectedCountry?.international_dialing || "";
+  const entryPriceLabels = useMemo(() => {
+    const labels = { ...ENTITY_ENTRY_PRICE_LABELS };
+    for (const entry of planCatalog?.entry_prices ?? []) {
+      labels[entry.entity_type as AllEntityType] = `$${Number(entry.monthly_price).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    }
+    const formatPlanPrice = (planName: "Basic" | "Pro" | "Elite", fallback: number) => {
+      const plan = planCatalog?.plans.find((item) => item.plan_name === planName);
+      return `$${Number(plan?.monthly_price ?? fallback).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    };
+    // Company hierarchy cards follow their plan prices, not independent entry prices.
+    labels.Factory = formatPlanPrice("Basic", 99);
+    labels.Cluster = formatPlanPrice("Pro", 199);
+    labels.Company = formatPlanPrice("Elite", 299);
+    return labels;
+  }, [planCatalog]);
 
   useEffect(() => {
     countriesApi.getAll().then(setCountries);
+  }, []);
+
+  useEffect(() => {
+    plansApi.getPublic().then((result) => { if (result.success && result.data) setPlanCatalog(result.data); });
   }, []);
 
   useEffect(() => {
@@ -1013,31 +1159,20 @@ function RegisterForm() {
       if (plan === "Custom") {
         setIsCustomPlan(true);
         setFormData((prev) => ({ ...prev, plan_name: "Custom" }));
-
-        try {
-          const raw = sessionStorage.getItem("custom_solution_payload");
-          if (raw) {
-            const payload = JSON.parse(raw);
-            sessionStorage.removeItem("custom_solution_payload");
-            if (payload.customSolution) {
-              setCustomSolution(normalizeCustomSolution(payload.customSolution));
-              setCustomLimitsReady(true);
-            }
-            if (payload.billing_cycle) {
-              setFormData((prev) => ({ ...prev, billing_cycle: payload.billing_cycle }));
-            }
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      } else if (["Basic", "Pro", "Elite"].includes(plan)) {
+        setCustomLimitsReady(false);
+      } else if (planCatalog?.plans.some((item) => item.plan_name === plan)) {
         setFormData((prev) => ({ ...prev, plan_name: plan }));
+        if (plan === "Elite" && !type) {
+          setSelectedGroup("Company");
+          setSelectedEntityType("Company");
+          setFormData((prev) => ({ ...prev, entity_type: "Company" }));
+        }
       }
     }
     if (billing === "Monthly" || billing === "Yearly") {
       setFormData((prev) => ({ ...prev, billing_cycle: billing }));
     }
-  }, [searchParams]);
+  }, [searchParams, planCatalog]);
 
   // Keep the selected entry type valid when the selected plan changes.
   useEffect(() => {
@@ -1059,9 +1194,21 @@ function RegisterForm() {
     setFormData((prev) => ({ ...prev, email: prev.org_email || "" }));
   }, [formData.org_email]);
 
-  const updateField = (field: keyof RegisterPayload, value: string) => {
+  const updateField = <K extends keyof RegisterPayload>(field: K, value: RegisterPayload[K]) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setError("");
+  };
+
+  const handleOrganizationLogoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      setError("Organization logo must be a PNG or JPEG image.");
+      return;
+    }
+    setOrganizationLogoFile(file);
   };
 
   const handleGroupSelect = (group: AccountGroup) => {
@@ -1079,18 +1226,15 @@ function RegisterForm() {
   };
 
   const handleStep1Next = () => {
-    if (!formData.plan_name || !["Basic", "Pro", "Elite", "Custom"].includes(formData.plan_name)) {
+    if (!formData.plan_name || (formData.plan_name !== "Custom" && !planCatalog?.plans.some((plan) => plan.plan_name === formData.plan_name))) {
       setError("Please select a plan to continue.");
       return;
     }
     setError("");
     if (formData.plan_name === "Custom") {
       setIsCustomPlan(true);
-      if (customLimitsReady) {
-        setStep(4);
-      } else {
-        setStep(2);
-      }
+      setCustomLimitsReady(false);
+      setStep(2);
     } else {
       setStep(2);
     }
@@ -1106,7 +1250,7 @@ function RegisterForm() {
       return;
     }
     setError("");
-    setStep(isCustomPlan && !customLimitsReady ? 3 : 4);
+    setStep(isCustomPlan ? 3 : 4);
   };
 
   const passwordRequirements = useMemo(() => ({
@@ -1194,9 +1338,35 @@ function RegisterForm() {
     setFormData((prev) => ({ ...prev, promo_code: "" }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const err = validateStep4();
+  const handleOrganizationDetailsNext = async () => {
+    const err = validateStep3();
+    if (err) { setError(err); return; }
+    if (isCustomPlan) {
+      void handleSubmit();
+      return;
+    }
+
+    setCheckingRegistrationEmail(true);
+    setError("");
+    try {
+      // The organization email is automatically used as the first admin email.
+      const response = await authApi.checkRegistrationEmail((formData.org_email || "").trim());
+      if (!response.success) {
+        setError(response.message || "Unable to check the organization email.");
+        return;
+      }
+      setFormData((previous) => ({ ...previous, email: (previous.org_email || "").trim() }));
+      setStep(5);
+    } catch {
+      setError("Unable to check the organization email. Please try again.");
+    } finally {
+      setCheckingRegistrationEmail(false);
+    }
+  };
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const err = isCustomPlan ? validateStep3() : validateStep4();
     if (err) { setError(err); return; }
     setLoading(true);
     setError("");
@@ -1227,17 +1397,23 @@ function RegisterForm() {
         <div className="max-w-md mx-auto w-full px-4">
           <div className="bg-white/5 border border-white/10 p-8 rounded-2xl text-center backdrop-blur-xl">
             <CheckCircle2 className="mx-auto text-secondary-500 mb-6" size={64} />
-            <h1 className="text-xl font-bold text-white mb-2">Check Your Email</h1>
-            <p className="text-gray-400 mb-8 max-w-sm mx-auto leading-relaxed">
-              We've sent a verification link to{" "}
-              <span className="text-white font-medium">{formData.email}</span>.
-              Please click the link inside to activate your account.
-            </p>
+            <h1 className="text-xl font-bold text-white mb-2">{isCustomPlan ? "Your Plan Is Ready for Review" : "Check Your Email"}</h1>
+            {isCustomPlan ? (
+              <p className="text-gray-400 mb-8 max-w-sm mx-auto leading-relaxed">
+                We sent a verification link to <span className="text-white font-medium">{formData.org_email}</span>.
+                After you verify it, your custom plan will be sent to our team for review. We&apos;ll contact you with the next steps and pricing.
+              </p>
+            ) : (
+              <p className="text-gray-400 mb-8 max-w-sm mx-auto leading-relaxed">
+                We&apos;ve sent a verification link to <span className="text-white font-medium">{formData.email}</span>.
+                Please click the link inside to activate your account.
+              </p>
+            )}
             <Link
-              href="/login"
+              href={isCustomPlan ? "/" : "/login"}
               className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 px-6 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400"
             >
-              Go to Login <ArrowRight size={18} />
+              {isCustomPlan ? "Return to Home" : "Go to Login"} <ArrowRight size={18} />
             </Link>
           </div>
         </div>
@@ -1264,12 +1440,12 @@ function RegisterForm() {
           </p>
         </div>
 
-        <StepIndicator current={step} total={4} />
+        <StepIndicator current={isCustomPlan ? Math.max(1, step - 1) : step} total={isCustomPlan ? 3 : 4} />
         <p className={"mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8 " + (isPricingPromoPlan && step === 1 ? "hidden" : "")}>
           {step === 1 && "Step 1 of 4 — Choose Your Plan"}
-          {step === 2 && "Step 2 of 4 — Account Type"}
-          {step === 3 && (isCustomPlan && !customLimitsReady ? "Step 3 of 4 — Configure Plan" : "Step 3 of 4 — Organization Details")}
-          {step === 4 && (isCustomPlan && !customLimitsReady ? "Step 4 of 4 — Organization Details" : "Step 4 of 4 — Admin Account")}
+          {step === 2 && (isCustomPlan ? "Step 1 of 3 — Account Type" : "Step 2 of 4 — Account Type")}
+          {step === 3 && (isCustomPlan ? "Step 2 of 3 — Configure Plan" : "Step 3 of 4 — Organization Details")}
+          {step === 4 && (isCustomPlan ? "Step 3 of 3 — Organization Details" : "Step 4 of 4 — Admin Account")}
           {step === 5 && "Step 4 of 4 — Admin Account"}
         </p>
         {isPricingPromoPlan && step === 1 && <p className="mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8">Step 1 of 4 — Promo Code</p>}
@@ -1280,7 +1456,12 @@ function RegisterForm() {
             selectedPlan={formData.plan_name || "Basic"}
             billingCycle={formData.billing_cycle as "Monthly" | "Yearly"}
             onPlanSelect={(plan) => {
-              setFormData((prev) => ({ ...prev, plan_name: plan }));
+              setFormData((prev) => ({ ...prev, plan_name: plan, billing_cycle: plan === "Basic" ? "Monthly" : prev.billing_cycle }));
+              if (plan === "Elite") {
+                setSelectedGroup("Company");
+                setSelectedEntityType("Company");
+                setFormData((prev) => ({ ...prev, entity_type: "Company" }));
+              }
               if (plan !== "Pro" && plan !== "Elite") handleRemovePromo();
               setError("");
             }}
@@ -1294,6 +1475,7 @@ function RegisterForm() {
             onPromoCodeChange={(value) => { setPromoCode(value); setPromoError(""); }}
             onValidatePromo={() => void handleValidatePromo()}
             onRemovePromo={handleRemovePromo}
+            planCatalog={planCatalog}
           />
         )}
 
@@ -1302,6 +1484,7 @@ function RegisterForm() {
           <PromoCodeStep
             planName={planFromUrl as "Pro" | "Elite"}
             billingCycle={formData.billing_cycle as "Monthly" | "Yearly"}
+            planCatalog={planCatalog}
             promoCode={promoCode}
             promoDiscount={promoDiscount}
             promoLoading={promoLoading}
@@ -1309,6 +1492,7 @@ function RegisterForm() {
             onPromoCodeChange={(value) => { setPromoCode(value); setPromoError(""); }}
             onValidate={() => void handleValidatePromo()}
             onRemove={handleRemovePromo}
+            onBack={() => router.push("/")}
             onNext={() => { setError(""); setStep(2); }}
           />
         )}
@@ -1319,14 +1503,14 @@ function RegisterForm() {
             selectedGroup={selectedGroup}
             selectedEntityType={selectedEntityType}
             planName={formData.plan_name ?? "Basic"}
-            customCompanyLevelLimit={6}
+            customCompanyLevelLimit={5}
+            entryPriceLabels={entryPriceLabels}
             onGroupSelect={handleGroupSelect}
             onEntityTypeSelect={handleEntityTypeSelect}
             onNext={handleStep2Next}
             onBack={() => {
               if (isPricingPromoPlan) setStep(1);
-              else if (isCustomPlan && customLimitsReady) router.push("/custom-solution");
-              else if (isCustomPlan) setStep(1);
+              else if (isCustomPlan) router.push("/");
               else router.push("/");
             }}
             error={error}
@@ -1335,7 +1519,7 @@ function RegisterForm() {
         )}
 
         {/* ─── Step 3: Custom Configuration (when coming from /custom-solution without pre-filled limits) ── */}
-        {step === 3 && isCustomPlan && !customLimitsReady && (() => {
+        {step === 3 && isCustomPlan && (() => {
           const updateCustomLimit = (key: keyof typeof CUSTOM_PLAN_MINIMUM_LIMITS, value: number) => {
             const feature = CUSTOM_CONFIGURATION_FEATURES.find((item) => item.key === key)!;
             setCustomSolution((previous) => ({ ...previous, [key]: Math.min(feature.max, Math.max(feature.min, value)) }));
@@ -1404,6 +1588,7 @@ function RegisterForm() {
                 type="button"
                 onClick={() => {
                   setError("");
+                  setCustomLimitsReady(true);
                   setStep(4);
                 }}
                 className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px"
@@ -1422,7 +1607,7 @@ function RegisterForm() {
               <button
                 type="button"
                 onClick={() => {
-                  setStep(isCustomPlan && !customLimitsReady ? 3 : 2);
+                  setStep(isCustomPlan ? 3 : 2);
                 }}
                 aria-label="Go back"
                 className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"
@@ -1451,6 +1636,58 @@ function RegisterForm() {
                 value={formData.org_name}
                 onChange={(v) => updateField("org_name", v)}
                 placeholder="Enter organization name"
+              />
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300">Organization logo <span className="text-xs font-normal text-gray-500">(optional)</span></label>
+                    <p className="mt-0.5 text-xs text-gray-500">PNG or JPEG. We crop and optimize it for your report header.</p>
+                  </div>
+                </div>
+                <input
+                  ref={organizationLogoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="hidden"
+                  onChange={handleOrganizationLogoChange}
+                />
+                <div className="flex min-h-20 items-center gap-3 rounded-xl border border-dashed border-white/15 bg-black/10 p-3">
+                  {formData.organization_logo ? (
+                    <img src={formData.organization_logo} alt="Organization logo preview" className="h-14 w-20 rounded-lg border border-white/10 bg-white object-contain p-1" />
+                  ) : (
+                    <div className="flex h-14 w-20 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-gray-500">
+                      <ImagePlus size={20} />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-white">{formData.organization_logo ? "Logo selected" : "Add your organization logo"}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">Optional branding for audit and CAP reports.</p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button type="button" onClick={() => organizationLogoInputRef.current?.click()} className="rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-medium text-gray-200 transition-colors hover:bg-white/10">
+                      {formData.organization_logo ? "Replace" : "Select"}
+                    </button>
+                    {formData.organization_logo && (
+                      <button type="button" onClick={() => updateField("organization_logo", null)} className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <OrganizationLogoCropModal
+                open={Boolean(organizationLogoFile)}
+                file={organizationLogoFile}
+                initialCrop={organizationLogoCrop}
+                onClose={() => setOrganizationLogoFile(null)}
+                onError={setError}
+                onApply={(organization_logo, crop) => {
+                  updateField("organization_logo", organization_logo);
+                  setOrganizationLogoCrop(crop);
+                  setOrganizationLogoFile(null);
+                }}
               />
 
               {selectedEntityType === "Company" && (
@@ -1609,15 +1846,11 @@ function RegisterForm() {
 
               <button
                 type="button"
-                onClick={() => {
-                  const err = validateStep3();
-                  if (err) { setError(err); return; }
-                  setError("");
-                  setStep(5);
-                }}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px"
+                onClick={() => void handleOrganizationDetailsNext()}
+                disabled={checkingRegistrationEmail}
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Next: Admin Account
+                {isCustomPlan ? "Submit Your Plan for Review" : checkingRegistrationEmail ? "Checking email…" : "Next: Admin Account"}
                 <ArrowRight size={16} />
               </button>
             </div>

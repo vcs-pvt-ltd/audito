@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, Save, Building2, MapPin, Mail, Shield, Phone, Globe, Fingerprint, ArrowLeft, Search, ChevronDown, X } from "lucide-react";
+import { Loader2, Save, Building2, MapPin, Mail, Shield, Phone, Globe, Fingerprint, ArrowLeft, Search, ChevronDown, X, ImagePlus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { authApi, countriesApi, type Country } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { Button, IconButton } from "@/components/ui";
+import OrganizationLogoCropModal from "@/components/organization/OrganizationLogoCropModal";
+import { type OrganizationLogoCrop } from "@/lib/organizationLogo";
 
 interface Organization {
   id?: number;
@@ -19,7 +21,15 @@ interface Organization {
   address_line_3?: string | null;
   country?: string | null;
   phone_number?: string | null;
+  organization_logo?: string | null;
 }
+
+const getOrganizationLogoUrl = (logo?: string | null) => {
+  if (!logo) return "";
+  if (logo.startsWith("data:") || logo.startsWith("http://") || logo.startsWith("https://")) return logo;
+  const mediaOrigin = process.env.NEXT_PUBLIC_MEDIA_URL || (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/api\/?$/, "");
+  return `${mediaOrigin}${logo.startsWith("/") ? logo : `/${logo}`}`;
+};
 
 export default function OrganizationSettingsPage() {
   const { admin, accessToken, refreshMe } = useAuth();
@@ -33,6 +43,9 @@ export default function OrganizationSettingsPage() {
   const [countryMenuPosition, setCountryMenuPosition] = useState({ top: 0, left: 0, width: 0 });
   const countryDropdownRef = useRef<HTMLDivElement>(null);
   const countryMenuRef = useRef<HTMLDivElement>(null);
+  const organizationLogoInputRef = useRef<HTMLInputElement>(null);
+  const [organizationLogoCrop, setOrganizationLogoCrop] = useState<OrganizationLogoCrop>("wide");
+  const [organizationLogoFile, setOrganizationLogoFile] = useState<File | null>(null);
   const [org, setOrg] = useState<Organization>({
     name: "",
     registration_number: "",
@@ -42,6 +55,7 @@ export default function OrganizationSettingsPage() {
     address_line_3: "",
     country: "",
     phone_number: "",
+    organization_logo: null,
   });
 
   useEffect(() => {
@@ -60,6 +74,7 @@ export default function OrganizationSettingsPage() {
                 address_line_3: data.organization.address_line_3 || "",
                 country: data.organization.country || "",
                 phone_number: data.organization.phone_number || "",
+                organization_logo: data.organization.organization_logo || null,
               });
             }
           }
@@ -122,6 +137,7 @@ export default function OrganizationSettingsPage() {
         address_line_3: org.address_line_3?.trim() || undefined,
         country: org.country?.trim() || undefined,
         phone_number: org.phone_number?.trim() || undefined,
+        organization_logo: org.organization_logo ?? null,
       });
 
       if (res.success) {
@@ -135,6 +151,18 @@ export default function OrganizationSettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleOrganizationLogoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      toast("Organization logo must be a PNG or JPEG image.", "error");
+      return;
+    }
+    setOrganizationLogoFile(file);
   };
 
   if (!admin) return null;
@@ -227,6 +255,41 @@ export default function OrganizationSettingsPage() {
                     placeholder="e.g. PV-12345"
                   />
                 </div>
+
+                <div className="sm:col-span-2">
+                  <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                    <label className="text-xs font-medium text-gray-400">Organization Logo</label>
+                    <span className="text-[11px] text-gray-500">Optional · PNG or JPEG · optimized automatically</span>
+                  </div>
+                  <input ref={organizationLogoInputRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleOrganizationLogoChange} />
+                  <div className="flex min-h-20 items-center gap-3 rounded-lg border border-dashed border-white/15 bg-black/[0.12] p-3">
+                    {org.organization_logo ? (
+                      <img src={getOrganizationLogoUrl(org.organization_logo)} alt="Organization logo preview" className="h-14 w-20 rounded-md border border-white/10 bg-white object-contain p-1" />
+                    ) : (
+                      <div className="flex h-14 w-20 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-gray-500"><ImagePlus size={20} /></div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-white">{org.organization_logo ? "Logo ready to save" : "Add organization branding"}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">Shown opposite the Audito logo in audit and CAP reports.</p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button type="button" onClick={() => organizationLogoInputRef.current?.click()} className="rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-medium text-gray-200 transition-colors hover:bg-white/10">{org.organization_logo ? "Replace" : "Select"}</button>
+                      {org.organization_logo && <button type="button" onClick={() => setOrg((previous) => ({ ...previous, organization_logo: null }))} className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20">Remove</button>}
+                    </div>
+                  </div>
+                </div>
+                <OrganizationLogoCropModal
+                  open={Boolean(organizationLogoFile)}
+                  file={organizationLogoFile}
+                  initialCrop={organizationLogoCrop}
+                  onClose={() => setOrganizationLogoFile(null)}
+                  onError={(message) => toast(message, "error")}
+                  onApply={(organization_logo, crop) => {
+                    setOrg((previous) => ({ ...previous, organization_logo }));
+                    setOrganizationLogoCrop(crop);
+                    setOrganizationLogoFile(null);
+                  }}
+                />
               </div>
             </div>
 

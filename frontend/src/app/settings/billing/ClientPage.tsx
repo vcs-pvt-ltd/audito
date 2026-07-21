@@ -20,25 +20,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { auditApi, checklistApi, usersApi, structureApi, paymentApi, billingCreditsApi, type PaymentDetails, type LinkBillingCredit, type SavedPaymentMethod } from "@/lib/api";
+import { auditApi, checklistApi, usersApi, structureApi, paymentApi, billingCreditsApi, plansApi, type PaymentDetails, type LinkBillingCredit, type SavedPaymentMethod, type PlanCatalog } from "@/lib/api";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui";
-
-const COMPARISON_ROWS = [
-  { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: ["1", "2", "6"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25"] },
-  { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15"] },
-  { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true] },
-  { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
-];
 
 const PLANS = [
   {
     name: "Basic",
-    priceMonthly: 0,
-    description: "Perfect for trying out Audito",
+    priceMonthly: 99,
+    description: "First month free, then the monthly renewal rate.",
     color: "from-[#378745]/40 to-[#1D4226]/40",
     badge: null,
     limits: { audits: 2, checklists: 3, auditors: 1, department: 4 },
@@ -75,6 +65,13 @@ export default function BillingPage() {
   const [paymentMethods, setPaymentMethods] = useState<SavedPaymentMethod[]>([]);
   const [linkCredits, setLinkCredits] = useState<LinkBillingCredit[]>([]);
   const [creditAvailable, setCreditAvailable] = useState(0);
+  const [planCatalog, setPlanCatalog] = useState<PlanCatalog | null>(null);
+
+  useEffect(() => {
+    plansApi.getPublic().then((res) => {
+      if (res.success && res.data) setPlanCatalog(res.data);
+    });
+  }, []);
 
   useEffect(() => {
     if (subscription?.billing_cycle === "Yearly") setBillingCycle("yearly");
@@ -167,20 +164,47 @@ export default function BillingPage() {
     }
   }, [accessToken, admin]);
 
-  const currentPlan = useMemo(() => {
-    if (!admin?.plan_limits) return PLANS[0];
-    const deptLimit = admin.plan_limits.department;
-    if (deptLimit >= 16) return PLANS[2];
-    if (deptLimit >= 8) return PLANS[1];
-    return PLANS[0];
-  }, [admin]);
+  const configuredPlans = useMemo(() => PLANS.map((plan) => {
+    const settings = planCatalog?.plans.find((item) => item.plan_name === plan.name);
+    if (!settings) return { ...plan, yearlyDiscountPercent: 20 };
+    return {
+      ...plan,
+      priceMonthly: Number(settings.monthly_price),
+      yearlyDiscountPercent: Number(settings.yearly_discount_percent),
+      limits: {
+        audits: settings.max_audits,
+        checklists: settings.max_checklists,
+        auditors: settings.max_auditors,
+        department: settings.max_departments,
+      },
+    };
+  }), [planCatalog]);
+  const yearlyDiscountPercent = Number(planCatalog?.plans[0]?.yearly_discount_percent ?? 20);
 
-  const currentPlanIndex = useMemo(() => PLANS.findIndex((p) => p.name === currentPlan.name), [currentPlan]);
-  const visiblePlans = useMemo(() => PLANS.slice(currentPlanIndex), [currentPlanIndex]);
+  const configuredComparisonRows = useMemo(() => [
+    { group: "WORKSPACE MANAGEMENT", feature: "Levels of Company", values: configuredPlans.map((plan) => String(planCatalog?.plans.find((item) => item.plan_name === plan.name)?.max_company_levels ?? (plan.name === "Basic" ? 1 : plan.name === "Pro" ? 2 : 5))) },
+    { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: configuredPlans.map((plan) => String(plan.limits.department)) },
+    { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: configuredPlans.map((plan) => String(plan.limits.audits)) },
+    { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: configuredPlans.map((plan) => String(plan.limits.checklists)) },
+    { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: configuredPlans.map((plan) => String(plan.limits.auditors)) },
+    { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: configuredPlans.map((plan) => planCatalog?.plans.find((item) => item.plan_name === plan.name)?.allow_auditor_eval ?? plan.name === "Elite") },
+    { group: "CORE FEATURES", feature: "Link Company to Company", values: configuredPlans.map((plan) => planCatalog?.plans.find((item) => item.plan_name === plan.name)?.allow_company_to_company ?? plan.name === "Elite") },
+  ], [configuredPlans, planCatalog]);
+
+  const currentPlan = useMemo(() => {
+    if (!admin?.plan_limits) return configuredPlans[0];
+    const deptLimit = admin.plan_limits.department;
+    if (deptLimit >= configuredPlans[2].limits.department) return configuredPlans[2];
+    if (deptLimit >= configuredPlans[1].limits.department) return configuredPlans[1];
+    return configuredPlans[0];
+  }, [admin, configuredPlans]);
+
+  const currentPlanIndex = useMemo(() => configuredPlans.findIndex((p) => p.name === currentPlan.name), [configuredPlans, currentPlan]);
+  const visiblePlans = useMemo(() => configuredPlans.slice(currentPlanIndex), [configuredPlans, currentPlanIndex]);
 
   const visibleRows = useMemo(
-    () => COMPARISON_ROWS.map((r) => ({ ...r, values: r.values.slice(currentPlanIndex) })),
-    [currentPlanIndex]
+    () => configuredComparisonRows.map((r) => ({ ...r, values: r.values.slice(currentPlanIndex) })),
+    [configuredComparisonRows, currentPlanIndex]
   );
   const workspaceRows = visibleRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
   const coreRows = visibleRows.filter((r) => r.group === "CORE FEATURES");
@@ -255,7 +279,7 @@ export default function BillingPage() {
       Yearly
       {billingCycle !== "yearly" && (
         <span className="absolute -top-2 -right-3 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold text-primary-950">
-          SAVE 20%
+          SAVE {yearlyDiscountPercent}%
         </span>
       )}
     </button>
@@ -289,7 +313,7 @@ export default function BillingPage() {
 
           {billingCycle === "yearly" && activeBillingCycle !== "Yearly" && !isCurrentPlanExpired && (
             <div className="mb-5 flex flex-col gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.07] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div><p className="text-sm font-semibold text-emerald-300">Save 20% with yearly billing</p><p className="mt-0.5 text-xs text-emerald-100/55">Choose your current plan below to move your next payment to an annual cycle.</p></div>
+              <div><p className="text-sm font-semibold text-emerald-300">Save {yearlyDiscountPercent}% with yearly billing</p><p className="mt-0.5 text-xs text-emerald-100/55">Choose your current plan below to move your next payment to an annual cycle.</p></div>
               <span className="shrink-0 text-xs font-bold text-emerald-300">12 months · one payment</span>
             </div>
           )}
@@ -343,8 +367,13 @@ export default function BillingPage() {
           >
             {visiblePlans.map((plan) => {
               const isCurrent = currentPlan.name === plan.name;
-              const price = plan.priceMonthly === 0 ? 0 : billingCycle === "monthly" ? plan.priceMonthly : Math.round(plan.priceMonthly * 12 * 0.8);
-              const period = billingCycle === "monthly" ? "/mo" : "/year";
+              const isBasicTrial = plan.name === "Basic";
+              const price = plan.priceMonthly === 0
+                ? 0
+                : isBasicTrial || billingCycle === "monthly"
+                  ? plan.priceMonthly
+                  : Math.round(plan.priceMonthly * 12 * (1 - plan.yearlyDiscountPercent / 100));
+              const period = isBasicTrial || billingCycle === "monthly" ? "/mo" : "/year";
               const periodLabel = price === 0 ? "included" : period;
               const canMoveToYearly = isCurrent && !isCurrentPlanExpired && selectedBillingCycle === "Yearly" && activeBillingCycle !== "Yearly";
               const canRenewCurrent = isCurrent && isCurrentPlanExpired;

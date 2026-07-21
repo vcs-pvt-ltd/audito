@@ -25,6 +25,7 @@ const {
   downloadExcelTemplate,
   uploadQuestionsExcel,
   previewQuestionsExcel,
+  generateAiChecklistQuestions,
 } = require('../controllers/checklistController');
 
 // Multer: store uploads in memory
@@ -69,6 +70,22 @@ const mediaUpload = multer({
   },
 });
 
+// AI reference documents are processed in memory and discarded after the request.
+const aiDocumentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf', 'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain', 'text/markdown',
+    ];
+    const allowedExtension = /\.(pdf|doc|docx|txt|md)$/i.test(file.originalname || '');
+    if (allowedTypes.includes(file.mimetype) || allowedExtension) cb(null, true);
+    else cb(new Error('Only PDF, Word, text, and Markdown files are allowed for AI question generation.'));
+  },
+});
+
 router.use(authenticate);
 
 // ── Checklist Types ──────────────────────────────────────────────
@@ -85,6 +102,7 @@ router.get('/excel-template', downloadExcelTemplate);
 
 // ── Excel preview (no DB writes) ──────────────────────────────────
 router.post('/questions/preview-upload', upload.single('questions_file'), previewQuestionsExcel);
+router.post('/ai/generate-questions', aiDocumentUpload.single('source_document'), generateAiChecklistQuestions);
 
 // ── Questions (standalone routes — must come before /:id) ────────
 router.put   ('/questions/:qid', updateQuestion);

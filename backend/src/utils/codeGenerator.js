@@ -93,6 +93,7 @@ const generateAuditorProfileId = () => generateTableId('auditor_profiles', 'audi
 const generateNoticeId = () => generateTableId('notices', 'notice_id', 'NTC', 4);
 const generateContactMessageId = () => generateTableId('contact_messages', 'contact_message_id', 'MSG', 4);
 const generatePromoCodeId = () => generateTableId('promo_codes', 'promo_code_id', 'PROMO', 4);
+const generatePromotionCampaignId = () => generateTableId('promotion_campaigns', 'campaign_id', 'PCAM', 5);
 const generateAuditResponseId = () => generateTableId('audit_responses', 'audit_response_id', 'ARES', 4);
 const generateAuditEvidenceId = () => generateTableId('audit_evidence', 'audit_evidence_id', 'AEVI', 4);
 const generateAuditEntityProgressId = () => generateTableId('audit_entity_progress', 'audit_entity_progress_id', 'AEP', 4);
@@ -127,6 +128,7 @@ const generateAuditAssignmentEntityIds = (count) => generateBatchIds('audit_assi
 const generateEvaluationAnswerIds = (count) => generateBatchIds('evaluation_answers', 'evaluation_answer_id', 'EANS', count, 4);
 const generateCapAssignmentEntityIds = (count) => generateBatchIds('cap_assignment_entities', 'cap_assignment_entity_id', 'CAE', 5);
 const generateCapEntityProgressIds = (count) => generateBatchIds('cap_entity_progress', 'cap_entity_progress_id', 'CEP', 5);
+const generateAiChecklistSuggestionIds = (count) => generateBatchIds('ai_checklist_question_suggestions', 'ai_checklist_suggestion_id', 'AICS', count, 5);
 const generateCapResponseId = () => generateTableId('cap_responses', 'cap_response_id', 'CRES', 4);
 const generateOrganizationLinkId = () => generateTableId('organization_links', 'organization_link_id', 'OLNK', 5);
 const generateLinkBillingCreditId = () => generateTableId('link_billing_credits', 'link_billing_credit_id', 'LBC', 5);
@@ -135,6 +137,8 @@ const generateCustomSolutionRequestId = () => generateTableId('custom_solution_r
 const generatePaymentGatewayEventId = () => generateTableId('payment_gateway_events', 'payment_gateway_event_id', 'PGE', 6);
 const generatePaymentMethodId = () => generateTableId('payment_methods', 'payment_method_id', 'PM', 6);
 const generateNotificationId = () => generateTableId('user_notifications', 'notification_id', 'NOTI', 5);
+const generateAiChecklistJobId = () => generateTableId('ai_checklist_generation_jobs', 'ai_checklist_job_id', 'AICJ', 5);
+const generateAiChecklistSuggestionId = () => generateTableId('ai_checklist_question_suggestions', 'ai_checklist_suggestion_id', 'AICS', 5);
 
 module.exports = {
   generateTableId,
@@ -189,6 +193,7 @@ module.exports = {
   generateNoticeId,
   generateContactMessageId,
   generatePromoCodeId,
+  generatePromotionCampaignId,
   generatePasswordResetOtpId,
   generateCapResponseEvidenceId,
   generateOrganizationLinkId,
@@ -198,4 +203,7 @@ module.exports = {
   generatePaymentGatewayEventId,
   generatePaymentMethodId,
   generateNotificationId,
+  generateAiChecklistJobId,
+  generateAiChecklistSuggestionId,
+  generateAiChecklistSuggestionIds,
 };

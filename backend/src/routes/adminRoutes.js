@@ -6,6 +6,18 @@ const { authenticate, authorize } = require('../middleware/auth');
 // Protected by authenticate & authorize('audito_admin')
 router.use(authenticate, authorize('audito_admin'));
 
+router.get('/plan-settings', adminController.listPlanSettings);
+router.post('/plan-settings', adminController.createPlanSettings);
+router.put('/plan-settings/yearly-discount', adminController.updateYearlyDiscount);
+router.put('/plan-settings/:planName', adminController.updatePlanSettings);
+router.put('/entry-prices/:entityType', adminController.updateEntryPrice);
+
+// Automatic time-bound plan promotions (separate from promo codes)
+router.get('/promotion-campaigns', adminController.listPromotionCampaigns);
+router.post('/promotion-campaigns', adminController.createPromotionCampaign);
+router.put('/promotion-campaigns/:campaignId', adminController.updatePromotionCampaign);
+router.put('/promotion-campaigns/:campaignId/status', adminController.setPromotionCampaignStatus);
+
 // Messages routing
 router.get('/messages', adminController.listMessages);
 router.post('/messages/:id/reply', adminController.replyMessage);

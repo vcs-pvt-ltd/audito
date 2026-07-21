@@ -2,41 +2,41 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Check, X } from "lucide-react";
-import { useState } from "react";
+import { Check, X, BadgePercent, Clock3 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import logo from "@/assets/logo/audito_logo.png";
 import basicPlanHierarchy from "@/assets/landing/pricing-plans/basic-plan-hierarchy.png";
 import proPlanHierarchy from "@/assets/landing/pricing-plans/pro-plan-hierarchy.png";
 import elitePlanHierarchy from "@/assets/landing/pricing-plans/elite-plan-hierarchy.png";
 import Reveal from "./Reveal";
-import { PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
+import { plansApi, type PlanCatalog, type PromotionCampaign } from "@/lib/api";
 
 type Plan = {
   name: string;
   price: string;
   period: string;
   description: string;
+  renewalNote?: string;
   cta: string;
   href: string;
+  originalPrice?: string;
+  offerLabel?: string;
+  offerEndsAt?: string;
 };
 
 const PLAN_DEFS = [
-  { name: "Basic", priceMonthly: 0, description: "Perfect for trying out Audito", cta: "Get Started", href: "/register?plan=Basic" },
+  { name: "Basic", priceMonthly: 99, description: "Perfect for trying out Audito", cta: "Get Started", href: "/register?plan=Basic" },
   { name: "Pro", priceMonthly: 199, description: "For growing teams", cta: "Get Started", href: "/register?plan=Pro" },
   { name: "Elite", priceMonthly: 299, description: "For large organizations", cta: "Get Started", href: "/register?plan=Elite" },
-  { name: "Custom", priceMonthly: 0, description: "Tailored to your needs", cta: "Contact Us", href: "/custom-solution" },
+  { name: "Custom", priceMonthly: 0, description: "Tailored to your needs", cta: "Build Custom Plan", href: "/register?plan=Custom" },
 ];
-
-const BASIC_YEARLY_TOTAL = Math.round(99 * 11 * 0.8);
 
 const comparisonRows = [
   {
     group: "WORKSPACE MANAGEMENT",
     feature: "Company levels",
     values: [
-      String(PLAN_COMPANY_LEVEL_LIMITS.Basic),
-      String(PLAN_COMPANY_LEVEL_LIMITS.Pro),
-      String(PLAN_COMPANY_LEVEL_LIMITS.Elite),
+      "1", "2", "5",
     ],
   },
   { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16"] },
@@ -49,25 +49,31 @@ const comparisonRows = [
 
 const planHierarchyVisuals = [
   { name: "Basic", image: basicPlanHierarchy, alt: "One company linked to four departments and one auditor", summary: "1 company · 4 departments · 1 auditor" },
-  { name: "Pro", image: proPlanHierarchy, alt: "Two companies linked to departments and three auditors", summary: "2 companies · 8 departments · 3 auditors" },
-  { name: "Elite", image: elitePlanHierarchy, alt: "Enterprise companies linked to departments and audit team", summary: "Enterprise hierarchy · 16 departments · 15 auditors" },
+  { name: "Pro", image: proPlanHierarchy, alt: "Headquarters linked to two companies, departments, and three auditors", summary: "2 company levels · 3 auditors" },
+  { name: "Elite", image: elitePlanHierarchy, alt: "Five-level enterprise hierarchy linked to a larger audit team", summary: "5 hierarchy levels · audit team" },
 ];
 
 type CardProps = { plan: Plan };
 
-const BasicCard = ({ plan, billingCycle }: CardProps & { billingCycle?: "monthly" | "yearly" }) => {
-  const isYearly = billingCycle === "yearly";
+const OfferPrice = ({ plan, dark = false }: { plan: Plan; dark?: boolean }) => <>
+  {plan.offerLabel && <div title={plan.offerLabel} className={`mb-2 inline-flex max-w-full items-center gap-1 truncate rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${dark ? "border-secondary-400/25 bg-secondary-500/15 text-secondary-200" : "border-[#062D27]/15 bg-[#062D27]/10 text-[#062D27]"}`}><BadgePercent size={11} className="shrink-0" /> <span className="truncate">{plan.offerLabel}</span></div>}
+  <div className="text-start mb-2">
+    {plan.originalPrice && <span className={`mr-2 text-base font-medium line-through ${dark ? "text-gray-400" : "text-[#062D27]/55"}`}>{plan.originalPrice}</span>}
+    <span className={`whitespace-nowrap text-3xl sm:text-4xl xl:text-[2.6rem] font-bold ${dark ? "text-white" : "text-[#062D27]"}`}>{plan.price}</span>
+    <span className={`ml-1 text-sm ${dark ? "text-gray-400" : "text-[#062D27]"}`}>{plan.period}</span>
+  </div>
+  {plan.offerEndsAt && <p className={`mb-2 flex items-center gap-1 text-[10px] font-medium ${dark ? "text-secondary-200/75" : "text-[#062D27]/70"}`}><Clock3 size={11} /> Offer ends {new Date(plan.offerEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>}
+</>;
+
+const BasicCard = ({ plan }: CardProps) => {
   return (
   <div className="pricing-card rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#378745]/40 to-[#1D4226]/40 h-full flex flex-col">
-    <div className="flex justify-start mb-4">
+    <div className="relative z-10 flex justify-start mb-4">
       <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
       <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">{plan.name}</h3>
     </div>
-    <div className="text-start mb-1">
-      <span className="text-4xl sm:text-5xl font-bold text-white">{isYearly ? `$${BASIC_YEARLY_TOTAL}` : plan.price}</span>
-      <span className="ml-1 text-sm text-gray-400">{isYearly ? "/year" : "/month"}</span>
-    </div>
-    <p className="text-xs text-secondary-400 mb-1">{isYearly ? "$79.20/mo after 1st month free" : "$99/mo from 2nd month"}</p>
+    <OfferPrice plan={plan} dark />
+    {plan.renewalNote && <p className="mb-1 text-xs font-semibold text-[#EECA53]">{plan.renewalNote}</p>}
     <p className="text-sm mb-5 text-start text-gray-400">{plan.description}</p>
     <Link href={plan.href}
       className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-white bg-[#27645E] hover:bg-[#1d4f4a] hover:shadow-lg hover:shadow-black/30 active:scale-[0.98]"
@@ -83,14 +89,11 @@ const ProCard = ({ plan }: CardProps) => (
     <div className="badge-shimmer absolute -top-2.5 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[10px] font-bold rounded-full uppercase tracking-wide shadow-lg whitespace-nowrap">
       Most Popular
     </div>
-    <div className="flex justify-start mb-4">
+    <div className="relative z-10 flex justify-start mb-4">
       <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
       <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-[#062D27]">{plan.name}</h3>
     </div>
-    <div className="text-start mb-2">
-      <span className="text-4xl sm:text-5xl font-bold text-[#062D27]">{plan.price}</span>
-      <span className="ml-1 text-sm text-[#062D27]">{plan.period}</span>
-    </div>
+    <OfferPrice plan={plan} />
     <p className="text-sm mb-5 text-start text-[#062D27]">{plan.description}</p>
     <Link href={plan.href}
       className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-primary-950 bg-gradient-to-r from-[#EECA53] to-[#E1A300] hover:brightness-105 hover:shadow-lg hover:shadow-[#D9A346]/30 active:scale-[0.98]"
@@ -106,10 +109,7 @@ const EliteCard = ({ plan }: CardProps) => (
       <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
       <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">{plan.name}</h3>
     </div>
-    <div className="text-start mb-2">
-      <span className="text-4xl sm:text-5xl font-bold text-white">{plan.price}</span>
-      <span className="ml-1 text-sm text-gray-300">{plan.period}</span>
-    </div>
+    <OfferPrice plan={plan} dark />
     <p className="text-sm mb-5 text-start text-gray-300">{plan.description}</p>
     <Link href={plan.href}
       className="mt-auto flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-all text-white bg-[#053B36] hover:bg-[#042c28] hover:shadow-lg hover:shadow-black/30 active:scale-[0.98]"
@@ -122,7 +122,7 @@ const EliteCard = ({ plan }: CardProps) => (
 const CustomCard = ({ plan }: CardProps) => (
   <div className="pricing-card rounded-3xl p-6 sm:p-7 border border-white/15 bg-gradient-to-br from-[#1a1a2e]/60 to-[#16213e]/60 h-full flex flex-col relative overflow-hidden">
     <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-[#EECA53]/10 to-transparent rounded-bl-full" />
-    <div className="flex justify-start mb-4">
+    <div className="relative z-10 flex justify-start mb-4">
       <Image src={logo} alt="Audito" className="h-auto w-24 object-contain" />
       <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-center pl-2 pt-3 text-white">{plan.name}</h3>
     </div>
@@ -135,22 +135,73 @@ const CustomCard = ({ plan }: CardProps) => (
   </div>
 );
 
+const DynamicPlanCard = ({ plan }: CardProps) => (
+  <div className="pricing-card rounded-3xl border border-white/15 bg-gradient-to-br from-[#173b36] to-[#0a2522] p-6 sm:p-7 h-full flex flex-col">
+    <h3 className="text-2xl font-bold text-white">{plan.name}</h3>
+    <div className="mt-4"><OfferPrice plan={plan} dark /></div>
+    <p className="mt-3 text-sm text-gray-400">{plan.description}</p>
+    <Link href={plan.href} className="mt-auto pt-6 flex items-center justify-center rounded-xl bg-secondary-500 py-3 text-sm font-semibold text-primary-950 transition hover:bg-secondary-400">{plan.cta}</Link>
+  </div>
+);
+
 export default function PricingSection() {
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
+  const [catalog, setCatalog] = useState<PlanCatalog | null>(null);
 
-  const plans: Plan[] = PLAN_DEFS.map((p) => ({
-    name: p.name,
-    price: `$${billingCycle === "monthly" ? p.priceMonthly : Math.round(p.priceMonthly * 12 * 0.8)}`,
-    period: billingCycle === "monthly" ? "/month" : "/year",
-    description: p.description,
-    cta: p.cta,
-    href: p.href.startsWith("/register")
-      ? `${p.href}&billing=${billingCycle === "yearly" ? "Yearly" : "Monthly"}`
-      : p.href,
-  }));
+  useEffect(() => { plansApi.getPublic().then((result) => { if (result.success && result.data) setCatalog(result.data); }); }, []);
+  const yearlyDiscount = Number(catalog?.plans[0]?.yearly_discount_percent ?? 20);
 
-  const workspaceRows = comparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
-  const coreRows = comparisonRows.filter((r) => r.group === "CORE FEATURES");
+  const plans: Plan[] = useMemo(() => PLAN_DEFS.map((p) => {
+    const config = catalog?.plans.find((item) => item.plan_name === p.name);
+    const monthly = Number(config?.monthly_price ?? p.priceMonthly);
+    const discount = Number(config?.yearly_discount_percent ?? 20);
+    const amount = billingCycle === "monthly" ? Math.round(monthly) : Math.round(monthly * 12 * (1 - discount / 100));
+    const isBasic = p.name === "Basic";
+    const campaign = !isBasic ? (catalog?.active_promotions || [])
+      .filter((offer) => offer.applies_to_registration && offer.plans.some((eligible) => eligible.plan_name === p.name && (eligible.billing_cycle === "Any" || eligible.billing_cycle === (billingCycle === "monthly" ? "Monthly" : "Yearly"))))
+      .reduce<PromotionCampaign | null>((best, offer) => {
+        const savings = offer.discount_type === "percentage" ? amount * (Number(offer.discount_value) / 100) : Number(offer.discount_value);
+        const bestSavings = !best ? 0 : best.discount_type === "percentage" ? amount * (Number(best.discount_value) / 100) : Number(best.discount_value);
+        return savings > bestSavings ? offer : best;
+      }, null) : null;
+    const offerDiscount = campaign ? Math.min(amount, campaign.discount_type === "percentage" ? Math.round(amount * (Number(campaign.discount_value) / 100)) : Math.round(Number(campaign.discount_value))) : 0;
+    const saleAmount = Math.max(0, amount - offerDiscount);
+    return {
+      name: p.name,
+      price: isBasic ? "$0" : `$${saleAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      period: isBasic ? "/month" : billingCycle === "monthly" ? "/month" : "/year",
+      originalPrice: campaign ? `$${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : undefined,
+      offerLabel: campaign ? `${campaign.discount_type === "percentage" ? `${campaign.discount_value}% off` : `$${campaign.discount_value} off`} · ${campaign.name}` : undefined,
+      offerEndsAt: campaign?.ends_at,
+      description: p.description,
+      renewalNote: isBasic ? `$${Math.round(monthly).toLocaleString()}/mo from 2nd month` : undefined,
+      cta: p.cta,
+      href: p.href.startsWith("/register") ? `${p.href}&billing=${isBasic || billingCycle === "monthly" ? "Monthly" : "Yearly"}` : p.href,
+    };
+  }), [billingCycle, catalog]);
+
+  const renderedComparisonRows = useMemo(() => comparisonRows.map((row) => {
+    if (!catalog) return row;
+    const values = catalog.plans.map((plan) => row.feature === "Company levels" ? String(plan.max_company_levels) : row.feature === "Departments" ? String(plan.max_departments) : row.feature === "Number of Audits" ? String(plan.max_audits) : row.feature === "Audit Checklists" ? String(plan.max_checklists) : row.feature === "Number of Auditors" ? String(plan.max_auditors) : row.feature === "Auditor Evaluation System" ? !!plan.allow_auditor_eval : row.feature === "Link Company to Company" ? !!plan.allow_company_to_company : "");
+    return { ...row, values };
+  }), [catalog]);
+
+  const workspaceRows = renderedComparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
+  const coreRows = renderedComparisonRows.filter((r) => r.group === "CORE FEATURES");
+  const additionalPlans = useMemo(() => (catalog?.plans || [])
+    .filter((plan) => !["Basic", "Pro", "Elite"].includes(plan.plan_name) && plan.is_active)
+    .map((plan) => {
+      const monthly = Math.round(Number(plan.monthly_price));
+      const yearly = Math.round(monthly * 12 * (1 - Number(plan.yearly_discount_percent) / 100));
+      const amount = billingCycle === "monthly" ? monthly : yearly;
+      const campaign = (catalog?.active_promotions || []).filter((offer) => offer.applies_to_registration && offer.plans.some((eligible) => eligible.plan_name === plan.plan_name && (eligible.billing_cycle === "Any" || eligible.billing_cycle === (billingCycle === "monthly" ? "Monthly" : "Yearly")))).reduce<PromotionCampaign | null>((best, offer) => {
+        const savings = offer.discount_type === "percentage" ? amount * Number(offer.discount_value) / 100 : Number(offer.discount_value);
+        const bestSavings = !best ? 0 : best.discount_type === "percentage" ? amount * Number(best.discount_value) / 100 : Number(best.discount_value);
+        return savings > bestSavings ? offer : best;
+      }, null);
+      const discount = campaign ? Math.min(amount, campaign.discount_type === "percentage" ? Math.round(amount * Number(campaign.discount_value) / 100) : Math.round(Number(campaign.discount_value))) : 0;
+      return { name: plan.display_name || plan.plan_name, price: `$${(amount - discount).toLocaleString()}`, originalPrice: campaign ? `$${amount.toLocaleString()}` : undefined, offerLabel: campaign ? `${campaign.discount_type === "percentage" ? `${campaign.discount_value}% off` : `$${campaign.discount_value} off`} · ${campaign.name}` : undefined, offerEndsAt: campaign?.ends_at, period: billingCycle === "monthly" ? "/month" : "/year", description: plan.description || "A flexible Audito plan", cta: "Get Started", href: `/register?plan=${encodeURIComponent(plan.plan_name)}&billing=${billingCycle === "yearly" ? "Yearly" : "Monthly"}` };
+    }), [billingCycle, catalog]);
 
   return (
     <section className="relative pt-20 pb-14 sm:py-18 lg:py-24 overflow-y-auto">
@@ -354,7 +405,7 @@ export default function PricingSection() {
               Yearly
               {billingCycle !== "yearly" && (
                 <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-emerald-500 text-primary-950 text-[8px] font-bold rounded-full">
-                  -20%
+                  -{yearlyDiscount}%
                 </span>
               )}
             </button>
@@ -364,7 +415,7 @@ export default function PricingSection() {
         {/* Desktop cards */}
         <div className="hidden lg:grid grid-cols-4 gap-6 xl:gap-8 max-w-7xl mx-auto mb-8 items-stretch">
           <Reveal variant="up" delay={0} className="h-full">
-            <BasicCard plan={plans[0]} billingCycle={billingCycle} />
+            <BasicCard plan={plans[0]} />
           </Reveal>
           <Reveal variant="up" delay={120} className="h-full"><ProCard plan={plans[1]} /></Reveal>
           <Reveal variant="up" delay={240} className="h-full"><EliteCard plan={plans[2]} /></Reveal>
@@ -375,7 +426,7 @@ export default function PricingSection() {
         <div className="hidden md:flex lg:hidden flex-col gap-5 max-w-3xl mx-auto mb-8">
           <div className="w-full"><ProCard plan={plans[1]} /></div>
           <div className="grid grid-cols-2 gap-5">
-            <BasicCard plan={plans[0]} billingCycle={billingCycle} />
+            <BasicCard plan={plans[0]} />
             <EliteCard plan={plans[2]} />
           </div>
           <div className="w-full"><CustomCard plan={plans[3]} /></div>
@@ -384,10 +435,12 @@ export default function PricingSection() {
         {/* Mobile cards */}
         <div className="flex flex-col md:hidden gap-5 max-w-sm mx-auto mb-8">
           <ProCard plan={plans[1]} />
-          <BasicCard plan={plans[0]} billingCycle={billingCycle} />
+          <BasicCard plan={plans[0]} />
           <EliteCard plan={plans[2]} />
           <CustomCard plan={plans[3]} />
         </div>
+
+        {additionalPlans.length > 0 && <div className="mx-auto mb-8 grid max-w-7xl gap-5 sm:grid-cols-2 lg:grid-cols-3">{additionalPlans.map((plan) => <DynamicPlanCard key={plan.name} plan={plan} />)}</div>}
 
 
         

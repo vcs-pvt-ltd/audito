@@ -56,7 +56,7 @@ const SECTIONS = [
 • Object to or restrict certain processing of your data
 • Data portability — receive your data in a structured, machine-readable format
 • Withdraw consent where processing is based on consent
-To exercise these rights, please contact our privacy team at info@audito.cloud.`,
+To exercise these rights, please contact our privacy team at hi@audito.cloud.`,
   },
   {
     title: "7. Cookies & Tracking",
@@ -85,7 +85,7 @@ You can control cookie preferences through your browser settings. Disabling cert
     content: `If you have questions or concerns about this Privacy Policy or our data practices, please contact us:
 
 Audito Privacy Team
-Email: info@audito.cloud
+Email: hi@audito.cloud
 
 We aim to respond to all privacy-related inquiries within 5 business days.`,
   },

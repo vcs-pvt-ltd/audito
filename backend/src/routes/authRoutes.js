@@ -27,6 +27,9 @@ router.post('/verify-otp', authController.verifyOtp);
 router.post('/reset-password', authController.resetPassword);
 router.post('/verify-email', authController.verifyEmail);
 router.post('/set-admin-password', authController.setAdminPassword);
+router.post('/check-registration-email', authController.checkRegistrationEmail);
+router.get('/custom-solution/setup-admin/:paymentCode', authController.getCustomSolutionAdminSetup);
+router.post('/custom-solution/setup-admin', authController.setupCustomSolutionAdmin);
 router.post('/validate-promo-code', authController.validatePromoCode);
 
 // Protected routes
@@ -40,5 +43,3 @@ router.post('/switch-account', authenticate, authController.switchAccount);
 
 
 module.exports = router;
-
-

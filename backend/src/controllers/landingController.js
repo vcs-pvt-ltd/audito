@@ -1,5 +1,21 @@
 const ContactMessageModel = require('../models/ContactMessageModel');
+const PlanSettingsModel = require('../models/PlanSettingsModel');
+const PromotionCampaignModel = require('../models/PromotionCampaignModel');
 const { sendContactEmail } = require('../services/emailService');
+const { successResponse, errorResponse } = require('../utils/helpers');
+
+const getPublicPlanSettings = async (_req, res) => {
+  try {
+    const [catalog, active_promotions] = await Promise.all([
+      PlanSettingsModel.list(),
+      PromotionCampaignModel.list({ activeOnly: true }),
+    ]);
+    return successResponse(res, { ...catalog, active_promotions });
+  } catch (error) {
+    console.error('getPublicPlanSettings error:', error);
+    return errorResponse(res, 'Failed to retrieve plan settings.', 500);
+  }
+};
 
 /**
  * Handle Contact Form Submissions from the Landing Page
@@ -35,5 +51,6 @@ const submitContactForm = async (req, res) => {
 };
 
 module.exports = {
-  submitContactForm
+  submitContactForm,
+  getPublicPlanSettings,
 };

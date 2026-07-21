@@ -77,6 +77,7 @@ interface ReportData {
     end_date: string;
     entities: AuditEntity[];
     organization_name?: string;
+    organization_logo?: string | null;
     auditor_name?: string;
     auditor_email?: string;
     auditor_phone?: string;
@@ -252,29 +253,45 @@ export function AuditPdfRenderer({ report, entityTree }: AuditPdfRendererProps) 
       };
 
       let logoDataUrl: string | undefined;
+      let organizationLogoDataUrl: string | undefined;
       try {
         logoDataUrl = await loadImageAsDataUrl(auditoLogo.src);
+      } catch (_) {}
+      try {
+        const organizationLogo = report.audit.organization_logo;
+        if (organizationLogo) {
+          organizationLogoDataUrl = organizationLogo.startsWith("data:")
+            ? organizationLogo
+            : await loadImageAsDataUrl(getMediaUrl(organizationLogo));
+        }
       } catch (_) {}
 
       // ─── Cover Page ────────────────────────────────────────────
       doc.setFillColor(255, 255, 255);
       doc.rect(0, 0, pageWidth, pageHeight, "F");
 
-     const logoW = 80;
-const logoH = 26;
-if (logoDataUrl) {
-  doc.addImage(logoDataUrl, "PNG", (pageWidth - logoW) / 2, 35, logoW, logoH);
-} else {
-  doc.setTextColor(...PRIMARY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.text("AUDITO", pageWidth / 2, 55, { align: "center" });
-}
+      const brandLogoW = 54;
+      const brandLogoH = 18;
+      const brandLogoY = 28;
+      if (logoDataUrl) {
+        doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), margin, brandLogoY, brandLogoW, brandLogoH);
+      } else {
+        doc.setTextColor(...PRIMARY);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(18);
+        doc.text("AUDITO", margin, brandLogoY + 13);
+      }
+      if (organizationLogoDataUrl) {
+        doc.addImage(organizationLogoDataUrl, inferImageFormat(organizationLogoDataUrl), pageWidth - margin - brandLogoW, brandLogoY, brandLogoW, brandLogoH);
+      }
+      doc.setDrawColor(...BORDER);
+      doc.setLineWidth(0.5);
+      doc.line(margin, 58, pageWidth - margin, 58);
 
       doc.setTextColor(...DARK);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(28);
-      doc.text("Audit Report", pageWidth / 2, 95, { align: "center" });
+      doc.text("Audit Report", pageWidth / 2, 92, { align: "center" });
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(13);
@@ -282,7 +299,7 @@ if (logoDataUrl) {
       doc.text(
         "Comprehensive Audit Summary & Analysis",
         pageWidth / 2,
-        118,
+        115,
         { align: "center" }
       );
 

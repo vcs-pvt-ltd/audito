@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { paymentApi, type PaymentDetails } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 
 function formatMoney(amount: number, currency: string) {
   try {
@@ -23,6 +24,7 @@ function PaymentContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { accessToken, refreshMe } = useAuth();
+  const { confirm } = useUiFeedback();
 
   const code = searchParams.get("code") || "";
   const gatewayReturn = searchParams.get("gateway_return");
@@ -113,6 +115,17 @@ function PaymentContent() {
     } finally {
       setPaying(false);
     }
+  };
+
+  const handleCancel = async () => {
+    const leavePayment = await confirm({
+      title: "Leave payment?",
+      message: "Your administrator account and payment link will remain ready. You can sign in later to resume this payment.",
+      confirmText: "Leave payment",
+      cancelText: "Continue payment",
+      variant: "warning",
+    });
+    if (leavePayment) router.push(accessToken ? "/settings/billing" : "/login");
   };
 
   if (loading) {
@@ -301,16 +314,17 @@ function PaymentContent() {
             {temporaryPaymentMode ? (
               paying ? "Accepting test payment..." : `Accept Temporary Payment — ${formatMoney(payment.amount, payment.currency)}`
             ) : (<>
-            {paying ? "Redirecting securely..." : `Continue to Sampath Bank — ${formatMoney(payment.amount, payment.currency)}`}
+            {paying ? "Redirecting securely..." : `Proceed to Payment — ${formatMoney(payment.amount, payment.currency)}`}
             </>)}
           </button>
 
-          <Link
-            href={accessToken ? "/settings/billing" : "/login"}
-            className="mt-2 block w-full rounded-lg py-2.5 text-center text-sm text-gray-400 hover:text-white transition-colors"
+          <button
+            type="button"
+            onClick={() => void handleCancel()}
+            className="mt-2 block w-full rounded-lg py-2.5 text-center text-sm text-gray-400 transition-colors hover:text-white"
           >
             Cancel
-          </Link>
+          </button>
         </div>
       </div>
     </div>

@@ -186,7 +186,7 @@ export default function ContactSection() {
                 <p className="text-sm text-gray-300 mb-3">Connect quickly with:</p>
                 <div className="flex items-center gap-3 justify-center lg:justify-start">
                   <SocialIcon href="https://wa.me/94773612339" iconSrc={whatsappIcon} label="WhatsApp" />
-                  <SocialIcon href="mailto:info@audito.cloud" iconSrc={mailIcon} label="Email" />
+                  <SocialIcon href="mailto:hi@audito.cloud" iconSrc={mailIcon} label="Email" />
                   <SocialIcon href="https://www.linkedin.com/company/valuecraft-minds" iconSrc={linkedinIcon} label="LinkedIn" />
                 </div>
               </div>
@@ -367,7 +367,7 @@ export default function ContactSection() {
                   </button>
 
                   <p className="text-[11px] text-center text-gray-400">
-                    Prefer to email directly? Reach us at info@audito.cloud
+                    Prefer to email directly? Reach us at hi@audito.cloud
                   </p>
                 </form>
               )}
