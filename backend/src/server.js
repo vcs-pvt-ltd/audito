@@ -5,6 +5,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const { connectDB } = require('./config/db');
+const { startSubscriptionReminderScheduler } = require('./services/subscriptionReminderService');
 
 // Import routes
 const authRoutes       = require('./routes/authRoutes');
@@ -104,6 +105,7 @@ app.use((err, req, res, next) => {
 // Start server after successful DB connection
 const startServer = async () => {
   await connectDB();
+  startSubscriptionReminderScheduler();
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });

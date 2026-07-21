@@ -42,6 +42,7 @@ const { MAX_EVIDENCE_BYTES, getEvidenceMediaType, getEvidencePolicy } = require(
 const ENTITY_TABLE_MAP = {
   'Customer': { table: 'customers', codeField: 'cust_code' },
   'Buying Office': { table: 'customer_buying_offices', codeField: 'cbo_code' },
+  'Supplier': { table: 'customer_suppliers', codeField: 'csup_code' },
   'Company': { table: 'companies', codeField: 'comp_code' },
   'Cluster': { table: 'company_clusters', codeField: 'comp_clus_code' },
   'Factory': { table: 'company_factories', codeField: 'comp_fact_code' },
@@ -452,7 +453,7 @@ const getCapDetail = async (req, res) => {
           const cfg = creatorAdmin?.entity_type ? ENTITY_TABLE_MAP[creatorAdmin.entity_type] : null;
           if (cfg && creatorAdmin?.entity_code) {
             const [orgRows] = await db.query(
-              `SELECT name, email, phone_number FROM \`${cfg.table}\` WHERE \`${cfg.codeField}\` = ? LIMIT 1`,
+              `SELECT name, email, phone_number, organization_logo FROM \`${cfg.table}\` WHERE \`${cfg.codeField}\` = ? LIMIT 1`,
               [creatorAdmin.entity_code]
             );
             const org = orgRows?.[0] || null;
@@ -460,6 +461,7 @@ const getCapDetail = async (req, res) => {
               source_audit.organization_name = org.name || null;
               source_audit.organization_email = org.email || null;
               source_audit.organization_phone = org.phone_number || null;
+              source_audit.organization_logo = org.organization_logo || null;
             }
           }
         }

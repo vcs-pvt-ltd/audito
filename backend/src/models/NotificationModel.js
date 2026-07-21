@@ -39,6 +39,14 @@ const NotificationModel = {
     return rows.length ? rows[0].notification_id : this.create(payload);
   },
 
+  async hasNotificationKey(notificationKey) {
+    const [rows] = await db.query(
+      'SELECT notification_id FROM user_notifications WHERE notification_key = ? LIMIT 1',
+      [notificationKey]
+    );
+    return rows.length > 0;
+  },
+
   async listForUser(userCode, userRole) {
     const [rows] = await db.query(
       `SELECT notification_id, recipient_role, type, title, message, audit_id, notify_date, created_at, is_read

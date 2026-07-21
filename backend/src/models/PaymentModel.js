@@ -43,14 +43,18 @@ const PaymentModel = {
     payerName = null,
     payerEmail = null,
     orgName = null,
+    promotionCampaignId = null,
+    listAmount = null,
+    promotionDiscountAmount = 0,
   }) {
     const code = genPaymentCode();
     const payment_transaction_id = await genPaymentTransactionId();
     await db.query(
       `INSERT INTO payment_transactions
-        (payment_transaction_id, payment_code, root_entity_code, purpose, plan_name, billing_cycle, amount, currency, status, payer_name, payer_email, org_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      [payment_transaction_id, code, rootEntityCode, purpose, planName, billingCycle, amount, currency, payerName, payerEmail, orgName]
+        (payment_transaction_id, payment_code, root_entity_code, purpose, plan_name, billing_cycle, amount, currency, status, payer_name, payer_email, org_name, promotion_campaign_id, list_amount, promotion_discount_amount)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+      [payment_transaction_id, code, rootEntityCode, purpose, planName, billingCycle, amount, currency, payerName, payerEmail, orgName,
+        promotionCampaignId, listAmount ?? amount, promotionDiscountAmount]
     );
     return this.findByCode(code);
   },
@@ -142,7 +146,8 @@ const PaymentModel = {
   async listByOrg(rootEntityCode) {
     const [rows] = await db.query(
       `SELECT payment_code, purpose, plan_name, billing_cycle, amount, currency, status,
-              payer_name, payer_email, org_name, invoice_number, period_start, period_end, paid_at, created_at
+              payer_name, payer_email, org_name, promotion_campaign_id, list_amount, promotion_discount_amount,
+              invoice_number, period_start, period_end, paid_at, created_at
        FROM payment_transactions
        WHERE root_entity_code = ?
        ORDER BY payment_transaction_id DESC`,

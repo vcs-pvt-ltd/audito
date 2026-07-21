@@ -41,11 +41,13 @@ const {
 const { successResponse, errorResponse, validateRequiredFields, isValidEmail } = require('../utils/helpers');
 const { db } = require('../config/db');
 const crypto = require('crypto');
-const { sendVerificationEmail } = require('../services/emailService');
+const { sendVerificationEmail, sendCustomSolutionVerificationEmail, sendCustomSolutionRequestEmail } = require('../services/emailService');
 const PaymentModel = require('../models/PaymentModel');
 const { getOrgName } = require('../utils/orgLookup');
 const SubscriptionModel = require('../models/SubscriptionModel');
 const CustomSolutionModel = require('../models/CustomSolutionModel');
+const PlanSettingsModel = require('../models/PlanSettingsModel');
+const PromotionCampaignModel = require('../models/PromotionCampaignModel');
 const fs = require('fs');
 const path = require('path');
 
@@ -71,6 +73,38 @@ const ENTITY_CONFIG = {
 };
 
 const VALID_ENTITY_TYPES = Object.keys(ENTITY_CONFIG);
+
+const ORGANIZATION_LOGO_PREFIX = '/uploads/organization-logos/';
+const MAX_ORGANIZATION_LOGO_BYTES = 700 * 1024;
+
+const saveOrganizationLogo = (entityCode, base64Image) => {
+  if (!base64Image) return null;
+
+  const match = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=\s]+)$/i.exec(base64Image);
+  if (!match) {
+    throw new Error('Organization logo must be a PNG or JPEG image.');
+  }
+
+  const imageBuffer = Buffer.from(match[2].replace(/\s/g, ''), 'base64');
+  if (!imageBuffer.length || imageBuffer.length > MAX_ORGANIZATION_LOGO_BYTES) {
+    throw new Error('Organization logo must be 700 KB or smaller.');
+  }
+
+  const extension = match[1].toLowerCase() === 'image/jpeg' ? 'jpg' : 'png';
+  const targetDir = path.join(__dirname, '..', 'public', 'uploads', 'organization-logos');
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  const filename = `organization_${entityCode}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${extension}`;
+  fs.writeFileSync(path.join(targetDir, filename), imageBuffer, { flag: 'wx' });
+  return `${ORGANIZATION_LOGO_PREFIX}${filename}`;
+};
+
+const deleteOrganizationLogo = (logoPath) => {
+  if (!logoPath || !logoPath.startsWith(ORGANIZATION_LOGO_PREFIX)) return;
+  const filename = path.basename(logoPath);
+  const filePath = path.join(__dirname, '..', 'public', 'uploads', 'organization-logos', filename);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+};
 
 // Standard plans control the entity type that may start a workspace.
 // Customer-family registrations require Elite. Company and Audit Firm entry
@@ -211,7 +245,7 @@ function getRootEntityCode(role, record) {
 
 async function getPlanLimitsForUser(role, record) {
   const rootCode = getRootEntityCode(role, record);
-  if (!rootCode) return SubscriptionModel.PLAN_LIMITS['Basic'];
+  if (!rootCode) return await SubscriptionModel.getPlanLimits('Basic');
   return await SubscriptionModel.getLimits(rootCode);
 }
 
@@ -289,7 +323,8 @@ async function collectAccounts(email) {
  *
  * Registers any entity type independently and creates its admin user.
  *
- * Required: entity_type, org_name, first_name, last_name, email, password
+ * Standard plans require an administrator. Custom plans verify the organization
+ * email first and collect administrator details after price approval, before payment.
  * Optional: registration_number, org_email, address, country, org_phone_number, nic, phone_number
  *
  * entity_type: Customer | Buying Office | Supplier | Company | Cluster | Factory |
@@ -297,6 +332,7 @@ async function collectAccounts(email) {
  */
 const register = async (req, res) => {
   const connection = await db.getConnection();
+  let savedOrganizationLogoPath = null;
 
   try {
     const {
@@ -317,14 +353,23 @@ const register = async (req, res) => {
       billing_cycle,
       timezone,
       promo_code,
-      custom_solution
+      custom_solution,
+      organization_logo
     } = req.body;
 
-    // Validate required fields
-    const missing = validateRequiredFields(req.body, [
-      'entity_type', 'org_name', 'first_name', 'last_name', 'email', 'password', 'plan_name'
+    const isCustomPlan = plan_name === 'Custom';
+    const customOnlyEntityTypes = new Set([
+      'Customer', 'Buying Office', 'Supplier',
+      'Audit Firm Company', 'Branch', 'Audit Firm Department',
     ]);
+    const missing = validateRequiredFields(req.body, isCustomPlan
+      ? ['entity_type', 'org_name', 'org_email', 'plan_name', 'custom_solution']
+      : ['entity_type', 'org_name', 'first_name', 'last_name', 'email', 'password', 'plan_name']);
     if (missing) return errorResponse(res, missing, 400);
+
+    if (!isCustomPlan && customOnlyEntityTypes.has(entity_type)) {
+      return errorResponse(res, 'Customer and Audit Firm workspaces require a Custom plan.', 400);
+    }
 
     // Validate promo code if provided
     let discount = 0;
@@ -345,7 +390,12 @@ const register = async (req, res) => {
     }
 
     const normalizedPlanName = SubscriptionModel.normalizePlanName(plan_name);
-    if (plan_name !== 'Custom' && !PLAN_REGISTRATION_ENTITY_ACCESS[normalizedPlanName]?.includes(entity_type)) {
+    if (!isCustomPlan) {
+      const planSettings = await PlanSettingsModel.find(normalizedPlanName);
+      if (!planSettings?.is_active) return errorResponse(res, 'The selected plan is not currently available.', 409);
+    }
+    const registrationEntityAccess = PLAN_REGISTRATION_ENTITY_ACCESS[normalizedPlanName] || PLAN_REGISTRATION_ENTITY_ACCESS.Elite;
+    if (plan_name !== 'Custom' && !registrationEntityAccess?.includes(entity_type)) {
       return errorResponse(
         res,
         `${normalizedPlanName} does not include ${entity_type} as a workspace entry type. Choose an available type or upgrade the plan.`,
@@ -353,16 +403,20 @@ const register = async (req, res) => {
       );
     }
 
-    if (!isValidEmail(email)) return errorResponse(res, 'Invalid email address.', 400);
+    const registrationEmail = isCustomPlan ? org_email : email;
+    if (!isValidEmail(registrationEmail)) return errorResponse(res, 'Invalid email address.', 400);
 
-    // Strong password validation: min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
-    if (!passwordRegex.test(password)) {
-      return errorResponse(res, 'Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character.', 400);
+    if (!isCustomPlan) {
+      // Strong password validation: min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
+      if (!passwordRegex.test(password)) {
+        return errorResponse(res, 'Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character.', 400);
+      }
     }
 
-    // Check duplicate admin email
-    if (await AdminModel.emailExists(email)) {
+    // Custom requests do not create an admin yet. Standard registrations still
+    // reserve the administrator email immediately.
+    if (!isCustomPlan && await AdminModel.emailExists(email)) {
       return errorResponse(res, 'Email already registered.', 409);
     }
 
@@ -378,12 +432,11 @@ const register = async (req, res) => {
       }
     }
 
-    // Generate entity code + admin user code
+    // Generate entity code. Admin credentials are intentionally deferred for custom plans.
     const config = ENTITY_CONFIG[entity_type];
     const orgCode = await config.genCode();
-    const userCode = await generateAdminUserCode();
-    const salt = await bcrypt.genSalt(12);
-    const hashedPw = await bcrypt.hash(password, salt);
+    const userCode = isCustomPlan ? null : await generateAdminUserCode();
+    const hashedPw = isCustomPlan ? null : await bcrypt.hash(password, await bcrypt.genSalt(12));
 
     // Transaction: insert entity + admin
     await connection.beginTransaction();
@@ -398,29 +451,39 @@ const register = async (req, res) => {
       address_line_3: req.body.address_line_3 || null,
       country: country || null,
       phone_number: org_phone_number || null,
-      company_type: entity_type === 'Company' ? (company_type || null) : null
+      company_type: entity_type === 'Company' ? (company_type || null) : null,
+      organization_logo: null
     };
+
+    if (organization_logo) {
+      try {
+        orgData.organization_logo = saveOrganizationLogo(orgCode, organization_logo);
+        savedOrganizationLogoPath = orgData.organization_logo;
+      } catch (logoError) {
+        return errorResponse(res, logoError.message, 400);
+      }
+    }
 
     if (entity_type === 'Company') {
       await connection.query(
-        `INSERT INTO \`${config.table}\` (name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, \`${config.codeField}\`, company_type, timezone)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO \`${config.table}\` (name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, \`${config.codeField}\`, company_type, timezone, organization_logo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [orgData.name, orgData.registration_number, orgData.email,
         orgData.address_line_1, orgData.address_line_2, orgData.address_line_3,
-        orgData.country, orgData.phone_number, orgCode, orgData.company_type, timezone || null]
+        orgData.country, orgData.phone_number, orgCode, orgData.company_type, timezone || null, orgData.organization_logo]
       );
     } else {
       await connection.query(
-        `INSERT INTO \`${config.table}\` (name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, \`${config.codeField}\`, timezone)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO \`${config.table}\` (name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, \`${config.codeField}\`, timezone, organization_logo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [orgData.name, orgData.registration_number, orgData.email,
         orgData.address_line_1, orgData.address_line_2, orgData.address_line_3,
-        orgData.country, orgData.phone_number, orgCode, timezone || null]
+        orgData.country, orgData.phone_number, orgCode, timezone || null, orgData.organization_logo]
       );
     }
 
     // Insert admin with generic entity_code
-    const adminId = await AdminModel.create({
+    const adminId = isCustomPlan ? null : await AdminModel.create({
       admin_id: userCode,
       first_name,
       last_name,
@@ -437,19 +500,37 @@ const register = async (req, res) => {
     // Free plans are activated immediately. Paid plans defer the subscription
     // until payment is confirmed — until then limits fall back to Basic.
     // Custom plans are also deferred until admin assigns a price.
-    const isCustomPlan = plan_name === 'Custom';
-    let planAmount = isCustomPlan ? 0 : SubscriptionModel.computeAmount(plan_name, billing_cycle, entity_type);
-    if (discount > 0) {
+    // Basic starts with one free month. Its configured monthly price is used
+    // only when this subscription renews after that trial period.
+    const effectiveBillingCycle = normalizedPlanName === 'Basic' ? 'Monthly' : billing_cycle;
+    let planAmount = isCustomPlan ? 0 : await SubscriptionModel.computeAmount(plan_name, effectiveBillingCycle, entity_type);
+    const listAmount = planAmount;
+    // Campaigns are automatic and never combine with a manually-entered promo
+    // code. A valid promo code keeps its established behaviour and takes
+    // precedence over an automatic promotion.
+    const campaignOffer = !isCustomPlan && !promo_code && normalizedPlanName !== 'Basic'
+      ? await PromotionCampaignModel.resolveBestOffer({
+        planName: normalizedPlanName,
+        billingCycle: effectiveBillingCycle === 'Yearly' ? 'Yearly' : 'Monthly',
+        purpose: 'registration',
+        listAmount,
+      })
+      : null;
+    if (normalizedPlanName === 'Basic') planAmount = 0;
+    const customVerificationToken = isCustomPlan ? crypto.randomBytes(32).toString('hex') : null;
+    if (campaignOffer) {
+      planAmount = campaignOffer.final_amount;
+    } else if (discount > 0) {
       planAmount = planAmount * (1 - discount / 100);
       planAmount = Math.max(0, parseFloat(planAmount.toFixed(2)));
     }
-    if (planAmount <= 0) {
-      await SubscriptionModel.createSubscription(connection, orgCode, plan_name, 'None');
+    if (!isCustomPlan && planAmount <= 0) {
+      await SubscriptionModel.createSubscription(connection, orgCode, normalizedPlanName, effectiveBillingCycle);
     }
 
     // For custom plans, store the custom solution request
     if (isCustomPlan && custom_solution) {
-      const customLimits = SubscriptionModel.normalizeCustomLimits({
+      const customLimits = await SubscriptionModel.normalizeCustomLimits({
         company_level: custom_solution.max_company_levels,
         department: custom_solution.max_departments,
         audits: custom_solution.max_audits,
@@ -462,7 +543,7 @@ const register = async (req, res) => {
         root_entity_code: orgCode,
         admin_id: adminId,
         org_name,
-        org_email: org_email || email,
+        org_email,
         entity_type,
         max_company_levels: customLimits.company_level,
         max_departments: customLimits.department,
@@ -471,10 +552,19 @@ const register = async (req, res) => {
         max_auditors: customLimits.auditors,
         allow_auditor_eval: customLimits.auditor_eval,
         allow_company_to_company: customLimits.company_to_company,
-      });
+        verification_token: customVerificationToken,
+        verification_expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000),
+      }, connection);
     }
 
     await connection.commit();
+
+    if (isCustomPlan) {
+      sendCustomSolutionVerificationEmail(org_email, org_name, customVerificationToken).catch(err => {
+        console.error('Failed to send custom solution verification email:', err);
+      });
+      return successResponse(res, { custom_solution_pending: true }, 'Custom solution request created. Please verify the organization email to send it for pricing review.', 201);
+    }
 
     // Generate Verification Token and Send Email
     const verificationToken = crypto.randomBytes(32).toString('hex');
@@ -498,6 +588,9 @@ const register = async (req, res) => {
         payerName: `${first_name} ${last_name}`,
         payerEmail: email,
         orgName: org_name,
+        promotionCampaignId: campaignOffer?.campaign_id || null,
+        listAmount,
+        promotionDiscountAmount: campaignOffer?.discount_amount || 0,
       });
       payment = {
         payment_code: created.payment_code,
@@ -512,6 +605,7 @@ const register = async (req, res) => {
 
   } catch (error) {
     await connection.rollback();
+    deleteOrganizationLogo(savedOrganizationLogoPath);
     console.error('Registration error:', error);
     return errorResponse(res, 'Registration failed. Please try again.', 500);
   } finally {
@@ -540,6 +634,33 @@ const login = async (req, res) => {
     const adminRec = await AdminModel.findByEmail(email);
     const auditorRec = await AuditorModel.findByEmail(email);
     const headRec = await EntityHeadModel.findByEmail(email);
+
+    // A custom-plan administrator is created before checkout but intentionally
+    // stays inactive until payment succeeds. If checkout was cancelled, allow
+    // the correct password to resume that existing payment instead of treating
+    // the account as invalid or creating another administrator.
+    if (adminRec && !adminRec.is_active && adminRec.is_verified && adminRec.password) {
+      const customRequest = await CustomSolutionModel.findByOrgCode(adminRec.entity_code);
+      if (customRequest?.admin_setup_completed && customRequest.admin_id === adminRec.admin_id && customRequest.payment_code) {
+        const payment = await PaymentModel.findByCode(customRequest.payment_code);
+        if (payment && ['pending', 'failed'].includes(payment.status) && await bcrypt.compare(password, adminRec.password)) {
+          return successResponse(
+            res,
+            {
+              payment_required: true,
+              payment: {
+                payment_code: payment.payment_code,
+                plan_name: payment.plan_name,
+                billing_cycle: payment.billing_cycle,
+                amount: Number(payment.amount),
+                currency: payment.currency,
+              },
+            },
+            'Your administrator account is ready. Please complete payment to activate the workspace.'
+          );
+        }
+      }
+    }
 
     // Build candidate list — { role, record } — with password-check candidates
     const candidates = [];
@@ -585,7 +706,14 @@ const login = async (req, res) => {
       // Prepare a renewal payment so the client can route into the payment flow.
       // Reuse an existing pending renewal to avoid spawning duplicates per attempt.
       let payment = null;
-      const renewalAmount = SubscriptionModel.computeAmount(subscription.plan_name, subscription.billing_cycle, activeRecord.entity_type);
+      const renewalListAmount = await SubscriptionModel.computeAmount(subscription.plan_name, subscription.billing_cycle, activeRecord.entity_type);
+      const renewalOffer = await PromotionCampaignModel.resolveBestOffer({
+        planName: SubscriptionModel.normalizePlanName(subscription.plan_name),
+        billingCycle: subscription.billing_cycle === 'Yearly' ? 'Yearly' : 'Monthly',
+        purpose: 'renewal',
+        listAmount: renewalListAmount,
+      });
+      const renewalAmount = renewalOffer?.final_amount ?? renewalListAmount;
       if (renewalAmount > 0) {
         const rootCode = getRootEntityCode(activeRole, activeRecord);
         let pending = await PaymentModel.findPendingByOrgPurpose(rootCode, 'renewal');
@@ -602,6 +730,9 @@ const login = async (req, res) => {
             payerName: `${activeRecord.first_name} ${activeRecord.last_name}`,
             payerEmail: activeRecord.email,
             orgName,
+            promotionCampaignId: renewalOffer?.campaign_id || null,
+            listAmount: renewalListAmount,
+            promotionDiscountAmount: renewalOffer?.discount_amount || 0,
           });
         }
         payment = {
@@ -812,7 +943,7 @@ const getMe = async (req, res) => {
       const config = ENTITY_CONFIG[admin.entity_type];
       if (config) {
         const [orgRows] = await db.query(
-          `SELECT name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number FROM \`${config.table}\` WHERE \`${config.codeField}\` = ?`,
+          `SELECT name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, organization_logo FROM \`${config.table}\` WHERE \`${config.codeField}\` = ?`,
           [admin.entity_code]
         );
         if (orgRows.length > 0) {
@@ -863,16 +994,17 @@ const getMe = async (req, res) => {
 
 /**
  * PUT /api/auth/organization
- * Body: { name, registration_number, email, address, country, phone_number }
+ * Body: { name, registration_number, email, address, country, phone_number, organization_logo }
  * Only works for 'admin' role on their own organization.
  */
 const updateOrganization = async (req, res) => {
+  let newLogoPath = null;
   try {
     if (req.user.role !== 'admin') {
       return errorResponse(res, 'Only administrators can update organization details.', 403);
     }
 
-    const { name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number } = req.body;
+    const { name, registration_number, email, address_line_1, address_line_2, address_line_3, country, phone_number, organization_logo } = req.body;
     if (!name) return errorResponse(res, 'Organization name is required.', 400);
 
     const admin = await AdminModel.findById(req.user.userCode);
@@ -881,15 +1013,42 @@ const updateOrganization = async (req, res) => {
     const config = ENTITY_CONFIG[admin.entity_type];
     if (!config) return errorResponse(res, 'Invalid entity type configuration.', 400);
 
+    const [existingRows] = await db.query(
+      `SELECT organization_logo FROM \`${config.table}\` WHERE \`${config.codeField}\` = ? LIMIT 1`,
+      [admin.entity_code]
+    );
+    if (!existingRows.length) return errorResponse(res, 'Organization not found.', 404);
+
+    const currentLogo = existingRows[0].organization_logo || null;
+    const hasLogoUpdate = Object.prototype.hasOwnProperty.call(req.body, 'organization_logo');
+    let finalLogo = currentLogo;
+    if (hasLogoUpdate) {
+      if (organization_logo === null || organization_logo === '') {
+        finalLogo = null;
+      } else if (typeof organization_logo === 'string' && organization_logo.startsWith('data:image/')) {
+        try {
+          newLogoPath = saveOrganizationLogo(admin.entity_code, organization_logo);
+          finalLogo = newLogoPath;
+        } catch (logoError) {
+          return errorResponse(res, logoError.message, 400);
+        }
+      } else if (organization_logo !== currentLogo) {
+        return errorResponse(res, 'Invalid organization logo.', 400);
+      }
+    }
+
     await db.query(
       `UPDATE \`${config.table}\` 
-       SET name = ?, registration_number = ?, email = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, country = ?, phone_number = ? 
+       SET name = ?, registration_number = ?, email = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, country = ?, phone_number = ?, organization_logo = ? 
        WHERE \`${config.codeField}\` = ?`,
-      [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, admin.entity_code]
+      [name, registration_number || null, email || null, address_line_1 || null, address_line_2 || null, address_line_3 || null, country || null, phone_number || null, finalLogo, admin.entity_code]
     );
+
+    if (currentLogo && currentLogo !== finalLogo) deleteOrganizationLogo(currentLogo);
 
     return successResponse(res, null, 'Organization details updated successfully.');
   } catch (error) {
+    deleteOrganizationLogo(newLogoPath);
     console.error('Update organization error:', error);
     return errorResponse(res, 'Failed to update organization details.', 500);
   }
@@ -1228,6 +1387,30 @@ const verifyEmail = async (req, res) => {
       }, 'Email verified successfully. You may now log in.', 200);
     }
 
+    // Custom solution requests are verified before a workspace admin exists.
+    const customRequest = await CustomSolutionModel.findByVerificationToken(token);
+    if (customRequest) {
+      await CustomSolutionModel.verifyEmail(customRequest.request_id);
+      const [auditoAdmins] = await db.query(
+        `SELECT email FROM admins
+         WHERE role = 'audito_admin' AND is_active = TRUE AND is_verified = TRUE`
+      );
+      const recipients = auditoAdmins.map((item) => item.email).filter(Boolean);
+      if (recipients.length) {
+        sendCustomSolutionRequestEmail(recipients, {
+          orgName: customRequest.org_name,
+          orgEmail: customRequest.org_email,
+          entityType: customRequest.entity_type,
+          requestId: customRequest.request_id,
+        }).catch((err) => console.error('Failed to notify Audito admins of custom request:', err));
+      }
+      return successResponse(res, {
+        email: customRequest.org_email,
+        custom_solution_pending: true,
+        needs_password: false,
+      }, 'Organization email verified. Your custom solution request is now with our pricing team.', 200);
+    }
+
     // 2. Check Auditors (uses email_token + expires)
     const auditor = await AuditorModel.findByEmailToken(token);
     if (auditor) {
@@ -1547,6 +1730,128 @@ const setAdminPassword = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/auth/custom-solution/setup-admin/:paymentCode
+ * Returns the verified organization email for the administrator setup screen.
+ */
+const getCustomSolutionAdminSetup = async (req, res) => {
+  try {
+    const payment = await PaymentModel.findByCode(req.params.paymentCode);
+    if (!payment || payment.plan_name !== 'Custom' || payment.purpose !== 'registration') {
+      return errorResponse(res, 'Invalid custom-plan payment.', 404);
+    }
+
+    const request = await CustomSolutionModel.findByPaymentCode(payment.payment_code);
+    if (!request?.email_verified) {
+      return errorResponse(res, 'The custom solution request is not verified.', 403);
+    }
+
+    const config = ENTITY_CONFIG[request.entity_type];
+    if (!config) return errorResponse(res, 'Invalid organization type for this custom request.', 400);
+    const [orgRows] = await db.query(
+      `SELECT country FROM \`${config.table}\` WHERE \`${config.codeField}\` = ? LIMIT 1`,
+      [request.root_entity_code]
+    );
+
+    return successResponse(res, {
+      email: request.org_email,
+      country: orgRows[0]?.country || null,
+    }, 'Custom solution setup details retrieved.');
+  } catch (error) {
+    console.error('getCustomSolutionAdminSetup error:', error);
+    return errorResponse(res, 'Failed to retrieve administrator setup details.', 500);
+  }
+};
+
+/**
+ * POST /api/auth/check-registration-email
+ * Checks the organization email that will also be used for the initial admin.
+ */
+const checkRegistrationEmail = async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return errorResponse(res, 'Enter a valid organization email address.', 400);
+    }
+    if (await AdminModel.emailExists(email)) {
+      return errorResponse(res, 'This organization email is already registered. Please use a different email.', 409);
+    }
+    return successResponse(res, { available: true }, 'Email is available.');
+  } catch (error) {
+    console.error('checkRegistrationEmail error:', error);
+    return errorResponse(res, 'Unable to check email availability.', 500);
+  }
+};
+
+/**
+ * POST /api/auth/custom-solution/setup-admin
+ * Creates the first workspace admin after organization verification and before payment.
+ */
+const setupCustomSolutionAdmin = async (req, res) => {
+  try {
+    const { payment_code, first_name, last_name, phone_number, password } = req.body;
+    const missing = validateRequiredFields(req.body, ['payment_code', 'first_name', 'last_name', 'phone_number', 'password']);
+    if (missing) return errorResponse(res, missing, 400);
+
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return errorResponse(res, 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character.', 400);
+    }
+
+    const payment = await PaymentModel.findByCode(payment_code);
+    if (!payment || payment.plan_name !== 'Custom' || payment.purpose !== 'registration') {
+      return errorResponse(res, 'Invalid custom-plan payment.', 404);
+    }
+    if (!['pending', 'failed'].includes(payment.status)) {
+      return errorResponse(res, 'This payment can no longer be used to set up the administrator account.', 409);
+    }
+
+    const request = await CustomSolutionModel.findByPaymentCode(payment_code);
+    if (!request || !request.email_verified) {
+      return errorResponse(res, 'The custom solution request is not verified.', 403);
+    }
+    if (request.admin_setup_completed || request.admin_id) {
+      return successResponse(res, { email: request.org_email, payment_code }, 'Administrator account is already set up. Continue to payment to activate the workspace.');
+    }
+    if (await AdminModel.emailExists(request.org_email)) {
+      return errorResponse(res, 'An account already exists for this organization email. Please contact support.', 409);
+    }
+
+    const config = ENTITY_CONFIG[request.entity_type];
+    if (!config) return errorResponse(res, 'Invalid organization type for this custom request.', 400);
+    const [orgRows] = await db.query(
+      `SELECT country FROM \`${config.table}\` WHERE \`${config.codeField}\` = ? LIMIT 1`,
+      [request.root_entity_code]
+    );
+    if (!orgRows.length) return errorResponse(res, 'Organization not found.', 404);
+
+    const adminId = await generateAdminUserCode();
+    const hashedPassword = await bcrypt.hash(password, 12);
+    await AdminModel.create({
+      admin_id: adminId,
+      first_name: first_name.trim(),
+      last_name: last_name.trim(),
+      email: request.org_email,
+      country: orgRows[0].country || null,
+      phone_number: phone_number?.trim() || null,
+      password: hashedPassword,
+      account_type: config.account_type,
+      entity_type: request.entity_type,
+      entity_code: request.root_entity_code,
+      org_level: config.org_level,
+    });
+    await AdminModel.markAsVerified(adminId);
+    // Credentials are ready for checkout, but access remains blocked until payment activates the plan.
+    await AdminModel.deactivate(adminId);
+    await CustomSolutionModel.completeAdminSetup(request.request_id, adminId);
+
+    return successResponse(res, { email: request.org_email, payment_code }, 'Administrator account created. Continue to payment to activate the workspace.', 201);
+  } catch (error) {
+    console.error('setupCustomSolutionAdmin error:', error);
+    return errorResponse(res, 'Failed to create administrator account.', 500);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -1560,6 +1865,9 @@ module.exports = {
   resetPassword,
   verifyEmail,
   setAdminPassword,
+  checkRegistrationEmail,
+  getCustomSolutionAdminSetup,
+  setupCustomSolutionAdmin,
   updateProfile,
   updateOrganization,
   getOnboardingStatus,

@@ -12,7 +12,7 @@ import { noticeApi, linksApi } from "@/lib/api";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
   ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
-  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Trash2, Inbox,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Trash2, Inbox, Tag, BadgePercent,
 } from "lucide-react";
 
 // ─── Avatar helper (mirrors profile page) ────────────────────────
@@ -227,8 +227,12 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
   ],
   audito_admin: [
     { type: "link", label: "Dashboard", path: "/admin-panel/dashboard", icon: LayoutDashboard },
+    { type: "link", label: "Plans & Limits", path: "/admin-panel/plans", icon: Settings, matchPrefix: true },
     { type: "link", label: "Messages", path: "/admin-panel/messages", icon: Mail, matchPrefix: true },
-    { type: "link", label: "Promo Codes", path: "/admin-panel/promo-codes", icon: CreditCard, matchPrefix: true },
+    { label: "Promotions", icon: Tag, items: [
+      { label: "Campaigns", path: "/admin-panel/promotions", icon: BadgePercent },
+      { label: "Promo Codes", path: "/admin-panel/promo-codes", icon: CreditCard },
+    ]},
     { type: "link", label: "Custom Solutions", path: "/admin-panel/custom-solutions", icon: Puzzle, matchPrefix: true },
     { type: "link", label: "Payments", path: "/admin-panel/payments", icon: Banknote, matchPrefix: true },
     { type: "link", label: "Organizations", path: "/admin-panel/organizations", icon: Building2, matchPrefix: true },
@@ -486,6 +490,7 @@ export default function Sidebar() {
     if (notice?.type === "training_assigned") return "/my-learning/trainings";
     if (notice?.type === "field_visit_assigned") return "/my-learning/field-visits";
     if (notice?.type === "evaluation_assigned") return "/my-learning/evaluation-papers";
+    if (notice?.type === "subscription_expiry") return "/settings/billing";
     if (notice?.type === "cap_created" || notice?.type === "sub_cap_created") {
       return admin?.role === "admin" || admin?.role === "audito_admin" ? "/caps" : "/my-caps";
     }
@@ -872,18 +877,19 @@ export default function Sidebar() {
             <div className="flex min-h-44 flex-1 flex-col items-center justify-center px-6 text-center"><div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.03] text-gray-500"><Inbox size={20} /></div><p className="text-sm font-medium text-gray-300">No notifications yet</p><p className="mt-1 text-xs leading-5 text-gray-500">{admin?.role === "audito_admin" ? "Platform updates and account alerts will appear here." : "Updates relevant to your workspace will appear here."}</p></div>
           ) : (
             <div className="flex-1 space-y-2 overflow-y-auto p-2.5 overscroll-contain">
-              {notices.map((n, i) => (
-                <article
+              {notices.map((n, i) => {
+                const isExpiryReminder = (n as any).type === "subscription_expiry";
+                return <article
                   key={getNotificationId(n) || i}
                   role="button"
                   tabIndex={0}
                   onClick={() => void handleNotificationClick(n)}
                   onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void handleNotificationClick(n); } }}
-                  className={`relative cursor-pointer overflow-hidden rounded-xl border p-2.5 transition-colors hover:border-secondary-400/35 hover:bg-white/[0.05] ${isNotificationRead(n) ? "border-white/[0.06] bg-white/[0.02]" : "border-secondary-400/20 bg-secondary-500/[0.07]"}`}
+                  className={`relative cursor-pointer overflow-hidden rounded-xl border p-2.5 transition-colors hover:bg-white/[0.05] ${isNotificationRead(n) ? "border-white/[0.06] bg-white/[0.02]" : isExpiryReminder ? "border-red-500/30 bg-red-500/[0.09] hover:border-red-400/50" : "border-secondary-400/20 bg-secondary-500/[0.07] hover:border-secondary-400/35"}`}
                 >
-                  {!isNotificationRead(n) && <span className="absolute inset-y-0 left-0 w-0.5 bg-secondary-400" />}
+                  {!isNotificationRead(n) && <span className={`absolute inset-y-0 left-0 w-0.5 ${isExpiryReminder ? "bg-red-400" : "bg-secondary-400"}`} />}
                   <div className="flex gap-2.5">
-                    <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isNotificationRead(n) ? "bg-gray-600" : "bg-secondary-400 shadow-[0_0_8px_rgba(251,191,36,0.65)]"}`} />
+                    <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isNotificationRead(n) ? "bg-gray-600" : isExpiryReminder ? "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.7)]" : "bg-secondary-400 shadow-[0_0_8px_rgba(251,191,36,0.65)]"}`} />
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm font-semibold leading-5 text-white">{(n as any).title || "Notification"}</h3>
                       {(n as any).message && (n as any).message !== (n as any).title && <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-400">{(n as any).message}</p>}
@@ -897,8 +903,8 @@ export default function Sidebar() {
                       <Trash2 size={12} />
                     </button>
                   </div>
-                </article>
-              ))}
+                </article>;
+              })}
             </div>
           )}
         </div>, document.body

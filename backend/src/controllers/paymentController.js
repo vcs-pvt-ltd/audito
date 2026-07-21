@@ -8,6 +8,8 @@
 
 const PaymentModel = require('../models/PaymentModel');
 const SubscriptionModel = require('../models/SubscriptionModel');
+const PlanSettingsModel = require('../models/PlanSettingsModel');
+const PromotionCampaignModel = require('../models/PromotionCampaignModel');
 const CustomSolutionModel = require('../models/CustomSolutionModel');
 const AdminModel = require('../models/AdminModel');
 const LinkBillingCreditModel = require('../models/LinkBillingCreditModel');
@@ -25,8 +27,13 @@ const {
 } = require('../services/sampathGatewayService');
 const crypto = require('crypto');
 
-const VALID_PLANS = ['Pro', 'Elite', 'Custom'];
 const VALID_CYCLES = ['Monthly', 'Yearly'];
+
+async function hasCompletedCustomAdminSetup(payment) {
+  if (payment.plan_name !== 'Custom' || payment.purpose !== 'registration') return true;
+  const request = await CustomSolutionModel.findByPaymentCode(payment.payment_code);
+  return Boolean(request?.email_verified && request?.admin_setup_completed && request?.admin_id);
+}
 
 // Client-safe projection — never exposes internal ids.
 function publicPayment(p) {
@@ -45,6 +52,9 @@ function publicPayment(p) {
     period_end: p.period_end,
     paid_at: p.paid_at,
     created_at: p.created_at,
+    list_amount: p.list_amount == null ? Number(p.amount) : Number(p.list_amount),
+    promotion_discount_amount: Number(p.promotion_discount_amount || 0),
+    promotion_campaign_id: p.promotion_campaign_id || null,
   };
 }
 
@@ -57,18 +67,22 @@ const createCheckout = async (req, res) => {
   try {
     const { plan_name, billing_cycle, purpose } = req.body;
 
-    if (!VALID_PLANS.includes(plan_name)) {
-      return errorResponse(res, `Invalid plan. Allowed: ${VALID_PLANS.join(', ')}.`, 400);
-    }
     if (!VALID_CYCLES.includes(billing_cycle)) {
       return errorResponse(res, `Invalid billing cycle. Allowed: ${VALID_CYCLES.join(', ')}.`, 400);
     }
+    if (plan_name === 'Custom') return errorResponse(res, 'Custom plans are quoted individually.', 400);
+    const selectedPlan = await PlanSettingsModel.find(plan_name);
+    if (!selectedPlan?.is_active) return errorResponse(res, 'The selected plan is not currently available.', 409);
     const effectivePurpose = purpose === 'renewal' ? 'renewal' : 'upgrade';
 
     const rootCode = req.user.entityCode;
     if (!rootCode) return errorResponse(res, 'No organization found for this account.', 400);
 
-    const amount = SubscriptionModel.computeAmount(plan_name, billing_cycle, req.user.entityType);
+    const listAmount = await SubscriptionModel.computeAmount(plan_name, billing_cycle, req.user.entityType);
+    const offer = await PromotionCampaignModel.resolveBestOffer({
+      planName: plan_name, billingCycle: billing_cycle, purpose: effectivePurpose, listAmount,
+    });
+    const amount = offer?.final_amount ?? listAmount;
     if (amount <= 0) {
       return errorResponse(res, 'The selected plan does not require a payment.', 400);
     }
@@ -86,6 +100,9 @@ const createCheckout = async (req, res) => {
       payerName,
       payerEmail: req.user.email,
       orgName,
+      promotionCampaignId: offer?.campaign_id || null,
+      listAmount,
+      promotionDiscountAmount: offer?.discount_amount || 0,
     });
 
     return successResponse(res, { payment: publicPayment(payment) }, 'Checkout created.');
@@ -108,7 +125,7 @@ async function activateVerifiedPayment(payment, gatewayReference) {
     if (payment.plan_name === 'Custom') {
       const csr = await CustomSolutionModel.findByOrgCode(payment.root_entity_code);
       if (csr) {
-        customLimits = SubscriptionModel.normalizeCustomLimits({
+        customLimits = await SubscriptionModel.normalizeCustomLimits({
           company_level: csr.max_company_levels,
           department: csr.max_departments,
           audits: csr.max_audits,
@@ -149,6 +166,13 @@ async function activateVerifiedPayment(payment, gatewayReference) {
       gateway: 'sampath',
       gatewayReference,
     });
+    if (payment.plan_name === 'Custom') {
+      const request = await CustomSolutionModel.findByPaymentCode(payment.payment_code);
+      if (request) {
+        await CustomSolutionModel.updateStatus(request.request_id, 'accepted');
+        if (request.admin_id) await AdminModel.activate(request.admin_id);
+      }
+    }
     return {
       payment: await PaymentModel.findByCode(payment.payment_code),
       creditApplied,
@@ -198,7 +222,7 @@ const confirmPayment = async (req, res) => {
     if (payment.plan_name === 'Custom') {
       const csr = await CustomSolutionModel.findByOrgCode(payment.root_entity_code);
       if (csr) {
-        customLimits = SubscriptionModel.normalizeCustomLimits({
+        customLimits = await SubscriptionModel.normalizeCustomLimits({
           company_level: csr.max_company_levels,
           department: csr.max_departments,
           audits: csr.max_audits,
@@ -242,6 +266,13 @@ const confirmPayment = async (req, res) => {
       gateway: (req.body && req.body.gateway) || 'manual',
       gatewayReference: (req.body && req.body.gateway_reference) || null,
     });
+    if (payment.plan_name === 'Custom') {
+      const request = await CustomSolutionModel.findByPaymentCode(payment.payment_code);
+      if (request) {
+        await CustomSolutionModel.updateStatus(request.request_id, 'accepted');
+        if (request.admin_id) await AdminModel.activate(request.admin_id);
+      }
+    }
 
     const updated = await PaymentModel.findByCode(req.params.code);
     return successResponse(res, {
@@ -262,6 +293,9 @@ const initiatePayment = async (req, res) => {
     if (!payment) return errorResponse(res, 'Payment not found.', 404);
     if (payment.status === 'paid') return successResponse(res, { payment: publicPayment(payment) }, 'Payment already completed.');
     if (!['pending', 'failed'].includes(payment.status)) return errorResponse(res, 'This payment is already being processed.', 409);
+    if (!await hasCompletedCustomAdminSetup(payment)) {
+      return errorResponse(res, 'Set up the workspace administrator before proceeding to payment.', 409);
+    }
 
     const savePaymentMethodRequested = req.body?.save_payment_method === true;
     if (savePaymentMethodRequested && (!isSavedPaymentMethodConfigured() || !PaymentMethodModel.isEncryptionConfigured())) {
@@ -296,6 +330,9 @@ const temporarilyAcceptPayment = async (req, res) => {
     if (!payment) return errorResponse(res, 'Payment not found.', 404);
     if (payment.status === 'paid') return successResponse(res, { payment: publicPayment(payment) }, 'Payment already completed.');
     if (!['pending', 'failed'].includes(payment.status)) return errorResponse(res, 'This payment is already being processed.', 409);
+    if (!await hasCompletedCustomAdminSetup(payment)) {
+      return errorResponse(res, 'Set up the workspace administrator before proceeding to payment.', 409);
+    }
 
     if (payment.status === 'failed') {
       await PaymentModel.markGatewayInitiated(payment.payment_transaction_id, {

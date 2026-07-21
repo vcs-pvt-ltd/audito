@@ -754,7 +754,7 @@ const getReport = async (req, res) => {
         const cfg = creatorAdmin?.entity_type ? ENTITY_TABLE_MAP[creatorAdmin.entity_type] : null;
         if (cfg && creatorAdmin?.entity_code) {
           const [orgRows] = await db.query(
-            `SELECT name, email, phone_number FROM \`${cfg.table}\` WHERE \`${cfg.codeField}\` = ? LIMIT 1`,
+            `SELECT name, email, phone_number, organization_logo FROM \`${cfg.table}\` WHERE \`${cfg.codeField}\` = ? LIMIT 1`,
             [creatorAdmin.entity_code]
           );
           const org = orgRows?.[0] || null;
@@ -762,6 +762,7 @@ const getReport = async (req, res) => {
             audit.organization_name = org.name || null;
             audit.organization_email = org.email || null;
             audit.organization_phone = org.phone_number || null;
+            audit.organization_logo = org.organization_logo || null;
           }
         }
       }

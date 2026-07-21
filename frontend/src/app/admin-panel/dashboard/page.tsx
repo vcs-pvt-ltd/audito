@@ -62,6 +62,8 @@ export default function AuditoAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("monthly");
   const [periodOpen, setPeriodOpen] = useState(false);
+  const [incomePeriod, setIncomePeriod] = useState<Period>("monthly");
+  const [incomePeriodOpen, setIncomePeriodOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoading && (!admin || admin.role !== "audito_admin")) {
@@ -69,11 +71,11 @@ export default function AuditoAdminDashboard() {
     }
   }, [isLoading, admin, router]);
 
-  const loadStats = useCallback(async (p: Period) => {
+  const loadStats = useCallback(async (registrationPeriod: Period, selectedIncomePeriod: Period) => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const res = await adminApi.getDashboardStats(accessToken, p);
+      const res = await adminApi.getDashboardStats(accessToken, registrationPeriod, selectedIncomePeriod);
       if (res.success && res.data) {
         setStats(res.data as AdminDashboardStats);
       } else {
@@ -87,8 +89,8 @@ export default function AuditoAdminDashboard() {
   }, [accessToken, toast]);
 
   useEffect(() => {
-    loadStats(period);
-  }, [period, loadStats]);
+    loadStats(period, incomePeriod);
+  }, [period, incomePeriod, loadStats]);
 
   if (isLoading || (!admin || admin.role !== "audito_admin")) return null;
   if (loading && !stats) return <Loading />;
@@ -105,6 +107,10 @@ export default function AuditoAdminDashboard() {
     name: p.plan_name,
     value: p.count,
     color: PLAN_COLORS[p.plan_name] || "#6b7280",
+  })) || [];
+  const incomeData = charts?.income_distribution.map((item) => ({
+    label: item.period_label,
+    income: Number(item.amount),
   })) || [];
 
   return (
@@ -153,7 +159,7 @@ export default function AuditoAdminDashboard() {
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Registrations Trend Chart */}
-            <div className="lg:col-span-2 rounded-2xl bg-white/[0.03] border border-white/[0.08] p-5">
+            <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <BarChart3 size={16} className="text-secondary-400" />
@@ -190,9 +196,9 @@ export default function AuditoAdminDashboard() {
                 </div>
               </div>
               {regData.length === 0 ? (
-                <div className="h-[260px] flex items-center justify-center text-xs text-gray-500">No data yet</div>
+                <div className="h-[250px] flex items-center justify-center text-xs text-gray-500">No data yet</div>
               ) : (
-                <div className="h-[260px]">
+                <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={regData} margin={{ left: -10, right: 0, top: 5, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
@@ -229,16 +235,70 @@ export default function AuditoAdminDashboard() {
               </div>
             </div>
 
+            {/* Income Distribution */}
+            <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <CreditCard size={16} className="text-emerald-400" />
+                  <h3 className="text-sm font-semibold text-white">Income distribution</h3>
+                </div>
+                <div className="relative">
+                  <button
+                    onClick={() => setIncomePeriodOpen(!incomePeriodOpen)}
+                    className="flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.06] px-2.5 py-1 text-xs text-gray-300 transition-colors hover:bg-white/[0.1]"
+                  >
+                    {PERIODS.find((p) => p.value === incomePeriod)?.label}
+                    <ChevronDown size={12} />
+                  </button>
+                  {incomePeriodOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setIncomePeriodOpen(false)} />
+                      <div className="absolute right-0 top-full z-20 mt-1 w-28 overflow-hidden rounded-xl border border-white/[0.12] bg-[#0a1f1c] shadow-2xl">
+                        {PERIODS.map((p) => (
+                          <button
+                            key={p.value}
+                            onClick={() => { setIncomePeriod(p.value); setIncomePeriodOpen(false); }}
+                            className={`w-full px-3 py-2 text-left text-xs transition-colors ${
+                              incomePeriod === p.value
+                                ? "bg-secondary-500/20 font-semibold text-secondary-300"
+                                : "text-gray-400 hover:bg-white/[0.06] hover:text-white"
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+              {incomeData.length === 0 ? (
+                <div className="h-[250px] flex items-center justify-center text-xs text-gray-500">No paid income in this period</div>
+              ) : (
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={incomeData} margin={{ left: -12, right: 0, top: 5, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                      <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 10 }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 10 }} />
+                      <Tooltip formatter={(value) => [`$${Math.round(Number(value || 0)).toLocaleString()}`, "Income"]} cursor={{ fill: "rgba(255,255,255,0.05)" }} contentStyle={{ backgroundColor: "rgba(2, 47, 43, 0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", fontSize: "11px" }} />
+                      <Bar dataKey="income" fill="#eeca53" radius={[4, 4, 0, 0]} name="Income" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
             {/* Plan Distribution Pie */}
-            <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-5">
+            <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
               <div className="flex items-center gap-2 mb-4">
                 <Tag size={16} className="text-secondary-400" />
                 <h3 className="text-sm font-semibold text-white">Plan Distribution</h3>
               </div>
               {planData.length === 0 ? (
-                <div className="h-[260px] flex items-center justify-center text-xs text-gray-500">No data yet</div>
+                <div className="h-[250px] flex items-center justify-center text-xs text-gray-500">No data yet</div>
               ) : (
-                <div className="h-[260px]">
+                <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie

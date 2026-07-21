@@ -1,4 +1,5 @@
 const { db } = require('../config/db');
+const PlanSettingsModel = require('./PlanSettingsModel');
 
 let subIdCounter = null;
 
@@ -34,7 +35,7 @@ const PLAN_LIMITS = {
     company_to_company: false
   },
   Elite: {
-    company_level: 6,
+    company_level: 5,
     department: 16,
     audits: 14,
     checklists: 25,
@@ -55,7 +56,7 @@ const PLAN_NAME_ALIASES = {
 
 // Monthly list price (USD). Yearly applies a 20% discount on 12 months.
 const PLAN_PRICING = {
-  Basic: 0,
+  Basic: 99,
   Pro: 199,
   Elite: 299
 };
@@ -71,14 +72,35 @@ const CUSTOMER_ENTITY_PRICING = {
 function normalizePlanName(planName) {
   if (!planName) return 'Basic';
   const key = String(planName).trim();
-  return PLAN_NAME_ALIASES[key] || 'Basic';
+  return PLAN_NAME_ALIASES[key] || key;
 }
 
 // Authoritative server-side price for a plan + billing cycle.
-function computeAmount(planName, billingCycle, entityType = null) {
-  const monthly = CUSTOMER_ENTITY_PRICING[entityType] ?? PLAN_PRICING[normalizePlanName(planName)] ?? 0;
+async function getPlanLimits(planName) {
+  const config = await PlanSettingsModel.find(normalizePlanName(planName));
+  if (!config) return PLAN_LIMITS[normalizePlanName(planName)] || PLAN_LIMITS.Basic;
+  return {
+    company_level: Number(config.max_company_levels),
+    department: Number(config.max_departments),
+    audits: Number(config.max_audits),
+    checklists: Number(config.max_checklists),
+    auditors: Number(config.max_auditors),
+    auditor_eval: !!config.allow_auditor_eval,
+    company_to_company: !!config.allow_company_to_company,
+  };
+}
+
+async function computeAmount(planName, billingCycle, entityType = null) {
+  // Customer-family subscriptions have entity-specific billing. Company and
+  // Audit Firm hierarchy prices are registration entry labels; their standard
+  // plan checkout still uses the selected plan's configured price.
+  const customerEntryTypes = ['Customer', 'Buying Office', 'Supplier'];
+  const entryPrice = customerEntryTypes.includes(entityType) ? await PlanSettingsModel.findEntryPrice(entityType) : null;
+  const config = await PlanSettingsModel.find(normalizePlanName(planName));
+  const monthly = entryPrice ? Number(entryPrice.monthly_price) : Number(config?.monthly_price ?? PLAN_PRICING[normalizePlanName(planName)] ?? 0);
   if (!monthly) return 0;
-  return billingCycle === 'Yearly' ? Math.round(monthly * 12 * 0.8) : monthly;
+  const discount = Number(config?.yearly_discount_percent ?? 20);
+  return billingCycle === 'Yearly' ? Math.round(monthly * 12 * (1 - discount / 100) * 100) / 100 : monthly;
 }
 
 /**
@@ -86,18 +108,19 @@ function computeAmount(planName, billingCycle, entityType = null) {
  * Normalising here protects the limits even if a request is altered outside
  * the registration interface.
  */
-function normalizeCustomLimits(limits = {}) {
+async function normalizeCustomLimits(limits = {}) {
+  const eliteLimits = await getPlanLimits('Elite');
   const atLeast = (value, minimum) => {
     const parsed = Number.parseInt(value, 10);
     return Math.max(minimum, Number.isFinite(parsed) ? parsed : minimum);
   };
 
   return {
-    company_level: atLeast(limits.company_level, PLAN_LIMITS.Elite.company_level),
-    department: atLeast(limits.department, PLAN_LIMITS.Elite.department),
-    audits: atLeast(limits.audits, PLAN_LIMITS.Elite.audits),
-    checklists: atLeast(limits.checklists, PLAN_LIMITS.Elite.checklists),
-    auditors: atLeast(limits.auditors, PLAN_LIMITS.Elite.auditors),
+    company_level: atLeast(limits.company_level, eliteLimits.company_level),
+    department: atLeast(limits.department, eliteLimits.department),
+    audits: atLeast(limits.audits, eliteLimits.audits),
+    checklists: atLeast(limits.checklists, eliteLimits.checklists),
+    auditors: atLeast(limits.auditors, eliteLimits.auditors),
     auditor_eval: true,
     company_to_company: true,
   };
@@ -108,6 +131,7 @@ const SubscriptionModel = {
   PLAN_PRICING,
   CUSTOMER_ENTITY_PRICING,
   normalizePlanName,
+  getPlanLimits,
   computeAmount,
   normalizeCustomLimits,
 
@@ -125,7 +149,7 @@ const SubscriptionModel = {
     }
 
     const effectivePlanName = normalizePlanName(planName);
-    const limits = PLAN_LIMITS[effectivePlanName] || PLAN_LIMITS['Basic'];
+    const limits = await getPlanLimits(effectivePlanName);
 
     const subscription_id = await genSubscriptionId();
     await connection.query(
@@ -162,8 +186,8 @@ const SubscriptionModel = {
 
     const effectivePlanName = normalizePlanName(planName);
     const limits = effectivePlanName === 'Custom'
-      ? normalizeCustomLimits(customLimits)
-      : PLAN_LIMITS[effectivePlanName] || PLAN_LIMITS['Basic'];
+      ? await normalizeCustomLimits(customLimits)
+      : await getPlanLimits(effectivePlanName);
 
     const subscription_id = await genSubscriptionId();
     await db.query(
@@ -246,7 +270,7 @@ const SubscriptionModel = {
    */
   async getLimits(rootEntityCode) {
     const limits = await this.getActiveLimits(rootEntityCode);
-    return limits ?? PLAN_LIMITS['Basic'];
+    return limits ?? await getPlanLimits('Basic');
   },
 
   /**

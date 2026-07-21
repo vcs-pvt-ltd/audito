@@ -96,6 +96,7 @@ export interface RegisterPayload {
   plan_name?: string;
   billing_cycle?: string;
   timezone?: string;
+  organization_logo?: string | null;
   custom_solution?: {
     max_company_levels: number;
     max_departments: number;
@@ -178,6 +179,27 @@ export const authApi = {
       body: { token, password },
     }),
 
+  checkRegistrationEmail: (email: string) =>
+    apiRequest<{ available: boolean }>("/auth/check-registration-email", {
+      method: "POST",
+      body: { email },
+    }),
+
+  setupCustomSolutionAdmin: (data: {
+    payment_code: string;
+    first_name: string;
+    last_name: string;
+    phone_number?: string;
+    password: string;
+  }) =>
+    apiRequest("/auth/custom-solution/setup-admin", {
+      method: "POST",
+      body: data as unknown as Record<string, unknown>,
+    }),
+
+  getCustomSolutionAdminSetup: (paymentCode: string) =>
+    apiRequest<{ email: string; country: string | null }>(`/auth/custom-solution/setup-admin/${encodeURIComponent(paymentCode)}`),
+
   switchAccount: (token: string, target_role: string, password: string) =>
     apiRequest("/auth/switch-account", {
       method: "POST",
@@ -197,7 +219,7 @@ export const authApi = {
 
   updateOrganization: (
     token: string,
-    data: { name: string; registration_number?: string; email?: string; address_line_1?: string; address_line_2?: string; address_line_3?: string; country?: string; phone_number?: string }
+    data: { name: string; registration_number?: string; email?: string; address_line_1?: string; address_line_2?: string; address_line_3?: string; country?: string; phone_number?: string; organization_logo?: string | null }
   ) =>
     apiRequest("/auth/organization", {
       method: "PUT",
@@ -432,6 +454,19 @@ export interface QuestionPayload {
   options?: QuestionOption[];
 }
 
+export interface AiChecklistQuestionSuggestion {
+  ai_checklist_suggestion_id: string;
+  entity_code: string;
+  org_tree_id?: string | null;
+  entity_type: string;
+  entity_name: string;
+  question_text: string;
+  answer_type: QuestionPayload["answer_type"];
+  options: Array<{ option_text: string; marks: number }>;
+  source_reference?: string;
+  rationale?: string;
+}
+
 export const checklistApi = {
   // Checklist types
   listTypes: (token: string) =>
@@ -520,6 +555,27 @@ export const checklistApi = {
     const formData = new FormData();
     formData.append("questions_file", file);
     const res = await fetch(`${API_BASE_URL}/checklists/questions/preview-upload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    return res.json();
+  },
+
+  // AI document analysis. Suggestions are returned as drafts and are not saved to a checklist.
+  generateAiQuestions: async (token: string, file: File, payload: {
+    questionCount: number;
+    focus?: string;
+    checklistType?: string;
+    existingQuestions?: string[];
+  }) => {
+    const formData = new FormData();
+    formData.append("source_document", file);
+    formData.append("question_count", String(payload.questionCount));
+    if (payload.focus) formData.append("focus", payload.focus);
+    if (payload.checklistType) formData.append("checklist_type", payload.checklistType);
+    if (payload.existingQuestions?.length) formData.append("existing_questions", JSON.stringify(payload.existingQuestions));
+    const res = await fetch(`${API_BASE_URL}/checklists/ai/generate-questions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -1147,6 +1203,58 @@ export const landingApi = {
     apiRequest("/landing/contact", { method: "POST", body: data as unknown as Record<string, unknown> }),
 };
 
+export interface PlanSetting {
+  plan_name: string;
+  display_name?: string;
+  description?: string | null;
+  sort_order?: number;
+  monthly_price: number;
+  yearly_discount_percent: number;
+  max_company_levels: number;
+  max_departments: number;
+  max_audits: number;
+  max_checklists: number;
+  max_auditors: number;
+  allow_auditor_eval: boolean;
+  allow_company_to_company: boolean;
+  is_active: boolean;
+  updated_at?: string;
+}
+
+export interface PlanEntryPrice { entity_type: string; monthly_price: number; }
+export interface PromotionCampaignPlan {
+  plan_name: string;
+  billing_cycle: "Monthly" | "Yearly" | "Any";
+}
+
+export interface PromotionCampaign {
+  campaign_id: string;
+  name: string;
+  description: string | null;
+  discount_type: "percentage" | "fixed";
+  discount_value: number;
+  priority: number;
+  starts_at: string;
+  ends_at: string;
+  applies_to_registration: boolean;
+  applies_to_upgrade: boolean;
+  applies_to_renewal: boolean;
+  is_active: boolean;
+  plans: PromotionCampaignPlan[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PlanCatalog {
+  plans: PlanSetting[];
+  entry_prices: PlanEntryPrice[];
+  active_promotions?: PromotionCampaign[];
+}
+
+export const plansApi = {
+  getPublic: () => apiRequest<PlanCatalog>("/landing/plans"),
+};
+
 // ─── Payments API ──────────────────────────────────────────────────
 
 export interface PaymentDetails {
@@ -1165,6 +1273,9 @@ export interface PaymentDetails {
   period_end?: string | null;
   paid_at?: string | null;
   created_at?: string | null;
+  list_amount?: number;
+  promotion_discount_amount?: number;
+  promotion_campaign_id?: string | null;
 }
 
 export interface SavedPaymentMethod {
@@ -1217,6 +1328,7 @@ export interface AdminDashboardStats {
   charts: {
     registrations: { period_label: string; count: number }[];
     plan_distribution: { plan_name: string; count: number }[];
+    income_distribution: { period_label: string; amount: number }[];
   };
 }
 
@@ -1346,6 +1458,44 @@ export interface AdminUser {
 }
 
 export const adminApi = {
+  listPlanSettings: (token: string) => apiRequest<PlanCatalog>("/admin/plan-settings", { token }),
+
+  updatePlanSettings: (token: string, planName: string, data: Omit<PlanSetting, "plan_name" | "updated_at" | "yearly_discount_percent">) =>
+    apiRequest<{ plan: PlanSetting }>(`/admin/plan-settings/${encodeURIComponent(planName)}`, {
+      method: "PUT", body: data as unknown as Record<string, unknown>, token,
+    }),
+
+  updateYearlyDiscount: (token: string, yearly_discount_percent: number) =>
+    apiRequest<PlanCatalog>("/admin/plan-settings/yearly-discount", {
+      method: "PUT", body: { yearly_discount_percent }, token,
+    }),
+
+  createPlanSettings: (token: string, data: Omit<PlanSetting, "yearly_discount_percent" | "updated_at">) =>
+    apiRequest<{ plan: PlanSetting }>("/admin/plan-settings", { method: "POST", body: data as unknown as Record<string, unknown>, token }),
+
+  updateEntryPrice: (token: string, entityType: string, monthly_price: number) =>
+    apiRequest<{ entry_price: PlanEntryPrice }>(`/admin/entry-prices/${encodeURIComponent(entityType)}`, {
+      method: "PUT", body: { monthly_price }, token,
+    }),
+
+  listPromotionCampaigns: (token: string) =>
+    apiRequest<PromotionCampaign[]>("/admin/promotion-campaigns", { token }),
+
+  createPromotionCampaign: (token: string, data: Omit<PromotionCampaign, "campaign_id" | "created_at" | "updated_at">) =>
+    apiRequest<{ campaign: PromotionCampaign }>("/admin/promotion-campaigns", {
+      method: "POST", body: data as unknown as Record<string, unknown>, token,
+    }),
+
+  updatePromotionCampaign: (token: string, campaignId: string, data: Omit<PromotionCampaign, "campaign_id" | "created_at" | "updated_at">) =>
+    apiRequest<{ campaign: PromotionCampaign }>(`/admin/promotion-campaigns/${encodeURIComponent(campaignId)}`, {
+      method: "PUT", body: data as unknown as Record<string, unknown>, token,
+    }),
+
+  setPromotionCampaignStatus: (token: string, campaignId: string, is_active: boolean) =>
+    apiRequest<{ campaign: PromotionCampaign }>(`/admin/promotion-campaigns/${encodeURIComponent(campaignId)}/status`, {
+      method: "PUT", body: { is_active }, token,
+    }),
+
   listMessages: (token: string) =>
     apiRequest<ContactMessage[]>("/admin/messages", { token }),
   
@@ -1430,8 +1580,8 @@ export const adminApi = {
     }),
 
   // Dashboard stats
-  getDashboardStats: (token: string, period: string = "monthly") =>
-    apiRequest<AdminDashboardStats>(`/admin/stats?period=${period}`, { token }),
+  getDashboardStats: (token: string, period: string = "monthly", incomePeriod: string = period) =>
+    apiRequest<AdminDashboardStats>(`/admin/stats?period=${encodeURIComponent(period)}&income_period=${encodeURIComponent(incomePeriod)}`, { token }),
 
   // Registered organizations
   listOrganizations: (token: string) =>

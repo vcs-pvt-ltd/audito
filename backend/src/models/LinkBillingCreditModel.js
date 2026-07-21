@@ -60,7 +60,7 @@ const LinkBillingCreditModel = {
     if (remainingMonths <= 0) return null;
 
     // Yearly billed amount for the requester
-    const yearlyBilled = computeAmount('Elite', 'Yearly'); // 2870.40
+    const yearlyBilled = await computeAmount('Elite', 'Yearly');
 
     // Monthly rate = total yearly / 12
     const monthlyRate = yearlyBilled / 12;

@@ -50,6 +50,10 @@ const AdminModel = {
     await db.query('UPDATE admins SET is_active = FALSE WHERE admin_id = ?', [admin_id]);
   },
 
+  async activate(admin_id) {
+    await db.query('UPDATE admins SET is_active = TRUE WHERE admin_id = ?', [admin_id]);
+  },
+
   async setVerificationToken(admin_id, token) {
     await db.query('UPDATE admins SET verification_token = ? WHERE admin_id = ?', [token, admin_id]);
   },
