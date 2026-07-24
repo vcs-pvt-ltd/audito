@@ -2,7 +2,7 @@
  * Users Controller
  *
  * Admin creates users (auditors, entity heads) without passwords.
- * A verification email is sent. After verifying, the user sets their password.
+ * An invitation email is sent. The invitee verifies their email and sets a password.
  *
  * Auditors  -> auditors table     (optionally assigned to a branch for Audit Firms)
  * Heads     -> entity_heads table (assigned to a specific entity)
@@ -13,7 +13,7 @@
  *   GET    /api/users/:userCode            Get single user
  *   PUT    /api/users/:userCode            Update user details
  *   DELETE /api/users/:userCode            Delete user permanently
- *   POST   /api/users/:userCode/resend     Resend verification email
+ *   POST   /api/users/:userCode/resend     Resend invitation email
  *   POST   /api/users/verify-email         Verify email token (public)
  *   POST   /api/users/set-password         Set password after verification (public)
  */
@@ -27,10 +27,11 @@ const AuditFirmModel = require('../models/AuditFirmModel');
 const CompanyModel = require('../models/CompanyModel');
 const CustomerModel = require('../models/CustomerModel');
 const { successResponse, errorResponse, validateRequiredFields, isValidEmail } = require('../utils/helpers');
-const { sendVerificationEmail } = require('../services/emailService');
+const { sendUserInvitationEmail } = require('../services/emailService');
 const { db } = require('../config/db');
 const { getAccessibleEntityCodes } = require('../utils/accessHelper');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
+const { getOrgDetails, getCountryDialingCode } = require('../utils/orgLookup');
 
 // ─── User code generators ────────────────────────────────────────
 
@@ -252,11 +253,34 @@ const createUser = async (req, res) => {
       });
     }
 
-    // Send verification email
+    // Send a workspace invitation with enough organization context for the recipient.
     try {
-      await sendVerificationEmail(email, `${first_name} ${last_name}`, emailToken);
+      const organizationType = req.user.entityType === 'Audit Firm'
+        ? 'Audit Firm Company'
+        : req.user.entityType;
+      const invitedEntityType = isAuditor(user_type)
+        ? assigned_entity_type
+        : (HEAD_TO_ENTITY[user_type] || assigned_entity_type);
+      const [organization, assignedEntity] = await Promise.all([
+        getOrgDetails(organizationType, req.user.entityCode),
+        !isAuditor(user_type) && assigned_entity_code && invitedEntityType
+          ? getOrgDetails(invitedEntityType, assigned_entity_code)
+          : Promise.resolve(null),
+      ]);
+      const organizationDialingCode = await getCountryDialingCode(organization?.country);
+      await sendUserInvitationEmail(email, `${first_name} ${last_name}`, emailToken, {
+        organizationName: organization?.name || req.user.entityCode,
+        organizationEmail: organization?.email,
+        organizationPhone: organization?.phoneNumber,
+        organizationDialingCode,
+        organizationAddress: organization?.address,
+        role: user_type,
+        includeAssignedArea: !isAuditor(user_type),
+        assignedEntityType: !isAuditor(user_type) ? invitedEntityType : null,
+        assignedEntityName: !isAuditor(user_type) ? (assignedEntity?.name || assigned_entity_code || null) : null,
+      });
     } catch (emailErr) {
-      console.error('Failed to send verification email:', emailErr.message);
+      console.error('Failed to send user invitation email:', emailErr.message);
     }
 
     return successResponse(res, {
@@ -267,7 +291,7 @@ const createUser = async (req, res) => {
       email,
       role,
       user_type,
-    }, 'User created. Verification email sent.', 201);
+    }, 'User invited. Invitation email sent.', 201);
 
   } catch (error) {
     console.error('Create user error:', error);
@@ -534,13 +558,32 @@ const resendVerification = async (req, res) => {
     await Model.regenerateToken(user.auditor_id || user.entity_head_id, newToken, newExpires);
 
     try {
-      await sendVerificationEmail(user.email, `${user.first_name} ${user.last_name}`, newToken);
+      const organization = user.created_by_entity_code
+        ? await findByCodeAny(user.created_by_entity_code)
+        : null;
+      const assignedEntity = user._table === 'entity_head' && user.assigned_entity_code
+        ? await findByCodeAny(user.assigned_entity_code)
+        : null;
+      const organizationDialingCode = await getCountryDialingCode(organization?.country);
+      await sendUserInvitationEmail(user.email, `${user.first_name} ${user.last_name}`, newToken, {
+        organizationName: organization?.name || user.created_by_entity_code || 'your organization',
+        organizationEmail: organization?.email,
+        organizationPhone: organization?.phone_number,
+        organizationDialingCode,
+        organizationAddress: organization
+          ? [organization.address_line_1, organization.address_line_2, organization.address_line_3, organization.country].filter(Boolean).join(', ')
+          : null,
+        role: user.user_type || (user._table === 'auditor' ? 'Auditor' : 'Entity Head'),
+        includeAssignedArea: user._table === 'entity_head',
+        assignedEntityType: user._table === 'entity_head' ? user.assigned_entity_type : null,
+        assignedEntityName: user._table === 'entity_head' ? (assignedEntity?.name || user.assigned_entity_code) : null,
+      });
     } catch (emailErr) {
       console.error('Resend email error:', emailErr.message);
       return errorResponse(res, 'Failed to send email. Please try again later.', 500);
     }
 
-    return successResponse(res, null, 'Verification email resent.');
+    return successResponse(res, null, 'Invitation email resent.');
   } catch (error) {
     console.error('Resend verification error:', error);
     return errorResponse(res, 'Failed to resend.', 500);

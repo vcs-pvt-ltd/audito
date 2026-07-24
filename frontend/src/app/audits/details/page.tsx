@@ -125,6 +125,20 @@ function formatAnswer(q: AuditQuestion, r?: AuditResponse): string {
   return "";
 }
 
+function isResponseAnswered(response?: AuditResponse, renderedAnswer = ""): boolean {
+  const status = String(response?.status || "").toLowerCase();
+  return status === "answered" || status === "completed" || Boolean(renderedAnswer);
+}
+
+function getQuestionsForNode(
+  node: Pick<TreeNode, "code" | "edge_id">,
+  questionsByKey: Record<string, AuditQuestion[]>
+) {
+  const direct = questionsByKey[progressKey(node.code, node.edge_id ?? null)] || [];
+  if (direct.length > 0) return direct;
+  return questionsByKey[progressKey(node.code, null)] || [];
+}
+
 function ProgressRing({ pct, size = 48 }: { pct: number; size?: number }) {
   const clamped = Math.max(0, Math.min(100, pct));
   const radius = (size - 8) / 2;
@@ -231,10 +245,10 @@ function EntityCard({
     let t = 0;
     let a = 0;
     const walk = (nd: TreeNode) => {
-      const k = progressKey(nd.code, nd.edge_id ?? null);
-      const qs = questionsByKey[k] || [];
+      const qs = getQuestionsForNode(nd, questionsByKey);
       const ans = qs.reduce((s, q) => {
-        const hasAns = !!formatAnswer(q, responsesByQuestionId[q.checklist_question_id]);
+        const response = responsesByQuestionId[q.checklist_question_id];
+        const hasAns = isResponseAnswered(response, formatAnswer(q, response));
         return s + (hasAns ? 1 : 0);
       }, 0);
       t += qs.length;
@@ -302,7 +316,8 @@ function QuestionPreviewCard({
 }) {
   const [open, setOpen] = useState(false);
   const ans = formatAnswer(question, response);
-  const pending = !ans;
+  const answered = isResponseAnswered(response, ans);
+  const pending = !answered;
 
   return (
     <div className={`rounded-xl border overflow-hidden transition-all ${pending ? "border-white/[0.06] bg-white/[0.02]" : "border-emerald-500/20 bg-white/[0.03]"}`}>
@@ -325,13 +340,13 @@ function QuestionPreviewCard({
           <div className="pt-3 space-y-3">
             <div>
               <p className="text-[11px] text-gray-500 mb-1 uppercase tracking-wider font-bold">Answer</p>
-              {ans ? (
-                <p className="text-sm text-secondary-400 font-medium">{ans}</p>
+              {answered ? (
+                <p className="text-sm text-secondary-400 font-medium">{ans || "Response submitted"}</p>
               ) : (
                 <p className="text-sm text-gray-500 italic">No answer yet</p>
               )}
             </div>
-            {Number(question.total_marks) > 0 && ans && (
+            {Number(question.total_marks) > 0 && answered && (
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-gray-500 uppercase tracking-wider font-bold">Score</span>
                 <span className="text-sm font-semibold text-white">{response?.marks_obtained ?? 0}</span>
@@ -353,11 +368,11 @@ function QuestionPreviewCard({
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {(response?.evidence || []).map((ev) => {
+                  {(response?.evidence || []).map((ev, evidenceIndex) => {
                     const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
                     const url = getEvidenceUrl(ev.file_path);
                     return (
-                      <a key={ev.id} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20">
+                      <a key={`${ev.id || ev.file_path || ev.file_name || "evidence"}::${evidenceIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20">
                         {kind === "image" ? (
                           <img src={url} alt={ev.file_name} className="w-full h-24 object-cover rounded-md" />
                         ) : (
@@ -504,8 +519,7 @@ function AuditDetailsContent() {
 
   const subtreeHasQuestions = (node: TreeNode | null): boolean => {
     if (!node) return false;
-    const k = progressKey(node.code, node.edge_id ?? null);
-    if ((questionsByKey[k] || []).length > 0) return true;
+    if (getQuestionsForNode(node, questionsByKey).length > 0) return true;
     return (node.children || []).some(subtreeHasQuestions);
   };
 
@@ -616,8 +630,7 @@ function AuditDetailsContent() {
               }
 
               const navigateNode = (nd: TreeNode) => {
-                const k = progressKey(nd.code, nd.edge_id ?? null);
-                const hasQ = (questionsByKey[k] || []).length > 0;
+                const hasQ = getQuestionsForNode(nd, questionsByKey).length > 0;
                 const hasKids = (nd.children || []).some(subtreeHasQuestions);
                 if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: nd.code }]);
                 else setStepHistory((h) => [...h, { mode: "questions", entityCode: nd.code, orgTreeId: nd.edge_id ?? null }]);
@@ -671,8 +684,9 @@ function AuditDetailsContent() {
                 : findInTree(step.entityCode);
               const entityCode = step.entityCode;
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
-              const key = progressKey(entityCode, edgeId);
-              const qs = (questionsByKey[key] || []).slice().sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+              const qs = getQuestionsForNode({ code: entityCode, edge_id: edgeId }, questionsByKey)
+                .slice()
+                .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
               const nodeChildren = node ? (node.children || []) : [];
               const hasChildrenWithQuestions = nodeChildren.some(c => subtreeHasQuestions(c));
 
@@ -705,7 +719,7 @@ function AuditDetailsContent() {
                   <div className="space-y-3">
                     {qs.length > 0 ? (
                       qs.map((q, idx) => (
-                        <QuestionPreviewCard key={q.checklist_question_id} question={q} response={responsesByQuestionId[q.checklist_question_id]} index={idx + 1} />
+                        <QuestionPreviewCard key={`${progressKey(entityCode, edgeId)}::${q.checklist_question_id}::${idx}`} question={q} response={responsesByQuestionId[q.checklist_question_id]} index={idx + 1} />
                       ))
                     ) : (
                       <div className="glass rounded-xl p-8 text-center border border-dashed border-white/10">

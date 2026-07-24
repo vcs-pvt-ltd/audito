@@ -21,11 +21,13 @@ const ChecklistModel = require('../models/ChecklistModel');
 const EntityHeadModel = require('../models/EntityHeadModel');
 const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
+const NotificationModel = require('../models/NotificationModel');
 const { db } = require('../config/db');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
 const { generateCorrectiveActionId, generateAuditResponseId, generateAuditEvidenceId, generateAuditEntityProgressId } = require('../utils/codeGenerator');
 const {
   getEntityHeadOrgTreeScope,
+  getEntityHeadEntityCodeScope,
   auditEntitiesInScope,
   extractEntityHeadSubtree,
 } = require('../utils/accessHelper');
@@ -165,10 +167,18 @@ async function getEntityHeadScope(req) {
   return getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId);
 }
 
-function filterProgressByScope(progress, scopeIds) {
-  if (!scopeIds?.length) return progress || [];
-  const scopeSet = new Set(scopeIds);
-  return (progress || []).filter((p) => p.org_tree_id != null && scopeSet.has(p.org_tree_id));
+async function getEntityHeadCodeScope(req, scopeIds) {
+  if (req.user?.role !== 'entity_head' || scopeIds?.length) return [];
+  return getEntityHeadEntityCodeScope(req.user.assignedEntityCode || req.user.entityCode);
+}
+
+function filterProgressByScope(progress, scopeIds, entityCodeScope = []) {
+  const scopeSet = new Set((scopeIds || []).map(String));
+  const entityCodeSet = new Set(entityCodeScope || []);
+  return (progress || []).filter((p) => {
+    if (scopeSet.size) return p.org_tree_id != null && scopeSet.has(String(p.org_tree_id));
+    return entityCodeSet.has(p.entity_code);
+  });
 }
 
 // ── GET /api/audit-execution/my-audits ───────────────────────────
@@ -176,18 +186,19 @@ const listMyAudits = async (req, res) => {
   try {
     const userCode = req.user.userCode;
     const scopeIds = await getEntityHeadScope(req);
+    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
     const audits = req.user.role === 'entity_head'
-      ? await AuditModel.listForEntityHead(req.user.assignedOrgTreeId)
+      ? await AuditModel.listForEntityHead(req.user.assignedOrgTreeId, req.user.assignedEntityCode || req.user.entityCode)
       : await AuditModel.listForAuditor(userCode);
     for (const a of audits) {
       const ents = await AuditModel.getEntities(a.audit_id);
       const scopedEnts = req.user.role === 'entity_head'
-        ? ents.filter((e) => scopeIds.includes(e.org_tree_id))
+        ? ents.filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope))
         : ents;
       a.entity_count = scopedEnts.length;
       const progress = await AuditExecutionModel.getProgress(a.audit_id);
       const scopedProgress = req.user.role === 'entity_head'
-        ? filterProgressByScope(progress, scopeIds)
+        ? filterProgressByScope(progress, scopeIds, entityCodeScope)
         : progress;
       const totalQ = scopedProgress.reduce((s, p) => s + (p.total_questions || 0), 0);
       const answeredQ = scopedProgress.reduce((s, p) => s + (p.answered_questions || 0), 0);
@@ -356,7 +367,8 @@ const getAuditDetail = async (req, res) => {
     }
 
     const scopeIds = await getEntityHeadScope(req);
-    if (req.user.role === 'entity_head' && !auditEntitiesInScope(audit.entities, scopeIds)) {
+    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
+    if (req.user.role === 'entity_head' && !auditEntitiesInScope(audit.entities, scopeIds, entityCodeScope)) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
@@ -371,8 +383,8 @@ const getAuditDetail = async (req, res) => {
     // Get progress per entity
     let progress = await AuditExecutionModel.getProgress(id);
     if (req.user.role === 'entity_head') {
-      progress = filterProgressByScope(progress, scopeIds);
-      audit.entities = (audit.entities || []).filter((e) => scopeIds.includes(e.org_tree_id));
+      progress = filterProgressByScope(progress, scopeIds, entityCodeScope);
+      audit.entities = (audit.entities || []).filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope));
     }
     audit.entity_progress = progress;
 
@@ -427,14 +439,16 @@ const getAuditDetail = async (req, res) => {
         });
 
         if (req.user.role === 'entity_head') {
-          const scopeSet = new Set(scopeIds);
-          audit.entity_questions = audit.entity_questions.filter(
-            (eq) => eq.org_tree_id != null && scopeSet.has(eq.org_tree_id)
+          audit.entity_questions = audit.entity_questions.filter((eq) =>
+            auditEntitiesInScope([eq], scopeIds, entityCodeScope)
           );
         }
 
         await recomputeAndUpsertProgressForAudit(id, audit.entity_questions);
         audit.entity_progress = await AuditExecutionModel.getProgress(id);
+        if (req.user.role === 'entity_head') {
+          audit.entity_progress = filterProgressByScope(audit.entity_progress, scopeIds, entityCodeScope);
+        }
       } else {
         audit.entity_questions = [];
       }
@@ -565,17 +579,17 @@ const getResponses = async (req, res) => {
   try {
     const { id } = req.params;
     const scopeIds = await getEntityHeadScope(req);
+    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
     if (req.user.role === 'entity_head') {
       const entities = await AuditModel.getEntities(id);
-      if (!auditEntitiesInScope(entities, scopeIds)) {
+      if (!auditEntitiesInScope(entities, scopeIds, entityCodeScope)) {
         return errorResponse(res, 'Not authorized.', 403);
       }
     }
 
     let responses = await AuditExecutionModel.getAllResponses(id);
     if (req.user.role === 'entity_head') {
-      const scopeSet = new Set(scopeIds);
-      responses = responses.filter((r) => r.org_tree_id != null && scopeSet.has(r.org_tree_id));
+      responses = filterProgressByScope(responses, scopeIds, entityCodeScope);
     }
 
     // Attach evidence to each response
@@ -733,6 +747,32 @@ const completeAudit = async (req, res) => {
 
     await AuditExecutionModel.completeAudit(id);
 
+    // Keep the workspace administrator informed when their assigned auditor
+    // finishes an audit. The key prevents duplicate notices if the endpoint is retried.
+    try {
+      const [workspaceAdmin, auditor] = await Promise.all([
+        audit.created_by ? AdminModel.findByEntityCode(audit.created_by) : null,
+        AuditorModel.findById(req.user.userCode),
+      ]);
+
+      if (workspaceAdmin?.admin_id) {
+        const auditorName = `${auditor?.first_name || ''} ${auditor?.last_name || ''}`.trim() || 'An auditor';
+        await NotificationModel.createIfNotExists({
+          recipient_user_code: workspaceAdmin.admin_id,
+          recipient_role: 'admin',
+          created_by_entity_code: audit.created_by || null,
+          type: 'audit_completed',
+          title: 'Audit Completed',
+          message: `${auditorName} completed the audit "${audit.title || 'Untitled audit'}".`,
+          audit_id: id,
+          notification_key: `audit_completed:${id}:${workspaceAdmin.admin_id}`,
+        });
+      }
+    } catch (notificationError) {
+      // Completion must remain successful even if a non-critical notification fails.
+      console.error('completeAudit notification error:', notificationError);
+    }
+
     return successResponse(res, null, 'Audit completed successfully.');
   } catch (err) {
     console.error('completeAudit error:', err);
@@ -854,9 +894,10 @@ const getEntityTree = async (req, res) => {
     }
 
     const scopeIds = await getEntityHeadScope(req);
+    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
     if (req.user.role === 'entity_head') {
       const entities = await AuditModel.getEntities(id);
-      if (!auditEntitiesInScope(entities, scopeIds)) {
+      if (!auditEntitiesInScope(entities, scopeIds, entityCodeScope)) {
         return errorResponse(res, 'Not authorized.', 403);
       }
     }

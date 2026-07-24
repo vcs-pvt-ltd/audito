@@ -48,6 +48,7 @@ function AuditAssignContent() {
   const [selBranchId, setSelBranchId] = useState<string | "">("");
   const [selDeptId, setSelDeptId] = useState<string | "">("");
   const [selAuditorCode, setSelAuditorCode] = useState("");
+  const assignmentLocked = ["in_progress", "completed"].includes(String(audit?.status || "").toLowerCase());
 
   useEffect(() => {
     if (!accessToken || !auditId) return;
@@ -238,6 +239,10 @@ function AuditAssignContent() {
 
   const handleSave = async () => {
     if (!accessToken || !auditId || !selAuditorCode) return;
+    if (assignmentLocked) {
+      toast("The auditor assignment cannot be changed after the audit has started.", "warning");
+      return;
+    }
     setSaving(true);
     try {
       // Per user request: auditors table identifies entity, no need for assigned_org_tree_id in audit_assignments
@@ -314,6 +319,12 @@ function AuditAssignContent() {
               </div>
 
               <div className="p-8 space-y-8 flex-grow">
+                {assignmentLocked && (
+                  <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 flex items-start gap-3">
+                    <AlertCircle size={18} className="shrink-0 mt-0.5 text-amber-400" />
+                    <p>This audit has already started. Its auditor assignment is now locked.</p>
+                  </div>
+                )}
                 {/* Step 1 & 2: Structure */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
@@ -322,12 +333,13 @@ function AuditAssignContent() {
                       <Building size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-secondary-400 transition-colors" />
                       <select
                         value={selBranchId}
+                        disabled={assignmentLocked}
                         onChange={(e) => {
                           setSelBranchId(e.target.value ? e.target.value : "");
                           setSelDeptId("");
                           setSelAuditorCode("");
                         }}
-                        className={selectClass}
+                        className={`${selectClass} disabled:opacity-50 disabled:cursor-not-allowed`}
                       >
                         <option value="" className="bg-[#0c2218]">All Branches</option>
                         {branches.map(b => (
@@ -343,7 +355,7 @@ function AuditAssignContent() {
                       <Briefcase size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-secondary-400 transition-colors" />
                       <select
                         value={selDeptId}
-                        disabled={!selBranchId}
+                        disabled={!selBranchId || assignmentLocked}
                         onChange={(e) => {
                           setSelDeptId(e.target.value ? e.target.value : "");
                           setSelAuditorCode("");
@@ -377,8 +389,9 @@ function AuditAssignContent() {
                           filteredAuditors.map(u => (
                             <button
                               key={u.user_code}
+                              disabled={assignmentLocked}
                               onClick={() => setSelAuditorCode(u.user_code)}
-                              className={`relative p-5 rounded-3xl border transition-all text-left overflow-hidden group ${selAuditorCode === u.user_code
+                              className={`relative p-5 rounded-3xl border transition-all text-left overflow-hidden group disabled:cursor-not-allowed disabled:opacity-60 ${selAuditorCode === u.user_code
                                   ? "bg-secondary-500/10 border-secondary-500/40 shadow-lg shadow-secondary-500/5"
                                   : "bg-white/[0.03] border-white/5 hover:border-white/20 hover:bg-white/[0.05]"
                                 }`}
@@ -432,12 +445,12 @@ function AuditAssignContent() {
                 </Button>
                 <Button
                   onClick={handleSave}
-                  disabled={saving || !selAuditorCode}
+                  disabled={saving || !selAuditorCode || assignmentLocked}
                   loading={saving}
                   leftIcon={<UserPlus size={18} strokeWidth={2.5} />}
                   className="px-8 py-3.5 rounded-2xl font-bold disabled:grayscale shadow-lg shadow-secondary-500/20 active:scale-95"
                 >
-                  {audit.assigned_auditor_id ? "Update Assignment" : "Finalize Assignment"}
+                  {assignmentLocked ? "Assignment Locked" : audit.assigned_auditor_id ? "Update Assignment" : "Finalize Assignment"}
                 </Button>
               </div>
             </div>

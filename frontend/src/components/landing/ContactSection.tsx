@@ -8,6 +8,7 @@ import {
   Loader2,
   CheckCircle,
   Star,
+  Quote,
 } from "lucide-react";
 import testimonialsBg from "@/assets/landing/client-background.png";
 import linkedinIcon from "@/assets/landing/icons/linkedin.png";
@@ -367,7 +368,10 @@ export default function ContactSection() {
                   </button>
 
                   <p className="text-[11px] text-center text-gray-400">
-                    Prefer to email directly? Reach us at hi@audito.cloud
+                    Prefer to email directly? Reach us at{" "}
+                    <a href="mailto:hi@audito.cloud" className="font-medium text-secondary-300 underline decoration-secondary-400/40 underline-offset-2 transition-colors hover:text-secondary-200">
+                      hi@audito.cloud
+                    </a>
                   </p>
                 </form>
               )}
@@ -376,8 +380,8 @@ export default function ContactSection() {
         </div>
       </div>
 
-      {/* Testimonials Section */}
-      <div className="relative overflow-hidden py-12 sm:py-16 lg:py-20">
+      {/* Client reviews */}
+      <div className="relative overflow-hidden border-y border-white/[0.06] py-14 sm:py-18 lg:py-22">
         <Image
           src={testimonialsBg}
           alt="Client testimonials background"
@@ -386,26 +390,22 @@ export default function ContactSection() {
         />
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
           <div className="max-w-6xl xl:max-w-7xl mx-auto">
-            {/* Header */}
-            <Reveal variant="up" className="text-center mb-8 sm:mb-10 lg:mb-12">
-              <div className="star-badge inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary-500/20 text-secondary-300 text-xs font-semibold mb-4">
+            <Reveal variant="up" className="mx-auto mb-9 max-w-2xl text-center sm:mb-12">
+              <div className="star-badge mb-4 inline-flex items-center gap-2 rounded-full border border-secondary-400/20 bg-secondary-500/10 px-3 py-1.5 text-xs font-semibold text-secondary-300">
                 <Star size={12} className="fill-secondary-400 text-secondary-400" />
-                Trusted by Leaders
+                Client reviews
               </div>
-              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white leading-tight mb-3 sm:mb-4">
-                What Our Clients
+              <h2 className="mb-3 text-3xl font-bold leading-tight text-white sm:text-4xl lg:text-[2.65rem]">
+                Built for the teams who
                 <br />
-                <span className="contact-gradient-text">
-                  Are Saying
-                </span>
+                <span className="contact-gradient-text">keep standards moving.</span>
               </h2>
-              <p className="text-gray-400 max-w-2xl mx-auto text-sm">
-                Join hundreds of enterprises who have transformed their audit operations with Audito.
+              <p className="mx-auto max-w-xl text-sm leading-6 text-gray-400 sm:text-[15px]">
+                Hear how audit and compliance leaders use Audito to make every review clearer, faster, and easier to follow.
               </p>
             </Reveal>
 
-            {/* Testimonials Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 lg:gap-6">
               <Reveal variant="up" delay={0} className="h-full">
                 <TestimonialCard
                   rating={5}
@@ -425,7 +425,7 @@ export default function ContactSection() {
                   featured={true}
                 />
               </Reveal>
-              <Reveal variant="up" delay={240} className="sm:col-span-2 lg:col-span-1 h-full">
+              <Reveal variant="up" delay={240} className="h-full sm:col-span-2 lg:col-span-1">
                 <TestimonialCard
                   rating={5}
                   quote="Best audit management platform we've used. The interface is beautiful, the features are powerful, and the support team is exceptional."
@@ -483,33 +483,42 @@ function TestimonialCard({
   company: string;
   featured?: boolean;
 }) {
+  const initials = name.split(" ").map((part) => part[0]).join("").slice(0, 2);
+
   return (
     <div
-      className={`testimonial-card relative rounded-2xl p-5 sm:p-6 h-full ${featured
-        ? "testimonial-card-featured bg-gradient-to-br from-[#F1FDF9]/20 to-[#B7DAD0]/30 border border-secondary-500/40 shadow-xl shadow-secondary-500/10"
-        : "glass border border-white/10"
+      className={`testimonial-card relative flex h-full flex-col overflow-hidden rounded-2xl border p-5 sm:p-6 ${featured
+        ? "testimonial-card-featured border-secondary-500/35 bg-gradient-to-br from-secondary-500/[0.16] via-[#0d2d29] to-[#09221f] shadow-xl shadow-secondary-500/[0.08]"
+        : "border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02]"
         }`}
     >
       {featured && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="px-4 py-1 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-primary-950 text-[10px] font-bold rounded-full uppercase tracking-wide shadow-lg">
-            FEATURED
+        <div className="absolute right-4 top-4">
+          <span className="rounded-full border border-secondary-300/25 bg-secondary-500/15 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-secondary-200">
+            Customer story
           </span>
         </div>
       )}
-      <div className="flex gap-1 mb-4 sm:mb-5">
-        {[...Array(rating)].map((_, i) => (
-          <Star key={i} size={15} className="text-[#EECA53] fill-[#EECA53]" />
-        ))}
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div className="flex gap-1">
+          {[...Array(rating)].map((_, i) => (
+            <Star key={i} size={14} className="fill-[#EECA53] text-[#EECA53]" />
+          ))}
+        </div>
+        {!featured && <Quote size={22} className="text-secondary-400/45" />}
       </div>
-      <p className="text-sm text-gray-200 leading-relaxed mb-5 sm:mb-6">&ldquo;{quote}&rdquo;</p>
-      <div className="border-t border-white/10 pt-4">
-        <p className="text-white font-semibold text-sm">{name}</p>
-        <p className="text-xs text-gray-400 mt-0.5">
-          {role}
-          <br />
+      <p className="mb-7 text-[15px] leading-7 text-gray-200">&ldquo;{quote}&rdquo;</p>
+      <div className="mt-auto flex items-center gap-3 border-t border-white/10 pt-4">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-secondary-400/20 bg-secondary-500/15 text-xs font-bold text-secondary-200">
+          {initials}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-white">{name}</p>
+          <p className="truncate text-xs text-gray-400">{role}</p>
+        </div>
+        <span className="ml-auto max-w-[7.5rem] truncate rounded-full border border-white/10 bg-black/10 px-2 py-1 text-[10px] font-medium text-gray-300">
           {company}
-        </p>
+        </span>
       </div>
     </div>
   );

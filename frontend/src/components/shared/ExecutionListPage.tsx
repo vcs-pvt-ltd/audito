@@ -679,12 +679,12 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                                 bg-secondary-500/10 text-secondary-400 border-secondary-500/20 hover:bg-secondary-500/20 hover:border-secondary-500/40 whitespace-nowrap"
                             >
                               {workflowType === "audit" ? (
-                                item.status === "plan" ? (
+                                displayStatus === "plan" ? (
                                   canStart ? <><Play size={12} /> Start</> : <><Clock size={12} /> Scheduled</>
-                                ) : item.status === "in_progress" ? (
+                                ) : displayStatus === "in_progress" ? (
                                   <><Play size={12} /> Continue</>
                                 ) : (
-                                  <><CheckCircle2 size={12} /> Report</>
+                                  <><CheckCircle2 size={12} /> View</>
                                 )
                               ) : (
                                 displayStatus === "plan" || displayStatus === "in_progress" ? (
@@ -780,8 +780,14 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                         rightIcon={<ChevronRight size={16} strokeWidth={3} />}
                       >
                         {workflowType === "audit" ? (
-                          item.status === "plan" ? (canStart ? "Start" : "Wait") : "Resume"
-                        ) : "Go"}
+                          displayStatus === "plan"
+                            ? (canStart ? "Start" : "Wait")
+                            : displayStatus === "in_progress"
+                              ? "Resume"
+                              : "View"
+                        ) : (
+                          displayStatus === "completed" ? "View" : "Continue"
+                        )}
                       </Button>
                     </div>
                   </div>

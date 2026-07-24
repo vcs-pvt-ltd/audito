@@ -99,26 +99,56 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-transparent px-4 py-12">
+    <div className="min-h-screen flex items-center justify-center px-4 py-8 sm:py-12">
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/3 right-1/3 w-80 h-80 bg-primary-600/15 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 left-1/3 w-60 h-60 bg-accent-500/10 rounded-full blur-3xl" />
       </div>
 
       <div className="relative w-full max-w-md">
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-block">
-            <Image src={auditoLogo} alt="Audito" width={120} height={30} className="h-10 mx-auto" />
-          </Link>
-          <p className="text-gray-400 mt-2">
-            {step === "email" && "Reset your password"}
-            {step === "otp" && "Enter the OTP sent to your email"}
-            {step === "reset" && "Set your new password"}
-            {step === "done" && "Password reset successful"}
-          </p>
-        </div>
+        <div className="rounded-2xl border border-white/10 bg-[#053B36] p-5 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8">
+          <div className="mb-7 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              aria-label="Back to home"
+              className="rounded-lg p-1 text-[#059669] transition-colors hover:bg-white/5 hover:text-[#20b67a]"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <button type="button" onClick={() => router.push("/")} className="text-sm text-[#059669] transition-colors hover:text-[#20b67a]">
+              Back to Home
+            </button>
+          </div>
 
-        <div className="glass-dark rounded-2xl p-6 sm:p-8">
+          <div className="mb-7 text-center">
+            <Link href="/" className="mb-5 inline-block">
+              <Image src={auditoLogo} alt="Audito" width={125} height={30} className="mx-auto h-10" />
+            </Link>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Password recovery</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-white">
+              {step === "email" && "Reset your password"}
+              {step === "otp" && "Verify your email"}
+              {step === "reset" && "Create a new password"}
+              {step === "done" && "Password reset successful"}
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-gray-400">
+              {step === "email" && "Enter your account email and we’ll send a secure verification code."}
+              {step === "otp" && "Enter the six-digit code we sent to your email address."}
+              {step === "reset" && "Choose a strong password to keep your workspace secure."}
+              {step === "done" && "Your new password is ready to use."}
+            </p>
+            {step !== "done" && (
+              <div className="mx-auto mt-5 flex max-w-[13rem] items-center gap-2">
+                {(["email", "otp", "reset"] as Step[]).map((item, index) => {
+                  const activeIndex = ["email", "otp", "reset"].indexOf(step);
+                  const isComplete = index < activeIndex;
+                  const isCurrent = index === activeIndex;
+                  return <span key={item} className={`h-1 flex-1 rounded-full ${isComplete || isCurrent ? "bg-secondary-400" : "bg-white/10"}`} />;
+                })}
+              </div>
+            )}
+          </div>
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-6">
               <p className="text-sm text-red-400">{error}</p>

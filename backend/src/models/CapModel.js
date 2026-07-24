@@ -111,11 +111,20 @@ const CapModel = {
     return rows;
   },
 
-  async listCapsForEntityHead(orgTreeId, { rootOnly = true } = {}) {
-    const { getEntityHeadOrgTreeScope } = require('../utils/accessHelper');
+  async listCapsForEntityHead(orgTreeId, assignedEntityCode, { rootOnly = true } = {}) {
+    const {
+      getEntityHeadOrgTreeScope,
+      getEntityHeadEntityCodeScope,
+    } = require('../utils/accessHelper');
     const scopeIds = await getEntityHeadOrgTreeScope(orgTreeId);
-    if (!scopeIds.length) return [];
-    const ph = scopeIds.map(() => '?').join(',');
+    const entityCodeScope = scopeIds.length
+      ? []
+      : await getEntityHeadEntityCodeScope(assignedEntityCode);
+    if (!scopeIds.length && !entityCodeScope.length) return [];
+
+    const scopeColumn = scopeIds.length ? 'cae.org_tree_id' : 'cae.entity_code';
+    const scopeValues = scopeIds.length ? scopeIds : entityCodeScope;
+    const ph = scopeValues.map(() => '?').join(',');
     const rootFilter = rootOnly ? 'AND c.parent_cap_id IS NULL' : '';
     const [rows] = await db.query(
       `SELECT DISTINCT c.*,
@@ -125,9 +134,9 @@ const CapModel = {
           FROM caps c
           JOIN audit_assignments aa ON aa.audit_id = c.audit_id
           INNER JOIN cap_assignment_entities cae ON cae.cap_id = c.cap_id
-          WHERE cae.org_tree_id IN (${ph}) AND aa.is_active = TRUE AND cae.is_active = TRUE ${rootFilter}
+          WHERE ${scopeColumn} IN (${ph}) AND aa.is_active = TRUE AND cae.is_active = TRUE ${rootFilter}
          ORDER BY c.created_at DESC`,
-      scopeIds
+      scopeValues
     );
     return rows;
   },

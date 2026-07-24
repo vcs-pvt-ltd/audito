@@ -123,11 +123,20 @@ const AuditModel = {
     return rows;
   },
 
-  async listForEntityHead(orgTreeId) {
-    const { getEntityHeadOrgTreeScope } = require('../utils/accessHelper');
+  async listForEntityHead(orgTreeId, assignedEntityCode) {
+    const {
+      getEntityHeadOrgTreeScope,
+      getEntityHeadEntityCodeScope,
+    } = require('../utils/accessHelper');
     const scopeIds = await getEntityHeadOrgTreeScope(orgTreeId);
-    if (!scopeIds.length) return [];
-    const ph = scopeIds.map(() => '?').join(',');
+    const entityCodeScope = scopeIds.length
+      ? []
+      : await getEntityHeadEntityCodeScope(assignedEntityCode);
+    if (!scopeIds.length && !entityCodeScope.length) return [];
+
+    const scopeColumn = scopeIds.length ? 'aae.org_tree_id' : 'aae.entity_code';
+    const scopeValues = scopeIds.length ? scopeIds : entityCodeScope;
+    const ph = scopeValues.map(() => '?').join(',');
     const [rows] = await db.query(
       `SELECT DISTINCT aa.audit_id, aa.audit_id AS audit_code, aa.title, aa.audit_type, aa.status,
               aa.start_date, aa.end_date, aa.budget, aa.currency, aa.num_workers,
@@ -137,12 +146,12 @@ const AuditModel = {
        FROM audit_assignments aa
        LEFT JOIN checklists c ON c.checklist_id = aa.checklist_id
        INNER JOIN audit_assignment_entities aae ON aae.audit_id = aa.audit_id
-       WHERE aae.org_tree_id IN (${ph}) 
+       WHERE ${scopeColumn} IN (${ph}) 
          AND aa.is_active = TRUE 
          AND aae.is_active = TRUE
          AND aa.status != 'cancelled'
        ORDER BY aa.start_date ASC`,
-      scopeIds
+      scopeValues
     );
     return rows;
   },

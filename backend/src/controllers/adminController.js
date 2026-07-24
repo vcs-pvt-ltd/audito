@@ -5,6 +5,7 @@ const CustomSolutionModel = require('../models/CustomSolutionModel');
 const PaymentModel = require('../models/PaymentModel');
 const PlanSettingsModel = require('../models/PlanSettingsModel');
 const PromotionCampaignModel = require('../models/PromotionCampaignModel');
+const PrivacyPolicyModel = require('../models/PrivacyPolicyModel');
 const { db } = require('../config/db');
 const { sendContactReplyEmail, sendVerificationEmail, sendCustomSolutionPriceEmail } = require('../services/emailService');
 const { successResponse, errorResponse } = require('../utils/helpers');
@@ -186,6 +187,56 @@ const setPromotionCampaignStatus = async (req, res) => {
   } catch (error) {
     console.error('setPromotionCampaignStatus error:', error);
     return errorResponse(res, 'Failed to update promotion campaign.', 500);
+  }
+};
+
+// --- Versioned privacy policies ---
+const validatePrivacyPolicy = (body) => {
+  const title = String(body?.title || '').trim();
+  const intro = String(body?.intro || '').trim();
+  const sections = PrivacyPolicyModel.normalizeSections(body?.sections);
+  if (!title || title.length > 160) throw new Error('A privacy policy title of 160 characters or fewer is required.');
+  if (!intro || intro.length > 2000) throw new Error('A policy introduction of 2,000 characters or fewer is required.');
+  if (!sections.length) throw new Error('Add at least one policy section with a title and content.');
+  if (sections.length > 40 || sections.some((section) => section.title.length > 180 || section.content.length > 12000)) throw new Error('One or more policy sections are too long.');
+  return { title, intro, sections };
+};
+
+const listPrivacyPolicies = async (_req, res) => {
+  try { return successResponse(res, await PrivacyPolicyModel.list(), 'Privacy policies retrieved.'); }
+  catch (error) { console.error('listPrivacyPolicies error:', error); return errorResponse(res, 'Failed to retrieve privacy policies.', 500); }
+};
+
+const createPrivacyPolicy = async (req, res) => {
+  try {
+    const policy = await PrivacyPolicyModel.create({ ...validatePrivacyPolicy(req.body), createdBy: req.user?.admin_id || null });
+    return successResponse(res, { policy }, 'Privacy policy draft created.', 201);
+  } catch (error) { return errorResponse(res, error.message || 'Failed to create privacy policy.', error.statusCode || 400); }
+};
+
+const updatePrivacyPolicy = async (req, res) => {
+  try {
+    const policy = await PrivacyPolicyModel.update(req.params.policyId, validatePrivacyPolicy(req.body));
+    if (!policy) return errorResponse(res, 'Privacy policy not found.', 404);
+    return successResponse(res, { policy }, 'Privacy policy updated.');
+  } catch (error) { return errorResponse(res, error.message || 'Failed to update privacy policy.', error.statusCode || 400); }
+};
+
+const publishPrivacyPolicy = async (req, res) => {
+  try {
+    const policy = await PrivacyPolicyModel.publish(req.params.policyId);
+    if (!policy) return errorResponse(res, 'Privacy policy not found.', 404);
+    return successResponse(res, { policy }, 'Privacy policy published. New registrations must agree to this version.');
+  } catch (error) { console.error('publishPrivacyPolicy error:', error); return errorResponse(res, 'Failed to publish privacy policy.', 500); }
+};
+
+const deletePrivacyPolicy = async (req, res) => {
+  try {
+    const removed = await PrivacyPolicyModel.remove(req.params.policyId);
+    if (!removed) return errorResponse(res, 'Privacy policy not found.', 404);
+    return successResponse(res, null, 'Privacy policy deleted.');
+  } catch (error) {
+    return errorResponse(res, error.message || 'Failed to delete privacy policy.', error.statusCode || 400);
   }
 };
 
@@ -557,7 +608,7 @@ const getDashboardStats = async (req, res) => {
     const [[promoCount]] = await db.query('SELECT COUNT(*) AS cnt FROM promo_codes');
     const [[promoActive]] = await db.query('SELECT COUNT(*) AS cnt FROM promo_codes WHERE is_active = 1');
     const [[csrCount]] = await db.query('SELECT COUNT(*) AS cnt FROM custom_solution_requests');
-    const [[csrPending]] = await db.query("SELECT COUNT(*) AS cnt FROM custom_solution_requests WHERE status = 'pending'");
+    const [[csrPending]] = await db.query("SELECT COUNT(*) AS cnt FROM custom_solution_requests WHERE status = 'pending' AND email_verified = TRUE");
     const [[orgCount]] = await db.query('SELECT COUNT(DISTINCT root_entity_code) AS cnt FROM subscriptions');
     const [[paidCount]] = await db.query("SELECT COUNT(DISTINCT root_entity_code) AS cnt FROM payment_transactions WHERE status = 'paid'");
     const [[adminCount]] = await db.query("SELECT COUNT(*) AS cnt FROM admins WHERE role = 'audito_admin'");
@@ -684,4 +735,9 @@ module.exports = {
   createPromotionCampaign,
   updatePromotionCampaign,
   setPromotionCampaignStatus,
+  listPrivacyPolicies,
+  createPrivacyPolicy,
+  updatePrivacyPolicy,
+  publishPrivacyPolicy,
+  deletePrivacyPolicy,
 };

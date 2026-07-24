@@ -424,18 +424,20 @@ export default function PricingSection() {
 
         {/* Tablet cards */}
         <div className="hidden md:flex lg:hidden flex-col gap-5 max-w-3xl mx-auto mb-8">
-          <div className="w-full"><ProCard plan={plans[1]} /></div>
           <div className="grid grid-cols-2 gap-5">
             <BasicCard plan={plans[0]} />
-            <EliteCard plan={plans[2]} />
+            <ProCard plan={plans[1]} />
           </div>
-          <div className="w-full"><CustomCard plan={plans[3]} /></div>
+          <div className="grid grid-cols-2 gap-5">
+            <EliteCard plan={plans[2]} />
+            <CustomCard plan={plans[3]} />
+          </div>
         </div>
 
         {/* Mobile cards */}
         <div className="flex flex-col md:hidden gap-5 max-w-sm mx-auto mb-8">
-          <ProCard plan={plans[1]} />
           <BasicCard plan={plans[0]} />
+          <ProCard plan={plans[1]} />
           <EliteCard plan={plans[2]} />
           <CustomCard plan={plans[3]} />
         </div>

@@ -470,6 +470,7 @@ function UserModal({
             {editData && <p className="text-xs text-gray-500 mt-1">Email address cannot be changed.</p>}
           </div>
 
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {/* Country */}
           <div className="relative">
             <label className="block text-sm text-gray-400 mb-1.5">Country <span className="text-red-400">*</span></label>
@@ -530,21 +531,24 @@ function UserModal({
             <label className="block text-sm text-gray-400 mb-1.5">Phone Number <span className="text-red-400">*</span></label>
             <div className="flex">
               {dialCode && (
-                <span className="inline-flex items-center px-2.5 bg-white/5 border border-white/10 border-r-0 rounded-l-lg text-gray-400 text-sm">
+                <span className="inline-flex min-h-11 items-center rounded-l-xl border border-r-0 border-white/10 bg-white/[0.04] px-3 text-sm text-gray-400">
                   {dialCode}
                 </span>
               )}
               <input
-                type="text"
+                type="tel"
+                inputMode="tel" 
                 value={form.phone_number}
                 onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
                 placeholder="Phone number"
-                className={`${inputClass} ${dialCode ? "rounded-l-none" : ""}`}
+                className={`min-h-11 w-full border border-white/10 bg-black/10 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none transition-all focus:border-secondary-400/60 focus:ring-4 focus:ring-secondary-500/10 ${dialCode ? "rounded-r-xl" : "rounded-xl"}`}
               />
             </div>
           </div>
 
           {/* Entity Assignment – cascading dropdowns from org tree */}
+          </div>
+
           {treeSteps.length > 0 && (
             <div className="space-y-3 pt-1">
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Assign to Entity</p>
@@ -992,7 +996,7 @@ export default function UsersClientPage() {
     setActionLoading(user.user_code);
     const res = await usersApi.resendVerification(accessToken, user.user_code);
     setActionLoading(null);
-    if (res.success) toast("Verification email resent.", "success");
+    if (res.success) toast("Invitation email resent.", "success");
     else toast(res.message || "Failed to resend email.", "error");
   };
 
@@ -1243,7 +1247,7 @@ export default function UsersClientPage() {
                                       onClick={() => handleResend(user)}
                                       disabled={actionLoading === user.user_code}
                                       className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all font-medium disabled:opacity-50"
-                                      title="Resend verification email"
+                                      title="Resend invitation email"
                                     >
                                       <Mail size={15} />
                                     </button>
@@ -1329,7 +1333,7 @@ export default function UsersClientPage() {
                               onClick={() => handleResend(user)}
                               disabled={actionLoading === user.user_code}
                               className="p-2 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all font-medium disabled:opacity-50"
-                              title="Resend verification email"
+                              title="Resend invitation email"
                             >
                               <Mail size={15} />
                             </button>

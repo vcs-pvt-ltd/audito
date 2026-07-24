@@ -231,15 +231,42 @@ async function getEntityHeadOrgTreeScope(orgTreeId) {
   return ids.length ? ids : [id];
 }
 
-function entityMatchesOrgTreeScope(entity, scopeIds) {
-  if (!scopeIds?.length || !entity) return false;
-  const orgId = entity.org_tree_id ?? entity.assigned_org_tree_id ?? null;
-  if (orgId === null || orgId === undefined) return false;
-  return scopeIds.includes(Number(orgId));
+/**
+ * Entity codes visible to an entity head when their assignment is the root
+ * organization entity. Root entities do not have an organization_tree edge,
+ * so there is no org_tree_id to use for access checks.
+ */
+async function getEntityHeadEntityCodeScope(assignedEntityCode) {
+  if (!assignedEntityCode) return [];
+
+  const [edges] = await db.query(
+    'SELECT parent_code, child_code FROM organization_tree WHERE is_active = TRUE'
+  );
+  const codes = new Set([assignedEntityCode]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const edge of edges) {
+      if (codes.has(edge.parent_code) && !codes.has(edge.child_code)) {
+        codes.add(edge.child_code);
+        added = true;
+      }
+    }
+  }
+  return [...codes];
 }
 
-function auditEntitiesInScope(entities, scopeIds) {
-  return (entities || []).some((e) => entityMatchesOrgTreeScope(e, scopeIds));
+function entityMatchesOrgTreeScope(entity, scopeIds, entityCodeScope = []) {
+  if (!entity) return false;
+  const orgId = entity.org_tree_id ?? entity.assigned_org_tree_id ?? null;
+  if (scopeIds?.length) {
+    return orgId !== null && orgId !== undefined && scopeIds.includes(Number(orgId));
+  }
+  return entityCodeScope.includes(entity.entity_code);
+}
+
+function auditEntitiesInScope(entities, scopeIds, entityCodeScope = []) {
+  return (entities || []).some((e) => entityMatchesOrgTreeScope(e, scopeIds, entityCodeScope));
 }
 
 /**
@@ -286,6 +313,7 @@ module.exports = {
   getAccessibleEntityCodes,
   resolveEntityNames,
   getEntityHeadOrgTreeScope,
+  getEntityHeadEntityCodeScope,
   entityMatchesOrgTreeScope,
   auditEntitiesInScope,
   extractEntityHeadSubtree,

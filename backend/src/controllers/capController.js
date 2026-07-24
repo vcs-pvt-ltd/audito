@@ -28,6 +28,7 @@ const { db } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const {
   getEntityHeadOrgTreeScope,
+  getEntityHeadEntityCodeScope,
   getAccessibleEntityCodes,
   resolveEntityNames,
   auditEntitiesInScope,
@@ -303,10 +304,17 @@ async function notifyCapCreated({ capId, capTitle, audit, entities, parentCapId,
   }
 };
 
-function filterCapProgressByScope(progress, scopeIds) {
-  if (!scopeIds?.length) return progress || [];
-  const scopeSet = new Set(scopeIds);
-  return (progress || []).filter((p) => p.org_tree_id != null && scopeSet.has(p.org_tree_id));
+async function getEntityHeadCodeScope(req, scopeIds) {
+  if (req.user?.role !== 'entity_head' || scopeIds?.length) return [];
+  return getEntityHeadEntityCodeScope(req.user.assignedEntityCode || req.user.entityCode);
+}
+
+function filterCapProgressByScope(progress, scopeIds, entityCodeScope = []) {
+  const scopeSet = new Set((scopeIds || []).map(String));
+  const entityCodeSet = new Set(entityCodeScope || []);
+  return (progress || []).filter((p) => scopeSet.size
+    ? p.org_tree_id != null && scopeSet.has(String(p.org_tree_id))
+    : entityCodeSet.has(p.entity_code));
 }
 
 // ── GET /api/caps ─────────────────────────────────────────────────
@@ -318,6 +326,7 @@ const listCaps = async (req, res) => {
     const scopeIds = req.user?.role === 'entity_head'
       ? await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId)
       : [];
+    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
 
     if (req.user?.role === 'admin') {
       const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
@@ -328,7 +337,11 @@ const listCaps = async (req, res) => {
         c.entity_name = ownerCode && ownerCode !== req.user.entityCode ? (nameMap.get(ownerCode)?.name || null) : null;
       }
     } else if (req.user?.role === 'entity_head') {
-      caps = await CapModel.listCapsForEntityHead(req.user.assignedOrgTreeId, listOpts);
+      caps = await CapModel.listCapsForEntityHead(
+        req.user.assignedOrgTreeId,
+        req.user.assignedEntityCode || req.user.entityCode,
+        listOpts
+      );
     } else {
       caps = await CapModel.listCapsForUser(req.user.userCode, listOpts);
     }
@@ -337,13 +350,13 @@ const listCaps = async (req, res) => {
     for (const c of caps) {
       const ents = await CapModel.getCapEntities(c.cap_id);
       const scopedEnts = req.user?.role === 'entity_head'
-        ? ents.filter((e) => scopeIds.includes(e.org_tree_id))
+        ? ents.filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope))
         : ents;
       c.entity_count = scopedEnts.length;
 
       const progress = await CapModel.getCapProgress(c.cap_id);
       const scopedProgress = req.user?.role === 'entity_head'
-        ? filterCapProgressByScope(progress, scopeIds)
+        ? filterCapProgressByScope(progress, scopeIds, entityCodeScope)
         : progress;
 
       const totalQuestions = scopedProgress.reduce((s, p) => s + (p.total_questions || 0), 0);
@@ -435,8 +448,9 @@ const getCapDetail = async (req, res) => {
     const scopeIds = req.user.role === 'entity_head'
       ? await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId)
       : [];
+    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
     const isEntityHead = req.user.role === 'entity_head'
-      && auditEntitiesInScope(entities, scopeIds);
+      && auditEntitiesInScope(entities, scopeIds, entityCodeScope);
 
     if (req.user.role !== 'admin' && !isCreator && !isAuditor && !isEntityHead) {
       return errorResponse(res, 'Not authorized.', 403);
@@ -500,10 +514,9 @@ const getCapDetail = async (req, res) => {
     let scopedQuestions = questions;
     let scopedTree = tree;
     if (req.user.role === 'entity_head') {
-      const scopeSet = new Set(scopeIds);
-      scopedEntities = entities.filter((e) => scopeSet.has(e.org_tree_id));
-      scopedProgress = filterCapProgressByScope(progress, scopeIds);
-      scopedQuestions = questions.filter((q) => q.org_tree_id != null && scopeSet.has(q.org_tree_id));
+      scopedEntities = entities.filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope));
+      scopedProgress = filterCapProgressByScope(progress, scopeIds, entityCodeScope);
+      scopedQuestions = questions.filter((q) => auditEntitiesInScope([q], scopeIds, entityCodeScope));
       if (tree) {
         scopedTree = extractEntityHeadSubtree(tree, req.user.assignedOrgTreeId, scopeIds);
       }
@@ -536,7 +549,8 @@ const getCapItems = async (req, res) => {
     const scopeIds = req.user.role === 'entity_head'
       ? await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId)
       : [];
-    if (req.user.role === 'entity_head' && !auditEntitiesInScope(entities, scopeIds)) {
+    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
+    if (req.user.role === 'entity_head' && !auditEntitiesInScope(entities, scopeIds, entityCodeScope)) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
@@ -547,8 +561,7 @@ const getCapItems = async (req, res) => {
     ]);
 
     if (req.user.role === 'entity_head') {
-      const scopeSet = new Set(scopeIds);
-      questions = questions.filter((q) => q.org_tree_id != null && scopeSet.has(q.org_tree_id));
+      questions = questions.filter((q) => auditEntitiesInScope([q], scopeIds, entityCodeScope));
       const allowedQuestionIds = new Set(questions.map((q) => q.cap_question_id));
       responses = responses.filter((r) => allowedQuestionIds.has(r.cap_question_id));
       if (tree) {

@@ -21,6 +21,7 @@ const EntityHeadModel = require('../models/EntityHeadModel');
 const CustomerModel = require('../models/CustomerModel');
 const CompanyModel = require('../models/CompanyModel');
 const AuditFirmModel = require('../models/AuditFirmModel');
+const PrivacyPolicyModel = require('../models/PrivacyPolicyModel');
 const {
   generateCustCode,
   generateCboCode,
@@ -41,7 +42,7 @@ const {
 const { successResponse, errorResponse, validateRequiredFields, isValidEmail } = require('../utils/helpers');
 const { db } = require('../config/db');
 const crypto = require('crypto');
-const { sendVerificationEmail, sendCustomSolutionVerificationEmail, sendCustomSolutionRequestEmail } = require('../services/emailService');
+const { sendOrganizationRegistrationVerificationEmail, sendCustomSolutionVerificationEmail, sendCustomSolutionRequestEmail } = require('../services/emailService');
 const PaymentModel = require('../models/PaymentModel');
 const { getOrgName } = require('../utils/orgLookup');
 const SubscriptionModel = require('../models/SubscriptionModel');
@@ -354,7 +355,8 @@ const register = async (req, res) => {
       timezone,
       promo_code,
       custom_solution,
-      organization_logo
+      organization_logo,
+      privacy_policy_id
     } = req.body;
 
     const isCustomPlan = plan_name === 'Custom';
@@ -366,6 +368,12 @@ const register = async (req, res) => {
       ? ['entity_type', 'org_name', 'org_email', 'plan_name', 'custom_solution']
       : ['entity_type', 'org_name', 'first_name', 'last_name', 'email', 'password', 'plan_name']);
     if (missing) return errorResponse(res, missing, 400);
+
+    const activePrivacyPolicy = await PrivacyPolicyModel.getPublished();
+    if (!activePrivacyPolicy) return errorResponse(res, 'Registration is temporarily unavailable because no privacy policy has been published.', 503);
+    if (!privacy_policy_id || privacy_policy_id !== activePrivacyPolicy.privacy_policy_id) {
+      return errorResponse(res, 'Please review and agree to the current Privacy Policy before registering.', 400);
+    }
 
     if (!isCustomPlan && customOnlyEntityTypes.has(entity_type)) {
       return errorResponse(res, 'Customer and Audit Firm workspaces require a Custom plan.', 400);
@@ -557,6 +565,15 @@ const register = async (req, res) => {
       }, connection);
     }
 
+    await PrivacyPolicyModel.recordAgreement(connection, {
+      privacyPolicyId: activePrivacyPolicy.privacy_policy_id,
+      adminId,
+      rootEntityCode: orgCode,
+      email: registrationEmail,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
     await connection.commit();
 
     if (isCustomPlan) {
@@ -571,8 +588,8 @@ const register = async (req, res) => {
     await AdminModel.setVerificationToken(adminId, verificationToken);
 
     // Dispatch email
-    sendVerificationEmail(email, first_name, verificationToken).catch(err => {
-      console.error('Failed to send verification email:', err);
+    sendOrganizationRegistrationVerificationEmail(email, first_name, verificationToken, org_name).catch(err => {
+      console.error('Failed to send organization verification email:', err);
     });
 
     // For a paid plan, create the pending registration payment so the client
@@ -1401,7 +1418,6 @@ const verifyEmail = async (req, res) => {
           orgName: customRequest.org_name,
           orgEmail: customRequest.org_email,
           entityType: customRequest.entity_type,
-          requestId: customRequest.request_id,
         }).catch((err) => console.error('Failed to notify Audito admins of custom request:', err));
       }
       return successResponse(res, {

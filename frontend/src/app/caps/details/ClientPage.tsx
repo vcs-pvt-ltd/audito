@@ -56,7 +56,8 @@ interface SourceAudit {
 }
 
 interface CapQuestionOption {
-  id: number;
+  checklist_question_option_id: string;
+  id?: number;
   option_text: string;
   marks: number;
 }
@@ -100,7 +101,7 @@ function normalizeSelectedOptionIds(ids: any): string[] {
       const parsed = JSON.parse(ids);
       if (Array.isArray(parsed)) return parsed.map(String);
     } catch {
-      return [ids];
+      return ids.split(",").map((id) => id.trim()).filter(Boolean);
     }
   }
   return [String(ids)];
@@ -110,13 +111,18 @@ function formatAnswer(q: CapQuestion, r?: CapResponse): string {
   const answerText = (r?.response_text || "").trim();
   const selected = normalizeSelectedOptionIds(r?.selected_option_ids || null);
   const selectedText = (q.options || [])
-    .filter((o) => selected.includes(String(o.id)))
+    .filter((o) => selected.includes(String(o.checklist_question_option_id || o.id)))
     .map((o) => o.option_text);
   const optStr = selectedText.length ? selectedText.join(", ") : "";
   if (answerText && optStr) return `${answerText} (${optStr})`;
   if (answerText) return answerText;
   if (optStr) return optStr;
   return "";
+}
+
+function isResponseAnswered(response?: CapResponse, questionStatus?: string, renderedAnswer = ""): boolean {
+  const responseStatus = String(response?.status || "").toLowerCase();
+  return responseStatus === "answered" || responseStatus === "completed" || String(questionStatus || "").toLowerCase() === "completed" || Boolean(renderedAnswer);
 }
 
 function progressKey(entityCode: string, orgTreeId: string | null | undefined) {
@@ -127,7 +133,9 @@ function getQuestionsForNode(
   node: Pick<TreeNode, "code" | "edge_id">,
   questionsByKey: Record<string, CapQuestion[]>
 ) {
-  return questionsByKey[progressKey(node.code, node.edge_id ?? null)] || [];
+  const direct = questionsByKey[progressKey(node.code, node.edge_id ?? null)] || [];
+  if (direct.length > 0) return direct;
+  return questionsByKey[progressKey(node.code, null)] || [];
 }
 
 function subtreeHasQuestions(node: TreeNode | null, questionsByKey: Record<string, CapQuestion[]>): boolean {
@@ -246,7 +254,8 @@ function EntityCard({
         if (seen.has(q.cap_question_id)) continue;
         seen.add(q.cap_question_id);
         t++;
-        if (formatAnswer(q, responsesByQuestion[q.cap_question_id])) a++;
+        const response = responsesByQuestion[q.cap_question_id];
+        if (isResponseAnswered(response, q.status, formatAnswer(q, response))) a++;
       }
       (nd.children || []).forEach(walk);
     };
@@ -312,7 +321,8 @@ function QuestionPreviewCard({
 }) {
   const [open, setOpen] = useState(false);
   const ans = formatAnswer(question, response);
-  const pending = !ans;
+  const answered = isResponseAnswered(response, question.status, ans);
+  const pending = !answered;
 
   return (
     <div className={`rounded-xl border overflow-hidden transition-all ${pending ? "border-white/[0.06] bg-white/[0.02]" : "border-emerald-500/20 bg-white/[0.03]"}`}>
@@ -341,13 +351,13 @@ function QuestionPreviewCard({
             )}
             <div>
               <p className="text-[11px] text-gray-500 mb-1 uppercase tracking-wider">Answer</p>
-              {ans ? (
-                <p className="text-sm text-secondary-400 font-medium">{ans}</p>
+              {answered ? (
+                <p className="text-sm text-secondary-400 font-medium">{ans || "Response submitted"}</p>
               ) : (
                 <p className="text-sm text-gray-500 italic">No answer yet</p>
               )}
             </div>
-            {Number(question.total_marks) > 0 && ans && (
+            {Number(question.total_marks) > 0 && answered && (
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-gray-500 uppercase tracking-wider">Score</span>
                 <span className="text-sm font-semibold text-white">{response?.marks_obtained ?? 0}</span>
@@ -367,11 +377,11 @@ function QuestionPreviewCard({
                   <span>{response?.evidence?.length} evidence file{(response?.evidence?.length ?? 0) !== 1 ? "s" : ""} attached</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {(response?.evidence || []).map((ev) => {
+                  {(response?.evidence || []).map((ev, evidenceIndex) => {
                     const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
                     const url = getEvidenceUrl(ev.file_path);
                     return (
-                      <a key={ev.id} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20">
+                      <a key={`${ev.id || ev.file_path || ev.file_name || "evidence"}::${evidenceIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20">
                         {kind === "image" ? (
                           <img src={url} alt={ev.file_name || "evidence"} className="w-full h-24 object-cover rounded-md" />
                         ) : (
@@ -696,7 +706,7 @@ export default function ClientPage() {
 
                   <div className="space-y-3">
                     {qs.map((q, idx) => (
-                      <QuestionPreviewCard key={q.cap_question_id} question={q} response={responsesByQuestion[q.cap_question_id]} index={idx + 1} />
+                      <QuestionPreviewCard key={`${progressKey(entityCode, edgeId)}::${q.cap_question_id}::${idx}`} question={q} response={responsesByQuestion[q.cap_question_id]} index={idx + 1} />
                     ))}
                   </div>
 

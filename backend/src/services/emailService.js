@@ -19,6 +19,18 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+const escapeHtml = (value) => String(value || '').replace(/[&<>'"]/g, (char) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+}[char]));
+
+const formatInternationalPhone = (phoneNumber, dialingCode) => {
+  const phone = String(phoneNumber || '').trim();
+  const code = String(dialingCode || '').trim();
+  if (!phone) return '—';
+  if (!code || phone.startsWith('+') || phone.startsWith(code)) return phone;
+  return `${code} ${phone.replace(/^0+/, '')}`.trim();
+};
+
 /**
  * Send email verification link to a newly created user
  */
@@ -56,6 +68,81 @@ const sendVerificationEmail = async (toEmail, userName, token) => {
   };
 
   await transporter.sendMail(mailOptions);
+};
+
+/** Send an onboarding invitation to an Auditor or Entity Head. */
+const sendUserInvitationEmail = async (toEmail, userName, token, details = {}) => {
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;
+  const organizationName = escapeHtml(details.organizationName || 'your organization');
+  const role = escapeHtml(details.role || 'Team member');
+  const organizationEmail = escapeHtml(details.organizationEmail || '—');
+  const organizationPhone = escapeHtml(formatInternationalPhone(details.organizationPhone, details.organizationDialingCode));
+  const organizationAddress = escapeHtml(details.organizationAddress || '—');
+  const assignedEntityName = escapeHtml(details.assignedEntityName || '—');
+  const assignedEntityType = escapeHtml(details.assignedEntityType || '');
+  const showAssignedArea = details.includeAssignedArea === true;
+  const safeName = escapeHtml(userName || 'there');
+
+  const { html, attachments } = getEmailTemplate({
+    title: `You’re invited to ${organizationName}`,
+    subtitle: 'Accept your Audito workspace invitation',
+    content: `
+      <p style="color: #333; font-size: 16px;">Hi ${safeName},</p>
+      <p style="color: #555; font-size: 14px; line-height: 1.6;">
+        You have been invited to join <strong>${organizationName}</strong> on Audito as a <strong>${role}</strong>.
+        Accept the invitation to verify your email and create your secure password.
+      </p>
+      <table style="width: 100%; border-collapse: collapse; background-color: #f8f8f8; border-radius: 8px; margin: 18px 0; padding: 12px 16px;">
+        <tr><td style="padding: 7px 0; color: #888; font-size: 12px;">Organization</td><td style="padding: 7px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${organizationName}</td></tr>
+        <tr><td style="padding: 7px 0; color: #888; font-size: 12px;">Email</td><td style="padding: 7px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${organizationEmail}</td></tr>
+        <tr><td style="padding: 7px 0; color: #888; font-size: 12px;">Phone number</td><td style="padding: 7px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${organizationPhone}</td></tr>
+        <tr><td style="padding: 7px 0; color: #888; font-size: 12px;">Address</td><td style="padding: 7px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${organizationAddress}</td></tr>
+        ${showAssignedArea ? `<tr><td style="padding: 7px 0; color: #888; font-size: 12px;">Assigned area</td><td style="padding: 7px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${assignedEntityType ? `${assignedEntityType} — ` : ''}${assignedEntityName}</td></tr>` : ''}
+      </table>
+      <div style="text-align: center; margin: 26px 0;">
+        <a href="${verifyUrl}" style="background-color: #12B572; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block;">Accept Invitation &amp; Set Password</a>
+      </div>
+      <p style="color: #888; font-size: 12px; line-height: 1.5;">This invitation expires in 48 hours. If you were not expecting it, you can safely ignore this email.</p>
+    `,
+  });
+
+  await transporter.sendMail({
+    from: `"Audito" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: `Audito - You’re invited to ${details.organizationName || 'a workspace'}`,
+    html,
+    attachments,
+  });
+};
+
+/** Verify a newly registered organization's email; this does not set a password. */
+const sendOrganizationRegistrationVerificationEmail = async (toEmail, contactName, token, organizationName) => {
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;
+  const safeName = escapeHtml(contactName || 'there');
+  const safeOrganizationName = escapeHtml(organizationName || 'your organization');
+  const { html, attachments } = getEmailTemplate({
+    title: 'Verify Your Organization Email',
+    subtitle: 'Confirm your registration with Audito',
+    content: `
+      <p style="color: #333; font-size: 16px;">Hi ${safeName},</p>
+      <p style="color: #555; font-size: 14px; line-height: 1.6;">
+        Thank you for registering <strong>${safeOrganizationName}</strong> with Audito. Please confirm this email address to activate your organization registration and continue with your subscription.
+      </p>
+      <div style="text-align: center; margin: 26px 0;">
+        <a href="${verifyUrl}" style="background-color: #12B572; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block;">Verify Organization Email</a>
+      </div>
+      <p style="color: #888; font-size: 12px; line-height: 1.5;">This link expires in 48 hours. This step only verifies your email address; it does not create or change your password.</p>
+    `,
+  });
+  await transporter.sendMail({
+    from: `"Audito" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: 'Audito - Verify Your Organization Email',
+    html,
+    attachments,
+  });
 };
 
 /** Verify the organization contact before its custom plan is sent for review. */
@@ -434,7 +521,7 @@ const sendCustomSolutionPriceEmail = async (toEmail, userName, { orgName, price,
 };
 
 /** Notify Audito administrators only after a custom requester verifies their organization email. */
-const sendCustomSolutionRequestEmail = async (toEmail, { orgName, orgEmail, entityType, requestId }) => {
+const sendCustomSolutionRequestEmail = async (toEmail, { orgName, orgEmail, entityType }) => {
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   const reviewUrl = `${baseUrl}/admin-panel/custom-solutions`;
   const { html, attachments } = getEmailTemplate({
@@ -446,7 +533,6 @@ const sendCustomSolutionRequestEmail = async (toEmail, { orgName, orgEmail, enti
         <tr><td style="color: #999; padding: 5px 0;">Organization:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${orgName}</td></tr>
         <tr><td style="color: #999; padding: 5px 0;">Email:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${orgEmail}</td></tr>
         <tr><td style="color: #999; padding: 5px 0;">Account type:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${entityType}</td></tr>
-        <tr><td style="color: #999; padding: 5px 0;">Request:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${requestId}</td></tr>
       </table>
       <div style="text-align: center; margin: 26px 0;"><a href="${reviewUrl}" style="background-color: #12B572; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block;">Review Request</a></div>
     `,
@@ -473,6 +559,8 @@ const sendSubscriptionExpiryReminderEmail = async (toEmail, adminName, { planNam
 
 module.exports = {
   sendVerificationEmail,
+  sendUserInvitationEmail,
+  sendOrganizationRegistrationVerificationEmail,
   sendCustomSolutionVerificationEmail,
   sendPasswordResetEmail,
   sendLinkRequestEmail,

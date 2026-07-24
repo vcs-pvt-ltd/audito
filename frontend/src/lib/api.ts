@@ -97,6 +97,7 @@ export interface RegisterPayload {
   billing_cycle?: string;
   timezone?: string;
   organization_logo?: string | null;
+  privacy_policy_id?: string;
   custom_solution?: {
     max_company_levels: number;
     max_departments: number;
@@ -106,6 +107,22 @@ export interface RegisterPayload {
     allow_auditor_eval: boolean;
     allow_company_to_company: boolean;
   };
+}
+
+export interface PrivacyPolicySection { title: string; content: string; }
+export interface PrivacyPolicy {
+  privacy_policy_id: string;
+  title: string;
+  version: string;
+  intro: string;
+  sections: PrivacyPolicySection[];
+  status?: "draft" | "published" | "archived";
+  is_current?: boolean;
+  effective_date?: string | null;
+  published_at?: string | null;
+  agreement_count?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface LoginPayload {
@@ -1201,7 +1218,19 @@ export const myLearningApi = {
 export const landingApi = {
   submitContact: (data: { name: string; email: string; company?: string; phone?: string; country?: string; message: string }) =>
     apiRequest("/landing/contact", { method: "POST", body: data as unknown as Record<string, unknown> }),
+  getPrivacyPolicy: () => apiRequest<PrivacyPolicy>("/landing/privacy-policy"),
+  askAssistant: (message: string) => apiRequest<LandingAssistantReply>("/landing/assistant/message", { method: "POST", body: { message } }),
 };
+
+export interface LandingAssistantAction {
+  label: string;
+  target: "pricing" | "features" | "register" | "custom-solution" | "contact";
+}
+
+export interface LandingAssistantReply {
+  answer: string;
+  actions: LandingAssistantAction[];
+}
 
 export interface PlanSetting {
   plan_name: string;
@@ -1458,6 +1487,16 @@ export interface AdminUser {
 }
 
 export const adminApi = {
+  listPrivacyPolicies: (token: string) => apiRequest<PrivacyPolicy[]>("/admin/privacy-policies", { token }),
+  createPrivacyPolicy: (token: string, data: Pick<PrivacyPolicy, "title" | "intro" | "sections">) =>
+    apiRequest<{ policy: PrivacyPolicy }>("/admin/privacy-policies", { method: "POST", body: data as unknown as Record<string, unknown>, token }),
+  updatePrivacyPolicy: (token: string, policyId: string, data: Pick<PrivacyPolicy, "title" | "intro" | "sections">) =>
+    apiRequest<{ policy: PrivacyPolicy }>(`/admin/privacy-policies/${encodeURIComponent(policyId)}`, { method: "PUT", body: data as unknown as Record<string, unknown>, token }),
+  publishPrivacyPolicy: (token: string, policyId: string) =>
+    apiRequest<{ policy: PrivacyPolicy }>(`/admin/privacy-policies/${encodeURIComponent(policyId)}/publish`, { method: "POST", token }),
+  deletePrivacyPolicy: (token: string, policyId: string) =>
+    apiRequest<null>(`/admin/privacy-policies/${encodeURIComponent(policyId)}`, { method: "DELETE", token }),
+
   listPlanSettings: (token: string) => apiRequest<PlanCatalog>("/admin/plan-settings", { token }),
 
   updatePlanSettings: (token: string, planName: string, data: Omit<PlanSetting, "plan_name" | "updated_at" | "yearly_discount_percent">) =>
