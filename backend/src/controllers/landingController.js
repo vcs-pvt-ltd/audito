@@ -1,6 +1,7 @@
 const ContactMessageModel = require('../models/ContactMessageModel');
 const PlanSettingsModel = require('../models/PlanSettingsModel');
 const PromotionCampaignModel = require('../models/PromotionCampaignModel');
+const PrivacyPolicyModel = require('../models/PrivacyPolicyModel');
 const { sendContactEmail } = require('../services/emailService');
 const { successResponse, errorResponse } = require('../utils/helpers');
 
@@ -14,6 +15,17 @@ const getPublicPlanSettings = async (_req, res) => {
   } catch (error) {
     console.error('getPublicPlanSettings error:', error);
     return errorResponse(res, 'Failed to retrieve plan settings.', 500);
+  }
+};
+
+const getPublishedPrivacyPolicy = async (_req, res) => {
+  try {
+    const policy = await PrivacyPolicyModel.getPublished();
+    if (!policy) return errorResponse(res, 'No privacy policy is currently published.', 404);
+    return successResponse(res, policy, 'Privacy policy retrieved.');
+  } catch (error) {
+    console.error('getPublishedPrivacyPolicy error:', error);
+    return errorResponse(res, 'Failed to retrieve privacy policy.', 500);
   }
 };
 
@@ -53,4 +65,5 @@ const submitContactForm = async (req, res) => {
 module.exports = {
   submitContactForm,
   getPublicPlanSettings,
+  getPublishedPrivacyPolicy,
 };

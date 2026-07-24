@@ -28,9 +28,11 @@ import logo from "@/assets/logo/audito_logo.png";
 import {
   authApi,
   countriesApi,
+  landingApi,
   plansApi,
   type Country,
   type PlanCatalog,
+  type PrivacyPolicy,
   type PromotionCampaign,
   type RegisterPayload,
   type AllEntityType,
@@ -448,7 +450,7 @@ function PlanSelectionStep({
   return (
     <div className="p-5 pt-1 sm:p-8 sm:pt-2">
       <div className="mb-6 flex items-start gap-3">
-        <button type="button" onClick={() => router.push('/')} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6">
+        <button type="button" onClick={() => router.push('/?section=pricing')} aria-label="Back to pricing" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6">
           <ArrowLeft size={18} />
         </button>
         <div>
@@ -720,11 +722,11 @@ function PromoCodePanel({
         </div>
       ) : (
         <div className="mt-4">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input value={promoCode} onChange={(e) => onPromoCodeChange(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onValidate(); } }} placeholder="Enter promo code" className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/15 px-3 text-sm font-medium tracking-wide text-white placeholder:font-normal placeholder:tracking-normal placeholder:text-gray-600 focus:outline-none focus:border-secondary-500/50" />
-            <button type="button" onClick={onValidate} disabled={promoLoading || !promoCode.trim()} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-secondary-400/25 bg-secondary-500/10 px-4 text-sm font-semibold text-secondary-300 transition hover:bg-secondary-500/20 disabled:cursor-not-allowed disabled:opacity-50">{promoLoading && <Loader2 size={15} className="animate-spin" />}{promoLoading ? "Checking" : "Apply code"}</button>
+          <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-[minmax(0,1fr)_auto]">
+            <input value={promoCode} onChange={(e) => onPromoCodeChange(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onValidate(); } }} placeholder="Enter promo code" autoCapitalize="characters" className="min-h-11 w-full rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white placeholder:font-normal placeholder:normal-case placeholder:tracking-normal placeholder:text-gray-500 transition-all focus:border-secondary-400/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-secondary-500/10" />
+            <button type="button" onClick={onValidate} disabled={promoLoading || !promoCode.trim()} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-secondary-400/25 bg-secondary-500/10 px-5 py-3 text-sm font-semibold text-secondary-300 transition hover:bg-secondary-500/20 min-[480px]:w-auto min-[480px]:whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">{promoLoading && <Loader2 size={15} className="animate-spin" />}{promoLoading ? "Checking…" : "Apply code"}</button>
           </div>
-          {promoError && <p className="mt-2 text-xs font-medium text-red-300">{promoError}</p>}
+          {promoError && <p className="mt-2 rounded-lg border border-red-400/20 bg-red-400/[0.06] px-3 py-2 text-xs font-medium text-red-300">{promoError}</p>}
         </div>
       )}
     </section>
@@ -748,13 +750,20 @@ function PromoCodeStep({
   const config = planCatalog?.plans.find((plan) => plan.plan_name === planName);
   return (
     <div className="p-5 pt-1 sm:p-8 sm:pt-2">
-      <div className="mb-6">
+      
+
+      {/* Header */}
+      <div className="flex items-start gap-3 mb-5">
         <button type="button" onClick={onBack} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6">
           <ArrowLeft size={18} />
         </button>
-        <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Apply a promo code</h3>
-        <p className="mt-1 text-sm leading-relaxed text-gray-400">Your {planName} {billingCycle.toLowerCase()} plan is selected. A promo code is optional and can be applied before you continue.</p>
+        <div>
+          <h3 className="text-xl sm:text-2xl font-semibold tracking-tight text-white">Apply a promo code</h3>
+          <p className="mt-1 text-sm leading-relaxed text-gray-400">Your {planName} {billingCycle.toLowerCase()} plan is selected. A promo code is optional and can be applied before you continue.</p>
+        </div>
       </div>
+      
+      
       <PromoCodePanel
         planName={planName}
         billingCycle={billingCycle}
@@ -1102,12 +1111,14 @@ function RegisterForm() {
     timezone: "",
     promo_code: "",
     organization_logo: null,
+    privacy_policy_id: "",
   });
 
   const [countries, setCountries] = useState<Country[]>([]);
   const [countrySearch, setCountrySearch] = useState("");
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [agreedToPrivacyPolicy, setAgreedToPrivacyPolicy] = useState(false);
+  const [privacyPolicy, setPrivacyPolicy] = useState<PrivacyPolicy | null>(null);
   const organizationLogoInputRef = useRef<HTMLInputElement>(null);
   const [organizationLogoCrop, setOrganizationLogoCrop] = useState<OrganizationLogoCrop>("wide");
   const [organizationLogoFile, setOrganizationLogoFile] = useState<File | null>(null);
@@ -1138,6 +1149,15 @@ function RegisterForm() {
 
   useEffect(() => {
     plansApi.getPublic().then((result) => { if (result.success && result.data) setPlanCatalog(result.data); });
+  }, []);
+
+  useEffect(() => {
+    landingApi.getPrivacyPolicy().then((result) => {
+      if (result.success && result.data) {
+        setPrivacyPolicy(result.data);
+        setFormData((previous) => ({ ...previous, privacy_policy_id: result.data!.privacy_policy_id }));
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -1284,6 +1304,8 @@ function RegisterForm() {
     if (!formData.org_phone_number?.trim()) return "Organization phone number is required.";
     if (!formData.address_line_1?.trim()) return "Address line 1 is required.";
     if (!formData.address_line_2?.trim()) return "Address line 2 is required.";
+    if (isCustomPlan && !privacyPolicy) return "The Privacy Policy is currently unavailable. Please try again shortly.";
+    if (isCustomPlan && !agreedToPrivacyPolicy) return "You must agree to the Privacy Policy to submit your plan for review.";
     return null;
   };
 
@@ -1303,6 +1325,7 @@ function RegisterForm() {
 
     if (!formData.password) return "Password is required.";
     if (formData.password !== confirmPassword) return "Passwords do not match.";
+    if (!privacyPolicy) return "The Privacy Policy is currently unavailable. Please try again shortly.";
     if (!agreedToPrivacyPolicy) return "You must agree to the Privacy Policy to create an account.";
     return null;
   };
@@ -1492,7 +1515,7 @@ function RegisterForm() {
             onPromoCodeChange={(value) => { setPromoCode(value); setPromoError(""); }}
             onValidate={() => void handleValidatePromo()}
             onRemove={handleRemovePromo}
-            onBack={() => router.push("/")}
+            onBack={() => router.push("/?section=pricing")}
             onNext={() => { setError(""); setStep(2); }}
           />
         )}
@@ -1844,10 +1867,36 @@ function RegisterForm() {
                 />
               </div>
 
+              {isCustomPlan && (
+                <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${
+                  agreedToPrivacyPolicy
+                    ? "border-secondary-400/30 bg-secondary-500/[0.07]"
+                    : "border-white/10 bg-black/10 hover:border-white/20"
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={agreedToPrivacyPolicy}
+                    onChange={(event) => setAgreedToPrivacyPolicy(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-secondary-500"
+                  />
+                  <span className="text-xs leading-relaxed text-gray-400">
+                    I have read and agree to the{" "}
+                    <a
+                      href="/privacy-policies/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-secondary-400 hover:text-secondary-300"
+                    >
+                      {privacyPolicy ? `${privacyPolicy.title} (${privacyPolicy.version})` : "Privacy Policy"}
+                    </a>.
+                  </span>
+                </label>
+              )}
+
               <button
                 type="button"
                 onClick={() => void handleOrganizationDetailsNext()}
-                disabled={checkingRegistrationEmail}
+                disabled={checkingRegistrationEmail || (isCustomPlan && (!agreedToPrivacyPolicy || !privacyPolicy))}
                 className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isCustomPlan ? "Submit Your Plan for Review" : checkingRegistrationEmail ? "Checking email…" : "Next: Admin Account"}
@@ -2056,20 +2105,21 @@ function RegisterForm() {
                 </div>
                 <span className="text-sm text-gray-400 leading-snug">
                   I agree to the{" "}
-                  <Link
-                    href="/privacy-policies"
+                  <a
+                    href="/privacy-policies/"
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="text-secondary-400 hover:text-secondary-300 font-medium underline underline-offset-2"
                   >
-                    Privacy Policy
-                  </Link>
+                    {privacyPolicy ? `${privacyPolicy.title} (${privacyPolicy.version})` : "Privacy Policy"}
+                  </a>
                   {" "}and acknowledge that my data will be processed in accordance with it.
                 </span>
               </label>
 
               <button
                 type="submit"
-                disabled={loading || !agreedToPrivacyPolicy}
+                disabled={loading || !agreedToPrivacyPolicy || !privacyPolicy}
                 className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50"
               >
                 {loading ? <Loader2 size={18} className="animate-spin" /> : "Create Account"}

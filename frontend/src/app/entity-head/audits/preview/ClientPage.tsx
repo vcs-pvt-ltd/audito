@@ -40,17 +40,20 @@ interface AuditResponse {
   marks_obtained: number;
   remarks: string | null;
   cap_required: number;
+  status?: string;
   evidence: Evidence[];
 }
 
 interface QuestionOption {
-  option_id: string;
+  checklist_question_option_id: string;
+  option_id?: string;
   option_text: string;
   marks: number;
 }
 
 interface ChecklistQuestion {
-  question_id: string;
+  checklist_question_id: string;
+  question_id?: string;
   question_text: string;
   answer_type: "free_text" | "single_option" | "multiple_options" | "dropdown";
   total_marks: number;
@@ -139,7 +142,7 @@ function formatAnswer(q: ChecklistQuestion, r?: AuditResponse): string {
   const answerText = (r?.answer_text || "").trim();
   const selected = normalizeSelectedOptionIds(r?.selected_option_ids || null);
   const selectedText = (q.options || [])
-    .filter((o) => selected.includes(String(o.option_id)))
+    .filter((o) => selected.includes(String(o.checklist_question_option_id || o.option_id)))
     .map((o) => o.option_text);
   const optStr = selectedText.length ? selectedText.join(", ") : "";
   if (answerText && optStr) return `${answerText} (${optStr})`;
@@ -283,7 +286,8 @@ function QuestionPreviewCard({
 }) {
   const [open, setOpen] = useState(false);
   const ans = formatAnswer(question, response);
-  const answered = !!ans;
+  const responseStatus = String(response?.status || "").toLowerCase();
+  const answered = responseStatus === "answered" || responseStatus === "completed" || !!ans;
   const hasEvidence = (response?.evidence || []).length > 0;
   const capRequired = !!response?.cap_required;
 
@@ -314,7 +318,7 @@ function QuestionPreviewCard({
             <div>
               <p className="text-[11px] text-gray-500 mb-1 uppercase tracking-wider">Answer</p>
               {answered ? (
-                <p className="text-sm text-secondary-400 font-medium">{ans}</p>
+                <p className="text-sm text-secondary-400 font-medium">{ans || "Response submitted"}</p>
               ) : (
                 <p className="text-sm text-gray-500 italic">No answer yet</p>
               )}
@@ -344,12 +348,12 @@ function QuestionPreviewCard({
                   <span>{response?.evidence.length} evidence file{(response?.evidence.length ?? 0) !== 1 ? "s" : ""} attached</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {(response?.evidence || []).map((ev) => {
+                  {(response?.evidence || []).map((ev, evidenceIndex) => {
                     const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
                     const url = getEvidenceUrl(ev.file_path);
                     return (
                       <a
-                        key={ev.evidence_id}
+                        key={`${ev.evidence_id || ev.file_path || ev.file_name || "evidence"}::${evidenceIndex}`}
                         href={url}
                         target="_blank"
                         rel="noreferrer"
@@ -614,9 +618,17 @@ export default function EntityHeadAuditPreviewPage() {
                   </div>
 
                   <div className="space-y-3">
-                    {qs.map((q, idx) => (
-                      <QuestionPreviewCard key={q.question_id} question={q} response={responseByEntityQuestion.get(`${key}::${q.question_id}`)} index={idx + 1} />
-                    ))}
+                    {qs.map((q, idx) => {
+                      const questionId = q.checklist_question_id || q.question_id || `question-${idx}`;
+                      return (
+                        <QuestionPreviewCard
+                          key={`${key}::${questionId}::${idx}`}
+                          question={q}
+                          response={responseByEntityQuestion.get(`${key}::${questionId}`)}
+                          index={idx + 1}
+                        />
+                      );
+                    })}
                   </div>
 
                   <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/[0.06]">

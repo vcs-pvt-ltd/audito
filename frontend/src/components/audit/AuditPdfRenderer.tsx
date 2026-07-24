@@ -153,6 +153,36 @@ export function AuditPdfRenderer({ report, entityTree }: AuditPdfRendererProps) 
     }
   };
 
+  // jsPDF can render transparent PNG palette data incorrectly in production builds.
+  // Decode the brand asset in the browser and flatten it onto white before embedding.
+  const loadBrandLogoForPdf = async (url: string): Promise<string | undefined> => {
+    try {
+      const response = await fetch(url);
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.ok || !contentType.startsWith("image/")) return undefined;
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      try {
+        const image = new Image();
+        image.src = objectUrl;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d");
+        if (!context) return undefined;
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0);
+        return canvas.toDataURL("image/png");
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    } catch {
+      return undefined;
+    }
+  };
+
   const inferImageFormat = (dataUrl: string): "PNG" | "JPEG" => {
     const m = /^data:(image\/[^;]+);/i.exec(dataUrl);
     const mime = (m?.[1] || "").toLowerCase();
@@ -255,7 +285,7 @@ export function AuditPdfRenderer({ report, entityTree }: AuditPdfRendererProps) 
       let logoDataUrl: string | undefined;
       let organizationLogoDataUrl: string | undefined;
       try {
-        logoDataUrl = await loadImageAsDataUrl(auditoLogo.src);
+        logoDataUrl = await loadBrandLogoForPdf(auditoLogo.src);
       } catch (_) {}
       try {
         const organizationLogo = report.audit.organization_logo;

@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   Users, ListChecks, LucideIcon,
   Globe, MapPin, Briefcase, ChevronDown,
-  LayoutGrid, User,
+  LayoutGrid, Bell,
   Maximize2, Minimize2, Layers, GitBranch, Building2,
-  PlusCircle, ClipboardCheck, FileCheck, Settings, ArrowRight, UserPlus, Search,
+  PlusCircle, ClipboardCheck, FileCheck, Settings, ArrowRight,
   Clock, AlertCircle, CheckCircle
 } from "lucide-react";
 import {
@@ -722,10 +722,10 @@ export default function AdminDashboard({ overview, admin, orgTree, filters, onFi
 
   const quickActions = isAuditFirm ? [
     { icon: FileCheck, label: "Audits", href: "/audits" },
-    { icon: UserPlus, label: "Add Auditor", href: "/users/list?type=auditor" },
     { icon: Users, label: "Auditors", href: "/users/list?type=auditor" },
-    { icon: GitBranch, label: "Branches", href: "/structure" },
-    { icon: Search, label: "Search Audits", href: "/audits" },
+    { icon: Bell, label: "Notices", href: "/settings/notices" },
+    { icon: GitBranch, label: "Branches", href: "/structure/list?type=branch" },
+    { icon: Building2, label: "Departments", href: "/structure/list?type=audit-firm-department" },
     { icon: Settings, label: "Settings", href: "/settings/organization" },
   ] : [
     { icon: PlusCircle, label: "New Audit", href: "/audits" },
@@ -982,16 +982,16 @@ export default function AdminDashboard({ overview, admin, orgTree, filters, onFi
                          <div className="text-3xl font-extrabold text-red-400">{summaries.overdue || 0}</div>
                          <p className="text-[10px] text-white/30 mt-2">Past deadline audits.</p>
                       </button>
-                      {/* Average Progress */}
+                      {/* Completed Audits Count */}
                       <button type="button" onClick={() => router.push("/audits?status=completed")} className="text-left p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] hover:border-white/20 transition-colors">
                          <div className="flex items-center gap-2 mb-2">
                             <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500">
                                <CheckCircle size={14} />
                             </div>
-                            <div className="text-[10px] text-white/40 font-bold uppercase tracking-widest">Efficiency</div>
+                            <div className="text-[10px] text-white/40 font-bold uppercase tracking-widest">Completed</div>
                          </div>
-                         <div className="text-3xl font-extrabold text-emerald-400">{Math.round(summaries.average_progress || 0)}%</div>
-                         <p className="text-[10px] text-white/30 mt-2">Avg. audit progress.</p>
+                         <div className="text-3xl font-extrabold text-emerald-400">{summaries.audits.completed || 0}</div>
+                         <p className="text-[10px] text-white/30 mt-2">Successfully finished audits.</p>
                       </button>
                    </div>
 

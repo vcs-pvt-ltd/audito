@@ -18,6 +18,13 @@ router.post('/promotion-campaigns', adminController.createPromotionCampaign);
 router.put('/promotion-campaigns/:campaignId', adminController.updatePromotionCampaign);
 router.put('/promotion-campaigns/:campaignId/status', adminController.setPromotionCampaignStatus);
 
+// Versioned privacy policies
+router.get('/privacy-policies', adminController.listPrivacyPolicies);
+router.post('/privacy-policies', adminController.createPrivacyPolicy);
+router.put('/privacy-policies/:policyId', adminController.updatePrivacyPolicy);
+router.post('/privacy-policies/:policyId/publish', adminController.publishPrivacyPolicy);
+router.delete('/privacy-policies/:policyId', adminController.deletePrivacyPolicy);
+
 // Messages routing
 router.get('/messages', adminController.listMessages);
 router.post('/messages/:id/reply', adminController.replyMessage);

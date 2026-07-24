@@ -139,6 +139,8 @@ const generatePaymentMethodId = () => generateTableId('payment_methods', 'paymen
 const generateNotificationId = () => generateTableId('user_notifications', 'notification_id', 'NOTI', 5);
 const generateAiChecklistJobId = () => generateTableId('ai_checklist_generation_jobs', 'ai_checklist_job_id', 'AICJ', 5);
 const generateAiChecklistSuggestionId = () => generateTableId('ai_checklist_question_suggestions', 'ai_checklist_suggestion_id', 'AICS', 5);
+const generatePrivacyPolicyId = () => generateTableId('privacy_policies', 'privacy_policy_id', 'PPOL', 5);
+const generatePrivacyPolicyAgreementId = () => generateTableId('privacy_policy_agreements', 'privacy_policy_agreement_id', 'PPAG', 6);
 
 module.exports = {
   generateTableId,
@@ -206,4 +208,6 @@ module.exports = {
   generateAiChecklistJobId,
   generateAiChecklistSuggestionId,
   generateAiChecklistSuggestionIds,
+  generatePrivacyPolicyId,
+  generatePrivacyPolicyAgreementId,
 };

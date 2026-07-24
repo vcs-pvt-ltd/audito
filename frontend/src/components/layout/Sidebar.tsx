@@ -228,6 +228,7 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
   audito_admin: [
     { type: "link", label: "Dashboard", path: "/admin-panel/dashboard", icon: LayoutDashboard },
     { type: "link", label: "Plans & Limits", path: "/admin-panel/plans", icon: Settings, matchPrefix: true },
+    { type: "link", label: "Privacy Policies", path: "/admin-panel/privacy-policies", icon: FileCheck, matchPrefix: true },
     { type: "link", label: "Messages", path: "/admin-panel/messages", icon: Mail, matchPrefix: true },
     { label: "Promotions", icon: Tag, items: [
       { label: "Campaigns", path: "/admin-panel/promotions", icon: BadgePercent },
@@ -483,7 +484,7 @@ export default function Sidebar() {
   );
   const getNotificationId = (notice: any) => String(notice?.notification_id || notice?.auditor_notification_id || notice?.id || "");
   const getNotificationTarget = (notice: any) => {
-    if (notice?.type === "audit_assigned" || notice?.type === "audit_start") {
+    if (notice?.type === "audit_assigned" || notice?.type === "audit_start" || notice?.type === "audit_completed") {
       if (admin?.role === "admin" || admin?.role === "audito_admin") return "/audits";
       return notice.audit_id ? `/my-audits/details?id=${encodeURIComponent(String(notice.audit_id))}` : "/my-audits";
     }

@@ -1318,7 +1318,6 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
                   </div>
                   <Button disabled leftIcon={<Sparkles size={15} />} className="shrink-0">Coming soon</Button>
                 </div>
-                <div className="border-t border-white/[0.07] px-4 py-2 text-[11px] text-gray-500 sm:px-5">AI-assisted drafts will be available after the organization enables its OpenAI service.</div>
               </div>
             )}
 

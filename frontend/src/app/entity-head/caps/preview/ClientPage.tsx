@@ -35,7 +35,8 @@ interface Cap {
 }
 
 interface CapQuestionOption {
-  cap_question_option_id: string;
+  checklist_question_option_id: string;
+  cap_question_option_id?: string;
   option_text: string;
   marks: number;
   order_index: number;
@@ -87,7 +88,7 @@ function normalizeSelectedOptionIds(ids: any): string[] {
       const parsed = JSON.parse(ids);
       if (Array.isArray(parsed)) return parsed.map(String);
     } catch {
-      return [ids];
+      return ids.split(",").map((id) => id.trim()).filter(Boolean);
     }
   }
   return [String(ids)];
@@ -97,7 +98,7 @@ function formatAnswer(q: CapQuestion, r?: CapResponse): string {
   const answerText = (r?.response_text || "").trim();
   const selected = normalizeSelectedOptionIds(r?.selected_option_ids || null);
   const selectedText = (q.options || [])
-    .filter((o) => selected.includes(String(o.cap_question_option_id)))
+    .filter((o) => selected.includes(String(o.checklist_question_option_id || o.cap_question_option_id)))
     .map((o) => o.option_text);
   const optStr = selectedText.length ? selectedText.join(", ") : "";
   if (answerText && optStr) return `${answerText} (${optStr})`;
@@ -258,9 +259,9 @@ function ActionPreviewCard({
   index: number;
 }) {
   const [open, setOpen] = useState(false);
-  const completed = action.status === "completed";
   const ans = formatAnswer(action, response);
-  const pending = !ans;
+  const responseStatus = String(response?.status || "").toLowerCase();
+  const completed = responseStatus === "completed" || responseStatus === "answered" || action.status === "completed";
 
   return (
     <div className={`rounded-xl border overflow-hidden transition-all ${!completed ? "border-white/[0.06] bg-white/[0.02]" : "border-emerald-500/20 bg-white/[0.03]"}`}>
@@ -290,13 +291,13 @@ function ActionPreviewCard({
           <div className="pt-3 space-y-3">
             <div>
               <p className="text-[11px] text-gray-500 mb-1 uppercase tracking-wider">Answer</p>
-              {ans ? (
-                <p className="text-sm text-secondary-400 font-medium">{ans}</p>
+              {completed ? (
+                <p className="text-sm text-secondary-400 font-medium">{ans || "Response submitted"}</p>
               ) : (
                 <p className="text-sm text-gray-500 italic">No answer yet</p>
               )}
             </div>
-            {Number(action.total_marks ?? 0) > 0 && ans && (
+            {Number(action.total_marks ?? 0) > 0 && completed && (
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-gray-500 uppercase tracking-wider">Score</span>
                 <span className="text-sm font-semibold text-white">{response?.marks_obtained ?? 0}</span>
@@ -316,11 +317,11 @@ function ActionPreviewCard({
                   <span>{response?.evidence?.length} evidence file{(response?.evidence?.length ?? 0) !== 1 ? "s" : ""} attached</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {(response?.evidence || []).map((ev) => {
+                  {(response?.evidence || []).map((ev, evidenceIndex) => {
                     const kind = inferEvidenceKind(ev.file_type, ev.file_name, ev.file_path);
                     const url = getEvidenceUrl(ev.file_path);
                     return (
-                      <a key={ev.evidence_id} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20">
+                      <a key={`${ev.evidence_id || ev.file_path || ev.file_name || "evidence"}::${evidenceIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.03] p-2 hover:border-white/20">
                         {kind === "image" ? (
                           <img src={url} alt={ev.file_name || "evidence"} className="w-full h-24 object-cover rounded-md" />
                         ) : (
@@ -373,6 +374,8 @@ export default function EntityHeadCapPreviewPage() {
 
       if (detailRes.success && detailRes.data) {
         setCap((detailRes.data as any).cap || null);
+      } else {
+        setError(detailRes.message || "CAP not found.");
       }
 
       if (!itemsRes.success || !itemsRes.data) {
@@ -572,7 +575,12 @@ export default function EntityHeadCapPreviewPage() {
 
                   <div className="space-y-3">
                     {qs.map((q, idx) => (
-                      <ActionPreviewCard key={q.cap_question_id} action={q} response={responsesByQuestion[q.cap_question_id]} index={idx + 1} />
+                      <ActionPreviewCard
+                        key={`${key}::${q.cap_question_id || "cap-question"}::${idx}`}
+                        action={q}
+                        response={responsesByQuestion[q.cap_question_id]}
+                        index={idx + 1}
+                      />
                     ))}
                   </div>
 

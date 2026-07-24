@@ -5,6 +5,7 @@ import HeroSection from "@/components/landing/HeroSection";
 import FeaturesSection from "@/components/landing/FeaturesSection";
 import PricingSection from "@/components/landing/PricingSection";
 import ContactSection from "@/components/landing/ContactSection";
+import LandingAssistant from "@/components/landing/LandingAssistant";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { LandingProvider, useLanding } from "@/context/LandingContext";
 
@@ -61,6 +62,7 @@ function HomePageContent() {
           ))}
         </div>
       </main>
+      <LandingAssistant />
     </div>
   );
 }

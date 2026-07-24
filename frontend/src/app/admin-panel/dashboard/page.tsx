@@ -98,20 +98,20 @@ export default function AuditoAdminDashboard() {
   const c = stats?.counts;
   const charts = stats?.charts;
 
-  const regData = charts?.registrations.map((r) => ({
+  const regData = (charts?.registrations ?? []).map((r) => ({
     label: r.period_label,
     registrations: r.count,
-  })) || [];
+  }));
 
-  const planData = charts?.plan_distribution.map((p) => ({
+  const planData = (charts?.plan_distribution ?? []).map((p) => ({
     name: p.plan_name,
     value: p.count,
     color: PLAN_COLORS[p.plan_name] || "#6b7280",
-  })) || [];
-  const incomeData = charts?.income_distribution.map((item) => ({
+  }));
+  const incomeData = (charts?.income_distribution ?? []).map((item) => ({
     label: item.period_label,
     income: Number(item.amount),
-  })) || [];
+  }));
 
   return (
     <div className="min-h-screen p-5 pt-20 lg:p-8 lg:pt-8">

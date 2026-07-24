@@ -19,6 +19,7 @@ const { db } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const {
   getEntityHeadOrgTreeScope,
+  getEntityHeadEntityCodeScope,
   auditEntitiesInScope,
   getAccessibleEntityCodes,
 } = require('../utils/accessHelper');
@@ -288,15 +289,21 @@ const listAudits = async (req, res) => {
     if (req.user.role === 'auditor') {
       audits = await AuditModel.listForAuditor(req.user.userCode);
     } else if (req.user.role === 'entity_head') {
-      audits = await AuditModel.listForEntityHead(req.user.assignedOrgTreeId);
+      audits = await AuditModel.listForEntityHead(req.user.assignedOrgTreeId, req.user.assignedEntityCode || req.user.entityCode);
       const scopeIds = await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId);
-      const scopeSet = new Set(scopeIds);
+      const entityCodeScope = scopeIds.length
+        ? []
+        : await getEntityHeadEntityCodeScope(req.user.assignedEntityCode || req.user.entityCode);
+      const scopeSet = new Set(scopeIds.map(String));
+      const entityCodeSet = new Set(entityCodeScope);
       for (const a of audits) {
         const ents = await AuditModel.getEntities(a.audit_id);
-        const scopedEnts = ents.filter((e) => scopeSet.has(e.org_tree_id));
+        const scopedEnts = ents.filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope));
         a.entity_count = scopedEnts.length;
         const progress = await AuditExecutionModel.getProgress(a.audit_id);
-        const scopedProgress = progress.filter((p) => p.org_tree_id != null && scopeSet.has(p.org_tree_id));
+        const scopedProgress = progress.filter((p) => scopeSet.size
+          ? p.org_tree_id != null && scopeSet.has(String(p.org_tree_id))
+          : entityCodeSet.has(p.entity_code));
         const totalQuestions = scopedProgress.reduce((s, p) => s + (p.total_questions || 0), 0);
         const answeredQuestions = scopedProgress.reduce((s, p) => s + (p.answered_questions || 0), 0);
         a.total_questions = totalQuestions;
@@ -377,8 +384,11 @@ const getAudit = async (req, res) => {
     const entityHeadScopeIds = req.user.role === 'entity_head'
       ? await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId)
       : [];
+    const entityHeadCodeScope = req.user.role === 'entity_head' && !entityHeadScopeIds.length
+      ? await getEntityHeadEntityCodeScope(req.user.assignedEntityCode || req.user.entityCode)
+      : [];
     const isEntityHead = req.user.role === 'entity_head'
-      && auditEntitiesInScope(audit.entities, entityHeadScopeIds);
+      && auditEntitiesInScope(audit.entities, entityHeadScopeIds, entityHeadCodeScope);
 
     if (!isCreator && !isAuditor && !isFirmAdmin && !isEntityHead) {
       return errorResponse(res, 'Audit not found.', 404);
@@ -446,6 +456,19 @@ const updateAudit = async (req, res) => {
 
     if (!isCreatorAdmin && !isFirmAdmin) {
       return errorResponse(res, 'Audit not found.', 404);
+    }
+
+    const auditHasStarted = ['in_progress', 'completed'].includes(String(audit.status || '').toLowerCase());
+    const assignmentChanged =
+      (Object.prototype.hasOwnProperty.call(req.body, 'assigned_auditor_id') &&
+        (req.body.assigned_auditor_id || null) !== (audit.assigned_auditor_id || null)) ||
+      (Object.prototype.hasOwnProperty.call(req.body, 'assigned_org_tree_id') &&
+        (req.body.assigned_org_tree_id || null) !== (audit.assigned_org_tree_id || null));
+
+    // An audit firm may hand an audit over before work starts. Once the auditor
+    // has started or completed it, its assignment must stay intact.
+    if (isFirmAdmin && auditHasStarted && assignmentChanged) {
+      return errorResponse(res, 'The auditor assignment cannot be changed after the audit has started.', 409);
     }
 
     // Firm admin is only allowed to assign/update the assigned_auditor_id (handover internal assignment).

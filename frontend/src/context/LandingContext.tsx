@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
 interface LandingContextType {
   activeSection: number;
@@ -14,15 +14,15 @@ const LandingContext = createContext<LandingContextType | undefined>(undefined);
 const SECTION_IDS = ["pricing", "features", "home", "contact"];
 
 export function LandingProvider({ children }: { children: ReactNode }) {
-  // Deep-link support: `/?section=contact` opens directly on that section.
-  const [activeSection, setActiveSection] = useState(() => {
-    if (typeof window !== "undefined") {
-      const param = new URLSearchParams(window.location.search).get("section");
-      const idx = param ? SECTION_IDS.indexOf(param) : -1;
-      if (idx !== -1) return idx;
-    }
-    return 2; // Initial: Home (index 2)
-  });
+  // Keep the first server and client render identical. The deep-link is read
+  // after hydration so `/?section=pricing` never causes a hydration mismatch.
+  const [activeSection, setActiveSection] = useState(2); // Initial: Home (index 2)
+
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get("section");
+    const idx = param ? SECTION_IDS.indexOf(param) : -1;
+    if (idx !== -1) setActiveSection(idx);
+  }, []);
 
   const navigate = (direction: "left" | "right") => {
     const totalSections = 4;

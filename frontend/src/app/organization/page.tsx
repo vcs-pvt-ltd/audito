@@ -263,7 +263,10 @@ function AddEntityPanel({
               : `All ${pluralize(childType).toLowerCase()} already added.`}
           </p>
         ) : (
-          <div className="space-y-0.5 max-h-44 overflow-y-auto pr-1">
+          <div
+            aria-label={`Available ${pluralize(childType).toLowerCase()}`}
+            className="max-h-[min(60vh,32rem)] space-y-0.5 overflow-y-auto overscroll-contain rounded-lg pr-1 [scrollbar-color:rgba(255,255,255,0.25)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:bg-transparent"
+          >
             {available.map((entity) => (
               <div key={entity.code}
                 className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-white/5 text-left transition-all group/add">
