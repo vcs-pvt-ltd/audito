@@ -248,7 +248,6 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
       const margin = 50;
 
       const title = report.audit.title || "Audit Report";
-      const auditCode = report.audit.audit_code || String(report.audit.audit_id);
 
       // ── Color Palette ──────────────────────────────────────────
       const PRIMARY: [number, number, number] = [16, 185, 129];
@@ -1131,7 +1130,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
         addFooter(i, totalPages);
       }
 
-      const fileName = `${safeTitle(auditCode)}-${safeTitle(title)}.pdf`;
+      const fileName = `${safeTitle(title)}.pdf`;
       doc.save(fileName);
     } catch (error) {
       console.error("PDF Generation Error:", error);

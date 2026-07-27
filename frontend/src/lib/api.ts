@@ -128,6 +128,7 @@ export interface PrivacyPolicy {
 export interface LoginPayload {
   email: string;
   password: string;
+  preferred_role?: string;
 }
 
 export interface OnboardingStatus {
@@ -644,6 +645,91 @@ export const auditApi = {
 
   count: (token: string) =>
     apiRequest<{ count: number }>("/audits/count", { token }),
+
+  comparisonCandidates: (token: string) =>
+    apiRequest<{
+      audits: Array<{
+        audit_id: string;
+        checklist_id: string;
+        checklist_name: string;
+        title: string;
+        audit_type: "internal" | "external";
+        start_date: string | null;
+        end_date: string | null;
+        completed_at: string | null;
+        marks_obtained: number;
+        total_marks: number;
+        percentage: number;
+      }>;
+    }>("/audits/comparison/candidates", { token }),
+
+  compare: (token: string, auditIds: string[]) =>
+    apiRequest<{
+      checklist: { name: string };
+      audits: Array<{
+        audit_id: string;
+        title: string;
+        audit_type: "internal" | "external";
+        start_date: string | null;
+        end_date: string | null;
+        completed_at: string | null;
+        marks_obtained: number;
+        total_marks: number;
+        percentage: number;
+      }>;
+      entity_tree: {
+        code: string;
+        name: string;
+        entity_type: string;
+        edge_id?: string | null;
+        children: Array<unknown>;
+      } | null;
+      entities: Array<{
+        entity_code: string;
+        org_tree_id: string | null;
+        entity_type: string;
+        audits: Array<{
+          audit_id: string;
+          available: boolean;
+          marks_obtained: number;
+          total_marks: number;
+          percentage: number;
+          corrective_action_count: number;
+          open_corrective_action_count: number;
+        }>;
+      }>;
+      /** Retained temporarily for compatibility with older clients. The server no longer returns question-level comparison data. */
+      sections: Array<{
+        entity_type: string;
+        audits: Array<{
+          audit_id: string;
+          marks_obtained: number;
+          total_marks: number;
+          percentage: number;
+          answered_count: number;
+          corrective_action_count: number;
+          open_corrective_action_count: number;
+        }>;
+      }>;
+      questions: Array<{
+        entity_type: string;
+        question_text: string;
+        audits: Array<{
+          audit_id: string;
+          available: boolean;
+          marks_obtained?: number;
+          total_marks?: number;
+          percentage?: number;
+          status?: string;
+          answer_summary?: string | null;
+          remarks_summary?: string | null;
+          evidence_count?: number;
+          corrective_action_count?: number;
+          open_corrective_action_count?: number;
+        }>;
+      }>;
+      comparison_basis: string;
+    }>("/audits/comparison", { method: "POST", body: { audit_ids: auditIds } as Record<string, unknown>, token }),
 };
 
 export interface DashboardFilters {
@@ -1457,6 +1543,7 @@ export interface ContactMessage {
   email: string;
   company: string | null;
   phone: string | null;
+  country?: string | null;
   message: string;
   status: 'unread' | 'read' | 'replied';
   reply_content: string | null;

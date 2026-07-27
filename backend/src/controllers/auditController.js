@@ -28,6 +28,24 @@ const LimitsEnforcer = require('../utils/limitsEnforcer');
 const { sendAuditAssignedEmail } = require('../services/emailService');
 const NotificationModel = require('../models/NotificationModel');
 const { findDuplicateName } = require('../utils/nameNormalizer');
+const { getCountryDialingCode } = require('../utils/orgLookup');
+
+function formatPhoneWithDialingCode(phoneNumber, dialingCode) {
+  const phone = String(phoneNumber || '').trim();
+  const code = String(dialingCode || '').trim();
+  if (!phone || !code || phone.startsWith('+') || phone.startsWith(code)) return phone || null;
+  return `${code} ${phone.replace(/^0+/, '')}`.trim();
+}
+
+function auditScore(marks, total) {
+  const score = Number(marks || 0);
+  const max = Number(total || 0);
+  return {
+    marks_obtained: Number(score.toFixed(2)),
+    total_marks: Number(max.toFixed(2)),
+    percentage: max > 0 ? Number(((score / max) * 100).toFixed(1)) : 0,
+  };
+}
 
 // Generate a unique audit_code like AUD-20260316-0001
 async function generateAuditCode() {
@@ -90,13 +108,13 @@ async function resolveCreatorOrganizations(audits) {
   if (codes.length === 0) return {};
   const ph = codes.map(() => '?').join(',');
   const [rows] = await db.query(
-    `SELECT cust_code AS code, name, email, phone_number, 'Customer' AS entity_type
+    `SELECT cust_code AS code, name, email, phone_number, country, address_line_1, address_line_2, address_line_3, 'Customer' AS entity_type
        FROM customers WHERE cust_code IN (${ph})
      UNION ALL
-     SELECT comp_code AS code, name, email, phone_number, 'Company' AS entity_type
+     SELECT comp_code AS code, name, email, phone_number, country, address_line_1, address_line_2, address_line_3, 'Company' AS entity_type
        FROM companies WHERE comp_code IN (${ph})
      UNION ALL
-     SELECT afc_code AS code, name, email, phone_number, 'Audit Firm Company' AS entity_type
+     SELECT afc_code AS code, name, email, phone_number, country, address_line_1, address_line_2, address_line_3, 'Audit Firm Company' AS entity_type
        FROM audit_firm_companies WHERE afc_code IN (${ph})`,
     Array(3).fill(codes).flat()
   );
@@ -107,6 +125,8 @@ async function resolveCreatorOrganizations(audits) {
       name: r.name?.trim?.() || r.code,
       email: r.email || null,
       phone_number: r.phone_number || null,
+      country: r.country || null,
+      address: [r.address_line_1, r.address_line_2, r.address_line_3].filter(Boolean).join(', ') || null,
       entity_type: r.entity_type || null,
     };
   }
@@ -159,6 +179,176 @@ const getChecklistEntities = async (req, res) => {
   } catch (err) {
     console.error('getChecklistEntities error:', err);
     return errorResponse(res, 'Failed to fetch checklist entities.', 500);
+  }
+};
+
+// GET /api/audits/comparison/candidates
+const getComparisonCandidates = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return errorResponse(res, 'Only organization administrators can compare audits.', 403);
+    }
+    if (req.user.accountType === 'Audit Firm' || req.user.accountType === 'Audit Firm Company') {
+      return errorResponse(res, 'Audit comparison is not available for audit firm accounts.', 403);
+    }
+    const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+    const isFirmAdmin = req.user.accountType === 'Audit Firm' || req.user.accountType === 'Audit Firm Company';
+    const rows = await AuditModel.listComparisonCandidates({
+      accessibleCodes,
+      firmCode: isFirmAdmin ? req.user.entityCode : null,
+    });
+    const audits = rows.map((row) => ({
+      audit_id: row.audit_id,
+      checklist_id: row.checklist_id,
+      checklist_name: row.checklist_name || 'Untitled checklist',
+      title: row.title || 'Untitled audit',
+      audit_type: row.audit_type,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      completed_at: row.completed_at,
+      ...auditScore(row.marks_obtained, row.total_marks),
+    }));
+    return successResponse(res, { audits });
+  } catch (err) {
+    console.error('getComparisonCandidates error:', err);
+    return errorResponse(res, 'Failed to load completed audits for comparison.', 500);
+  }
+};
+
+// POST /api/audits/comparison
+const compareAudits = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return errorResponse(res, 'Only organization administrators can compare audits.', 403);
+    }
+    if (req.user.accountType === 'Audit Firm' || req.user.accountType === 'Audit Firm Company') {
+      return errorResponse(res, 'Audit comparison is not available for audit firm accounts.', 403);
+    }
+
+    const requestedIds = Array.isArray(req.body?.audit_ids)
+      ? [...new Set(req.body.audit_ids.map((id) => String(id || '').trim()).filter(Boolean))]
+      : [];
+    if (requestedIds.length < 2 || requestedIds.length > 5) {
+      return errorResponse(res, 'Select between 2 and 5 completed audits to compare.', 400);
+    }
+
+    const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+    const isFirmAdmin = req.user.accountType === 'Audit Firm' || req.user.accountType === 'Audit Firm Company';
+    const candidates = await AuditModel.listComparisonCandidates({
+      accessibleCodes,
+      firmCode: isFirmAdmin ? req.user.entityCode : null,
+    });
+    const selected = requestedIds.map((id) => candidates.find((candidate) => candidate.audit_id === id)).filter(Boolean);
+    if (selected.length !== requestedIds.length) {
+      return errorResponse(res, 'One or more selected audits are not available for comparison.', 403);
+    }
+
+    const checklistId = selected[0]?.checklist_id;
+    if (!checklistId || selected.some((audit) => audit.checklist_id !== checklistId)) {
+      return errorResponse(res, 'Select completed audits that use the same checklist.', 400);
+    }
+
+    const audits = [...selected]
+      .sort((a, b) => new Date(a.completed_at || a.end_date || 0).getTime() - new Date(b.completed_at || b.end_date || 0).getTime())
+      .map((audit) => ({
+        audit_id: audit.audit_id,
+        title: audit.title || 'Untitled audit',
+        audit_type: audit.audit_type,
+        start_date: audit.start_date,
+        end_date: audit.end_date,
+        completed_at: audit.completed_at,
+        ...auditScore(audit.marks_obtained, audit.total_marks),
+      }));
+
+    const rows = await AuditModel.getComparisonResponseRows(audits.map((audit) => audit.audit_id));
+    const auditIndex = new Map(audits.map((audit) => [audit.audit_id, audit]));
+    const entities = new Map();
+
+    for (const row of rows) {
+      if (!auditIndex.has(row.audit_id)) continue;
+      const entityType = String(row.entity_type || 'General').trim() || 'General';
+      const orgTreeId = row.org_tree_id || null;
+      const entityKey = `${row.entity_code}::${orgTreeId || 'null'}`;
+      if (!entities.has(entityKey)) {
+        entities.set(entityKey, {
+          entity_code: row.entity_code,
+          org_tree_id: orgTreeId,
+          entity_type: entityType,
+          byAudit: new Map(),
+        });
+      }
+      const entity = entities.get(entityKey);
+      if (!entity.byAudit.has(row.audit_id)) {
+        entity.byAudit.set(row.audit_id, { marks: 0, total: 0, actions: 0, openActions: 0 });
+      }
+      const value = entity.byAudit.get(row.audit_id);
+      value.marks += Number(row.marks_obtained || 0);
+      value.total += Number(row.total_marks || 0);
+      value.actions += Number(row.corrective_action_count || 0);
+      value.openActions += Number(row.open_corrective_action_count || 0);
+    }
+
+    const entityResults = [...entities.values()].map((entity) => ({
+      entity_code: entity.entity_code,
+      org_tree_id: entity.org_tree_id,
+      entity_type: entity.entity_type,
+      audits: audits.map((audit) => {
+        const value = entity.byAudit.get(audit.audit_id);
+        if (!value) return { audit_id: audit.audit_id, available: false };
+        return {
+          audit_id: audit.audit_id,
+          available: true,
+          ...auditScore(value.marks, value.total),
+          corrective_action_count: value.actions,
+          open_corrective_action_count: value.openActions,
+        };
+      }),
+    }));
+    const entityTree = await AuditExecutionModel.getEntityTree(audits[0].audit_id);
+
+    /* Legacy question-level builders are intentionally disabled. The
+       comparison response is entity-only and does not return this content.
+    const sectionResults = [...sections.entries()].map(([entity_type, byAudit]) => ({
+      entity_type,
+      audits: audits.map((audit) => {
+        const value = byAudit.get(audit.audit_id) || { marks: 0, total: 0, answered: 0, actions: 0, openActions: 0 };
+        return { audit_id: audit.audit_id, ...auditScore(value.marks, value.total), answered_count: value.answered, corrective_action_count: value.actions, open_corrective_action_count: value.openActions };
+      }),
+    }));
+
+    const questionResults = [...questions.values()]
+      .map((question) => ({
+        entity_type: question.entity_type,
+        question_text: question.question_text,
+        audits: audits.map((audit) => {
+          const value = question.byAudit.get(audit.audit_id);
+          if (!value) return { audit_id: audit.audit_id, available: false };
+          return {
+            audit_id: audit.audit_id,
+            available: true,
+            ...auditScore(value.marks, value.total),
+            status: value.status,
+            answer_summary: [...new Set(value.answerTexts)].join(' · ') || null,
+            remarks_summary: [...new Set(value.remarks)].join(' · ') || null,
+            evidence_count: value.evidence,
+            corrective_action_count: value.actions,
+            open_corrective_action_count: value.openActions,
+          };
+        }),
+      }))
+      .sort((a, b) => a.entity_type.localeCompare(b.entity_type) || a.question_text.localeCompare(b.question_text));
+    */
+
+    return successResponse(res, {
+      checklist: { name: selected[0]?.checklist_name || 'Checklist' },
+      audits,
+      entity_tree: entityTree,
+      entities: entityResults,
+      comparison_basis: 'Scores and corrective-action counts are aggregated by audited organization entity. No question or response content is returned.',
+    });
+  } catch (err) {
+    console.error('compareAudits error:', err);
+    return errorResponse(res, 'Failed to compare the selected audits.', 500);
   }
 };
 
@@ -353,6 +543,8 @@ const listAudits = async (req, res) => {
               name: org.name,
               email: org.email,
               phone_number: org.phone_number,
+              country: org.country,
+              address: org.address,
               entity_type: org.entity_type,
             }
           : null;
@@ -409,14 +601,15 @@ const getAudit = async (req, res) => {
         const auditor = await AuditorModel.findByCode(audit.assigned_auditor_id);
         if (auditor) {
           const fullName = `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim();
+          const dialingCode = await getCountryDialingCode(auditor.country);
           audit.auditor_name = fullName || null;
           audit.auditor_email = auditor.email || null;
-          audit.auditor_phone = auditor.phone_number || null;
+          audit.auditor_phone = formatPhoneWithDialingCode(auditor.phone_number, dialingCode);
         }
       }
       if (!audit.auditor_name && audit.assigned_firm_code) {
         const [firmRows] = await db.query(
-          `SELECT name, email, phone_number
+          `SELECT name, email, phone_number, country
              FROM audit_firm_companies
             WHERE afc_code = ?
             LIMIT 1`,
@@ -426,7 +619,10 @@ const getAudit = async (req, res) => {
         if (firm) {
           audit.auditor_name = firm.name || null;
           audit.auditor_email = firm.email || null;
-          audit.auditor_phone = firm.phone_number || null;
+          audit.auditor_phone = formatPhoneWithDialingCode(
+            firm.phone_number,
+            await getCountryDialingCode(firm.country)
+          );
         }
       }
     } catch (e) {
@@ -712,6 +908,8 @@ const getAuditCount = async (req, res) => {
 
 module.exports = {
   getChecklistEntities,
+  getComparisonCandidates,
+  compareAudits,
   createAudit,
   listAudits,
   getAudit,

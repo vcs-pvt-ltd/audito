@@ -322,11 +322,19 @@ export default function OrganizationSettingsPage() {
 
                 <div className="sm:order-2">
                   <label className="block text-xs font-medium text-gray-400 mb-1.5">Phone Number</label>
-                  <div className="relative">
-                    <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 w-4 h-4" />
+                  <div className="relative flex">
+                    {selectedCountry?.international_dialing && (
+                      <span className="inline-flex items-center gap-1.5 rounded-l-lg border border-r-0 border-white/10 bg-white/[0.04] px-3 text-sm text-gray-400">
+                        <Phone className="h-4 w-4 text-gray-500" />
+                        {selectedCountry.international_dialing}
+                      </span>
+                    )}
+                    {!selectedCountry?.international_dialing && (
+                      <Phone className="absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                    )}
                     <input
                       type="tel"
-                      className={`${inputCls} pl-10`}
+                      className={`${inputCls} ${selectedCountry?.international_dialing ? "rounded-l-none" : "pl-10"}`}
                       value={org.phone_number || ""}
                       onChange={(e) => setOrg(prev => ({ ...prev, phone_number: e.target.value }))}
                       placeholder="+1 234 567 890"

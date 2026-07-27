@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1:3306
--- Generation Time: Jul 22, 2026 at 05:31 AM
+-- Generation Time: Jul 27, 2026 at 04:53 AM
 -- Server version: 8.0.36-28
 -- PHP Version: 8.1.34
 
@@ -1429,12 +1429,12 @@ CREATE TABLE `plan_entry_prices` (
 --
 
 INSERT INTO `plan_entry_prices` (`id`, `entity_type`, `monthly_price`, `updated_at`) VALUES
-(1, 'Audit Firm Company', 999.00, '2026-07-21 04:49:16'),
-(2, 'Audit Firm Department', 299.00, '2026-07-21 04:49:16'),
-(3, 'Branch', 599.00, '2026-07-21 04:49:16'),
-(4, 'Buying Office', 599.00, '2026-07-21 04:49:16'),
-(5, 'Customer', 999.00, '2026-07-21 04:49:16'),
-(6, 'Supplier', 299.00, '2026-07-21 04:49:16');
+(1, 'Audit Firm Company', 999.00, '2026-07-23 03:15:50'),
+(2, 'Audit Firm Department', 299.00, '2026-07-23 03:15:50'),
+(3, 'Branch', 599.00, '2026-07-23 03:15:50'),
+(4, 'Buying Office', 599.00, '2026-07-23 03:15:50'),
+(5, 'Customer', 999.00, '2026-07-23 03:15:50'),
+(6, 'Supplier', 299.00, '2026-07-23 03:15:50');
 
 -- --------------------------------------------------------
 
@@ -1466,9 +1466,56 @@ CREATE TABLE `plan_settings` (
 --
 
 INSERT INTO `plan_settings` (`id`, `plan_name`, `display_name`, `description`, `sort_order`, `monthly_price`, `yearly_discount_percent`, `max_company_levels`, `max_departments`, `max_audits`, `max_checklists`, `max_auditors`, `allow_auditor_eval`, `allow_company_to_company`, `is_active`, `updated_at`) VALUES
-(1, 'Basic', 'Basic', 'Perfect for trying out Audito', 10, 99.00, 20.00, 1, 4, 2, 3, 1, 0, 0, 1, '2026-07-21 09:54:44'),
-(2, 'Elite', 'Elite', 'For large organizations', 30, 299.00, 20.00, 5, 16, 14, 25, 15, 1, 1, 1, '2026-07-21 09:54:44'),
-(3, 'Pro', 'Pro', 'For growing teams', 20, 199.00, 20.00, 2, 8, 6, 6, 3, 0, 0, 1, '2026-07-21 09:54:44');
+(1, 'Basic', 'Basic', 'Perfect for trying out Audito', 10, 99.00, 20.00, 1, 4, 2, 3, 1, 0, 0, 1, '2026-07-23 03:15:50'),
+(2, 'Elite', 'Elite', 'For large organizations', 30, 299.00, 20.00, 5, 16, 14, 25, 15, 1, 1, 1, '2026-07-23 03:15:50'),
+(3, 'Pro', 'Pro', 'For growing teams', 20, 199.00, 20.00, 2, 8, 6, 6, 3, 0, 0, 1, '2026-07-23 03:15:50');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `privacy_policies`
+--
+
+CREATE TABLE `privacy_policies` (
+  `id` bigint UNSIGNED NOT NULL,
+  `privacy_policy_id` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `title` varchar(160) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `version` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `intro` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sections_json` json NOT NULL,
+  `status` enum('draft','published','archived') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `is_current` tinyint(1) NOT NULL DEFAULT '0',
+  `effective_date` date DEFAULT NULL,
+  `published_at` datetime DEFAULT NULL,
+  `created_by` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `privacy_policies`
+--
+
+INSERT INTO `privacy_policies` (`id`, `privacy_policy_id`, `title`, `version`, `intro`, `sections_json`, `status`, `is_current`, `effective_date`, `published_at`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 'PPOL00001', 'Privacy Policy', 'v1.0', 'This Privacy Policy explains how Audito collects, uses, protects, and shares information when you use our platform.', '[{\"title\": \"1. Information We Collect\", \"content\": \"We collect the account, organization, audit, checklist, report, corrective action, communication, and usage information needed to provide Audito.\"}, {\"title\": \"2. How We Use Information\", \"content\": \"We use this information to operate and secure the platform, deliver requested services, provide support, improve Audito, and meet legal obligations.\"}, {\"title\": \"3. Information Sharing\", \"content\": \"We do not sell personal information. We share information only with authorized users, service providers that support Audito, or where required by law.\"}, {\"title\": \"4. Data Security\", \"content\": \"We use appropriate technical and organizational measures to protect information. No online service can guarantee absolute security.\"}, {\"title\": \"5. Your Rights and Choices\", \"content\": \"You may request access, correction, or deletion of personal information where applicable, subject to legal and operational requirements.\"}, {\"title\": \"6. Contact Us\", \"content\": \"For privacy questions or requests, contact Audito through the support details published in the platform.\"}]', 'published', 1, '2026-07-23', '2026-07-23 17:08:07', NULL, '2026-07-23 11:38:07', '2026-07-23 11:38:07');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `privacy_policy_agreements`
+--
+
+CREATE TABLE `privacy_policy_agreements` (
+  `id` bigint UNSIGNED NOT NULL,
+  `privacy_policy_agreement_id` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `privacy_policy_id` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `admin_id` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `root_entity_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `accepted_by_email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ip_address` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_agent` varchar(512) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `agreed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -1494,13 +1541,6 @@ CREATE TABLE `promotion_campaigns` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
---
--- Dumping data for table `promotion_campaigns`
---
-
-INSERT INTO `promotion_campaigns` (`id`, `campaign_id`, `name`, `description`, `discount_type`, `discount_value`, `priority`, `starts_at`, `ends_at`, `applies_to_registration`, `applies_to_upgrade`, `applies_to_renewal`, `is_active`, `created_at`, `updated_at`) VALUES
-(1, 'PCAM00001', 'Launch Week Offer', 'Save on your first Audito subscription.', 'percentage', 20.00, 0, '2026-07-21 15:09:00', '2026-07-28 15:09:00', 1, 0, 0, 0, '2026-07-21 09:42:04', '2026-07-21 09:54:55');
-
 -- --------------------------------------------------------
 
 --
@@ -1513,16 +1553,6 @@ CREATE TABLE `promotion_campaign_plans` (
   `plan_name` varchar(50) COLLATE utf8mb4_general_ci NOT NULL,
   `billing_cycle` enum('Monthly','Yearly','Any') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Any'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `promotion_campaign_plans`
---
-
-INSERT INTO `promotion_campaign_plans` (`id`, `campaign_id`, `plan_name`, `billing_cycle`) VALUES
-(1, 'PCAM00001', 'Elite', 'Monthly'),
-(2, 'PCAM00001', 'Elite', 'Yearly'),
-(3, 'PCAM00001', 'Pro', 'Monthly'),
-(4, 'PCAM00001', 'Pro', 'Yearly');
 
 -- --------------------------------------------------------
 
@@ -1555,6 +1585,13 @@ CREATE TABLE `refresh_tokens` (
   `expires_at` timestamp NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `refresh_tokens`
+--
+
+INSERT INTO `refresh_tokens` (`id`, `refresh_token_id`, `admin_id`, `user_role`, `token`, `expires_at`, `created_at`) VALUES
+(1, 'RT000001', 'USR-00000002', 'audito_admin', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJVU1ItMDAwMDAwMDIiLCJ1c2VyQ29kZSI6IlVTUi0wMDAwMDAwMiIsInJvbGUiOiJhdWRpdG9fYWRtaW4iLCJpYXQiOjE3ODUxMjA2NTIsImV4cCI6MTc4NTcyNTQ1Mn0.TTSkvDNmjD8y9bkFmE3TBVCTs2v-vCtw9_xJYnOZwoU', '2026-08-03 02:50:52', '2026-07-27 02:50:52');
 
 -- --------------------------------------------------------
 
@@ -2232,6 +2269,24 @@ ALTER TABLE `plan_settings`
   ADD UNIQUE KEY `uq_plan_settings_plan_name` (`plan_name`);
 
 --
+-- Indexes for table `privacy_policies`
+--
+ALTER TABLE `privacy_policies`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_privacy_policies_policy_id` (`privacy_policy_id`),
+  ADD UNIQUE KEY `uq_privacy_policies_version` (`version`),
+  ADD KEY `idx_privacy_policies_current` (`status`,`is_current`);
+
+--
+-- Indexes for table `privacy_policy_agreements`
+--
+ALTER TABLE `privacy_policy_agreements`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_privacy_policy_agreement_id` (`privacy_policy_agreement_id`),
+  ADD KEY `idx_privacy_policy_agreements_policy` (`privacy_policy_id`),
+  ADD KEY `idx_privacy_policy_agreements_entity` (`root_entity_code`);
+
+--
 -- Indexes for table `promotion_campaigns`
 --
 ALTER TABLE `promotion_campaigns`
@@ -2310,7 +2365,7 @@ ALTER TABLE `user_notifications`
 -- AUTO_INCREMENT for table `admins`
 --
 ALTER TABLE `admins`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
 
 --
 -- AUTO_INCREMENT for table `ai_checklist_generation_jobs`
@@ -2658,13 +2713,25 @@ ALTER TABLE `payment_transactions`
 -- AUTO_INCREMENT for table `plan_entry_prices`
 --
 ALTER TABLE `plan_entry_prices`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `plan_settings`
 --
 ALTER TABLE `plan_settings`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `privacy_policies`
+--
+ALTER TABLE `privacy_policies`
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `privacy_policy_agreements`
+--
+ALTER TABLE `privacy_policy_agreements`
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `promotion_campaigns`
@@ -2688,7 +2755,7 @@ ALTER TABLE `promo_codes`
 -- AUTO_INCREMENT for table `refresh_tokens`
 --
 ALTER TABLE `refresh_tokens`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `subscriptions`
@@ -2945,6 +3012,12 @@ ALTER TABLE `payment_gateway_events`
 --
 ALTER TABLE `payment_transactions`
   ADD CONSTRAINT `fk_payment_transactions_promotion_campaign` FOREIGN KEY (`promotion_campaign_id`) REFERENCES `promotion_campaigns` (`campaign_id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `privacy_policy_agreements`
+--
+ALTER TABLE `privacy_policy_agreements`
+  ADD CONSTRAINT `fk_privacy_policy_agreements_policy` FOREIGN KEY (`privacy_policy_id`) REFERENCES `privacy_policies` (`privacy_policy_id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
 -- Constraints for table `promotion_campaign_plans`

@@ -361,15 +361,7 @@ export default function CapsPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden max-w-xs">
-                              <div
-                                className="h-full bg-gradient-to-r from-secondary-400 to-secondary-500 transition-all"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-gray-400 font-medium w-10 text-right">{pct}%</span>
-                          </div>
+                          <span className="text-xs font-semibold text-gray-300">{pct}%</span>
                         </td>
                         <td className="px-4 py-3 text-gray-400">
                           {fmtDate(cap.created_at)}
@@ -431,14 +423,9 @@ export default function CapsPage() {
                       </div>
                     </div>
 
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">{cap.completed_questions}/{cap.total_questions} completed</span>
-                        <span className="text-gray-300">{pct}%</span>
-                      </div>
-                      <div className="mt-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-secondary-400 to-secondary-500" style={{ width: `${pct}%` }} />
-                      </div>
+                    <div className="mt-3 flex items-center justify-between text-xs">
+                      <span className="text-gray-500">Progress</span>
+                      <span className="font-semibold text-gray-300">{pct}%</span>
                     </div>
                   </div>
                 );

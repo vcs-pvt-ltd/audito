@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { capApi } from "@/lib/api";
 import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
 import { Button, IconButton } from "@/components/ui";
+import PhoneNumber from "@/components/shared/PhoneNumber";
 import {
   AlertCircle,
   ArrowLeft,
@@ -218,14 +219,14 @@ function ContactLine({
 }: {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
-  value?: string | number | null;
+  value?: React.ReactNode;
 }) {
   return (
     <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
       <Icon size={16} className="text-secondary-400 shrink-0 mt-0.5" />
       <div className="min-w-0">
         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">{label}</p>
-        <p className="text-sm text-white font-semibold break-words">{value || "Not available"}</p>
+        <p className="text-sm text-white font-semibold break-words">{value ?? "Not available"}</p>
       </div>
     </div>
   );

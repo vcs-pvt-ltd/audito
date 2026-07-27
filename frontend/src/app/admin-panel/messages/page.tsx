@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
-import { adminApi, type ContactMessage } from "@/lib/api";
+import { adminApi, countriesApi, type ContactMessage } from "@/lib/api";
+import { formatPhoneWithCountryCode } from "@/components/shared/PhoneNumber";
 import {
   Mail, RefreshCw, Loader2, Send, Clock, CheckCircle2, Circle, Eye,
 } from "lucide-react";
@@ -74,9 +75,17 @@ export default function MessagesPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await adminApi.listMessages(accessToken);
+      const [res, countries] = await Promise.all([
+        adminApi.listMessages(accessToken),
+        countriesApi.getAll().catch(() => []),
+      ]);
       if (res.success && res.data) {
-        setMessages(res.data as ContactMessage[]);
+        setMessages(
+          (res.data as ContactMessage[]).map((message) => ({
+            ...message,
+            phone: formatPhoneWithCountryCode(message.phone, message.country, countries),
+          }))
+        );
       } else {
         setError((res as any).message || "Failed to load messages.");
         toast((res as any).message || "Failed to load messages.", "error");

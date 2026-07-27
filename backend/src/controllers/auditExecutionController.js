@@ -35,6 +35,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { MAX_EVIDENCE_BYTES, getEvidenceMediaType, getEvidencePolicy } = require('../utils/evidencePolicy');
+const { getCountryDialingCode } = require('../utils/orgLookup');
 
 const ENTITY_TABLE_MAP = {
   'Customer': { table: 'customers', codeField: 'cust_code' },
@@ -50,6 +51,13 @@ const ENTITY_TABLE_MAP = {
   'Branch': { table: 'audit_firm_company_branches', codeField: 'afc_branch_code' },
   'Audit Firm Department': { table: 'audit_firm_company_departments', codeField: 'afc_dept_code' },
 };
+
+function formatPhoneWithDialingCode(phoneNumber, dialingCode) {
+  const phone = String(phoneNumber || '').trim();
+  const code = String(dialingCode || '').trim();
+  if (!phone || !code || phone.startsWith('+') || phone.startsWith(code)) return phone || null;
+  return `${code} ${phone.replace(/^0+/, '')}`.trim();
+}
 
 // ── File upload setup ────────────────────────────────────────────
 const uploadDir = path.join(__dirname, '../public/uploads/evidence');
@@ -794,14 +802,17 @@ const getReport = async (req, res) => {
         const cfg = creatorAdmin?.entity_type ? ENTITY_TABLE_MAP[creatorAdmin.entity_type] : null;
         if (cfg && creatorAdmin?.entity_code) {
           const [orgRows] = await db.query(
-            `SELECT name, email, phone_number, organization_logo FROM \`${cfg.table}\` WHERE \`${cfg.codeField}\` = ? LIMIT 1`,
+            `SELECT name, email, phone_number, country, organization_logo FROM \`${cfg.table}\` WHERE \`${cfg.codeField}\` = ? LIMIT 1`,
             [creatorAdmin.entity_code]
           );
           const org = orgRows?.[0] || null;
           if (org) {
             audit.organization_name = org.name || null;
             audit.organization_email = org.email || null;
-            audit.organization_phone = org.phone_number || null;
+            audit.organization_phone = formatPhoneWithDialingCode(
+              org.phone_number,
+              await getCountryDialingCode(org.country)
+            );
             audit.organization_logo = org.organization_logo || null;
           }
         }
@@ -813,7 +824,10 @@ const getReport = async (req, res) => {
           const fullName = `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim();
           audit.auditor_name = fullName || auditor.auditor_id;
           audit.auditor_email = auditor.email || null;
-          audit.auditor_phone = auditor.phone_number || null;
+          audit.auditor_phone = formatPhoneWithDialingCode(
+            auditor.phone_number,
+            await getCountryDialingCode(auditor.country)
+          );
         }
       }
     } catch (e) {

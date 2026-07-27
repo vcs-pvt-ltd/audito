@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer,
+  ResponsiveContainer, LabelList,
 } from 'recharts';
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
@@ -268,7 +268,9 @@ function PerformanceChart({ data, isFullScreen }: { data: ChartItem[]; isFullScr
             contentStyle={{ backgroundColor: 'rgba(2, 47, 43, 0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
             itemStyle={{ fontSize: isFullScreen ? '15px' : '11px' }}
           />
-          <Bar dataKey="completed" stackId="a" fill="url(#scoreGreen)" barSize={barSize} radius={[0, 0, 0, 0]} />
+          <Bar dataKey="completed" stackId="a" fill="url(#scoreGreen)" barSize={barSize} radius={[0, 0, 0, 0]}>
+            <LabelList dataKey="completed" position="center" fill="#ffffff" fontSize={isFullScreen ? 14 : 10} fontWeight={800} formatter={(value) => Number(value) > 0 ? `${value}%` : ""} />
+          </Bar>
           <Bar dataKey="remaining" stackId="a" fill="url(#scoreRed)" barSize={barSize} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
@@ -1003,7 +1005,7 @@ export default function AdminDashboard({ overview, admin, orgTree, filters, onFi
                                <div className="min-w-0 flex-1">
                                   <div className="text-sm font-bold text-white truncate">{a.title}</div>
                                   <div className="flex items-center gap-3 mt-1">
-                                     <span className="text-[10px] text-emerald-400/60 font-medium">{a.audit_type}</span>
+                                     <span className="text-[10px] text-emerald-400/60 font-medium">{a.audit_type === "external" ? "External" : "Internal"}</span>
                                   </div>
                                </div>
                                <button 

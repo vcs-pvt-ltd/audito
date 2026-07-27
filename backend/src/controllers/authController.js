@@ -634,15 +634,16 @@ const register = async (req, res) => {
 
 /**
  * POST /api/auth/login
- * Body: { email, password }
+ * Body: { email, password, preferred_role? }
  *
  * Unified login — checks admins, auditors, and entity_heads tables.
  * If the email exists in multiple tables, returns all available accounts
- * and logs into the first one whose password matches (priority: admin > entity_head > auditor).
+ * and logs into the first one whose password matches. A previous-role preference
+ * may be supplied by the client, but it never bypasses password verification.
  */
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, preferred_role: preferredRole } = req.body;
 
     const missing = validateRequiredFields(req.body, ['email', 'password']);
     if (missing) return errorResponse(res, missing, 400);
@@ -698,7 +699,19 @@ const login = async (req, res) => {
       return errorResponse(res, 'Invalid email or password.', 401);
     }
 
-    // Try the given password against each candidate (priority order above)
+    // A user can legitimately have more than one account role under the same
+    // email address. Prefer the last role they used when it is available, while
+    // retaining the existing fallback order and password checks for every role.
+    if (typeof preferredRole === 'string' && preferredRole.trim()) {
+      const normalizedPreferredRole = preferredRole.trim();
+      candidates.sort((a, b) => {
+        if (a.role === normalizedPreferredRole) return -1;
+        if (b.role === normalizedPreferredRole) return 1;
+        return 0;
+      });
+    }
+
+    // Try the given password against each candidate in the preferred order.
     let activeRole = null;
     let activeRecord = null;
     for (const c of candidates) {

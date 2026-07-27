@@ -7,6 +7,7 @@ import { useUiFeedback } from "@/context/UiFeedbackContext";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import EmptyState from "@/components/shared/EmptyState";
 import { countriesApi, linksApi, type Country } from "@/lib/api";
+import PhoneNumber from "@/components/shared/PhoneNumber";
 
 import {
   Link as LinkIcon,
@@ -162,7 +163,7 @@ function ViewDataModal({
   loading: boolean;
   error: string;
 }) {
-  const infoRow = (label: string, value: string | null | undefined) => (
+  const infoRow = (label: string, value: React.ReactNode) => (
     <div className="flex justify-between py-1.5 border-b border-white/5 last:border-0">
       <span className="text-gray-500 text-xs">{label}</span>
       <span className="text-white text-xs text-right">{value || "—"}</span>
@@ -200,7 +201,7 @@ function ViewDataModal({
                 {infoRow("Name", data.entity.name)}
                 {infoRow("Registration No.", data.entity.registration_number)}
                 {infoRow("Email", data.entity.email)}
-                {infoRow("Phone", data.entity.phone_number)}
+                {infoRow("Phone", <PhoneNumber phone={data.entity.phone_number} country={data.entity.country} />)}
                 {infoRow("Address", data.entity.address)}
                 {infoRow("Country", data.entity.country)}
               </div>
@@ -215,7 +216,7 @@ function ViewDataModal({
               <div className="bg-white/5 rounded-lg p-3">
                 {infoRow("Name", `${data.admin.first_name} ${data.admin.last_name}`)}
                 {infoRow("Email", data.admin.email)}
-                {infoRow("Phone", data.admin.phone_number)}
+                {infoRow("Phone", <PhoneNumber phone={data.admin.phone_number} country={data.entity?.country} />)}
               </div>
             </div>
           )}

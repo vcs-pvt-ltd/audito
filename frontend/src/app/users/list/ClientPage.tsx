@@ -11,6 +11,7 @@ import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Table, THead, Th } from "@/components/ui";
+import PhoneNumber from "@/components/shared/PhoneNumber";
 
 // ─── Config per user type slug ───────────────────────────────────
 
@@ -1226,7 +1227,7 @@ export default function UsersClientPage() {
                           </td>
 
                           <td className="px-4 py-3 text-gray-400">{user.email}</td>
-                          <td className="px-4 py-3 text-gray-400">{user.phone_number || "—"}</td>
+                          <td className="px-4 py-3 text-gray-400"><PhoneNumber phone={user.phone_number} country={user.country} /></td>
                           <td className="px-4 py-3 text-gray-400">{user.country || "—"}</td>
                           {effectiveTreeSteps.length > 0 && (
                             <td className="px-4 py-3 text-gray-400 text-xs">
@@ -1307,7 +1308,7 @@ export default function UsersClientPage() {
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
                         <p className="text-gray-500">Phone</p>
-                        <p className="text-gray-300 mt-0.5 truncate">{user.phone_number || "-"}</p>
+                        <p className="text-gray-300 mt-0.5 truncate"><PhoneNumber phone={user.phone_number} country={user.country} emptyValue="-" /></p>
                       </div>
                       <div className="rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
                         <p className="text-gray-500">Country</p>

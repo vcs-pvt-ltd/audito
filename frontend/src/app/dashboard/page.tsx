@@ -53,7 +53,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     // org-tree is only available to admin role — skip for auditor / entity_head
-    if (!accessToken || !admin || admin.role !== "admin") return;
+    if (!accessToken || !admin || !["admin", "entity_head"].includes(admin.role)) return;
     orgTreeApi.getTree(accessToken).then((res) => {
       if (res.success && res.data) setOrgTree(res.data);
     });

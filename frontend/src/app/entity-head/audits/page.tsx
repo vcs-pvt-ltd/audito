@@ -59,7 +59,7 @@ const AUDIT_TYPE_BADGE: Record<string, string> = {
 
 const AUDIT_TYPE_LABEL: Record<string, string> = {
   internal: "Internal",
-  external: "Audit Firm",
+  external: "External",
 };
 
 function fmtDate(d: string | null) {
@@ -215,7 +215,7 @@ export default function EntityHeadAuditsPage() {
           >
             <option value="all">All Types</option>
             <option value="internal">Internal</option>
-            <option value="external">Audit Firm</option>
+            <option value="external">External</option>
           </select>
           <input
             type="date"
@@ -299,15 +299,7 @@ export default function EntityHeadAuditsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden max-w-[100px]">
-                              <div
-                                className="h-full bg-gradient-to-r from-secondary-400 to-secondary-500 transition-all"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-gray-400 font-medium w-10 text-right">{pct}%</span>
-                          </div>
+                          <span className="text-xs font-semibold text-gray-300">{pct}%</span>
                         </td>
                       </tr>
                     );
@@ -342,19 +334,11 @@ export default function EntityHeadAuditsPage() {
                       <div className="text-gray-500 uppercase tracking-wider text-[10px]">Timeline</div>
                       <div className="text-gray-300">{fmtDate(a.start_date)} — {fmtDate(a.end_date)}</div>
                     </div>
-                    <div className="pt-2">
-                    <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                    <div className="flex justify-between pt-2 text-[10px] text-gray-500">
                       <span>Progress</span>
-                      <span>{pct}%</span>
-                    </div>
-                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-secondary-500 transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
+                      <span className="font-semibold text-gray-300">{pct}%</span>
                     </div>
                   </div>
-                </div>
                 );
               })}
             </div>

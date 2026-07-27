@@ -8,6 +8,7 @@
 const nodemailer = require('nodemailer');
 
 const { getEmailTemplate } = require('../utils/emailTemplates');
+const { getCountryDialingCode } = require('../utils/orgLookup');
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || 'smtp.gmail.com',
@@ -265,6 +266,7 @@ const sendAuditAssignedEmail = async (toEmail, auditorName, audit) => {
 
   const startDate = formatDateOnly(audit.start_date);
   const endDate = formatDateOnly(audit.end_date);
+  const auditTypeLabel = audit.audit_type === 'external' ? 'External' : 'Internal';
 
   const { html, attachments } = getEmailTemplate({
     title: 'Audit Assigned',
@@ -282,7 +284,7 @@ const sendAuditAssignedEmail = async (toEmail, auditorName, audit) => {
           </tr>
           <tr>
             <td style="padding: 10px 0; color: #999; font-size: 12px;">Audit Type</td>
-            <td style="padding: 10px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${audit.audit_type || ''}</td>
+            <td style="padding: 10px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${auditTypeLabel}</td>
           </tr>
           <tr>
             <td style="padding: 10px 0; color: #999; font-size: 12px;">Start Date</td>
@@ -357,6 +359,10 @@ const sendLearningAssignmentEmail = async (toEmail, auditorName, assignment) => 
  * Send contact form submission to team/admin and thank you to the user
  */
 const sendContactEmail = async ({ name, email, company, phone, country, message }) => {
+  const phoneWithDialingCode = formatInternationalPhone(
+    phone,
+    await getCountryDialingCode(country)
+  );
   // 1. Email to the team (Audito Admin)
   const teamEmailHtml = getEmailTemplate({
     title: 'New Contact Request',
@@ -379,7 +385,7 @@ const sendContactEmail = async ({ name, email, company, phone, country, message 
           </tr>
           <tr>
             <td style="color: #999; padding: 5px 0;">Phone:</td>
-            <td style="color: #00374B; font-weight: 700;">${phone || 'N/A'}</td>
+            <td style="color: #00374B; font-weight: 700;">${phoneWithDialingCode}</td>
           </tr>
           <tr>
             <td style="color: #999; padding: 5px 0;">Country:</td>

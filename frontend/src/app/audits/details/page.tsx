@@ -36,6 +36,7 @@ import {
 } from "@/utils/executionService";
 import { ENTITY_TYPE_COLORS } from "@/utils/executionFormatters";
 import { Button, IconButton } from "@/components/ui";
+import PhoneNumber from "@/components/shared/PhoneNumber";
 
 // --- Interfaces ---
 
@@ -68,6 +69,8 @@ interface AuditDetail {
     name?: string | null;
     email?: string | null;
     phone_number?: string | null;
+    country?: string | null;
+    address?: string | null;
     entity_type?: string | null;
   } | null;
 }
@@ -213,14 +216,14 @@ function ContactLine({
 }: {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
-  value?: string | number | null;
+  value?: React.ReactNode;
 }) {
   return (
     <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
       <Icon size={16} className="text-secondary-400 shrink-0 mt-0.5" />
       <div className="min-w-0">
         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">{label}</p>
-        <p className="text-sm text-white font-semibold break-words">{value || "Not available"}</p>
+        <p className="text-sm text-white font-semibold break-words">{value ?? "Not available"}</p>
       </div>
     </div>
   );
@@ -496,6 +499,8 @@ function AuditDetailsContent() {
     );
   }
 
+  const isFirmAdmin = admin?.role === "admin" && ["Audit Firm", "Audit Firm Company"].includes((admin as any)?.account_type || "");
+
   const findInTree = (code: string) => {
     const walk = (n: TreeNode): TreeNode | null => {
       if (n.code === code) return n;
@@ -524,24 +529,27 @@ function AuditDetailsContent() {
   };
 
   return (
-    <div className="min-h-screen bg-transparent text-white pt-24 pb-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-full bg-transparent text-white px-4 pb-12 pt-20 sm:px-6 lg:px-8 lg:pt-8">
+      <div className="mx-auto w-full max-w-6xl">
         {/* Header Section */}
-        <div className="flex items-center gap-3 mb-6">
-          <IconButton bordered onClick={() => router.push(`/audits`)}>
-            <ArrowLeft size={16} />
-          </IconButton>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <IconButton bordered onClick={() => router.push(`/audits`)} title="Back to audits">
+              <ArrowLeft size={16} />
+            </IconButton>
+            <div className="min-w-0">
+              <h1 className="flex items-center gap-2 text-xl font-bold text-white sm:text-2xl">
               <ClipboardList size={22} className="text-secondary-400" />
-              Preview Audit
-            </h1>
-            {audit && (
-              <p className="text-sm text-gray-400 mt-0.5 font-mono truncate">
-                {audit.title}
+                Audit Details
+              </h1>
+              <p className="mt-1 truncate text-sm text-gray-400">
+                {isFirmAdmin ? "Review the audit assigned to your firm and its execution progress." : "Review audit details, assignment information, and execution progress."}
               </p>
-            )}
+            </div>
           </div>
+          <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-xs font-semibold ${String(audit.status).toLowerCase() === "completed" ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" : String(audit.status).toLowerCase() === "in_progress" ? "border-blue-500/25 bg-blue-500/10 text-blue-300" : "border-amber-500/25 bg-amber-500/10 text-amber-300"}`}>
+            {String(audit.status || "plan").replace("_", " ")}
+          </span>
         </div>
 
       
@@ -551,11 +559,8 @@ function AuditDetailsContent() {
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
               <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
                 <div className="min-w-0">
-                  <p className="text-[10px] text-secondary-400 font-bold uppercase tracking-widest mb-2">Audit Details</p>
-                  <h2 className="text-2xl font-black text-white mb-2 break-words">{audit.title}</h2>
-                  <p className="text-sm text-gray-400 max-w-2xl">
-                    Review the assignment information before opening the question preview.
-                  </p>
+                  <h2 className="text-2xl font-bold text-white mb-2">{audit.title}</h2>
+                  <p className="text-sm text-gray-400 max-w-2xl">Open the question preview to review recorded answers, scores, evidence, and corrective actions.</p>
                 </div>
                 <Button leftIcon={<Eye size={18}/>} onClick={() => setShowPreview(true)}>Preview Questions</Button>
               </div>
@@ -577,33 +582,70 @@ function AuditDetailsContent() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-secondary-500/10 text-secondary-400 border border-secondary-500/20 flex items-center justify-center">
-                      <ClipboardList size={18} />
+                {isFirmAdmin ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-xl bg-secondary-500/10 text-secondary-400 border border-secondary-500/20 flex items-center justify-center shrink-0">
+                        <Building2 size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-secondary-400 font-bold uppercase tracking-widest">Client Organization</p>
+                        <h3 className="text-lg font-black text-white truncate">{audit.assigned_company?.name || "Organization details unavailable"}</h3>
+                        {audit.assigned_company?.entity_type && (
+                          <span className="mt-1 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-gray-300">
+                            {audit.assigned_company.entity_type}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[10px] text-secondary-400 font-bold uppercase tracking-widest">Audit Details</p>
-                      <h3 className="text-lg font-black text-white">{audit.checklist_name || "Checklist not selected"}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <ContactLine icon={Mail} label="Organization Email" value={audit.assigned_company?.email} />
+                      <ContactLine
+                        icon={Phone}
+                        label="Organization Phone"
+                        value={<PhoneNumber phone={audit.assigned_company?.phone_number} country={audit.assigned_company?.country} emptyValue="Not available" />}
+                      />
+                      <ContactLine icon={Building2} label="Country" value={audit.assigned_company?.country} />
+                      <ContactLine icon={FileText} label="Address" value={audit.assigned_company?.address} />
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <DetailStat icon={Calendar} label="Audit Timeline" value={`${fmtDate(audit.start_date)} - ${fmtDate(audit.end_date)}`} />
+                      <DetailStat
+                        icon={Clock}
+                        label="Checklist Duration"
+                        value={audit.time_period_value && audit.time_period_unit ? `${audit.time_period_value} ${audit.time_period_unit}` : "Not set"}
+                      />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <DetailStat icon={Calendar} label="Timeline" value={`${fmtDate(audit.start_date)} - ${fmtDate(audit.end_date)}`} />
-                    <DetailStat icon={DollarSign} label="Budget" value={money(audit.budget, audit.currency)} />
-                    <DetailStat icon={Users} label="Workers" value={audit.num_workers ? `${audit.num_workers}` : "Not set"} />
-                    <DetailStat
-                      icon={Clock}
-                      label="Checklist Duration"
-                      value={audit.time_period_value && audit.time_period_unit ? `${audit.time_period_value} ${audit.time_period_unit}` : "Not set"}
-                    />
-                  </div>
-                  {audit.notes && (
-                    <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 flex gap-3">
-                      <FileText size={16} className="text-gray-500 shrink-0 mt-0.5" />
-                      <p className="text-sm text-gray-400 leading-relaxed">{audit.notes}</p>
+                ) : (
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-xl bg-secondary-500/10 text-secondary-400 border border-secondary-500/20 flex items-center justify-center">
+                        <ClipboardList size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-secondary-400 font-bold uppercase tracking-widest">Audit Details</p>
+                        <h3 className="text-lg font-black text-white">{audit.checklist_name || "Checklist not selected"}</h3>
+                      </div>
                     </div>
-                  )}
-                </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <DetailStat icon={Calendar} label="Timeline" value={`${fmtDate(audit.start_date)} - ${fmtDate(audit.end_date)}`} />
+                      <DetailStat icon={DollarSign} label="Budget" value={money(audit.budget, audit.currency)} />
+                      <DetailStat icon={Users} label="Workers" value={audit.num_workers ? `${audit.num_workers}` : "Not set"} />
+                      <DetailStat
+                        icon={Clock}
+                        label="Checklist Duration"
+                        value={audit.time_period_value && audit.time_period_unit ? `${audit.time_period_value} ${audit.time_period_unit}` : "Not set"}
+                      />
+                    </div>
+                    {audit.notes && (
+                      <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 flex gap-3">
+                        <FileText size={16} className="text-gray-500 shrink-0 mt-0.5" />
+                        <p className="text-sm text-gray-400 leading-relaxed">{audit.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

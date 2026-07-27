@@ -644,12 +644,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                           </div>
                         </Td>
                         <Td>
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden max-w-xs">
-                              <div className="h-full bg-gradient-to-r from-secondary-400 to-secondary-500 transition-all" style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="text-xs text-gray-400 font-medium w-8 text-right">{pct}%</span>
-                          </div>
+                          <span className="text-xs font-semibold text-gray-300">{pct}%</span>
                         </Td>
                         {workflowType === "cap" && (
                           <Td className="text-gray-400">
@@ -733,7 +728,10 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                           {displayStatus.replace("_", " ")}
                         </div>
                       </div>
-                      <CircularProgress pct={pct} />
+                      <div className="shrink-0 text-right">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500">Progress</p>
+                        <p className="mt-1 text-lg font-bold text-secondary-300">{pct}%</p>
+                      </div>
                     </div>
 
                     <div className="flex items-end justify-between gap-4 pt-2 border-t border-white/5">
