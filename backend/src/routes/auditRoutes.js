@@ -3,6 +3,8 @@ const router  = express.Router();
 const { authenticate } = require('../middleware/auth');
 const {
   getChecklistEntities,
+  getComparisonCandidates,
+  compareAudits,
   createAudit,
   listAudits,
   getAudit,
@@ -20,6 +22,8 @@ router.get('/checklist/:checklist_id/entities', getChecklistEntities);
 
 // Count route — must be before /:id to avoid being swallowed by the param route
 router.get('/count', getAuditCount);
+router.get('/comparison/candidates', getComparisonCandidates);
+router.post('/comparison', compareAudits);
 
 router.post('/',     createAudit);
 router.get('/',      listAudits);

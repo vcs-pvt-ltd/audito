@@ -116,6 +116,15 @@ function buildAdminGuide(accountType: string): RoleGuide {
         { title: "Track CAPs", detail: "When findings need fixing, Corrective Action Plans (CAPs) are raised and tracked from the CAPs menu until they are resolved." },
       ],
     });
+    sections.push({
+      icon: BarChart3,
+      title: "7. Compare completed audits",
+      description: "Compare repeated audits that use the same checklist to identify performance changes across your organization.",
+      steps: [
+        { title: "Open Audit Comparison", detail: "From Audits, select Compare Audits. Choose two to five completed audits that use the same checklist." },
+        { title: "Focus on an entity", detail: "Use the Entity filter to view the completed score for your organization, a specific entity, or one of its child entities." },
+      ],
+    });
   } else {
     // Audit Firm receives assignments rather than creating them
     sections.push({
@@ -147,9 +156,9 @@ function buildAdminGuide(accountType: string): RoleGuide {
     description: "The Settings menu holds the controls that apply to your whole organization.",
     steps: [
       { title: "Timezone", detail: "Set the official timezone so all audit schedules and reports use consistent times." },
-      { title: "Notices", detail: "Publish announcements that your users see in their notification panel." },
-      { title: "Organization Info", detail: "Keep your organization's profile details up to date." },
-      { title: "Billing", detail: "Review your current plan, resource limits and upgrade when you need more capacity." },
+      { title: "Notices and notifications", detail: "Publish organization notices and use in-app notifications to keep assigned users informed about audits, learning and corrective actions." },
+      { title: "Organization Info", detail: "Keep your organization profile, contact details and optional logo up to date. The logo can appear alongside Audito branding in reports." },
+      { title: "Billing", detail: "Review your plan, renewal date and limits; change between monthly and yearly billing, upgrade when you need capacity, and complete renewal payments when prompted." },
     ],
   });
 
@@ -245,7 +254,74 @@ function buildEntityHeadGuide(): RoleGuide {
   };
 }
 
+function buildAuditoAdminGuide(): RoleGuide {
+  return {
+    badge: "Audito Admin",
+    heading: "Operating the Audito platform",
+    intro: "As an Audito administrator, you manage platform-wide plans, campaigns, policy content, payments and organization requests. Changes here can affect future registrations and renewals, so review each update before saving.",
+    sections: [
+      {
+        icon: BarChart3,
+        title: "Monitor the platform dashboard",
+        description: "Use the dashboard to understand registrations, income and plan performance at a glance.",
+        steps: [
+          { title: "Review registrations", detail: "Use the registration chart time range to monitor new organizations over daily, weekly, monthly or yearly periods." },
+          { title: "Review income", detail: "Use the income distribution chart and payment records to identify revenue by plan and billing activity." },
+        ],
+      },
+      {
+        icon: CreditCard,
+        title: "Manage plans and limits",
+        description: "Plan settings control the prices and limits presented on the landing page, registration flow and future subscription renewals.",
+        steps: [
+          { title: "Open Plans", detail: "Review each plan side by side, then update its price, included limits and available features as needed." },
+          { title: "Use yearly discount carefully", detail: "The yearly discount applies platform-wide. Confirm the calculation before saving because it changes the yearly price displayed to customers." },
+          { title: "Add a plan when required", detail: "Use Add Plan to create a new plan with its name, price, billing options, limits and feature access." },
+        ],
+      },
+      {
+        icon: Network,
+        title: "Run promotion campaigns",
+        description: "Campaigns are time-limited public offers. They are separate from promo codes and can automatically appear on pricing cards.",
+        steps: [
+          { title: "Create a campaign", detail: "Set the eligible plan, discount type or amount, purchase purpose and the campaign start and end period." },
+          { title: "Check active dates", detail: "Only active campaigns within their configured time window are applied to new purchases. End or pause a campaign when the offer is no longer valid." },
+          { title: "Manage promo codes separately", detail: "Use Promotions → Promo Codes for code-based discounts that a customer enters during registration." },
+        ],
+      },
+      {
+        icon: FileCheck,
+        title: "Review custom solution requests",
+        description: "Custom plan registrations are verified before they appear for pricing review.",
+        steps: [
+          { title: "Wait for email verification", detail: "Only verified custom solution requests appear as pending review, preventing unverified submissions from entering the pricing workflow." },
+          { title: "Set the tailored price", detail: "Review the requested capacity, assign the agreed price and send the organization its secure payment path." },
+        ],
+      },
+      {
+        icon: ClipboardCheck,
+        title: "Manage privacy policies",
+        description: "Published policies are shown during registration and each registration records the policy version accepted.",
+        steps: [
+          { title: "Draft and review", detail: "Create a policy title, introduction and clear sections before publishing it." },
+          { title: "Publish a new version", detail: "Once a published policy has accepted registrations, keep it as a historical record and publish a new policy version for future registrations." },
+        ],
+      },
+      {
+        icon: Shield,
+        title: "Review payments and renewals",
+        description: "Payment records provide the financial trail for registrations, renewals and upgrades.",
+        steps: [
+          { title: "Filter and export", detail: "Use plan, billing cycle, status and date filters on Payments. Download a date-range PDF report when a finance summary is needed." },
+          { title: "Subscription reminders", detail: "Active plans receive reminders at 7, 3 and 1 day before expiry. Ensure organization admin email and notification delivery remain enabled." },
+        ],
+      },
+    ],
+  };
+}
+
 function buildGuide(role: string, accountType: string | null | undefined): RoleGuide {
+  if (role === "audito_admin" || accountType === "audito_admin") return buildAuditoAdminGuide();
   if (role === "auditor") return buildAuditorGuide();
   if (role === "entity_head") return buildEntityHeadGuide();
   return buildAdminGuide(accountType === "Audit Firm Company" ? "Audit Firm" : (accountType || "Customer"));

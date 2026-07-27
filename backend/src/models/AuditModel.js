@@ -156,6 +156,79 @@ const AuditModel = {
     return rows;
   },
 
+  /**
+   * Completed audits that can be compared. Access is limited to audits created
+   * by the caller's accessible organizations or assigned to their audit firm.
+   */
+  async listComparisonCandidates({ accessibleCodes = [], firmCode = null }) {
+    const conditions = [];
+    const params = [];
+    if (accessibleCodes.length) {
+      conditions.push(`aa.created_by IN (${accessibleCodes.map(() => '?').join(',')})`);
+      params.push(...accessibleCodes);
+    }
+    if (firmCode) {
+      conditions.push('aa.assigned_firm_code = ?');
+      params.push(firmCode);
+    }
+    if (!conditions.length) return [];
+
+    const [rows] = await db.query(
+      `SELECT aa.audit_id, aa.checklist_id, aa.title, aa.audit_type, aa.start_date, aa.end_date,
+              aa.completed_at, c.name AS checklist_name,
+              COALESCE(scores.marks_obtained, 0) AS marks_obtained,
+              COALESCE(scores.total_marks, 0) AS total_marks
+         FROM audit_assignments aa
+         INNER JOIN checklists c ON c.checklist_id = aa.checklist_id
+         LEFT JOIN (
+           SELECT r.audit_id,
+                  SUM(COALESCE(r.marks_obtained, 0)) AS marks_obtained,
+                  SUM(COALESCE(q.total_marks, 0)) AS total_marks
+             FROM audit_responses r
+             INNER JOIN checklist_questions q ON q.checklist_question_id = r.checklist_question_id
+            WHERE r.status = 'answered'
+            GROUP BY r.audit_id
+         ) scores ON scores.audit_id = aa.audit_id
+        WHERE aa.is_active = TRUE
+          AND aa.status = 'completed'
+          AND (${conditions.join(' OR ')})
+        ORDER BY c.name ASC, COALESCE(aa.completed_at, aa.end_date, aa.created_at) DESC`,
+      params
+    );
+    return rows;
+  },
+
+  /**
+   * Returns entity-level comparison input. Question identifiers are used only
+   * inside the server join and are never returned to the client.
+   */
+  async getComparisonResponseRows(auditIds) {
+    if (!auditIds.length) return [];
+    const placeholders = auditIds.map(() => '?').join(',');
+    const [rows] = await db.query(
+      `SELECT r.audit_id, r.entity_code, r.org_tree_id, q.entity_type,
+              r.marks_obtained, q.total_marks,
+              (
+                SELECT COUNT(*)
+                  FROM corrective_actions action_item
+                 WHERE action_item.audit_response_id = r.audit_response_id
+              ) AS corrective_action_count,
+              (
+                SELECT COUNT(*)
+                  FROM corrective_actions action_item
+                 WHERE action_item.audit_response_id = r.audit_response_id
+                   AND action_item.status NOT IN ('resolved', 'verified', 'closed')
+              ) AS open_corrective_action_count
+         FROM audit_responses r
+         INNER JOIN checklist_questions q
+           ON q.checklist_question_id = r.checklist_question_id
+        WHERE r.audit_id IN (${placeholders})
+        ORDER BY q.entity_type, r.org_tree_id, r.entity_code`,
+      auditIds
+    );
+    return rows;
+  },
+
   async getEntities(audit_id) {
     const [rows] = await db.query(
       `SELECT org_tree_id, entity_code, entity_type

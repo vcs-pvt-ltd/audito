@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer,
+  ResponsiveContainer, LabelList,
 } from 'recharts';
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
@@ -105,17 +105,17 @@ function percent(value: number) {
 
 function flattenTree(
   node: OrgTreeNode | null,
-  list: { code: string; name: string; entity_type: string; depth: number; uniqueKey: string }[] = [],
+  list: { code: string; name: string; entity_type: string; edge_id: string; depth: number; uniqueKey: string }[] = [],
   depth = 0,
   parentPath = ""
-): { code: string; name: string; entity_type: string; depth: number; uniqueKey: string }[] {
+): { code: string; name: string; entity_type: string; edge_id: string; depth: number; uniqueKey: string }[] {
   if (!node) return list;
   const code = node.code || node.comp_code || node.cust_code || node.afc_code || "";
   const name = node.name || code;
   const entityType = node.entity_type || "";
-  const edgeId = node.edge_id || node.id || 0;
+  const edgeId = String(node.edge_id ?? node.id ?? "");
   const uniqueKey = parentPath ? `${parentPath}/${code}-${edgeId}` : `${code}-${edgeId}`;
-  if (code) list.push({ code, name, entity_type: entityType, depth, uniqueKey });
+  if (code) list.push({ code, name, entity_type: entityType, edge_id: edgeId, depth, uniqueKey });
   if (node.children) {
     for (const child of node.children) flattenTree(child, list, depth + 1, uniqueKey);
   }
@@ -252,7 +252,9 @@ function PerformanceChart({ data, isFullScreen, isLoading }: { data: ChartItem[]
             contentStyle={{ backgroundColor: 'rgba(2, 47, 43, 0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
             itemStyle={{ fontSize: isFullScreen ? '15px' : '11px' }}
           />
-          <Bar dataKey="completed" stackId="a" fill="url(#scoreGreen)" barSize={barSize} radius={[0, 0, 0, 0]} />
+          <Bar dataKey="completed" stackId="a" fill="url(#scoreGreen)" barSize={barSize} radius={[0, 0, 0, 0]}>
+            <LabelList dataKey="completed" position="center" fill="#ffffff" fontSize={isFullScreen ? 14 : 10} fontWeight={800} formatter={(value) => Number(value) > 0 ? `${value}%` : ""} />
+          </Bar>
           <Bar dataKey="remaining" stackId="a" fill="url(#scoreRed)" barSize={barSize} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
@@ -399,6 +401,11 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
     [initialOverview.scope.entity_code, admin.entityCode, admin.entity_code]
   );
 
+  const loggedEntityTreeId = useMemo(
+    () => String(admin.assigned_org_tree_id || admin.assignedOrgTreeId || "").trim(),
+    [admin.assigned_org_tree_id, admin.assignedOrgTreeId]
+  );
+
   const auditStatusData = [
     { label: "Plan", status: "plan", value: summaries.audits.plan || 0, color: "text-slate-300", bg: "bg-slate-400/10" },
     { label: "In Progress", status: "in_progress", value: summaries.audits.in_progress || 0, color: "text-amber-300", bg: "bg-amber-400/10" },
@@ -482,9 +489,10 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
 
   const headRootNode = useMemo(() => {
     if (!orgTree?.tree) return null;
-    if (!loggedEntityCode) return orgTree.tree;
-    return findNodeByCode(orgTree.tree, loggedEntityCode) || orgTree.tree;
-  }, [orgTree, loggedEntityCode]);
+    if (loggedEntityTreeId) return findNodeByEdgeId(orgTree.tree, loggedEntityTreeId);
+    if (loggedEntityCode) return findNodeByCode(orgTree.tree, loggedEntityCode);
+    return null;
+  }, [orgTree, loggedEntityCode, loggedEntityTreeId]);
 
   const treeEntities = useMemo(() => {
     if (!headRootNode) return [];
@@ -499,19 +507,21 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
     if (!headRootNode) return opts;
 
     for (const e of treeEntities) {
-      const node = findNodeByCode(headRootNode, e.code);
+      const node = findNodeByEdgeId(headRootNode, e.edge_id) || findNodeByCode(headRootNode, e.code);
       if (!node) continue;
       if (hasActiveDescendant(node, activeCodes)) {
-        opts.push({ value: e.code, label: e.name, depth: e.depth, uniqueKey: e.uniqueKey });
+        opts.push({ value: e.edge_id ? `tree:${e.edge_id}` : `code:${e.code}`, label: e.name, depth: e.depth, uniqueKey: e.uniqueKey });
       }
     }
 
     // Guarantee logged-in root entity appears in the filter.
     const rootCode = headRootNode.code || headRootNode.comp_code || headRootNode.cust_code || headRootNode.afc_code || "";
     const rootName = headRootNode.name || rootCode;
-    if (rootCode && !opts.some((o) => o.value === rootCode)) {
+    const rootEdgeId = String(headRootNode.edge_id ?? headRootNode.id ?? "");
+    const rootValue = rootEdgeId ? `tree:${rootEdgeId}` : `code:${rootCode}`;
+    if (rootCode && !opts.some((o) => o.value === rootValue)) {
       opts.splice(1, 0, {
-        value: rootCode,
+        value: rootValue,
         label: rootName,
         depth: 0,
         uniqueKey: `__root__${rootCode}`,
@@ -583,7 +593,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
 
     for (const item of rawPerf) {
       const itemEdgeId = String(item.org_tree_id || "");
-      const matchesNode = edgeSet.size > 0 && itemEdgeId
+      const matchesNode = edgeSet.size > 0
         ? edgeSet.has(itemEdgeId)
         : codes.includes(item.entity_code);
 
@@ -614,9 +624,9 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
       rawPerf = rawPerf.filter((item: any) => item.audit_code === selectedAuditCode);
     }
 
-    if (!orgTree?.tree) {
-      return rawPerf;
-    }
+    // An Entity Head must never receive organization-wide fallback bars. If
+    // the assigned tree position cannot be resolved, show no chart data.
+    if (!orgTree?.tree || !headRootNode) return [];
 
     if (!chartFilters.entity_code || chartFilters.entity_code === "all") {
       if (!headRootNode) return rawPerf;
@@ -642,8 +652,11 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
       ];
     }
 
-    const selectedNode = findNodeByCode(headRootNode, chartFilters.entity_code);
-    if (!selectedNode) return rawPerf;
+    const selectedEntityValue = chartFilters.entity_code;
+    const selectedNode = selectedEntityValue.startsWith("tree:")
+      ? findNodeByEdgeId(headRootNode, selectedEntityValue.slice(5))
+      : findNodeByCode(headRootNode, selectedEntityValue.replace(/^code:/, ""));
+    if (!selectedNode) return [];
 
     const results: any[] = [];
     if (selectedNode.children) {
@@ -981,7 +994,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
                             <div className="text-sm font-bold text-white truncate">{a.title}</div>
                             <div className="flex items-center gap-3 mt-1">
                               <span className="text-[10px] text-white/40">{a.audit_code}</span>
-                              <span className="text-[10px] text-emerald-400/60 font-medium">{a.audit_type}</span>
+                              <span className="text-[10px] text-emerald-400/60 font-medium">{a.audit_type === "external" ? "External" : "Internal"}</span>
                             </div>
                           </div>
                           <button

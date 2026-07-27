@@ -171,7 +171,7 @@ export default function ContactSection() {
                 <Image
                   src={vcmLogo}
                   alt="ValueCraft Minds"
-                  className="h-auto w-36 sm:w-40 lg:w-44"
+                  className="h-auto w-46 sm:w-50 lg:w-64"
                   sizes="(max-width: 639px) 9rem, (max-width: 1023px) 10rem, 11rem"
                 />
               </div>

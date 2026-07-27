@@ -230,7 +230,7 @@ export default function AssignAuditPage() {
                           </div>
                           <div>
                             <p className="text-sm font-medium text-white capitalize">{type}</p>
-                            <p className="text-[11px] text-gray-500 mt-0.5 hidden sm:block">{type === "internal" ? "Use internal team" : "Assign to firm"}</p>
+                            <p className="text-[11px] text-gray-500 mt-0.5 hidden sm:block">{type === "internal" ? "Use your internal team" : "Assign an external audit firm"}</p>
                           </div>
                         </label>
                       ))}

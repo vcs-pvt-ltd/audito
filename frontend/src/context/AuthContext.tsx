@@ -86,6 +86,33 @@ function normalizeAccountType(accountType: string | null | undefined): string | 
   return accountType;
 }
 
+const LAST_ROLE_BY_EMAIL_STORAGE_KEY = "audito_last_role_by_email";
+
+function normalizedEmail(email: string | null | undefined) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function getLastRoleForEmail(email: string) {
+  try {
+    const roles = JSON.parse(localStorage.getItem(LAST_ROLE_BY_EMAIL_STORAGE_KEY) || "{}") as Record<string, string>;
+    return roles[normalizedEmail(email)] || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberLastRoleForEmail(email: string | null | undefined, role: string | null | undefined) {
+  const key = normalizedEmail(email);
+  if (!key || !role) return;
+  try {
+    const roles = JSON.parse(localStorage.getItem(LAST_ROLE_BY_EMAIL_STORAGE_KEY) || "{}") as Record<string, string>;
+    roles[key] = role;
+    localStorage.setItem(LAST_ROLE_BY_EMAIL_STORAGE_KEY, JSON.stringify(roles));
+  } catch {
+    // A saved role is only a convenience preference. Login remains fully functional without it.
+  }
+}
+
 function normalizeBoolean(value: unknown): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
@@ -161,7 +188,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (payload: LoginPayload) => {
-      const res = await authApi.login(payload) as {
+      const preferredRole = getLastRoleForEmail(payload.email);
+      const res = await authApi.login({ ...payload, ...(preferredRole ? { preferred_role: preferredRole } : {}) }) as {
         success: boolean;
         data?: { admin?: Admin; accounts?: AccountInfo[]; subscription?: SubscriptionStatus; subscription_expired?: boolean; payment_required?: boolean; custom_solution_pending?: boolean; payment?: PaymentDetails | null; tokens?: { accessToken: string; refreshToken: string } };
         message?: string;
@@ -182,6 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (res.success && res.data?.admin && res.data?.tokens) {
         loginPasswordRef.current = payload.password;
+        rememberLastRoleForEmail(res.data.admin.email, res.data.admin.role);
         persist(res.data.admin, res.data.accounts || [], res.data.tokens.accessToken, res.data.tokens.refreshToken, res.data.subscription ?? null);
         // Return the role so login page can redirect correctly
         return { success: true, message: res.message, role: res.data.admin.role };
@@ -220,6 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       if (res.success && res.data) {
         loginPasswordRef.current = pw;
+        rememberLastRoleForEmail(res.data.admin.email, res.data.admin.role);
         persist(res.data.admin, state.accounts, res.data.tokens.accessToken, res.data.tokens.refreshToken, res.data.subscription ?? null);
         return { success: true };
       }

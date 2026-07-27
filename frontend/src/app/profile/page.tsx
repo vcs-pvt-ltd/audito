@@ -15,6 +15,7 @@ import {
 
 import { AuditorProfileTabs } from "./AuditorProfileTabs";
 import { Button, IconButton } from "@/components/ui";
+import { formatPhoneWithCountryCode } from "@/components/shared/PhoneNumber";
 
 interface Organization {
   name: string;
@@ -404,7 +405,7 @@ export default function ProfilePage() {
                 {profile.phone_number && (
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Phone size={13} className="text-gray-500 shrink-0" />
-                    <span className="text-sm text-gray-300 font-medium truncate">{profile.phone_number}</span>
+                    <span className="text-sm text-gray-300 font-medium truncate">{formatPhoneWithCountryCode(profile.phone_number, profile.country, countries)}</span>
                   </div>
                 )}
                 {profile.country && (
@@ -572,7 +573,7 @@ export default function ProfilePage() {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
                     <DetailItem icon={Mail} label="Email Address" value={profile.email} copyable />
-                    <DetailItem icon={Phone} label="Phone Number" value={profile.phone_number} />
+                    <DetailItem icon={Phone} label="Phone Number" value={formatPhoneWithCountryCode(profile.phone_number, profile.country, countries)} />
                     <DetailItem icon={MapPin} label="Country" value={profile.country} />
                   </div>
                 )}

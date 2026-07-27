@@ -24,6 +24,7 @@ import {
   Briefcase,
   ExternalLink,
   Crown,
+  BarChart3,
 } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { structureApi, usersApi } from "@/lib/api";
@@ -82,7 +83,7 @@ const AUDIT_TYPE_BADGE: Record<string, string> = {
 
 const AUDIT_TYPE_LABEL: Record<string, string> = {
   internal: "Internal",
-  external: "Audit Firm",
+  external: "External",
 };
 
 function fmtDate(d: string | null) {
@@ -97,7 +98,7 @@ export default function AuditsPage() {
   const { allDone, completeOnboarding } = useOnboarding();
   const isOnboarding = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("onboarding") === "1";
 
-  const isFirmAdmin = admin?.role === "admin" && admin?.account_type === "Audit Firm";
+  const isFirmAdmin = admin?.role === "admin" && ["Audit Firm", "Audit Firm Company"].includes(admin?.account_type || "");
 
   const [audits, setAudits] = useState<AuditAssignment[]>([]);
   const [auditCount, setAuditCount] = useState(0);
@@ -333,6 +334,16 @@ export default function AuditsPage() {
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             </IconButton>
             {!isFirmAdmin && (
+              <Button
+                variant="secondary"
+                onClick={() => router.push("/audits/comparison")}
+                leftIcon={<BarChart3 size={16} />}
+              >
+                <span className="sm:hidden">Compare</span>
+                <span className="hidden sm:inline">Compare audits</span>
+              </Button>
+            )}
+            {!isFirmAdmin && (
               <Button onClick={handleNewAuditClick} leftIcon={isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}>
                 <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Create"}</span>
                 <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : "Create New Audit"}</span>
@@ -390,12 +401,12 @@ export default function AuditsPage() {
                 <THead>
                   <Th className="w-12">#</Th>
                   <Th>Audit</Th>
-                  <Th>Type</Th>
+                  {!isFirmAdmin && <Th>Type</Th>}
                   <Th>Created At</Th>
                   <Th>Start Date</Th>
                   <Th>End Date</Th>
-                  <Th>Budget</Th>
-                  <Th>Workers</Th>
+                  {!isFirmAdmin && <Th>Budget</Th>}
+                  {!isFirmAdmin && <Th>Workers</Th>}
                   <Th>Status</Th>
                   <Th>Progress</Th>
                   <Th align="right">Actions</Th>
@@ -419,11 +430,13 @@ export default function AuditsPage() {
                           </button>
                         </td>
 
+                        {!isFirmAdmin && (
                         <td className="px-4 py-3">
                           <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${AUDIT_TYPE_BADGE[a.audit_type] || "bg-white/5 text-gray-300 border-white/10"}`}>
                             {AUDIT_TYPE_LABEL[a.audit_type] || a.audit_type}
                           </span>
                         </td>
+                        )}
                         <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(a.created_at)}</td>
                         <td className="px-4 py-3 text-gray-300">
                           {fmtDate(a.start_date)}
@@ -431,27 +444,23 @@ export default function AuditsPage() {
                         <td className="px-4 py-3 text-gray-300">
                           {fmtDate(a.end_date)}
                         </td>
+                        {!isFirmAdmin && (
+                        <>
                         <td className="px-4 py-3 text-gray-300">
                           {a.budget ? `${a.currency || "$"}${a.budget}` : "—"}
                         </td>
                         <td className="px-4 py-3 text-gray-300">
                           {a.num_workers !== null ? a.num_workers : "—"}
                         </td>
+                        </>
+                        )}
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-medium ${STATUS_BADGE[a.status] || ""}`}>
                             {STATUS_LABEL[a.status] || a.status}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden max-w-xs">
-                              <div
-                                className="h-full bg-gradient-to-r from-secondary-400 to-secondary-500 transition-all"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-gray-400 font-medium w-10 text-right">{pct}%</span>
-                          </div>
+                          <span className="text-xs font-semibold text-gray-300">{pct}%</span>
                         </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-2 justify-end">
@@ -542,14 +551,14 @@ export default function AuditsPage() {
                     </div>
 
                     <div className="mt-3 flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${AUDIT_TYPE_BADGE[a.audit_type] || "bg-white/5 text-gray-300 border-white/10"}`}>
+                      {!isFirmAdmin && <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${AUDIT_TYPE_BADGE[a.audit_type] || "bg-white/5 text-gray-300 border-white/10"}`}>
                         {AUDIT_TYPE_LABEL[a.audit_type] || a.audit_type}
-                      </span>
+                      </span>}
                       <span className="text-xs text-gray-400">{fmtDate(a.start_date)} - {fmtDate(a.end_date)}</span>
                     </div>
 
                     {/* Show Budget and Workers in Mobile view */}
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    {!isFirmAdmin && <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-1.5">
                         <p className="text-gray-500 flex items-center gap-1"><DollarSign size={10} /> Budget</p>
                         <p className="text-gray-300 font-medium mt-0.5">{a.budget ? `${a.currency || "$"}${a.budget}` : "—"}</p>
@@ -558,16 +567,11 @@ export default function AuditsPage() {
                         <p className="text-gray-500 flex items-center gap-1"><Users size={10} /> Workers</p>
                         <p className="text-gray-300 font-medium mt-0.5">{a.num_workers !== null ? a.num_workers : "—"}</p>
                       </div>
-                    </div>
+                    </div>}
 
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">Progress</span>
-                        <span className="text-gray-300">{pct}%</span>
-                      </div>
-                      <div className="mt-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-secondary-400 to-secondary-500" style={{ width: `${pct}%` }} />
-                      </div>
+                    <div className="mt-3 flex items-center justify-between text-xs">
+                      <span className="text-gray-500">Progress</span>
+                      <span className="font-semibold text-gray-300">{pct}%</span>
                     </div>
 
                     <div className="mt-3 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>

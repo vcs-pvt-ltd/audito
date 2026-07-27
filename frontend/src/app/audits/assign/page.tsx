@@ -20,6 +20,7 @@ import {
   Eye
 } from "lucide-react";
 import { Button, IconButton, fieldClass } from "@/components/ui";
+import PhoneNumber from "@/components/shared/PhoneNumber";
 
 interface TreeNode {
   id: string;
@@ -528,7 +529,13 @@ function AuditAssignContent() {
                         </div>
                         <div className="flex items-center gap-3">
                           <Phone size={14} className="text-gray-500" />
-                          <p className="text-xs text-gray-400">{audit.assigned_company.phone_number || "No contact number"}</p>
+                          <p className="text-xs text-gray-400">
+                            <PhoneNumber
+                              phone={audit.assigned_company.phone_number}
+                              country={audit.assigned_company.country}
+                              emptyValue="No contact number"
+                            />
+                          </p>
                         </div>
                       </div>
                     </div>

@@ -17,6 +17,7 @@ import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton } from "@/components/ui";
+import PhoneNumber from "@/components/shared/PhoneNumber";
 
 // ─── Configuration per entity type ───────────────────────────────
 
@@ -453,12 +454,11 @@ export default function SetupStructurePage() {
             )}
           </div>
         </div>
- <div className="mb-6 flex gap-3 rounded-2xl border border-secondary-500/25 bg-gradient-to-r from-secondary-500/[0.13] via-secondary-500/[0.06] to-transparent p-4 sm:items-center sm:p-5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-secondary-500/25 bg-secondary-500/15 text-secondary-300">
+ <div className="mb-6 flex gap-3 rounded-2xl border border-secondary-500/25 bg-gradient-to-r from-secondary-500/[0.13] via-secondary-500/[0.06] to-transparent p-1 sm:items-center sm:p-2">
+          <div className="flex shrink-0 items-center justify-center text-secondary-300">
             <Info size={19} />
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">One {config.label.toLowerCase()} entry is enough</p>
             <p className="mt-1 text-sm leading-relaxed text-gray-300">
               Create each {config.label.toLowerCase()} once, then use that same entity in multiple places when you set up your organization structure. There&apos;s no need to add duplicate names.
             </p>
@@ -544,7 +544,7 @@ export default function SetupStructurePage() {
                       </div>
                       <div className="rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
                         <p className="text-gray-500">Phone</p>
-                        <p className="text-gray-300 mt-0.5 truncate">{(entity.phone_number as string) || "-"}</p>
+                        <p className="text-gray-300 mt-0.5 truncate"><PhoneNumber phone={entity.phone_number as string} country={entity.country as string} emptyValue="-" /></p>
                       </div>
                       <div className="col-span-2 rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
                         <p className="text-gray-500">Country</p>
