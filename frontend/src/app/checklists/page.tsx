@@ -325,7 +325,7 @@ export default function ChecklistsPage() {
                       </td>
                       <td className="px-4 py-3">
                         {cl.checklist_type_name ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-secondary-500/15 text-secondary-400 border border-secondary-500/20">
+                          <span className="text px-2 py-0.5 text-gray-300">
                             {cl.checklist_type_name}
                           </span>
                         ) : (

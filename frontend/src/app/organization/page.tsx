@@ -19,7 +19,6 @@ import {
   X,
   TreePine,
 } from "lucide-react";
-import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { Button, IconButton } from "@/components/ui";
 
 // ─── Config ──────────────────────────────────────────────────────
@@ -591,33 +590,6 @@ export default function OrganizationPage() {
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
   const treeLoaded = useRef(false);
 
-  const [limitModal, setLimitModal] = useState<{
-    open: boolean;
-    title: string;
-    message: string;
-    limit: number;
-  }>({
-    open: false,
-    title: "",
-    message: "",
-    limit: 0
-  });
-
-  const getTreeDepth = useCallback((node: TreeNode): number => {
-    if (!node.children || node.children.length === 0) return 1;
-    return 1 + Math.max(...node.children.map(getTreeDepth));
-  }, []);
-
-  const countDepartments = useCallback((node: TreeNode): number => {
-    let count = node.entity_type === "Department" ? 1 : 0;
-    if (node.children) {
-      for (const child of node.children) {
-        count += countDepartments(child);
-      }
-    }
-    return count;
-  }, []);
-
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
   }, [isLoading, admin, router]);
@@ -705,23 +677,6 @@ export default function OrganizationPage() {
       if (!accessToken || !tree) return;
 
       // ─── Plan Limits Enforcement ──────────────────────────────
-      if (admin?.plan_limits) {
-        // 1. Department Count Limit
-        if (childType === "Department") {
-          const currentDepts = countDepartments(tree);
-          if (currentDepts + children.length > admin.plan_limits.department) {
-            setLimitModal({
-              open: true,
-              title: "Department Limit Reached",
-              message: "Your current plan has reached the maximum number of departments allowed in the organization tree.",
-              limit: admin.plan_limits.department
-            });
-            return;
-          }
-        }
-
-      }
-
       // Immediately sync to backend
       const adds = children.map((c) => ({
         parent_code: parentCode,
@@ -745,7 +700,7 @@ export default function OrganizationPage() {
         setSavingNodes(prev => { const next = new Set(prev); next.delete(parentCode); return next; });
       }
     },
-    [accessToken, tree, toast, fetchTree, countDepartments]
+    [accessToken, tree, toast, fetchTree]
   );
 
   const handleRemoveLocal = useCallback(
@@ -791,13 +746,6 @@ export default function OrganizationPage() {
 
   return (
     <div className="min-h-full bg-transparent flex flex-col relative w-full">
-      <LimitReachedModal
-        isOpen={limitModal.open}
-        onClose={() => setLimitModal(prev => ({ ...prev, open: false }))}
-        title={limitModal.title}
-        message={limitModal.message}
-        limit={limitModal.limit}
-      />
       <div className="flex-1 p-4 sm:p-6 lg:p-8 pt-20 lg:pt-8 pb-32">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">

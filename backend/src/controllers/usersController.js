@@ -32,6 +32,7 @@ const { db } = require('../config/db');
 const { getAccessibleEntityCodes } = require('../utils/accessHelper');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
 const { getOrgDetails, getCountryDialingCode } = require('../utils/orgLookup');
+const { getResendCooldownSeconds, recordResend } = require('../utils/emailResendCooldown');
 
 // ─── User code generators ────────────────────────────────────────
 
@@ -279,6 +280,7 @@ const createUser = async (req, res) => {
         assignedEntityType: !isAuditor(user_type) ? invitedEntityType : null,
         assignedEntityName: !isAuditor(user_type) ? (assignedEntity?.name || assigned_entity_code || null) : null,
       });
+      recordResend(`verification:${email}`);
     } catch (emailErr) {
       console.error('Failed to send user invitation email:', emailErr.message);
     }
@@ -551,6 +553,10 @@ const resendVerification = async (req, res) => {
     if (user.email_verified) {
       return errorResponse(res, 'Email is already verified.', 400);
     }
+    const cooldownSeconds = getResendCooldownSeconds(`verification:${user.email}`);
+    if (cooldownSeconds > 0) {
+      return errorResponse(res, `Please wait ${cooldownSeconds} second${cooldownSeconds === 1 ? '' : 's'} before resending the invitation.`, 429);
+    }
 
     const newToken = generateEmailToken();
     const newExpires = tokenExpiry();
@@ -578,6 +584,7 @@ const resendVerification = async (req, res) => {
         assignedEntityType: user._table === 'entity_head' ? user.assigned_entity_type : null,
         assignedEntityName: user._table === 'entity_head' ? (assignedEntity?.name || user.assigned_entity_code) : null,
       });
+      recordResend(`verification:${user.email}`);
     } catch (emailErr) {
       console.error('Resend email error:', emailErr.message);
       return errorResponse(res, 'Failed to send email. Please try again later.', 500);

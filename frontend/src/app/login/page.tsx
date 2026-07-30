@@ -7,7 +7,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2, CheckCircle, ArrowLeft, Clock3, Mail, X } from "lucide-react";
 import { useAuth, type SubscriptionStatus } from "@/context/AuthContext";
-import { type PaymentDetails } from "@/lib/api";
+import { authApi, type PaymentDetails } from "@/lib/api";
 import SubscriptionExpiredModal from "@/components/auth/SubscriptionExpiredModal";
 
 function LoginForm() {
@@ -23,12 +23,37 @@ function LoginForm() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [expiredModal, setExpiredModal] = useState<{ open: boolean; subscription?: SubscriptionStatus | null; payment?: PaymentDetails | null }>({ open: false });
   const [customPlanPendingModal, setCustomPlanPendingModal] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState("");
+  const [verificationModalOpen, setVerificationModalOpen] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const [resendMessage, setResendMessage] = useState("");
 
   useEffect(() => {
     if (searchParams.get("registered") === "true") {
       setShowSuccess(true);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const timer = window.setInterval(() => setResendSeconds((current) => Math.max(0, current - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [resendSeconds]);
+
+  const handleResendVerification = async () => {
+    if (!verificationEmail || resendingVerification || resendSeconds > 0) return;
+    setResendingVerification(true);
+    setResendMessage("");
+    const result = await authApi.resendVerification(verificationEmail);
+    if (result.success) {
+      setResendSeconds(30);
+      setResendMessage("A new verification email has been sent. Please check your inbox.");
+    } else {
+      setResendMessage(result.message || "Unable to resend the verification email.");
+    }
+    setResendingVerification(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +81,10 @@ function LoginForm() {
         setExpiredModal({ open: true, subscription: res.subscription, payment: res.payment });
       } else if (res.customSolutionPending) {
         setCustomPlanPendingModal(true);
+      } else if (res.emailVerificationRequired) {
+        setVerificationEmail(res.email || email.trim());
+        setResendMessage("");
+        setVerificationModalOpen(true);
       } else {
         setError(res.message || "Login failed.");
       }
@@ -104,6 +133,21 @@ function LoginForm() {
               className="mt-6 flex min-h-11 w-full items-center justify-center rounded-xl bg-secondary-500 px-4 py-3 text-sm font-semibold text-primary-950 transition-colors hover:bg-secondary-400"
             >
               Back to sign in
+            </button>
+          </div>
+        </div>
+      )}
+      {verificationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary-950/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="verify-email-title">
+          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-secondary-500/25 bg-[#053B36] p-6 shadow-2xl shadow-black/40 sm:p-8">
+            <button type="button" onClick={() => setVerificationModalOpen(false)} aria-label="Close" className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-white/10 hover:text-white"><X size={18} /></button>
+            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-secondary-500/25 bg-secondary-500/15 text-secondary-300"><Mail size={23} /></div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary-400">Email verification</p>
+            <h2 id="verify-email-title" className="mt-2 text-2xl font-semibold tracking-tight text-white">Verify your email to continue</h2>
+            <p className="mt-3 text-sm leading-relaxed text-gray-300">Your account is ready, but the email address <span className="font-medium text-white">{verificationEmail}</span> must be verified before you can sign in.</p>
+            {resendMessage && <p className={`mt-4 rounded-xl border p-3 text-sm ${resendMessage.startsWith("A new") ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" : "border-red-400/25 bg-red-400/10 text-red-200"}`}>{resendMessage}</p>}
+            <button type="button" disabled={resendingVerification || resendSeconds > 0} onClick={() => void handleResendVerification()} className="mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-secondary-500 px-4 py-3 text-sm font-semibold text-primary-950 transition-colors hover:bg-secondary-400 disabled:cursor-not-allowed disabled:opacity-50">
+              {resendingVerification ? <Loader2 size={17} className="animate-spin" /> : resendSeconds > 0 ? `Resend available in ${resendSeconds}s` : "Resend verification email"}
             </button>
           </div>
         </div>

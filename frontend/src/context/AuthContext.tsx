@@ -70,7 +70,7 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string; role?: string; subscriptionExpired?: boolean; subscription?: SubscriptionStatus; paymentRequired?: boolean; customSolutionPending?: boolean; payment?: PaymentDetails | null }>;
+  login: (payload: LoginPayload) => Promise<{ success: boolean; message?: string; role?: string; subscriptionExpired?: boolean; subscription?: SubscriptionStatus; paymentRequired?: boolean; customSolutionPending?: boolean; emailVerificationRequired?: boolean; email?: string; payment?: PaymentDetails | null }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
   switchAccount: (targetRole: string, password?: string) => Promise<{ success: boolean; message?: string; needsPassword?: boolean }>;
@@ -191,7 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const preferredRole = getLastRoleForEmail(payload.email);
       const res = await authApi.login({ ...payload, ...(preferredRole ? { preferred_role: preferredRole } : {}) }) as {
         success: boolean;
-        data?: { admin?: Admin; accounts?: AccountInfo[]; subscription?: SubscriptionStatus; subscription_expired?: boolean; payment_required?: boolean; custom_solution_pending?: boolean; payment?: PaymentDetails | null; tokens?: { accessToken: string; refreshToken: string } };
+        data?: { admin?: Admin; accounts?: AccountInfo[]; subscription?: SubscriptionStatus; subscription_expired?: boolean; payment_required?: boolean; custom_solution_pending?: boolean; email_verification_required?: boolean; email?: string; payment?: PaymentDetails | null; tokens?: { accessToken: string; refreshToken: string } };
         message?: string;
       };
       // Expired plan: backend returns success with a flag (no tokens). Block the
@@ -207,6 +207,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // price. Do not establish a session until that review is complete.
       if (res.success && res.data?.custom_solution_pending) {
         return { success: false, message: res.message, customSolutionPending: true };
+      }
+      if (res.success && res.data?.email_verification_required) {
+        return { success: false, message: res.message, emailVerificationRequired: true, email: res.data.email };
       }
       if (res.success && res.data?.admin && res.data?.tokens) {
         loginPasswordRef.current = payload.password;

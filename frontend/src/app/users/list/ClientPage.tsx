@@ -850,6 +850,7 @@ export default function UsersClientPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [resendCooldowns, setResendCooldowns] = useState<Record<string, number>>({});
   const [limitModalOpen, setLimitModalOpen] = useState(false);
 
   // Modal states
@@ -877,6 +878,20 @@ export default function UsersClientPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [q, setQ] = useState("");
+
+  useEffect(() => {
+    if (!Object.keys(resendCooldowns).length) return;
+    const timer = window.setInterval(() => {
+      setResendCooldowns((current) => {
+        const next: Record<string, number> = {};
+        for (const [userCode, seconds] of Object.entries(current)) {
+          if (seconds > 1) next[userCode] = seconds - 1;
+        }
+        return next;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldowns]);
 
   const effectiveTreeSteps = useMemo(() => {
     if (!admin || !config) return [];
@@ -997,7 +1012,10 @@ export default function UsersClientPage() {
     setActionLoading(user.user_code);
     const res = await usersApi.resendVerification(accessToken, user.user_code);
     setActionLoading(null);
-    if (res.success) toast("Invitation email resent.", "success");
+    if (res.success) {
+      setResendCooldowns((current) => ({ ...current, [user.user_code]: 30 }));
+      toast("Invitation email resent.", "success");
+    }
     else toast(res.message || "Failed to resend email.", "error");
   };
 
@@ -1246,9 +1264,9 @@ export default function UsersClientPage() {
                                   {!user.email_verified && (
                                     <button
                                       onClick={() => handleResend(user)}
-                                      disabled={actionLoading === user.user_code}
+                                      disabled={actionLoading === user.user_code || !!resendCooldowns[user.user_code]}
                                       className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all font-medium disabled:opacity-50"
-                                      title="Resend invitation email"
+                                      title={resendCooldowns[user.user_code] ? `Resend available in ${resendCooldowns[user.user_code]}s` : "Resend invitation email"}
                                     >
                                       <Mail size={15} />
                                     </button>
@@ -1332,9 +1350,9 @@ export default function UsersClientPage() {
                           {!user.email_verified && (
                             <button
                               onClick={() => handleResend(user)}
-                              disabled={actionLoading === user.user_code}
+                              disabled={actionLoading === user.user_code || !!resendCooldowns[user.user_code]}
                               className="p-2 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all font-medium disabled:opacity-50"
-                              title="Resend invitation email"
+                              title={resendCooldowns[user.user_code] ? `Resend available in ${resendCooldowns[user.user_code]}s` : "Resend invitation email"}
                             >
                               <Mail size={15} />
                             </button>

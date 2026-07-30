@@ -141,6 +141,7 @@ const generateAiChecklistJobId = () => generateTableId('ai_checklist_generation_
 const generateAiChecklistSuggestionId = () => generateTableId('ai_checklist_question_suggestions', 'ai_checklist_suggestion_id', 'AICS', 5);
 const generatePrivacyPolicyId = () => generateTableId('privacy_policies', 'privacy_policy_id', 'PPOL', 5);
 const generatePrivacyPolicyAgreementId = () => generateTableId('privacy_policy_agreements', 'privacy_policy_agreement_id', 'PPAG', 6);
+const generateAiKnowledgeSettingId = () => generateTableId('ai_knowledge_settings', 'ai_knowledge_setting_id', 'AIKS', 5);
 
 module.exports = {
   generateTableId,
@@ -210,4 +211,5 @@ module.exports = {
   generateAiChecklistSuggestionIds,
   generatePrivacyPolicyId,
   generatePrivacyPolicyAgreementId,
+  generateAiKnowledgeSettingId,
 };

@@ -142,7 +142,7 @@ const createSubEntity = async (req, res) => {
       country
     } = req.body;
 
-    const missing = validateRequiredFields(req.body, ['entity_type', 'name', 'email']);
+    const missing = validateRequiredFields(req.body, ['entity_type', 'name']);
     if (missing) return errorResponse(res, missing, 400);
 
     const accountType = req.user.accountType === 'Audit Firm Company' ? 'Audit Firm' : req.user.accountType;
@@ -196,7 +196,7 @@ const createSubEntity = async (req, res) => {
     const common = {
       name,
       registration_number: registration_number || null,
-      email: String(email).trim(),
+      email: String(email || '').trim() || null,
       address_line_1: address_line_1 || null,
       address_line_2: address_line_2 || null,
       address_line_3: address_line_3 || null,
@@ -283,10 +283,6 @@ const updateSubEntity = async (req, res) => {
     const adminCode = req.user.entityCode;
     const accessibleCodes = await getAccessibleEntityCodes(adminCode, req.user.entityType);
     let updated = false;
-
-    if (Object.prototype.hasOwnProperty.call(req.body, 'email') && !String(req.body.email || '').trim()) {
-      return errorResponse(res, 'Email is required.', 400);
-    }
 
     // --- Uniqueness check: block renaming to a duplicate name within the same owner ---
     // Same normalized-match rule as create: case, spacing, and leading zeros are ignored.
