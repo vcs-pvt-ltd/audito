@@ -42,9 +42,10 @@ const {
 const { successResponse, errorResponse, validateRequiredFields, isValidEmail } = require('../utils/helpers');
 const { db } = require('../config/db');
 const crypto = require('crypto');
-const { sendOrganizationRegistrationVerificationEmail, sendCustomSolutionVerificationEmail, sendCustomSolutionRequestEmail } = require('../services/emailService');
+const { sendOrganizationRegistrationVerificationEmail, sendCustomSolutionVerificationEmail, sendCustomSolutionRequestEmail, sendUserInvitationEmail, sendOtpEmail } = require('../services/emailService');
 const PaymentModel = require('../models/PaymentModel');
-const { getOrgName } = require('../utils/orgLookup');
+const { getOrgName, getOrgDetails, getCountryDialingCode } = require('../utils/orgLookup');
+const { getResendCooldownSeconds, recordResend } = require('../utils/emailResendCooldown');
 const SubscriptionModel = require('../models/SubscriptionModel');
 const CustomSolutionModel = require('../models/CustomSolutionModel');
 const PlanSettingsModel = require('../models/PlanSettingsModel');
@@ -580,6 +581,7 @@ const register = async (req, res) => {
       sendCustomSolutionVerificationEmail(org_email, org_name, customVerificationToken).catch(err => {
         console.error('Failed to send custom solution verification email:', err);
       });
+      recordResend(`verification:${org_email}`);
       return successResponse(res, { custom_solution_pending: true }, 'Custom solution request created. Please verify the organization email to send it for pricing review.', 201);
     }
 
@@ -591,6 +593,7 @@ const register = async (req, res) => {
     sendOrganizationRegistrationVerificationEmail(email, first_name, verificationToken, org_name).catch(err => {
       console.error('Failed to send organization verification email:', err);
     });
+    recordResend(`verification:${email}`);
 
     // For a paid plan, create the pending registration payment so the client
     // can redirect into the payment flow.
@@ -682,21 +685,18 @@ const login = async (req, res) => {
 
     // Build candidate list — { role, record } — with password-check candidates
     const candidates = [];
+    const unverifiedCandidates = [];
     if (adminRec && adminRec.is_active && adminRec.password) {
-      if (!adminRec.is_verified) {
-        return errorResponse(res, 'Please verify your email address. Check your inbox for the verification link.', 403);
-      }
-      candidates.push({ role: adminRec.role || 'admin', record: adminRec });
+      if (adminRec.is_verified) candidates.push({ role: adminRec.role || 'admin', record: adminRec });
+      else unverifiedCandidates.push({ role: adminRec.role || 'admin', record: adminRec });
     }
-    if (headRec && headRec.is_active && headRec.email_verified && headRec.password) {
-      candidates.push({ role: 'entity_head', record: headRec });
+    if (headRec && headRec.is_active && headRec.password) {
+      if (headRec.email_verified) candidates.push({ role: 'entity_head', record: headRec });
+      else unverifiedCandidates.push({ role: 'entity_head', record: headRec });
     }
-    if (auditorRec && auditorRec.is_active && auditorRec.email_verified && auditorRec.password) {
-      candidates.push({ role: 'auditor', record: auditorRec });
-    }
-
-    if (candidates.length === 0) {
-      return errorResponse(res, 'Invalid email or password.', 401);
+    if (auditorRec && auditorRec.is_active && auditorRec.password) {
+      if (auditorRec.email_verified) candidates.push({ role: 'auditor', record: auditorRec });
+      else unverifiedCandidates.push({ role: 'auditor', record: auditorRec });
     }
 
     // A user can legitimately have more than one account role under the same
@@ -723,6 +723,15 @@ const login = async (req, res) => {
     }
 
     if (!activeRole) {
+      for (const candidate of unverifiedCandidates) {
+        if (await bcrypt.compare(password, candidate.record.password)) {
+          return successResponse(
+            res,
+            { email_verification_required: true, email: candidate.record.email },
+            'Please verify your email address before signing in.'
+          );
+        }
+      }
       return errorResponse(res, 'Invalid email or password.', 401);
     }
 
@@ -1214,16 +1223,33 @@ const switchAccount = async (req, res) => {
 /**
  * POST /api/auth/forgot-password
  * Body: { email }
- * Sends a 6-digit OTP to the admin's email address.
+ * Sends a 6-digit OTP to the email address for any verified login account.
  */
 const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const email = String(req.body?.email || '').trim().toLowerCase();
     if (!email) return errorResponse(res, 'Email is required.', 400);
     if (!isValidEmail(email)) return errorResponse(res, 'Invalid email address.', 400);
+    const cooldownSeconds = getResendCooldownSeconds(`password-reset:${email}`);
+    if (cooldownSeconds > 0) {
+      return errorResponse(res, `Please wait ${cooldownSeconds} second${cooldownSeconds === 1 ? '' : 's'} before requesting another code.`, 429);
+    }
 
-    const admin = await AdminModel.findByEmail(email);
-    if (!admin) {
+    // A single email can be used by an administrator, auditor, and/or entity
+    // head. Every active, verified account that can sign in must be able to
+    // request a password reset, not only organization administrators.
+    const [admin, auditor, entityHead] = await Promise.all([
+      AdminModel.findByEmail(email),
+      AuditorModel.findByEmail(email),
+      EntityHeadModel.findByEmail(email),
+    ]);
+    const recipient = [
+      admin && admin.is_active && admin.is_verified ? admin : null,
+      auditor && auditor.is_active && auditor.email_verified && auditor.password ? auditor : null,
+      entityHead && entityHead.is_active && entityHead.email_verified && entityHead.password ? entityHead : null,
+    ].find(Boolean);
+
+    if (!recipient) {
       // Don't reveal whether account exists
       return successResponse(res, null, 'If an account exists with that email, an OTP has been sent.');
     }
@@ -1244,13 +1270,14 @@ await db.query(
 
     // Send OTP email
     try {
-      const { sendOtpEmail } = require('../services/emailService');
-      await sendOtpEmail(email, `${admin.first_name} ${admin.last_name}`, otp);
+      const recipientName = [recipient.first_name, recipient.last_name].filter(Boolean).join(' ') || 'there';
+      await sendOtpEmail(email, recipientName, otp);
     } catch (emailErr) {
       console.error('Failed to send OTP email:', emailErr.message);
       return errorResponse(res, 'Failed to send OTP email. Please try again.', 500);
     }
 
+    recordResend(`password-reset:${email}`);
     return successResponse(res, null, 'If an account exists with that email, an OTP has been sent.');
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -1265,10 +1292,101 @@ await db.query(
  * Body: { email, otp }
  * Verifies the OTP and returns a temporary reset token.
  */
+/** Resends a pending organization, invitation, or custom-plan verification email. */
+const resendVerificationEmail = async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim();
+    if (!email) return errorResponse(res, 'Email is required.', 400);
+    if (!isValidEmail(email)) return errorResponse(res, 'Invalid email address.', 400);
+
+    const cooldownKey = `verification:${email}`;
+    const cooldownSeconds = getResendCooldownSeconds(cooldownKey);
+    if (cooldownSeconds > 0) {
+      return errorResponse(res, `Please wait ${cooldownSeconds} second${cooldownSeconds === 1 ? '' : 's'} before resending the verification email.`, 429);
+    }
+
+    const admin = await AdminModel.findByEmail(email);
+    if (admin && !admin.is_verified) {
+      const token = crypto.randomBytes(32).toString('hex');
+      await AdminModel.setVerificationToken(admin.admin_id, token);
+      const organizationName = await getOrgName(admin.entity_type, admin.entity_code);
+      await sendOrganizationRegistrationVerificationEmail(admin.email, admin.first_name, token, organizationName || admin.entity_code);
+      recordResend(cooldownKey);
+      return successResponse(res, null, 'A verification email has been sent if the account is awaiting verification.');
+    }
+
+    const resendInvitation = async (record, type) => {
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+      const model = type === 'auditor' ? AuditorModel : EntityHeadModel;
+      const recordId = type === 'auditor' ? record.auditor_id : record.entity_head_id;
+      await model.regenerateToken(recordId, token, expiresAt);
+
+      const ownerAdmin = record.created_by_entity_code
+        ? await AdminModel.findByEntityCode(record.created_by_entity_code)
+        : null;
+      const organization = ownerAdmin
+        ? await getOrgDetails(ownerAdmin.entity_type, record.created_by_entity_code)
+        : null;
+      const dialingCode = await getCountryDialingCode(organization?.country);
+      await sendUserInvitationEmail(record.email, `${record.first_name} ${record.last_name}`, token, {
+        organizationName: organization?.name || record.created_by_entity_code || 'your organization',
+        organizationEmail: organization?.email,
+        organizationPhone: organization?.phoneNumber,
+        organizationDialingCode: dialingCode,
+        organizationAddress: organization?.address,
+        role: record.user_type || (type === 'auditor' ? 'Auditor' : 'Entity Head'),
+        includeAssignedArea: type === 'entity_head',
+        assignedEntityType: type === 'entity_head' ? record.assigned_entity_type : null,
+        assignedEntityName: type === 'entity_head' ? record.assigned_entity_code : null,
+      });
+    };
+
+    const auditor = await AuditorModel.findByEmail(email);
+    if (auditor && !auditor.email_verified && auditor.is_active) {
+      await resendInvitation(auditor, 'auditor');
+      recordResend(cooldownKey);
+      return successResponse(res, null, 'A verification email has been sent if the account is awaiting verification.');
+    }
+
+    const entityHead = await EntityHeadModel.findByEmail(email);
+    if (entityHead && !entityHead.email_verified && entityHead.is_active) {
+      await resendInvitation(entityHead, 'entity_head');
+      recordResend(cooldownKey);
+      return successResponse(res, null, 'A verification email has been sent if the account is awaiting verification.');
+    }
+
+    const [customRows] = await db.query(
+      `SELECT request_id, org_name, org_email
+       FROM custom_solution_requests
+       WHERE org_email = ? AND email_verified = FALSE AND verification_expires_at IS NOT NULL
+       ORDER BY created_at DESC LIMIT 1`,
+      [email]
+    );
+    if (customRows[0]) {
+      const token = crypto.randomBytes(32).toString('hex');
+      await db.query(
+        `UPDATE custom_solution_requests
+         SET verification_token = ?, verification_expires_at = ?
+         WHERE request_id = ?`,
+        [token, new Date(Date.now() + 48 * 60 * 60 * 1000), customRows[0].request_id]
+      );
+      await sendCustomSolutionVerificationEmail(customRows[0].org_email, customRows[0].org_name, token);
+      recordResend(cooldownKey);
+    }
+
+    return successResponse(res, null, 'A verification email has been sent if the account is awaiting verification.');
+  } catch (error) {
+    console.error('Resend verification email error:', error);
+    return errorResponse(res, 'Unable to resend the verification email. Please try again.', 500);
+  }
+};
+
 const verifyOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
-    const missing = validateRequiredFields(req.body, ['email', 'otp']);
+    const { otp } = req.body;
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const missing = validateRequiredFields({ email, otp }, ['email', 'otp']);
     if (missing) return errorResponse(res, missing, 400);
 
     const [rows] = await db.query(
@@ -1310,8 +1428,9 @@ await db.query(
  */
 const resetPassword = async (req, res) => {
   try {
-    const { email, reset_token, new_password } = req.body;
-    const missing = validateRequiredFields(req.body, ['email', 'reset_token', 'new_password']);
+    const { reset_token, new_password } = req.body;
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const missing = validateRequiredFields({ email, reset_token, new_password }, ['email', 'reset_token', 'new_password']);
     if (missing) return errorResponse(res, missing, 400);
 
     if (new_password.length < 8) return errorResponse(res, 'Password must be at least 8 characters.', 400);
@@ -1330,20 +1449,28 @@ const resetPassword = async (req, res) => {
     await db.query('UPDATE password_reset_otps SET used = TRUE WHERE password_reset_otp_id = ?', [rows[0].password_reset_otp_id]);
 
     // Find admin — required (forgot password is admin-initiated)
-    const admin = await AdminModel.findByEmail(email);
-    if (!admin) return errorResponse(res, 'Account not found.', 404);
+    const [admin, auditor, head] = await Promise.all([
+      AdminModel.findByEmail(email),
+      AuditorModel.findByEmail(email),
+      EntityHeadModel.findByEmail(email),
+    ]);
+    const accounts = [
+      { type: 'admin', record: admin },
+      { type: 'auditor', record: auditor },
+      { type: 'entity_head', record: head },
+    ].filter(({ record }) => record?.is_active);
+
+    if (accounts.length === 0) return errorResponse(res, 'Account not found.', 404);
 
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(new_password, salt);
 
-    // Update password for every role that shares this email
-    await AdminModel.updatePassword(admin.admin_id, hashedPassword);
-
-    const auditor = await AuditorModel.findByEmail(email);
-    if (auditor) await AuditorModel.setPassword(auditor.auditor_id, hashedPassword);
-
-    const head = await EntityHeadModel.findByEmail(email);
-    if (head) await EntityHeadModel.setPassword(head.entity_head_id, hashedPassword);
+    // Keep every active role sharing this email in sync after a reset.
+    await Promise.all(accounts.map(({ type, record }) => {
+      if (type === 'admin') return AdminModel.updatePassword(record.admin_id, hashedPassword);
+      if (type === 'auditor') return AuditorModel.setPassword(record.auditor_id, hashedPassword);
+      return EntityHeadModel.setPassword(record.entity_head_id, hashedPassword);
+    }));
 
     return successResponse(res, null, 'Password reset successfully. You can now log in.');
   } catch (error) {
@@ -1890,6 +2017,7 @@ module.exports = {
   changePassword,
   switchAccount,
   forgotPassword,
+  resendVerificationEmail,
   verifyOtp,
   resetPassword,
   verifyEmail,

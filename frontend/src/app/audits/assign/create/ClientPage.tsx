@@ -23,7 +23,7 @@ const ENTITY_TYPE_COLORS: Record<string, string> = {
 
 interface TreeNode { code: string; name: string; entity_type: string; edge_id?: string | null; children?: TreeNode[]; [key: string]: unknown; }
 interface ChecklistEntity { entity_code: string; entity_type: string; entity_name: string; org_tree_id: string | null; question_count: number; }
-interface AuditorUser { user_code: string; first_name: string; last_name: string; email: string; role?: string; }
+interface AuditorUser { user_code: string; first_name: string; last_name: string; email: string; role?: string; email_verified?: boolean | number; }
 interface AuditFirmItem { code: string; name: string; email?: string; country?: string; }
 interface ChecklistBase { checklist_id: string; name: string; time_period_value: number | null; time_period_unit: string | null; budget: string | number | null; currency: string | null; num_workers: number | null; }
 
@@ -93,7 +93,11 @@ export default function AssignAuditPage() {
         usersApi.list(accessToken, "Auditor"),
         orgTreeApi.listEntities(accessToken, "Audit Firm Company"),
       ]);
-      if (auditorRes.success && auditorRes.data) setAuditors(((auditorRes.data as any).users || []));
+      if (auditorRes.success && auditorRes.data) {
+        const verifiedAuditors = ((auditorRes.data as any).users || [])
+          .filter((auditor: AuditorUser) => auditor.email_verified === true || auditor.email_verified === 1);
+        setAuditors(verifiedAuditors);
+      }
       if (firmRes.success && firmRes.data) setFirmCompanies(((firmRes.data as any).items || []));
       if (clRes.success && clRes.data) {
         const cl = (clRes.data as any).checklist;
@@ -314,7 +318,7 @@ export default function AssignAuditPage() {
                   <div className="flex-1 overflow-y-auto pr-1 space-y-1.5">
                     {auditType === "internal" ? (
                       auditors.length === 0 ? (
-                        <div className="text-center py-10"><Users size={28} className="text-gray-600 mx-auto mb-2" /><p className="text-gray-500 text-xs">No auditors found.</p></div>
+                        <div className="text-center py-10"><Users size={28} className="text-gray-600 mx-auto mb-2" /><p className="text-gray-500 text-xs">No verified auditors available.</p></div>
                       ) : auditors.map(a => (
                         <label key={a.user_code} className={`flex items-center gap-3 px-3.5 py-3 rounded-xl cursor-pointer transition-all border ${selectedAuditorCode === a.user_code ? "bg-amber-500/10 border-amber-500/30" : "border-transparent bg-white/[0.01] hover:bg-white/[0.03]"}`}>
                           <input type="radio" className="sr-only" checked={selectedAuditorCode === a.user_code} onChange={() => setSelectedAuditorCode(a.user_code)} />

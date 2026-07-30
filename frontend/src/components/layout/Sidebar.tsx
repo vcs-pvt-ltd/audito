@@ -12,7 +12,7 @@ import { noticeApi, linksApi } from "@/lib/api";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
   ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
-  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Trash2, Inbox, Tag, BadgePercent,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Trash2, Inbox, Tag, BadgePercent, Bot,
 } from "lucide-react";
 
 // ─── Avatar helper (mirrors profile page) ────────────────────────
@@ -228,6 +228,7 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
   audito_admin: [
     { type: "link", label: "Dashboard", path: "/admin-panel/dashboard", icon: LayoutDashboard },
     { type: "link", label: "Plans & Limits", path: "/admin-panel/plans", icon: Settings, matchPrefix: true },
+    { type: "link", label: "AI Knowledge", path: "/admin-panel/ai-knowledge", icon: Bot, matchPrefix: true },
     { type: "link", label: "Privacy Policies", path: "/admin-panel/privacy-policies", icon: FileCheck, matchPrefix: true },
     { type: "link", label: "Messages", path: "/admin-panel/messages", icon: Mail, matchPrefix: true },
     { label: "Promotions", icon: Tag, items: [

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -23,6 +23,14 @@ export default function ForgotPasswordPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const [resendMessage, setResendMessage] = useState("");
+
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const timer = window.setInterval(() => setResendSeconds((current) => Math.max(0, current - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [resendSeconds]);
 
   const passwordRequirements = useMemo(() => ({
     length: newPassword.length >= 8,
@@ -47,8 +55,32 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     try {
       const res = await authApi.forgotPassword(email);
-      if (res.success) setStep("otp");
+      if (res.success) {
+        setStep("otp");
+        setResendSeconds(30);
+        setResendMessage("");
+      }
       else setError(res.message || "Failed to send OTP.");
+    } catch {
+      setError("Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!email.trim() || loading || resendSeconds > 0) return;
+    setLoading(true);
+    setError("");
+    setResendMessage("");
+    try {
+      const res = await authApi.forgotPassword(email);
+      if (res.success) {
+        setResendSeconds(30);
+        setResendMessage("A new verification code has been sent to your email.");
+      } else {
+        setError(res.message || "Failed to resend OTP.");
+      }
     } catch {
       setError("Something went wrong.");
     } finally {
@@ -173,10 +205,10 @@ export default function ForgotPasswordPage() {
               </div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || resendSeconds > 0}
                 className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 disabled:opacity-50 text-primary-950 font-semibold rounded-lg transition-all"
               >
-                {loading ? <Loader2 size={18} className="animate-spin" /> : "Send OTP"}
+                {loading ? <Loader2 size={18} className="animate-spin" /> : resendSeconds > 0 ? `Send available in ${resendSeconds}s` : "Send OTP"}
               </button>
             </form>
           )}
@@ -207,6 +239,15 @@ export default function ForgotPasswordPage() {
                 className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500 hover:bg-secondary-600 disabled:opacity-50 text-primary-950 font-semibold rounded-lg transition-all"
               >
                 {loading ? <Loader2 size={18} className="animate-spin" /> : "Verify OTP"}
+              </button>
+              {resendMessage && <p className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-3 text-center text-xs text-emerald-200">{resendMessage}</p>}
+              <button
+                type="button"
+                disabled={loading || resendSeconds > 0}
+                onClick={() => void handleResendOtp()}
+                className="w-full text-center text-sm font-medium text-secondary-400 transition-colors hover:text-secondary-300 disabled:cursor-not-allowed disabled:text-gray-500"
+              >
+                {resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : "Resend code"}
               </button>
               <button
                 type="button"

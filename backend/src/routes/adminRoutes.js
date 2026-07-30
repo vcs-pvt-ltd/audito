@@ -1,7 +1,34 @@
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const aiKnowledgeController = require('../controllers/aiKnowledgeController');
 const { authenticate, authorize } = require('../middleware/auth');
+const { errorResponse } = require('../utils/helpers');
+
+const aiKnowledgeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const accepted = [
+      'application/pdf', 'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain', 'text/markdown',
+    ];
+    if (accepted.includes(file.mimetype) || /\.(pdf|doc|docx|txt|md)$/i.test(file.originalname || '')) return cb(null, true);
+    return cb(new Error('Only PDF, Word, TXT, and Markdown documents are allowed.'));
+  },
+});
+
+const handleAiKnowledgeUpload = (req, res, next) => {
+  aiKnowledgeUpload.single('document')(req, res, (error) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      return errorResponse(res, 'Document must be 10 MB or smaller.', 400);
+    }
+    return errorResponse(res, error.message || 'Unable to upload the document.', 400);
+  });
+};
 
 // Protected by authenticate & authorize('audito_admin')
 router.use(authenticate, authorize('audito_admin'));
@@ -24,6 +51,15 @@ router.post('/privacy-policies', adminController.createPrivacyPolicy);
 router.put('/privacy-policies/:policyId', adminController.updatePrivacyPolicy);
 router.post('/privacy-policies/:policyId/publish', adminController.publishPrivacyPolicy);
 router.delete('/privacy-policies/:policyId', adminController.deletePrivacyPolicy);
+
+// Public knowledge used by Audito AI Assistant
+router.get('/ai-knowledge', aiKnowledgeController.listKnowledgeSources);
+router.post('/ai-knowledge/articles', aiKnowledgeController.createArticle);
+router.post('/ai-knowledge/documents', handleAiKnowledgeUpload, aiKnowledgeController.createDocument);
+router.put('/ai-knowledge/:sourceId', aiKnowledgeController.updateSource);
+router.post('/ai-knowledge/:sourceId/publish', aiKnowledgeController.publishSource);
+router.post('/ai-knowledge/:sourceId/unpublish', aiKnowledgeController.unpublishSource);
+router.delete('/ai-knowledge/:sourceId', aiKnowledgeController.deleteSource);
 
 // Messages routing
 router.get('/messages', adminController.listMessages);

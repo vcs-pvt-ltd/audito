@@ -263,28 +263,34 @@ export default function AuditsPage() {
 
   const handleToggleAudit = async (id: string, isEnabled: boolean) => {
     if (!accessToken) return;
+    const currentAudit = audits.find(a => a.audit_id === id);
+
+    // Turning the switch off is a cancellation and already has its own
+    // destructive-action confirmation.
+    if (!isEnabled) {
+      await handleCancel(id, currentAudit?.title || "Audit");
+      return;
+    }
+
+    const progress = currentAudit?.progress_pct || 0;
+    const restoredStatus: "plan" | "in_progress" | "completed" = progress === 0
+      ? "plan"
+      : progress === 100
+        ? "completed"
+        : "in_progress";
+    const ok = await confirm({
+      title: "Re-enable Audit",
+      message: `Re-enable the audit "${currentAudit?.title || "Audit"}"? It will be restored as ${STATUS_LABEL[restoredStatus]}.`,
+      confirmText: "Re-enable Audit",
+      variant: "warning",
+    });
+    if (!ok) return;
+
     try {
       setToggling(id);
-
-      const currentAudit = audits.find(a => a.audit_id === id);
-
-      let newStatus: "plan" | "in_progress" | "completed";
-      if (!isEnabled) {
-        await handleCancel(id, currentAudit?.title || "Audit");
-        return;
-      } else {
-        const progress = currentAudit?.progress_pct || 0;
-        if (progress === 0) {
-          newStatus = "plan";
-        } else if (progress === 100) {
-          newStatus = "completed";
-        } else {
-          newStatus = "in_progress";
-        }
-      }
-
-      const res = await auditApi.update(accessToken, id, { status: newStatus });
+      const res = await auditApi.update(accessToken, id, { status: restoredStatus });
       if (res.success) {
+        toast("Audit re-enabled successfully.", "success");
         await fetchAudits();
       } else {
         console.error("Failed to update audit status:", res.message);

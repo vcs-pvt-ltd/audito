@@ -121,10 +121,6 @@ export default function AddEditEntityModal({
       setError("Name is required.");
       return;
     }
-    if (!form.email.trim()) {
-      setError("Email is required.");
-      return;
-    }
     if (parentRequired && !form.parent_code) {
       setError(`${parentLabel} is required.`);
       return;
@@ -215,7 +211,7 @@ export default function AddEditEntityModal({
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">
-                Email <span className="text-red-400">*</span>
+                Email
               </label>
               <input
                 type="email"
@@ -223,7 +219,6 @@ export default function AddEditEntityModal({
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="Enter email"
                 className={inputClass}
-                required
               />
             </div>
 

@@ -1069,6 +1069,10 @@ function RegisterForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isRegistered, setIsRegistered] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [resendMessage, setResendMessage] = useState("");
+  const [resendError, setResendError] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<AccountGroup | null>(
     (typeFromUrl && ["Customer", "Company", "Audit Firm"].includes(typeFromUrl) ? typeFromUrl : "Customer") as AccountGroup
   );
@@ -1146,6 +1150,12 @@ function RegisterForm() {
   useEffect(() => {
     countriesApi.getAll().then(setCountries);
   }, []);
+
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const timer = window.setInterval(() => setResendSeconds((current) => Math.max(0, current - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [resendSeconds]);
 
   useEffect(() => {
     plansApi.getPublic().then((result) => { if (result.success && result.data) setPlanCatalog(result.data); });
@@ -1296,7 +1306,6 @@ function RegisterForm() {
       (!formData.company_type || !formData.company_type.trim())
     )
       return "Company type is required.";
-    if (!formData.registration_number?.trim()) return "Registration number is required.";
     if (!formData.org_email?.trim()) return "Organization email is required.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.org_email || ""))
       return "Invalid organization email address.";
@@ -1400,13 +1409,32 @@ function RegisterForm() {
       const res = (await authApi.register(payload)) as { success: boolean; message?: string };
       // Email verification comes first; paid plans continue to payment after
       // the email is verified (see the verify-email page).
-      if (res.success) setIsRegistered(true);
+      if (res.success) {
+        setIsRegistered(true);
+        setResendSeconds(30);
+      }
       else setError(res.message || "Registration failed.");
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResendVerification = async () => {
+    const verificationEmail = isCustomPlan ? formData.org_email : formData.email;
+    if (!verificationEmail || resendingVerification || resendSeconds > 0) return;
+    setResendingVerification(true);
+    setResendMessage("");
+    setResendError("");
+    const response = await authApi.resendVerification(verificationEmail);
+    if (response.success) {
+      setResendSeconds(30);
+      setResendMessage("A new verification email has been sent. Please check your inbox.");
+    } else {
+      setResendError(response.message || "Unable to resend the verification email.");
+    }
+    setResendingVerification(false);
   };
 
   const activeConfig = selectedGroup
@@ -1432,6 +1460,16 @@ function RegisterForm() {
                 Please click the link inside to activate your account.
               </p>
             )}
+            {resendMessage && <p className="mb-4 rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3 text-sm text-emerald-200">{resendMessage}</p>}
+            {resendError && <p className="mb-4 rounded-xl border border-red-400/25 bg-red-400/10 p-3 text-sm text-red-200">{resendError}</p>}
+            <button
+              type="button"
+              disabled={resendingVerification || resendSeconds > 0}
+              onClick={() => void handleResendVerification()}
+              className="mb-4 w-full text-sm font-medium text-secondary-400 transition-colors hover:text-secondary-300 disabled:cursor-not-allowed disabled:text-gray-500"
+            >
+              {resendingVerification ? "Sending verification email..." : resendSeconds > 0 ? `Resend available in ${resendSeconds}s` : "Resend verification email"}
+            </button>
             <Link
               href={isCustomPlan ? "/" : "/login"}
               className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 px-6 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400"
@@ -1732,7 +1770,6 @@ function RegisterForm() {
 
               <Input
                 label="Registration Number"
-                required
                 value={formData.registration_number || ""}
                 onChange={(v) => updateField("registration_number", v)}
                 placeholder="Business registration number"

@@ -173,6 +173,12 @@ export const authApi = {
       body: { email },
     }),
 
+  resendVerification: (email: string) =>
+    apiRequest("/auth/resend-verification", {
+      method: "POST",
+      body: { email },
+    }),
+
   verifyOtp: (email: string, otp: string) =>
     apiRequest("/auth/verify-otp", {
       method: "POST",
@@ -585,6 +591,7 @@ export const checklistApi = {
     questionCount: number;
     focus?: string;
     checklistType?: string;
+    scopeEntityCode?: string;
     existingQuestions?: string[];
   }) => {
     const formData = new FormData();
@@ -592,6 +599,7 @@ export const checklistApi = {
     formData.append("question_count", String(payload.questionCount));
     if (payload.focus) formData.append("focus", payload.focus);
     if (payload.checklistType) formData.append("checklist_type", payload.checklistType);
+    if (payload.scopeEntityCode) formData.append("scope_entity_code", payload.scopeEntityCode);
     if (payload.existingQuestions?.length) formData.append("existing_questions", JSON.stringify(payload.existingQuestions));
     const res = await fetch(`${API_BASE_URL}/checklists/ai/generate-questions`, {
       method: "POST",
@@ -1318,6 +1326,22 @@ export interface LandingAssistantReply {
   actions: LandingAssistantAction[];
 }
 
+export interface AiKnowledgeSource {
+  ai_knowledge_source_id: string;
+  source_type: "article" | "document";
+  title: string;
+  category?: string | null;
+  tags: string[];
+  body_content?: string | null;
+  source_file_name?: string | null;
+  source_mime?: string | null;
+  status: "draft" | "processing" | "published" | "failed" | "archived";
+  error_message?: string | null;
+  published_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface PlanSetting {
   plan_name: string;
   display_name?: string;
@@ -1574,6 +1598,33 @@ export interface AdminUser {
 }
 
 export const adminApi = {
+  listAiKnowledgeSources: (token: string) => apiRequest<AiKnowledgeSource[]>("/admin/ai-knowledge", { token }),
+  createAiKnowledgeArticle: (token: string, data: { title: string; category?: string; tags?: string[]; body_content: string }) =>
+    apiRequest<{ source: AiKnowledgeSource }>("/admin/ai-knowledge/articles", { method: "POST", body: data as unknown as Record<string, unknown>, token }),
+  uploadAiKnowledgeDocument: async (token: string, file: File, data: { title: string; category?: string; tags?: string[] }) => {
+    const formData = new FormData();
+    formData.append("document", file);
+    formData.append("title", data.title);
+    if (data.category) formData.append("category", data.category);
+    if (data.tags?.length) formData.append("tags", data.tags.join(","));
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/ai-knowledge/documents`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData });
+      const payload = await res.json().catch(() => null);
+      if (payload && typeof payload.success === "boolean") return payload;
+      return { success: false, message: payload?.message || `Document upload failed (${res.status}).` };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "Document upload failed." };
+    }
+  },
+  updateAiKnowledgeSource: (token: string, sourceId: string, data: { title: string; category?: string; tags?: string[]; body_content?: string }) =>
+    apiRequest<{ source: AiKnowledgeSource }>(`/admin/ai-knowledge/${encodeURIComponent(sourceId)}`, { method: "PUT", body: data as unknown as Record<string, unknown>, token }),
+  publishAiKnowledgeSource: (token: string, sourceId: string) =>
+    apiRequest<{ source: AiKnowledgeSource }>(`/admin/ai-knowledge/${encodeURIComponent(sourceId)}/publish`, { method: "POST", token }),
+  unpublishAiKnowledgeSource: (token: string, sourceId: string) =>
+    apiRequest<{ source: AiKnowledgeSource }>(`/admin/ai-knowledge/${encodeURIComponent(sourceId)}/unpublish`, { method: "POST", token }),
+  deleteAiKnowledgeSource: (token: string, sourceId: string) =>
+    apiRequest<null>(`/admin/ai-knowledge/${encodeURIComponent(sourceId)}`, { method: "DELETE", token }),
+
   listPrivacyPolicies: (token: string) => apiRequest<PrivacyPolicy[]>("/admin/privacy-policies", { token }),
   createPrivacyPolicy: (token: string, data: Pick<PrivacyPolicy, "title" | "intro" | "sections">) =>
     apiRequest<{ policy: PrivacyPolicy }>("/admin/privacy-policies", { method: "POST", body: data as unknown as Record<string, unknown>, token }),

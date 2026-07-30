@@ -380,7 +380,7 @@ export default function SetupStructurePage() {
         {
           name: formData.name,
           registration_number: formData.registration_number || null,
-          email: formData.email.trim(),
+          email: formData.email.trim() || null,
           phone_number: formData.phone_number || null,
           address_line_1: formData.address_line_1 || null,
           address_line_2: formData.address_line_2 || null,
@@ -397,7 +397,7 @@ export default function SetupStructurePage() {
         entity_type: config.entityTypeBody,
         name: formData.name,
         registration_number: formData.registration_number || null,
-        email: formData.email.trim(),
+        email: formData.email.trim() || null,
         phone_number: formData.phone_number || null,
         address_line_1: formData.address_line_1 || null,
         address_line_2: formData.address_line_2 || null,

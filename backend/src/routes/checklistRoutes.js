@@ -73,7 +73,7 @@ const mediaUpload = multer({
 // AI reference documents are processed in memory and discarded after the request.
 const aiDocumentUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2 MB
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'application/pdf', 'application/msword',

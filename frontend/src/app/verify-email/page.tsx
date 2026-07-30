@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { authApi, usersApi } from "@/lib/api";
-import { CheckCircle2, XCircle, Loader2, ArrowRight, Eye, EyeOff, Lock, Check } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, ArrowRight, Eye, EyeOff, Lock, Check, Mail } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui";
 
@@ -23,6 +23,10 @@ function VerifyEmailContent() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupError, setSetupError] = useState("");
+  const [resendEmail, setResendEmail] = useState("");
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const [resending, setResending] = useState(false);
+  const [resendMessage, setResendMessage] = useState("");
 
   const passwordRequirements = useMemo(() => ({
     length: password.length >= 8,
@@ -39,6 +43,26 @@ function VerifyEmailContent() {
     if (met <= 4) return { label: "Medium", color: "bg-yellow-500", width: "66%", text: "text-yellow-500" };
     return { label: "Strong", color: "bg-emerald-500", width: "100%", text: "text-emerald-500" };
   }, [passwordRequirements]);
+
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const timer = window.setInterval(() => setResendSeconds((current) => Math.max(0, current - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [resendSeconds]);
+
+  const handleResendVerification = async () => {
+    if (!resendEmail.trim() || resending || resendSeconds > 0) return;
+    setResending(true);
+    setResendMessage("");
+    const res = await authApi.resendVerification(resendEmail.trim());
+    if (res.success) {
+      setResendSeconds(30);
+      setResendMessage("A verification email has been sent if the account is awaiting verification.");
+    } else {
+      setResendMessage(res.message || "Unable to resend the verification email.");
+    }
+    setResending(false);
+  };
 
   useEffect(() => {
     if (!token) {
@@ -254,12 +278,22 @@ function VerifyEmailContent() {
             <XCircle className="text-red-500 mb-4" size={48} />
             <h1 className="text-xl font-bold text-white mb-2">Verification Failed</h1>
             <p className="text-gray-400 mb-8">{message}</p>
-            <Link
-              href="/login"
-              className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-medium px-6 py-3 rounded-xl transition-colors border border-white/10"
-            >
-              Back to Login
-            </Link>
+            <div className="w-full space-y-3">
+              <div className="relative text-left">
+                <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input type="email" value={resendEmail} onChange={(event) => setResendEmail(event.target.value)} placeholder="Enter your email to resend" className="w-full rounded-xl border border-white/10 bg-white/5 py-3 pl-10 pr-3 text-sm text-white outline-none placeholder:text-gray-500 focus:border-secondary-500/50" />
+              </div>
+              {resendMessage && <p className="rounded-lg border border-white/10 bg-white/[.04] p-3 text-xs leading-relaxed text-gray-300">{resendMessage}</p>}
+              <Button type="button" fullWidth disabled={!resendEmail.trim() || resending || resendSeconds > 0} loading={resending} onClick={() => void handleResendVerification()}>
+                {resending ? "Sending" : resendSeconds > 0 ? `Resend available in ${resendSeconds}s` : "Resend verification email"}
+              </Button>
+              <Link
+                href="/login"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/10 px-6 py-3 font-medium text-white transition-colors hover:bg-white/20"
+              >
+                Back to Login
+              </Link>
+            </div>
           </div>
         )}
       </div>

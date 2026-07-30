@@ -383,6 +383,16 @@ const createAudit = async (req, res) => {
       return errorResponse(res, 'Checklist not found.', 404);
     }
 
+    if (audit_type === 'internal') {
+      if (!assigned_auditor_id) {
+        return errorResponse(res, 'A verified auditor is required for an internal audit.', 400);
+      }
+      const assignedAuditor = await AuditorModel.findByCode(assigned_auditor_id);
+      if (!assignedAuditor || !assignedAuditor.email_verified || !accessibleCodes.includes(assignedAuditor.created_by_entity_code)) {
+        return errorResponse(res, 'Select a verified auditor available to your organization.', 400);
+      }
+    }
+
     const limitError = await LimitsEnforcer.checkAuditLimit(req.user.entityCode);
     if (limitError) return errorResponse(res, limitError, 403);
 
@@ -677,8 +687,8 @@ const updateAudit = async (req, res) => {
 
       // Ensure auditor belongs to this firm
       const auditor = await AuditorModel.findByCode(assigned_auditor_id);
-      if (!auditor || auditor.created_by_entity_code !== req.user.entityCode) {
-        return errorResponse(res, 'Invalid auditor for this audit firm.', 400);
+      if (!auditor || !auditor.email_verified || auditor.created_by_entity_code !== req.user.entityCode) {
+        return errorResponse(res, 'Select a verified auditor for this audit firm.', 400);
       }
 
       await AuditModel.updateAssignedAuditor(id, { assigned_auditor_id, assigned_org_tree_id: assigned_org_tree_id || null });
