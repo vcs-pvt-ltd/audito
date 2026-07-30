@@ -27,7 +27,6 @@ const AuditExecutionModel = require('../models/AuditExecutionModel');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
 const { sendAuditAssignedEmail } = require('../services/emailService');
 const NotificationModel = require('../models/NotificationModel');
-const { findDuplicateName } = require('../utils/nameNormalizer');
 const { getCountryDialingCode } = require('../utils/orgLookup');
 
 function formatPhoneWithDialingCode(phoneNumber, dialingCode) {
@@ -396,23 +395,6 @@ const createAudit = async (req, res) => {
     const limitError = await LimitsEnforcer.checkAuditLimit(req.user.entityCode);
     if (limitError) return errorResponse(res, limitError, 403);
 
-    // Uniqueness: audit title must be unique per creating organization.
-    // Titles differing only by capitalization, spacing, or leading zeros
-    // (e.g. "Audit 01" vs "audit1") are treated as duplicates.
-    try {
-      const dup = await findDuplicateName({
-        db,
-        table: 'audit_assignments',
-        nameColumn: 'title',
-        name: title,
-        whereClauses: ['created_by = ?', 'is_active = TRUE', "status != 'cancelled'"],
-        whereParams: [req.user.entityCode]
-      });
-      if (dup) return errorResponse(res, `An audit titled "${dup.name}" already exists for your organization.`, 409);
-    } catch (err) {
-      console.error('Audit title uniqueness check failed:', err);
-    }
-
     const audit_code = await generateAuditCode();
 
     const id = await AuditModel.create({
@@ -760,23 +742,6 @@ const updateAudit = async (req, res) => {
     // Full update requires all core fields
     if (!title || !audit_type || !start_date || !end_date) {
       return errorResponse(res, 'title, audit_type, start_date, end_date are required.', 400);
-    }
-
-    // Ensure new title is unique within this organization
-    // (case/space/leading-zero insensitive — same rule as create)
-    try {
-      const dup = await findDuplicateName({
-        db,
-        table: 'audit_assignments',
-        nameColumn: 'title',
-        name: title,
-        whereClauses: ['created_by = ?', 'is_active = TRUE', "status != 'cancelled'"],
-        whereParams: [audit.created_by],
-        excludeId: id
-      });
-      if (dup) return errorResponse(res, `An audit titled "${dup.name}" already exists for your organization.`, 409);
-    } catch (err) {
-      console.error('Audit title update uniqueness check failed:', err);
     }
 
     await AuditModel.update(id, {
