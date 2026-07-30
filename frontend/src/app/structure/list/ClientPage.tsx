@@ -121,16 +121,6 @@ const ORDER_BY_ACCOUNT: Record<string, string[]> = {
   "Audit Firm": ["branch", "audit-firm-department"],
 };
 
-const FIRST_CHILD_BY_ROOT_ENTITY_TYPE: Record<string, string> = {
-  Company: "Cluster",
-  Cluster: "Factory",
-  Factory: "Unit",
-  Unit: "Department",
-  Department: "Section",
-  "Audit Firm Company": "Branch",
-  Branch: "Audit Firm Department",
-};
-
 // ─── Page Component ──────────────────────────────────────────────
 
 export default function SetupStructurePage() {
@@ -307,10 +297,11 @@ export default function SetupStructurePage() {
     admin.account_type === "Audit Firm Company" ? "Audit Firm" : admin.account_type || "";
   const canCreateEntities = config.accountTypes[0] === normalizedAccountType;
 
-  const usesStructurePlanLimits = normalizedAccountType === "Company" || normalizedAccountType === "Audit Firm";
-  const isFirstChildType = FIRST_CHILD_BY_ROOT_ENTITY_TYPE[admin.entity_type || ""] === config.entityTypeBody;
-  const entityLimit = usesStructurePlanLimits
-    ? (isFirstChildType ? admin.plan_limits?.company_level : admin.plan_limits?.department)
+  const usesDepartmentPlanLimit =
+    (normalizedAccountType === "Company" || normalizedAccountType === "Audit Firm")
+    && (config.entityTypeBody === "Department" || config.entityTypeBody === "Audit Firm Department");
+  const entityLimit = usesDepartmentPlanLimit
+    ? admin.plan_limits?.department
     : undefined;
 
   const isLimitExceeded = entityLimit !== undefined && entities.length >= entityLimit;
@@ -420,10 +411,8 @@ export default function SetupStructurePage() {
         <LimitReachedModal
           isOpen={limitModalOpen}
           onClose={() => setLimitModalOpen(false)}
-          title="Structure Entity Limit Reached"
-          message={isFirstChildType
-            ? "Your plan has reached the first hierarchy entity capacity. Upgrade to add more entities at this level."
-            : "Your plan has reached the allowed number of this structure entity type. Upgrade to add more."}
+          title="Department Limit Reached"
+          message="Your plan has reached its allowed department capacity. Upgrade to add more departments."
           limit={entityLimit || 0}
         />
        

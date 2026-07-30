@@ -1,23 +1,8 @@
 const { db } = require('../config/db');
 const SubscriptionModel = require('../models/SubscriptionModel');
 
-const FIRST_CHILD_BY_ROOT_ENTITY_TYPE = {
-  Company: 'Cluster',
-  Cluster: 'Factory',
-  Factory: 'Unit',
-  Unit: 'Department',
-  Department: 'Section',
-  'Audit Firm Company': 'Branch',
-  Branch: 'Audit Firm Department'
-};
-
-const STRUCTURE_ENTITY_STORAGE = {
-  Cluster: { table: 'company_clusters', ownerColumn: 'comp_code' },
-  Factory: { table: 'company_factories', ownerColumn: 'comp_code' },
-  Unit: { table: 'company_units', ownerColumn: 'comp_code' },
+const DEPARTMENT_ENTITY_STORAGE = {
   Department: { table: 'company_departments', ownerColumn: 'comp_code' },
-  Section: { table: 'company_sections', ownerColumn: 'comp_code' },
-  Branch: { table: 'audit_firm_company_branches', ownerColumn: 'afc_code' },
   'Audit Firm Department': { table: 'audit_firm_company_departments', ownerColumn: 'afc_code' }
 };
 
@@ -29,35 +14,26 @@ const STRUCTURE_ENTITY_STORAGE = {
 
 const LimitsEnforcer = {
   /**
-   * Check structure limits. The first entity type below the registered root
-   * uses the plan's company-level capacity. Each later structure entity type
-   * uses the plan's department capacity.
+   * Check structure limits. Only Company and Audit Firm departments use the
+   * plan's department capacity. All other structure entities are unlimited;
+   * company-level settings describe plan hierarchy access, not creation count.
    * @param {string} rootEntityCode
    * @param {string} entityType
    * @returns {string|null} Error message if limit exceeded, else null.
    */
   async checkStructureLimits(rootEntityCode, entityType) {
-    const limits = await SubscriptionModel.getLimits(rootEntityCode);
-
-    const storage = STRUCTURE_ENTITY_STORAGE[entityType];
+    const storage = DEPARTMENT_ENTITY_STORAGE[entityType];
     if (!storage) return null;
 
-    const [adminRows] = await db.query(
-      'SELECT entity_type FROM admins WHERE entity_code = ? LIMIT 1',
-      [rootEntityCode]
-    );
-    const rootEntityType = adminRows[0]?.entity_type;
-    const isFirstChildType = FIRST_CHILD_BY_ROOT_ENTITY_TYPE[rootEntityType] === entityType;
-    const limit = isFirstChildType ? limits.company_level : limits.department;
+    const limits = await SubscriptionModel.getLimits(rootEntityCode);
 
     const [[{ count }]] = await db.query(
       `SELECT COUNT(*) AS count FROM \`${storage.table}\` WHERE \`${storage.ownerColumn}\` = ? AND is_active = TRUE`,
       [rootEntityCode]
     );
 
-    if (count >= limit) {
-      const capacityName = isFirstChildType ? 'company-level' : 'department';
-      return `Plan Limit Reached: Your current plan allows a maximum of ${limit} ${entityType} entity(s) under the ${capacityName} capacity.`;
+    if (count >= limits.department) {
+      return `Plan Limit Reached: Your current plan allows a maximum of ${limits.department} ${entityType} entity(s).`;
     }
     return null; // OK
   },
