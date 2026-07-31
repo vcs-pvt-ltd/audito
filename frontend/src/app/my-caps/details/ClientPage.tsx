@@ -89,7 +89,7 @@ interface TreeNode {
   [key: string]: unknown;
 }
 
-interface EntityHead {
+interface OrganizationUser {
   user_code: string;
   first_name: string;
   last_name: string;

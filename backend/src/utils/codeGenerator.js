@@ -71,7 +71,7 @@ const generateTableId = async (table, idField, prefix, padLen = 4) => {
 
 const generateAdminId = () => generateTableId('admins', 'admin_id', 'ADM', 4);
 const generateAuditorId = () => generateTableId('auditors', 'auditor_id', 'AUD', 4);
-const generateEntityHeadId = () => generateTableId('entity_heads', 'entity_head_id', 'EHD', 4);
+const generateOrganizationUserId = () => generateTableId('organization_users', 'organization_user_id', 'EHD', 4);
 const generateAuditId = () => generateTableId('audit_assignments', 'audit_id', 'AUDT', 4);
 const generateCapId = () => generateTableId('caps', 'cap_id', 'CAP', 4);
 const generateChecklistTypeId = () => generateTableId('checklist_types', 'checklist_type_id', 'CHKLT', 4);
@@ -124,7 +124,7 @@ const generateTrainingAssignmentIds = (count) => generateBatchIds('training_assi
 const generateFieldVisitAssignmentIds = (count) => generateBatchIds('field_visit_assignments', 'field_visit_assignment_id', 'FVA', count, 4);
 const generateEvaluationQuestionOptionIds = (count) => generateBatchIds('evaluation_question_options', 'evaluation_question_option_id', 'EQO', count, 4);
 const generateEvaluationAssignmentIds = (count) => generateBatchIds('evaluation_assignments', 'evaluation_assignment_id', 'EA', count, 4);
-const generateAuditAssignmentEntityIds = (count) => generateBatchIds('audit_assignment_entities', 'audit_assignment_entity_id', 'AAE', 5);
+const generateAuditAssignmentEntityIds = (count) => generateBatchIds('audit_assignment_entities', 'audit_assignment_entity_id', 'AAE', count, 5);
 const generateEvaluationAnswerIds = (count) => generateBatchIds('evaluation_answers', 'evaluation_answer_id', 'EANS', count, 4);
 const generateCapAssignmentEntityIds = (count) => generateBatchIds('cap_assignment_entities', 'cap_assignment_entity_id', 'CAE', 5);
 const generateCapEntityProgressIds = (count) => generateBatchIds('cap_entity_progress', 'cap_entity_progress_id', 'CEP', 5);
@@ -161,7 +161,7 @@ module.exports = {
   generateAdminUserCode,
   generateAdminId,
   generateAuditorId,
-  generateEntityHeadId,
+  generateOrganizationUserId,
   generateAuditId,
   generateCapId,
   generateChecklistTypeId,

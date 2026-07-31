@@ -29,7 +29,7 @@ function getNavItems(role: string): NavItem[] {
     ];
   }
 
-  if (role === "entity_head") {
+  if (role === "organization_user") {
     return [
       { label: "Home", path: "/dashboard", icon: LayoutDashboard },
       { label: "Audits", path: "/my-audits", icon: FileCheck, matchPrefix: true },

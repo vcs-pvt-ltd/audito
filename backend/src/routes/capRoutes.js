@@ -13,8 +13,8 @@ router.post('/', ctrl.createCap);
 // List CAPs for current user
 router.get('/', ctrl.listCaps);
 
-// Entity heads for assignment dropdown
-router.get('/entity-heads/:entityCode', ctrl.getEntityHeads);
+// Organization users for assignment dropdown
+router.get('/organization-users/:entityCode', ctrl.getOrganizationUsers);
 
 // Create follow-up (CAP verification) audit
 router.post('/create-follow-up', ctrl.createFollowUpAudit);

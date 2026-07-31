@@ -345,7 +345,7 @@ function ActionPreviewCard({
 
 // ── Page ──────────────────────────────────────────────────────────
 
-export default function EntityHeadCapPreviewPage() {
+export default function OrganizationUserCapPreviewPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -359,7 +359,7 @@ export default function EntityHeadCapPreviewPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!isLoading && (!admin || admin.role !== "entity_head")) router.push("/login");
+    if (!isLoading && (!admin || admin.role !== "organization_user")) router.push("/login");
   }, [isLoading, admin, router]);
 
   const load = useCallback(async () => {
@@ -422,13 +422,13 @@ export default function EntityHeadCapPreviewPage() {
       </div>
     );
   }
-  if (!admin || admin.role !== "entity_head") return null;
+  if (!admin || admin.role !== "organization_user") return null;
 
   return (
     <div className="h-screen bg-transparent flex">
       <main className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto">
         <div className="flex items-center gap-3 mb-6">
-          <IconButton bordered onClick={() => router.push("/entity-head/caps")}>
+          <IconButton bordered onClick={() => router.push("/organization-user/caps")}>
             <ArrowLeft size={16} />
           </IconButton>
           <div className="min-w-0">

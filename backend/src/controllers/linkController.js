@@ -9,7 +9,7 @@
 const LinkModel = require('../models/LinkModel');
 const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
-const EntityHeadModel = require('../models/EntityHeadModel');
+const OrganizationUserModel = require('../models/OrganizationUserModel');
 const OrganizationTreeModel = require('../models/OrganizationTreeModel');
 const crypto = require('crypto');
 const { generateLinkCode, generateOrganizationLinkId } = require('../utils/codeGenerator');
@@ -555,7 +555,7 @@ const getLinkedEntityData = async (req, res) => {
 
     // 3. All users across the partner account
     const auditors = await AuditorModel.listByCreators(accountCodes);
-    const heads = await EntityHeadModel.listByCreators(accountCodes);
+    const organizationUsers = await OrganizationUserModel.listByCreators(accountCodes);
 
     const formatEntity = (row) => ({
       name: row.name,
@@ -628,7 +628,7 @@ const getLinkedEntityData = async (req, res) => {
         email: admin.email,
         phone_number: admin.phone_number,
       } : null,
-      users: [...auditors, ...heads],
+      users: [...auditors, ...organizationUsers],
       structure,
     });
   } catch (error) {

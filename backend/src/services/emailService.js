@@ -71,7 +71,7 @@ const sendVerificationEmail = async (toEmail, userName, token) => {
   await transporter.sendMail(mailOptions);
 };
 
-/** Send an onboarding invitation to an Auditor or Entity Head. */
+/** Send an onboarding invitation to an Auditor or Organization User. */
 const sendUserInvitationEmail = async (toEmail, userName, token, details = {}) => {
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;

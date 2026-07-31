@@ -874,7 +874,7 @@ CREATE TABLE `corrective_actions` (
   `org_tree_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
   `severity` enum('low','medium','high','critical') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'medium',
-  `responsible_entity_head_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `responsible_organization_user_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `responsible_person_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `due_date` date DEFAULT NULL,
   `status` enum('open','in_progress','resolved','verified','closed') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'open',
@@ -1008,12 +1008,12 @@ CREATE TABLE `custom_solution_requests` (
 -- --------------------------------------------------------
 
 --
--- Table structure for table `entity_heads`
+-- Table structure for table `organization_users`
 --
 
-CREATE TABLE `entity_heads` (
+CREATE TABLE `organization_users` (
   `id` int NOT NULL,
-  `entity_head_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `organization_user_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `first_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `last_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
@@ -1021,7 +1021,7 @@ CREATE TABLE `entity_heads` (
   `nic` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `country` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `password` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `role` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'entity_head',
+  `role` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'organization_user',
   `user_type` varchar(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `assigned_entity_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `assigned_entity_code` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
@@ -1038,6 +1038,30 @@ CREATE TABLE `entity_heads` (
   `onboarding_completed` tinyint(1) DEFAULT '0',
   `onboarding_skipped` tinyint(1) DEFAULT '0',
   `onboarding_completed_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `organization_user_scopes`
+--
+
+CREATE TABLE `organization_user_scopes` (
+  `scope_id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `organization_user_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `org_tree_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `entity_code` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `entity_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `scope_mode` enum('EXACT','SUBTREE') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'EXACT',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_by_admin_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`scope_id`),
+  UNIQUE KEY `uq_organization_user_scope` (`organization_user_id`,`org_tree_id`),
+  KEY `idx_organization_user_scopes_user` (`organization_user_id`,`is_active`),
+  KEY `idx_organization_user_scopes_tree` (`org_tree_id`,`is_active`),
+  KEY `idx_organization_user_scopes_entity` (`entity_code`,`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -1671,7 +1695,7 @@ CREATE TABLE `user_notifications` (
   `id` bigint UNSIGNED NOT NULL,
   `notification_id` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `recipient_user_code` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `recipient_role` enum('admin','auditor','entity_head','audito_admin') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `recipient_role` enum('admin','auditor','organization_user','audito_admin') COLLATE utf8mb4_unicode_ci NOT NULL,
   `created_by_entity_code` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `type` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL,
   `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -2019,7 +2043,7 @@ ALTER TABLE `corrective_actions`
   ADD KEY `idx_audit_id` (`audit_id`),
   ADD KEY `idx_entity_code` (`entity_code`),
   ADD KEY `idx_status` (`status`),
-  ADD KEY `idx_responsible` (`responsible_entity_head_id`),
+  ADD KEY `idx_responsible_organization_user` (`responsible_organization_user_id`),
   ADD KEY `idx_audit_response_id` (`audit_response_id`),
   ADD KEY `idx_org_tree_id` (`org_tree_id`),
   ADD KEY `fk_corrective_actions_cap_response` (`cap_response_id`);
@@ -2061,18 +2085,18 @@ ALTER TABLE `custom_solution_requests`
   ADD KEY `idx_custom_solution_verification_token` (`verification_token`);
 
 --
--- Indexes for table `entity_heads`
+-- Indexes for table `organization_users`
 --
-ALTER TABLE `entity_heads`
+ALTER TABLE `organization_users`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `entity_head_id` (`entity_head_id`),
+  ADD UNIQUE KEY `organization_user_id` (`organization_user_id`),
   ADD UNIQUE KEY `email` (`email`),
   ADD KEY `idx_email` (`email`),
   ADD KEY `idx_user_type` (`user_type`),
   ADD KEY `idx_created_by` (`created_by_entity_code`),
   ADD KEY `idx_assigned` (`assigned_entity_code`),
   ADD KEY `idx_assigned_org_tree_id` (`assigned_org_tree_id`),
-  ADD KEY `fk_entity_heads_admin` (`created_by_admin_id`);
+  ADD KEY `fk_organization_users_admin` (`created_by_admin_id`);
 
 --
 -- Indexes for table `evaluation_answers`
@@ -2596,9 +2620,9 @@ ALTER TABLE `custom_solution_requests`
   MODIFY `id` int NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT for table `entity_heads`
+-- AUTO_INCREMENT for table `organization_users`
 --
-ALTER TABLE `entity_heads`
+ALTER TABLE `organization_users`
   MODIFY `id` int NOT NULL AUTO_INCREMENT;
 
 --
@@ -2919,7 +2943,7 @@ ALTER TABLE `checklist_question_options`
 ALTER TABLE `corrective_actions`
   ADD CONSTRAINT `fk_corrective_actions_audit` FOREIGN KEY (`audit_id`) REFERENCES `audit_assignments` (`audit_id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_corrective_actions_cap_response` FOREIGN KEY (`cap_response_id`) REFERENCES `cap_responses` (`cap_response_id`) ON DELETE SET NULL,
-  ADD CONSTRAINT `fk_corrective_actions_entity_head` FOREIGN KEY (`responsible_entity_head_id`) REFERENCES `entity_heads` (`entity_head_id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_corrective_actions_organization_user` FOREIGN KEY (`responsible_organization_user_id`) REFERENCES `organization_users` (`organization_user_id`) ON DELETE SET NULL,
   ADD CONSTRAINT `fk_corrective_actions_response` FOREIGN KEY (`audit_response_id`) REFERENCES `audit_responses` (`audit_response_id`) ON DELETE CASCADE;
 
 --
@@ -2929,10 +2953,16 @@ ALTER TABLE `custom_solution_requests`
   ADD CONSTRAINT `fk_custom_solution_requests_admin` FOREIGN KEY (`admin_id`) REFERENCES `admins` (`admin_id`) ON DELETE CASCADE;
 
 --
--- Constraints for table `entity_heads`
+-- Constraints for table `organization_users`
 --
-ALTER TABLE `entity_heads`
-  ADD CONSTRAINT `fk_entity_heads_admin` FOREIGN KEY (`created_by_admin_id`) REFERENCES `admins` (`admin_id`) ON DELETE CASCADE;
+ALTER TABLE `organization_users`
+  ADD CONSTRAINT `fk_organization_users_admin` FOREIGN KEY (`created_by_admin_id`) REFERENCES `admins` (`admin_id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `organization_user_scopes`
+--
+ALTER TABLE `organization_user_scopes`
+  ADD CONSTRAINT `fk_organization_user_scopes_user` FOREIGN KEY (`organization_user_id`) REFERENCES `organization_users` (`organization_user_id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `evaluation_answers`

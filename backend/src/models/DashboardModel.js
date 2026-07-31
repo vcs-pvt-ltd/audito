@@ -1,6 +1,6 @@
 const { db } = require('../config/db');
 const NoticeModel = require('./NoticeModel');
-const { getEntityHeadOrgTreeScope, getAccessibleEntityCodes } = require('../utils/accessHelper');
+const { getOrganizationUserScope, getAccessibleEntityCodes } = require('../utils/accessHelper');
 
 const ENTITY_TABLES = [
   { table: 'customers', code: 'cust_code', type: 'Customer' },
@@ -32,7 +32,7 @@ function normalizeDateRange(query = {}) {
   return { from, to };
 }
 
-function getAuditScope(user, orgTreeScopeIds = null, entityHeadScopeCodes = [], accessibleCodes = []) {
+function getAuditScope(user, orgTreeScopeIds = null, organizationUserScopeCodes = [], accessibleCodes = []) {
   const accountType = user.accountType === 'Audit Firm' ? 'Audit Firm Company' : user.accountType;
 
   if (user.role === 'auditor') {
@@ -43,36 +43,29 @@ function getAuditScope(user, orgTreeScopeIds = null, entityHeadScopeCodes = [], 
     };
   }
 
-  if (user.role === 'entity_head') {
-    if (!orgTreeScopeIds?.length) {
-      const scopedEntityCode = user.assignedEntityCode || user.entityCode || user.createdByEntityCode || null;
-      if (!scopedEntityCode) {
-        return { where: '1 = 0', params: [], scopeLabel: 'Audits for my organization tree' };
-      }
-      const codes = entityHeadScopeCodes.length ? entityHeadScopeCodes : [scopedEntityCode];
-      const ph = codes.map(() => '?').join(',');
-      return {
-        where: `EXISTS (
-          SELECT 1
-            FROM audit_assignment_entities aae
-           WHERE aae.audit_id = aa.audit_id
-             AND aae.is_active = TRUE
-             AND aae.entity_code IN (${ph})
-        )`,
-        params: codes,
-        scopeLabel: 'Audits for my organization tree',
-      };
+  if (user.role === 'organization_user') {
+    const conditions = [];
+    const params = [];
+    if (orgTreeScopeIds?.length) {
+      conditions.push(`aae.org_tree_id IN (${orgTreeScopeIds.map(() => '?').join(',')})`);
+      params.push(...orgTreeScopeIds);
     }
-    const ph = orgTreeScopeIds.map(() => '?').join(',');
+    if (organizationUserScopeCodes.length) {
+      conditions.push(`(aae.org_tree_id IS NULL AND aae.entity_code IN (${organizationUserScopeCodes.map(() => '?').join(',')}))`);
+      params.push(...organizationUserScopeCodes);
+    }
+    if (!conditions.length) {
+      return { where: '1 = 0', params: [], scopeLabel: 'Audits for my organization tree' };
+    }
     return {
       where: `EXISTS (
         SELECT 1
           FROM audit_assignment_entities aae
           WHERE aae.audit_id = aa.audit_id
             AND aae.is_active = TRUE
-            AND aae.org_tree_id IN (${ph})
+            AND (${conditions.join(' OR ')})
       )`,
-      params: orgTreeScopeIds,
+      params,
       scopeLabel: 'Audits for my organization tree',
     };
   }
@@ -204,26 +197,33 @@ async function getAuditRows(whereSql, params) {
   });
 }
 
-async function getCapsSummary(user, filters, descendantCodes = [], orgTreeScopeIds = [], accessibleCodes = []) {
+async function getCapsSummary(user, filters, descendantCodes = [], orgTreeScopeIds = [], entityScopeCodes = [], accessibleCodes = []) {
   const where = ['1 = 1'];
   const params = [];
 
   if (user.role === 'auditor') {
     where.push('(c.created_by = ? OR aa.assigned_auditor_id = ?)');
     params.push(user.userCode, user.userCode);
-  } else if (user.role === 'entity_head') {
-    if (!orgTreeScopeIds.length) {
+  } else if (user.role === 'organization_user') {
+    const conditions = [];
+    if (orgTreeScopeIds.length) {
+      conditions.push(`cae.org_tree_id IN (${orgTreeScopeIds.map(() => '?').join(',')})`);
+      params.push(...orgTreeScopeIds);
+    }
+    if (entityScopeCodes.length) {
+      conditions.push(`(cae.org_tree_id IS NULL AND cae.entity_code IN (${entityScopeCodes.map(() => '?').join(',')}))`);
+      params.push(...entityScopeCodes);
+    }
+    if (!conditions.length) {
       where.push('1 = 0');
     } else {
-      const ph = orgTreeScopeIds.map(() => '?').join(',');
       where.push(`EXISTS (
         SELECT 1
           FROM cap_assignment_entities cae
           WHERE cae.cap_id = c.cap_id
            AND cae.is_active = TRUE
-           AND cae.org_tree_id IN (${ph})
+           AND (${conditions.join(' OR ')})
       )`);
-      params.push(...orgTreeScopeIds);
     }
   } else if (user.role === 'admin' && (user.accountType === 'Audit Firm' || user.accountType === 'Audit Firm Company')) {
     where.push('aa.assigned_firm_code = ?');
@@ -280,12 +280,12 @@ async function getPeopleSummary(user, accessibleCodes = []) {
 
   const queries = [
     db.query(`SELECT COUNT(*) AS total FROM auditors WHERE created_by_entity_code IN (${ph}) AND is_active = TRUE`, codes),
-    db.query(`SELECT COUNT(*) AS total FROM entity_heads WHERE created_by_entity_code IN (${ph}) AND is_active = TRUE`, codes),
+    db.query(`SELECT COUNT(*) AS total FROM organization_users WHERE created_by_entity_code IN (${ph}) AND is_active = TRUE`, codes),
     db.query(`SELECT COUNT(*) AS total FROM checklists WHERE created_by IN (${ph}) AND is_active = TRUE`, codes),
   ];
 
   const type = user.accountType;
-  const labels = ['auditors', 'entity_heads', 'checklists'];
+  const labels = ['auditors', 'organization_users', 'checklists'];
   if (type === 'Corporate' || type === 'Company') {
     queries.push(db.query(`SELECT COUNT(*) AS total FROM companies WHERE comp_code IN (${ph}) AND is_active = TRUE`, codes));
     queries.push(db.query(`SELECT COUNT(*) AS total FROM company_clusters WHERE comp_code IN (${ph}) AND is_active = TRUE`, codes));
@@ -481,27 +481,11 @@ const DashboardModel = {
     };
 
     let orgTreeScopeIds = [];
-    let entityHeadScopeCodes = [];
-    if (user.role === 'entity_head') {
-      orgTreeScopeIds = await getEntityHeadOrgTreeScope(user.assignedOrgTreeId);
-      if (!orgTreeScopeIds.length) {
-        const scopedEntityCode = user.assignedEntityCode || user.entityCode || null;
-        if (scopedEntityCode) {
-          const [edges] = await db.query('SELECT parent_code, child_code FROM organization_tree WHERE is_active = TRUE');
-          const descendants = new Set([scopedEntityCode]);
-          let added = true;
-          while (added) {
-            added = false;
-            for (const edge of edges) {
-              if (descendants.has(edge.parent_code) && !descendants.has(edge.child_code)) {
-                descendants.add(edge.child_code);
-                added = true;
-              }
-            }
-          }
-          entityHeadScopeCodes = [...descendants];
-        }
-      }
+    let organizationUserScopeCodes = [];
+    if (user.role === 'organization_user') {
+      const organizationScope = await getOrganizationUserScope(user);
+      orgTreeScopeIds = organizationScope.orgTreeIds;
+      organizationUserScopeCodes = organizationScope.entityCodes;
     }
 
     let descendantCodes = [];
@@ -523,7 +507,7 @@ const DashboardModel = {
 
     const accessibleCodes = await getAccessibleEntityCodes(user.entityCode, user.entityType);
 
-    const scope = getAuditScope(user, orgTreeScopeIds, entityHeadScopeCodes, accessibleCodes);
+    const scope = getAuditScope(user, orgTreeScopeIds, organizationUserScopeCodes, accessibleCodes);
     const scopedFilters = applyFilters(scope.where, scope.params, filters, descendantCodes);
     const audits = await getAuditRows(scopedFilters.whereSql, scopedFilters.params);
     const now = new Date();
@@ -538,14 +522,14 @@ const DashboardModel = {
     const overdue = audits.filter((audit) => audit.end_date && new Date(audit.end_date) < now && audit.status !== 'completed');
     const recent = audits.slice(0, 8);
 
-    // Build entity-level scope for head
+    // Build entity-level scope for the Organization User.
     let entScopeWhere = '1=1';
     let entScopeParams = [];
-    if (user.role === 'entity_head') {
+    if (user.role === 'organization_user') {
       const conditions = [];
-      if (entityHeadScopeCodes.length > 0) {
-        conditions.push(`aae.entity_code IN (${entityHeadScopeCodes.map(() => '?').join(',')})`);
-        entScopeParams.push(...entityHeadScopeCodes);
+      if (organizationUserScopeCodes.length > 0) {
+        conditions.push(`(aae.org_tree_id IS NULL AND aae.entity_code IN (${organizationUserScopeCodes.map(() => '?').join(',')}))`);
+        entScopeParams.push(...organizationUserScopeCodes);
       }
       if (orgTreeScopeIds.length > 0) {
         conditions.push(`aae.org_tree_id IN (${orgTreeScopeIds.map(() => '?').join(',')})`);
@@ -557,9 +541,9 @@ const DashboardModel = {
     }
 
     const [caps, people, entityPerformance, notices, [assignmentEntities]] = await Promise.all([
-      getCapsSummary(user, filters, descendantCodes, orgTreeScopeIds, accessibleCodes),
+      getCapsSummary(user, filters, descendantCodes, orgTreeScopeIds, organizationUserScopeCodes, accessibleCodes),
       getPeopleSummary(user, accessibleCodes),
-      getEntityPerformance(chartAudits.filter(a => a.status === 'completed'), entityHeadScopeCodes, orgTreeScopeIds),
+      getEntityPerformance(chartAudits.filter(a => a.status === 'completed'), organizationUserScopeCodes, orgTreeScopeIds),
       user.role === 'auditor' ? NoticeModel.getNoticesForAuditor(user.createdByEntityCode, user.userCode) : Promise.resolve([]),
       db.query(
         `SELECT aa.audit_id AS audit_code, aae.entity_code, aae.org_tree_id
@@ -576,7 +560,7 @@ const DashboardModel = {
         role: user.role,
         account_type: user.accountType || null,
         entity_type: user.entityType || null,
-        entity_code: (user.role === 'entity_head'
+        entity_code: (user.role === 'organization_user'
           ? (user.assignedEntityCode || user.entityCode || null)
           : (user.entityCode || null)),
         label: scope.scopeLabel,

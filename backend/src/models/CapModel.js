@@ -111,20 +111,32 @@ const CapModel = {
     return rows;
   },
 
-  async listCapsForEntityHead(orgTreeId, assignedEntityCode, { rootOnly = true } = {}) {
+  async listCapsForOrganizationUser(scopeOrOrgTreeId, assignedEntityCode, { rootOnly = true } = {}) {
     const {
-      getEntityHeadOrgTreeScope,
-      getEntityHeadEntityCodeScope,
+      getOrganizationUserOrgTreeScope,
+      getOrganizationUserEntityCodeScope,
     } = require('../utils/accessHelper');
-    const scopeIds = await getEntityHeadOrgTreeScope(orgTreeId);
-    const entityCodeScope = scopeIds.length
-      ? []
-      : await getEntityHeadEntityCodeScope(assignedEntityCode);
+    const isResolvedScope = scopeOrOrgTreeId
+      && typeof scopeOrOrgTreeId === 'object'
+      && Array.isArray(scopeOrOrgTreeId.orgTreeIds);
+    const scopeIds = isResolvedScope
+      ? scopeOrOrgTreeId.orgTreeIds
+      : await getOrganizationUserOrgTreeScope(scopeOrOrgTreeId);
+    const entityCodeScope = isResolvedScope
+      ? (scopeOrOrgTreeId.entityCodes || [])
+      : (scopeIds.length ? [] : await getOrganizationUserEntityCodeScope(assignedEntityCode));
     if (!scopeIds.length && !entityCodeScope.length) return [];
 
-    const scopeColumn = scopeIds.length ? 'cae.org_tree_id' : 'cae.entity_code';
-    const scopeValues = scopeIds.length ? scopeIds : entityCodeScope;
-    const ph = scopeValues.map(() => '?').join(',');
+    const conditions = [];
+    const scopeValues = [];
+    if (scopeIds.length) {
+      conditions.push(`cae.org_tree_id IN (${scopeIds.map(() => '?').join(',')})`);
+      scopeValues.push(...scopeIds);
+    }
+    if (entityCodeScope.length) {
+      conditions.push(`(cae.org_tree_id IS NULL AND cae.entity_code IN (${entityCodeScope.map(() => '?').join(',')}))`);
+      scopeValues.push(...entityCodeScope);
+    }
     const rootFilter = rootOnly ? 'AND c.parent_cap_id IS NULL' : '';
     const [rows] = await db.query(
       `SELECT DISTINCT c.*,
@@ -134,7 +146,7 @@ const CapModel = {
           FROM caps c
           JOIN audit_assignments aa ON aa.audit_id = c.audit_id
           INNER JOIN cap_assignment_entities cae ON cae.cap_id = c.cap_id
-          WHERE ${scopeColumn} IN (${ph}) AND aa.is_active = TRUE AND cae.is_active = TRUE ${rootFilter}
+          WHERE (${conditions.join(' OR ')}) AND aa.is_active = TRUE AND cae.is_active = TRUE ${rootFilter}
          ORDER BY c.created_at DESC`,
       scopeValues
     );
@@ -367,7 +379,7 @@ const CapModel = {
     const [rows] = await db.query(
       `SELECT cq.*,
               q.question_text, q.answer_type, q.total_marks, q.order_index, q.entity_type AS question_entity_type,
-              ca.audit_response_id, ca.responsible_entity_head_id, ca.responsible_person_name, ca.due_date,
+              ca.audit_response_id, ca.responsible_organization_user_id, ca.responsible_person_name, ca.due_date,
               ca.description AS ca_description, ca.severity
          FROM cap_questions cq
          JOIN checklist_questions q ON q.checklist_question_id = cq.checklist_question_id
@@ -393,7 +405,7 @@ const CapModel = {
     const [rows] = await db.query(
       `SELECT cq.*,
               q.question_text, q.answer_type, q.total_marks, q.order_index,
-              ca.audit_response_id, ca.responsible_entity_head_id, ca.responsible_person_name, ca.due_date,
+              ca.audit_response_id, ca.responsible_organization_user_id, ca.responsible_person_name, ca.due_date,
               ca.org_tree_id AS org_tree_id
          FROM cap_questions cq
          JOIN checklist_questions q ON q.checklist_question_id = cq.checklist_question_id
@@ -541,7 +553,7 @@ const CapModel = {
 
   async getCapResponses(cap_id) {
     const [rows] = await db.query(
-      `SELECT cr.*
+      `SELECT cr.*, cq.entity_code, cq.org_tree_id
          FROM cap_responses cr
          JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id
         WHERE cq.cap_id = ?
@@ -637,21 +649,21 @@ const CapModel = {
       [cap_id]
     );
 
-    // Fetch entity heads using EntityHeadModel (same approach as audit corrective actions)
+    // Fetch organization users using OrganizationUserModel (same approach as audit corrective actions)
     const orgTreeIds = [...new Set(rows.map(r => r.assigned_org_tree_id).filter(Boolean))];
-    const EntityHeadModel = require('./EntityHeadModel');
-    const heads = await EntityHeadModel.findByOrgTreeIds(orgTreeIds);
-    const headByOrgTreeId = {};
-    for (const h of heads) headByOrgTreeId[h.assigned_org_tree_id] = h;
+    const OrganizationUserModel = require('./OrganizationUserModel');
+    const organizationUsers = await OrganizationUserModel.findByOrgTreeIds(orgTreeIds);
+    const organizationUserByOrgTreeId = {};
+    for (const h of organizationUsers) organizationUserByOrgTreeId[h.assigned_org_tree_id] = h;
 
     for (const it of rows) {
-      const head = it.assigned_org_tree_id ? headByOrgTreeId[it.assigned_org_tree_id] : null;
-      it.responsible_entity_head = head
+      const organizationUser = it.assigned_org_tree_id ? organizationUserByOrgTreeId[it.assigned_org_tree_id] : null;
+      it.responsible_organization_user = organizationUser
         ? {
-            user_code: head.entity_head_id,
-            first_name: head.first_name,
-            last_name: head.last_name,
-            email: head.email,
+            user_code: organizationUser.organization_user_id,
+            first_name: organizationUser.first_name,
+            last_name: organizationUser.last_name,
+            email: organizationUser.email,
           }
         : null;
     }

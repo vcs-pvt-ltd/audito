@@ -109,7 +109,14 @@ export default function Navbar() {
               onClick={() => handleNavClick(2)}
               className="flex items-center justify-center flex-shrink-0 hover:opacity-70 transition-opacity duration-200"
             >
-              <Image src={auditoLogo} alt="Audito" width={90} height={25} priority />
+              <Image
+                src={auditoLogo}
+                alt="Audito"
+                width={90}
+                height={20}
+                className="h-5 w-[90px] object-contain"
+                priority
+              />
             </button>
 
             <button

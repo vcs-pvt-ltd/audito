@@ -11,8 +11,8 @@ const AuditModel = {
   // ── ASSIGNMENTS ──────────────────────────────────────────────────
 
    async create({ audit_id, checklist_id, title, audit_type, assigned_auditor_id,
-                  assigned_firm_code, assigned_org_tree_id, budget, currency, num_workers, start_date, end_date, notes, created_by, status }) {
-    await db.query(
+                  assigned_firm_code, assigned_org_tree_id, budget, currency, num_workers, start_date, end_date, notes, created_by, status }, executor = db) {
+    await executor.query(
       `INSERT INTO audit_assignments
          (audit_id, checklist_id, title, audit_type, assigned_auditor_id,
           assigned_firm_code, assigned_org_tree_id, budget, currency, num_workers, start_date, end_date, notes, created_by, status)
@@ -25,7 +25,7 @@ const AuditModel = {
     return audit_id;
   },
 
-  async addEntities(audit_id, entities) {
+  async addEntities(audit_id, entities, executor = db) {
     if (!entities.length) return;
     const seen = new Set();
     const unique = [];
@@ -38,12 +38,24 @@ const AuditModel = {
     }
     const { generateAuditAssignmentEntityIds } = require('../utils/codeGenerator');
     const ids = await generateAuditAssignmentEntityIds(unique.length);
-    const values = unique.map((e, i) => [ids[i], audit_id, e.org_tree_id || null, e.entity_code, e.entity_type]);
-    await db.query(
-      `INSERT INTO audit_assignment_entities (audit_assignment_entity_id, audit_id, org_tree_id, entity_code, entity_type)
-       VALUES ?`,
-      [values]
-    );
+    // A large checklist can target hundreds or thousands of entity instances.
+    // Keep each INSERT comfortably below MySQL packet and placeholder limits.
+    const INSERT_BATCH_SIZE = 200;
+    for (let start = 0; start < unique.length; start += INSERT_BATCH_SIZE) {
+      const batch = unique.slice(start, start + INSERT_BATCH_SIZE);
+      const values = batch.map((e, offset) => [
+        ids[start + offset],
+        audit_id,
+        e.org_tree_id || null,
+        e.entity_code,
+        e.entity_type,
+      ]);
+      await executor.query(
+        `INSERT INTO audit_assignment_entities (audit_assignment_entity_id, audit_id, org_tree_id, entity_code, entity_type)
+         VALUES ?`,
+        [values]
+      );
+    }
   },
 
   async findById(audit_id) {
@@ -123,20 +135,32 @@ const AuditModel = {
     return rows;
   },
 
-  async listForEntityHead(orgTreeId, assignedEntityCode) {
+  async listForOrganizationUser(scopeOrOrgTreeId, assignedEntityCode) {
     const {
-      getEntityHeadOrgTreeScope,
-      getEntityHeadEntityCodeScope,
+      getOrganizationUserOrgTreeScope,
+      getOrganizationUserEntityCodeScope,
     } = require('../utils/accessHelper');
-    const scopeIds = await getEntityHeadOrgTreeScope(orgTreeId);
-    const entityCodeScope = scopeIds.length
-      ? []
-      : await getEntityHeadEntityCodeScope(assignedEntityCode);
+    const isResolvedScope = scopeOrOrgTreeId
+      && typeof scopeOrOrgTreeId === 'object'
+      && Array.isArray(scopeOrOrgTreeId.orgTreeIds);
+    const scopeIds = isResolvedScope
+      ? scopeOrOrgTreeId.orgTreeIds
+      : await getOrganizationUserOrgTreeScope(scopeOrOrgTreeId);
+    const entityCodeScope = isResolvedScope
+      ? (scopeOrOrgTreeId.entityCodes || [])
+      : (scopeIds.length ? [] : await getOrganizationUserEntityCodeScope(assignedEntityCode));
     if (!scopeIds.length && !entityCodeScope.length) return [];
 
-    const scopeColumn = scopeIds.length ? 'aae.org_tree_id' : 'aae.entity_code';
-    const scopeValues = scopeIds.length ? scopeIds : entityCodeScope;
-    const ph = scopeValues.map(() => '?').join(',');
+    const conditions = [];
+    const scopeValues = [];
+    if (scopeIds.length) {
+      conditions.push(`aae.org_tree_id IN (${scopeIds.map(() => '?').join(',')})`);
+      scopeValues.push(...scopeIds);
+    }
+    if (entityCodeScope.length) {
+      conditions.push(`(aae.org_tree_id IS NULL AND aae.entity_code IN (${entityCodeScope.map(() => '?').join(',')}))`);
+      scopeValues.push(...entityCodeScope);
+    }
     const [rows] = await db.query(
       `SELECT DISTINCT aa.audit_id, aa.audit_id AS audit_code, aa.title, aa.audit_type, aa.status,
               aa.start_date, aa.end_date, aa.budget, aa.currency, aa.num_workers,
@@ -146,7 +170,7 @@ const AuditModel = {
        FROM audit_assignments aa
        LEFT JOIN checklists c ON c.checklist_id = aa.checklist_id
        INNER JOIN audit_assignment_entities aae ON aae.audit_id = aa.audit_id
-       WHERE ${scopeColumn} IN (${ph}) 
+       WHERE (${conditions.join(' OR ')})
          AND aa.is_active = TRUE 
          AND aae.is_active = TRUE
          AND aa.status != 'cancelled'
@@ -269,16 +293,26 @@ const AuditModel = {
   },
 
   async updateEntities(audit_id, entities) {
-    await db.query(
-      'DELETE FROM audit_assignment_entities WHERE audit_id = ?',
-      [audit_id]
-    );
-    if (entities.length) await this.addEntities(audit_id, entities);
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.query(
+        'DELETE FROM audit_assignment_entities WHERE audit_id = ?',
+        [audit_id]
+      );
+      if (entities.length) await this.addEntities(audit_id, entities, connection);
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   },
 
   async delete(audit_id) {
     await db.query(
-      'UPDATE audit_assignments SET is_active = FALSE WHERE audit_id = ?',
+      'DELETE FROM audit_assignments WHERE audit_id = ?',
       [audit_id]
     );
   },

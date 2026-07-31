@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
-import { orgTreeApi } from "@/lib/api";
+import { authApi, orgTreeApi, structureApi } from "@/lib/api";
+import AddEditEntityModal, { type EntityFormData } from "@/components/structure/AddEditEntityModal";
 
 import {
   FolderTree,
@@ -76,6 +77,18 @@ interface EntityOption {
   [key: string]: unknown;
 }
 
+const ENTITY_CODE_FIELDS: Record<string, string> = {
+  "Buying Office": "cbo_code",
+  Supplier: "csup_code",
+  Cluster: "comp_clus_code",
+  Factory: "comp_fact_code",
+  Unit: "comp_unit_code",
+  Department: "comp_dept_code",
+  Section: "comp_section_code",
+  Branch: "afc_branch_code",
+  "Audit Firm Department": "afc_dept_code",
+};
+
 function nodeKey(node: Pick<TreeNode, "code" | "edge_id">): string {
   return `${node.code}__${node.edge_id ?? "null"}`;
 }
@@ -132,12 +145,14 @@ function AddEntityPanel({
   existingChildCodes,
   accessToken,
   onAdded,
+  onCreateEntity,
   onClose,
 }: {
   childType: string;
   existingChildCodes: Set<string>;
   accessToken: string;
-  onAdded: (entities: EntityOption[]) => void;
+  onAdded: (entities: EntityOption[]) => Promise<void>;
+  onCreateEntity: (childType: string, formData: EntityFormData) => Promise<EntityOption>;
   onClose: () => void;
 }) {
   const [entities, setEntities] = useState<EntityOption[]>([]);
@@ -145,6 +160,27 @@ function AddEntityPanel({
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [createOpen, setCreateOpen] = useState(false);
+  const [orgRegistrationNumber, setOrgRegistrationNumber] = useState("");
+  const [orgCountry, setOrgCountry] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    authApi.getMe(accessToken)
+      .then((res) => {
+        if (cancelled || !res.success || !res.data) return;
+        const data = res.data as { organization?: { registration_number?: string; country?: string } };
+        setOrgRegistrationNumber(data.organization?.registration_number || "");
+        setOrgCountry(data.organization?.country || "");
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOrgRegistrationNumber("");
+          setOrgCountry("");
+        }
+      });
+    return () => { cancelled = true; };
+  }, [accessToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,7 +206,13 @@ function AddEntityPanel({
     return () => { cancelled = true; };
   }, [accessToken, childType]);
 
-  const handleAddOne = (entity: EntityOption) => { onAdded([entity]); };
+  const handleAddOne = async (entity: EntityOption) => {
+    try {
+      await onAdded([entity]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add entity.");
+    }
+  };
 
   const handleToggleSelected = (code: string) => {
     setSelected((prev) => {
@@ -187,11 +229,26 @@ function AddEntityPanel({
 
   const handleClearSelection = () => setSelected(new Set());
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const queue = entities.filter((e) => selected.has(e.code));
     if (queue.length === 0) return;
-    onAdded(queue);
-    setSelected(new Set());
+    try {
+      await onAdded(queue);
+      setSelected(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add entities.");
+    }
+  };
+
+  const handleCreate = async (formData: EntityFormData) => {
+    const created = await onCreateEntity(childType, formData);
+    try {
+      await onAdded([created]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to add the entity to this branch.";
+      throw new Error(`${childType} was created, but could not be added to this branch: ${message}`);
+    }
+    setSearch("");
   };
 
   const available = entities
@@ -215,6 +272,13 @@ function AddEntityPanel({
         </button>
       </div>
       <div className="p-2.5">
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-secondary-500/25 bg-secondary-500/10 px-3 py-2 text-xs font-medium text-secondary-300 transition-colors hover:bg-secondary-500/15"
+        >
+          <Plus size={13} /> Create new {childType}
+        </button>
         <div className="relative mb-2">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
@@ -256,7 +320,7 @@ function AddEntityPanel({
         ) : available.length === 0 ? (
           <p className="text-gray-500 text-xs py-2 px-1">
             {entities.length === 0
-              ? `No ${pluralize(childType).toLowerCase()} found. Create them in Setup Structure first.`
+              ? `No ${pluralize(childType).toLowerCase()} found yet. Create one above to add it here.`
               : search
               ? "No matches found."
               : `All ${pluralize(childType).toLowerCase()} already added.`}
@@ -289,6 +353,14 @@ function AddEntityPanel({
           </div>
         )}
       </div>
+      <AddEditEntityModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={handleCreate}
+        entityLabel={childType}
+        orgRegistrationNumber={orgRegistrationNumber}
+        orgCountry={orgCountry}
+      />
     </div>
   );
 }
@@ -371,6 +443,7 @@ function TreeNodeBuilder({
   onToggleExpand,
   onExpandNode,
   onAddLocal,
+  onCreateEntity,
   onRemoveLocal,
   findChildren,
   allowedChildrenMap,
@@ -383,7 +456,8 @@ function TreeNodeBuilder({
   expandedCodes: Set<string>;
   onToggleExpand: (nodeKey: string) => void;
   onExpandNode: (nodeKey: string) => void;
-  onAddLocal: (parentCode: string, childType: string, children: EntityOption[], parentEdgeId: string | number | null) => void;
+  onAddLocal: (parentCode: string, childType: string, children: EntityOption[], parentEdgeId: string | number | null) => Promise<void>;
+  onCreateEntity: (childType: string, formData: EntityFormData) => Promise<EntityOption>;
   onRemoveLocal: (edgeId: string | number, name: string) => void;
   findChildren: (parentCode: string, parentEdgeId: string | number | null) => Set<string>;
   allowedChildrenMap: Record<string, string[]>;
@@ -502,11 +576,12 @@ function TreeNodeBuilder({
                       childType={childType}
                       existingChildCodes={findChildren(node.code, thisEdgeId)}
                       accessToken={accessToken}
-                      onAdded={(entities) => {
-                        onAddLocal(node.code, childType, entities, thisEdgeId);
+                      onAdded={async (entities) => {
+                        await onAddLocal(node.code, childType, entities, thisEdgeId);
                         onExpandNode(thisNodeKey);
                         closeAddPanel(childType);
                       }}
+                      onCreateEntity={onCreateEntity}
                       onClose={() => closeAddPanel(childType)}
                     />
                   </div>
@@ -544,6 +619,7 @@ function TreeNodeBuilder({
                             onToggleExpand={onToggleExpand}
                             onExpandNode={onExpandNode}
                             onAddLocal={onAddLocal}
+                            onCreateEntity={onCreateEntity}
                             onRemoveLocal={onRemoveLocal}
                             findChildren={findChildren}
                             allowedChildrenMap={allowedChildrenMap}
@@ -674,7 +750,7 @@ export default function OrganizationPage() {
 
   const handleAddLocal = useCallback(
     async (parentCode: string, childType: string, children: EntityOption[], parentEdgeId: string | number | null) => {
-      if (!accessToken || !tree) return;
+      if (!accessToken || !tree) throw new Error("Organization tree is not available.");
 
       // ─── Plan Limits Enforcement ──────────────────────────────
       // Immediately sync to backend
@@ -692,15 +768,50 @@ export default function OrganizationPage() {
           toast(`Added ${children.length} ${pluralize(childType).toLowerCase()}.`, "success");
           await fetchTree(true);
         } else {
-          toast(res.message || "Failed to add entity.", "error");
+          throw new Error(res.message || "Failed to add entity.");
         }
-      } catch {
-        toast("Failed to add entity.", "error");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to add entity.";
+        toast(message, "error");
+        throw err;
       } finally {
         setSavingNodes(prev => { const next = new Set(prev); next.delete(parentCode); return next; });
       }
     },
     [accessToken, tree, toast, fetchTree]
+  );
+
+  const handleCreateEntity = useCallback(
+    async (childType: string, formData: EntityFormData): Promise<EntityOption> => {
+      if (!accessToken) throw new Error("Your session has expired. Please sign in again.");
+
+      const res = await structureApi.createSubEntity(accessToken, {
+        entity_type: childType,
+        name: formData.name.trim(),
+        registration_number: formData.registration_number || null,
+        email: formData.email.trim() || null,
+        phone_number: formData.phone_number || null,
+        address_line_1: formData.address_line_1 || null,
+        address_line_2: formData.address_line_2 || null,
+        address_line_3: formData.address_line_3 || null,
+        country: formData.country || null,
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.message || `Failed to create ${childType}.`);
+      }
+
+      const created = res.data as Record<string, unknown>;
+      const codeField = ENTITY_CODE_FIELDS[childType];
+      const code = codeField ? String(created[codeField] || "") : "";
+      if (!code) throw new Error(`Created ${childType}, but its identifier was not returned.`);
+
+      return {
+        code,
+        name: String(created.name || formData.name).trim(),
+        entity_type: childType,
+      };
+    },
+    [accessToken]
   );
 
   const handleRemoveLocal = useCallback(
@@ -796,6 +907,7 @@ export default function OrganizationPage() {
                 onToggleExpand={toggleExpand}
                 onExpandNode={expandNode}
                 onAddLocal={handleAddLocal}
+                onCreateEntity={handleCreateEntity}
                 onRemoveLocal={handleRemoveLocal}
                 findChildren={findChildCodes}
                 allowedChildrenMap={allowedChildrenMap}

@@ -44,7 +44,7 @@ interface SubCapRequiredItem {
   cap_id: string;
   entity_code: string;
   assigned_org_tree_id?: string | null;
-  responsible_entity_head?: {
+  responsible_organization_user?: {
     user_code: string;
     first_name: string;
     last_name: string;
@@ -196,7 +196,7 @@ function EntityNode({
             <div className="space-y-3 pt-1 pb-2" style={{ paddingLeft: questionIndent, paddingRight: 4 }}>
               {entityItems.map((it, idx) => {
                 const a = assignments[it.response_id] || { due_date: "" };
-                const head = it.responsible_entity_head;
+                const organizationUser = it.responsible_organization_user;
                 const dueDateMissing = showDueDateErrors && !a.due_date;
                 return (
                   <div key={it.response_id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
@@ -230,20 +230,20 @@ function EntityNode({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div className="px-3 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                           <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-2">Responsible</p>
-                          {head ? (
+                          {organizationUser ? (
                             <div className="flex items-center gap-2">
                               <div className="w-7 h-7 rounded-lg bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center shrink-0">
                                 <Building2 size={12} className="text-secondary-400" />
                               </div>
                               <div className="min-w-0">
-                                <p className="text-xs font-medium text-white truncate">{head.first_name} {head.last_name}</p>
-                                <p className="text-[10px] text-gray-500 truncate">{head.email}</p>
+                                <p className="text-xs font-medium text-white truncate">{organizationUser.first_name} {organizationUser.last_name}</p>
+                                <p className="text-[10px] text-gray-500 truncate">{organizationUser.email}</p>
                               </div>
                             </div>
                           ) : (
                             <div className="flex items-center gap-1.5 text-orange-500/60">
                               <AlertCircle size={12} />
-                              <span className="text-xs">No entity head assigned</span>
+                              <span className="text-xs">No organization user assigned</span>
                             </div>
                           )}
                         </div>

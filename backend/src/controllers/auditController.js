@@ -6,7 +6,7 @@
  *   GET    /api/audits                     List audit assignments
  *   GET    /api/audits/:id                  Get one with entities
  *   PUT    /api/audits/:id                  Update assignment
- *   DELETE /api/audits/:id                  Cancel (soft-delete)
+ *   DELETE /api/audits/:id                  Permanently delete a planned audit
  *
  * HELPER
  *   GET    /api/audits/checklist/:id/entities  Get entities that have questions in this checklist
@@ -18,8 +18,7 @@ const AuditorModel = require('../models/AuditorModel');
 const { db } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const {
-  getEntityHeadOrgTreeScope,
-  getEntityHeadEntityCodeScope,
+  getOrganizationUserScope,
   auditEntitiesInScope,
   getAccessibleEntityCodes,
 } = require('../utils/accessHelper');
@@ -69,35 +68,39 @@ async function generateAuditCode() {
 async function resolveEntityNames(entityList) {
   if (!entityList || entityList.length === 0) return {};
   const codes = [...new Set(entityList.map(e => e.entity_code))];
-  const ph = codes.map(() => '?').join(',');
-  const [rows] = await db.query(
-    `SELECT cust_code          AS code, name FROM customers                    WHERE cust_code          IN (${ph})
-     UNION ALL
-     SELECT cbo_code           AS code, name FROM customer_buying_offices       WHERE cbo_code           IN (${ph})
-     UNION ALL
-     SELECT csup_code          AS code, name FROM customer_suppliers            WHERE csup_code          IN (${ph})
-     UNION ALL
-     SELECT comp_code          AS code, name FROM companies                     WHERE comp_code          IN (${ph})
-     UNION ALL
-     SELECT comp_clus_code     AS code, name FROM company_clusters              WHERE comp_clus_code     IN (${ph})
-     UNION ALL
-     SELECT comp_fact_code     AS code, name FROM company_factories             WHERE comp_fact_code     IN (${ph})
-     UNION ALL
-     SELECT comp_unit_code     AS code, name FROM company_units                 WHERE comp_unit_code     IN (${ph})
-     UNION ALL
-     SELECT comp_dept_code     AS code, name FROM company_departments           WHERE comp_dept_code     IN (${ph})
-     UNION ALL
-     SELECT comp_section_code  AS code, name FROM company_sections              WHERE comp_section_code  IN (${ph})
-     UNION ALL
-     SELECT afc_code           AS code, name FROM audit_firm_companies          WHERE afc_code           IN (${ph})
-     UNION ALL
-     SELECT afc_branch_code    AS code, name FROM audit_firm_company_branches   WHERE afc_branch_code    IN (${ph})
-     UNION ALL
-     SELECT afc_dept_code      AS code, name FROM audit_firm_company_departments WHERE afc_dept_code      IN (${ph})`,
-    Array(12).fill(codes).flat()
-  );
   const nameMap = {};
-  for (const r of rows) nameMap[r.code] = r.name.trim();
+  const LOOKUP_BATCH_SIZE = 500;
+  for (let start = 0; start < codes.length; start += LOOKUP_BATCH_SIZE) {
+    const batch = codes.slice(start, start + LOOKUP_BATCH_SIZE);
+    const ph = batch.map(() => '?').join(',');
+    const [rows] = await db.query(
+      `SELECT cust_code          AS code, name FROM customers                    WHERE cust_code          IN (${ph})
+       UNION ALL
+       SELECT cbo_code           AS code, name FROM customer_buying_offices       WHERE cbo_code           IN (${ph})
+       UNION ALL
+       SELECT csup_code          AS code, name FROM customer_suppliers            WHERE csup_code          IN (${ph})
+       UNION ALL
+       SELECT comp_code          AS code, name FROM companies                     WHERE comp_code          IN (${ph})
+       UNION ALL
+       SELECT comp_clus_code     AS code, name FROM company_clusters              WHERE comp_clus_code     IN (${ph})
+       UNION ALL
+       SELECT comp_fact_code     AS code, name FROM company_factories             WHERE comp_fact_code     IN (${ph})
+       UNION ALL
+       SELECT comp_unit_code     AS code, name FROM company_units                 WHERE comp_unit_code     IN (${ph})
+       UNION ALL
+       SELECT comp_dept_code     AS code, name FROM company_departments           WHERE comp_dept_code     IN (${ph})
+       UNION ALL
+       SELECT comp_section_code  AS code, name FROM company_sections              WHERE comp_section_code  IN (${ph})
+       UNION ALL
+       SELECT afc_code           AS code, name FROM audit_firm_companies          WHERE afc_code           IN (${ph})
+       UNION ALL
+       SELECT afc_branch_code    AS code, name FROM audit_firm_company_branches   WHERE afc_branch_code    IN (${ph})
+       UNION ALL
+       SELECT afc_dept_code      AS code, name FROM audit_firm_company_departments WHERE afc_dept_code      IN (${ph})`,
+      Array(12).fill(batch).flat()
+    );
+    for (const r of rows) nameMap[r.code] = r.name.trim();
+  }
   return nameMap;
 }
 
@@ -401,7 +404,10 @@ const createAudit = async (req, res) => {
 
         const audit_code = await generateAuditCode();
 
-        const id = await AuditModel.create({
+        const connection = await db.getConnection();
+        try {
+          await connection.beginTransaction();
+          const id = await AuditModel.create({
           audit_id: audit_code, checklist_id, title, audit_type,
           assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
           budget: budget ?? checklist.budget,
@@ -410,7 +416,7 @@ const createAudit = async (req, res) => {
           start_date, end_date, notes,
           created_by: req.user.entityCode,
           status: 'plan',
-        });
+          }, connection);
 
         // Store only codes+types (+ org_tree_id if provided) — names are always resolved fresh on read
         const entitiesToStore = entities.map(({ org_tree_id, entity_code, entity_type }) => ({
@@ -418,8 +424,15 @@ const createAudit = async (req, res) => {
           entity_code,
           entity_type,
         }));
-        await AuditModel.addEntities(id, entitiesToStore);
-        return { id };
+          await AuditModel.addEntities(id, entitiesToStore, connection);
+          await connection.commit();
+          return { id };
+        } catch (error) {
+          await connection.rollback();
+          throw error;
+        } finally {
+          connection.release();
+        }
       }
     );
     if (creation.limitError) return errorResponse(res, creation.limitError, 403);
@@ -427,8 +440,12 @@ const createAudit = async (req, res) => {
 
     const created = await AuditModel.getWithEntities(id);
     if (created && created.entities && created.entities.length > 0) {
-      const nameMap = await resolveEntityNames(created.entities);
-      for (const e of created.entities) e.entity_name = nameMap[e.entity_code] || e.entity_code;
+      try {
+        const nameMap = await resolveEntityNames(created.entities);
+        for (const e of created.entities) e.entity_name = nameMap[e.entity_code] || e.entity_code;
+      } catch (nameError) {
+        console.error('createAudit entity-name enrichment error:', nameError);
+      }
     }
 
     if (assigned_auditor_id) {
@@ -479,12 +496,11 @@ const listAudits = async (req, res) => {
     let audits;
     if (req.user.role === 'auditor') {
       audits = await AuditModel.listForAuditor(req.user.userCode);
-    } else if (req.user.role === 'entity_head') {
-      audits = await AuditModel.listForEntityHead(req.user.assignedOrgTreeId, req.user.assignedEntityCode || req.user.entityCode);
-      const scopeIds = await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId);
-      const entityCodeScope = scopeIds.length
-        ? []
-        : await getEntityHeadEntityCodeScope(req.user.assignedEntityCode || req.user.entityCode);
+    } else if (req.user.role === 'organization_user') {
+      const organizationScope = await getOrganizationUserScope(req.user);
+      audits = await AuditModel.listForOrganizationUser(organizationScope);
+      const scopeIds = organizationScope.orgTreeIds;
+      const entityCodeScope = organizationScope.entityCodes;
       const scopeSet = new Set(scopeIds.map(String));
       const entityCodeSet = new Set(entityCodeScope);
       for (const a of audits) {
@@ -492,8 +508,8 @@ const listAudits = async (req, res) => {
         const scopedEnts = ents.filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope));
         a.entity_count = scopedEnts.length;
         const progress = await AuditExecutionModel.getProgress(a.audit_id);
-        const scopedProgress = progress.filter((p) => scopeSet.size
-          ? p.org_tree_id != null && scopeSet.has(String(p.org_tree_id))
+        const scopedProgress = progress.filter((p) => p.org_tree_id != null
+          ? scopeSet.has(String(p.org_tree_id))
           : entityCodeSet.has(p.entity_code));
         const totalQuestions = scopedProgress.reduce((s, p) => s + (p.total_questions || 0), 0);
         const answeredQuestions = scopedProgress.reduce((s, p) => s + (p.answered_questions || 0), 0);
@@ -512,7 +528,7 @@ const listAudits = async (req, res) => {
     }
     // Attach entity count and calculate progress per audit
     for (const a of audits) {
-      if (req.user.role === 'entity_head') continue;
+      if (req.user.role === 'organization_user') continue;
 
       const ents = await AuditModel.getEntities(a.audit_id);
       a.entity_count = ents.length;
@@ -574,22 +590,26 @@ const getAudit = async (req, res) => {
       audit.assigned_firm_code &&
       audit.assigned_firm_code === req.user.entityCode;
 
-    const entityHeadScopeIds = req.user.role === 'entity_head'
-      ? await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId)
-      : [];
-    const entityHeadCodeScope = req.user.role === 'entity_head' && !entityHeadScopeIds.length
-      ? await getEntityHeadEntityCodeScope(req.user.assignedEntityCode || req.user.entityCode)
-      : [];
-    const isEntityHead = req.user.role === 'entity_head'
-      && auditEntitiesInScope(audit.entities, entityHeadScopeIds, entityHeadCodeScope);
+    const organizationScope = req.user.role === 'organization_user'
+      ? await getOrganizationUserScope(req.user)
+      : { orgTreeIds: [], entityCodes: [] };
+    const organizationUserScopeIds = organizationScope.orgTreeIds;
+    const organizationUserCodeScope = organizationScope.entityCodes;
+    const isOrganizationUser = req.user.role === 'organization_user'
+      && auditEntitiesInScope(audit.entities, organizationUserScopeIds, organizationUserCodeScope);
 
-    if (!isCreator && !isAuditor && !isFirmAdmin && !isEntityHead) {
+    if (!isCreator && !isAuditor && !isFirmAdmin && !isOrganizationUser) {
       return errorResponse(res, 'Audit not found.', 404);
     }
     // Always resolve names fresh — don't rely on stored entity_name
     if (audit.entities && audit.entities.length > 0) {
       const nameMap = await resolveEntityNames(audit.entities);
       for (const e of audit.entities) e.entity_name = nameMap[e.entity_code] || e.entity_code;
+      if (req.user.role === 'organization_user') {
+        audit.entities = audit.entities.filter((entity) =>
+          auditEntitiesInScope([entity], organizationUserScopeIds, organizationUserCodeScope)
+        );
+      }
     }
 
     // Attach creator org details (useful for audit firm assigned audits)

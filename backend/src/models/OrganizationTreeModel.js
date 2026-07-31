@@ -240,7 +240,7 @@ const OrganizationTreeModel = {
 
   /**
    * Check if an edge or any of its descendants are "in use" by:
-   * 1. Users (Entity Heads / Auditors) assigned to that specific org_tree_id
+   * 1. Users (Organization Users / Auditors) assigned to that specific org_tree_id
    * 2. Checklist questions specifically linked to that org_tree_id
    * 3. Audits targeting that org_tree_id (directly or via assignment entities)
    */
@@ -250,14 +250,23 @@ const OrganizationTreeModel = {
 
     const placeholders = ids.map(() => '?').join(',');
 
-    // Check Entity Heads
+    // Check Organization Users
     const [headRows] = await db.query(
-      `SELECT COUNT(*) as count FROM entity_heads
+      `SELECT COUNT(*) as count FROM organization_users
        WHERE assigned_org_tree_id IN (${placeholders})
        AND is_active = TRUE`,
       ids
     );
     if (headRows[0].count > 0) return true;
+
+    // Check Organization User custom scopes
+    const [organizationUserRows] = await db.query(
+      `SELECT COUNT(*) as count FROM organization_user_scopes
+       WHERE org_tree_id IN (${placeholders})
+       AND is_active = TRUE`,
+      ids
+    );
+    if (organizationUserRows[0].count > 0) return true;
 
     // Check Auditors
     const [auditorRows] = await db.query(

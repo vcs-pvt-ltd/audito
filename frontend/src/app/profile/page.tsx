@@ -295,9 +295,8 @@ export default function ProfilePage() {
   if (!admin || !profile) return null;
 
   const getRoleLabel = () => {
-    if (admin.role === "entity_head") {
-      const entity = admin.entity_type || "Entity";
-      return `${entity.charAt(0).toUpperCase() + entity.slice(1).toLowerCase()} Head`;
+    if (admin.role === "organization_user") {
+      return "Organization User";
     }
     if (admin.role === "admin") return ACCOUNT_LABELS[admin.account_type || ""] || admin.account_type || "Admin";
     const roleCap = admin.role.charAt(0).toUpperCase() + admin.role.slice(1).toLowerCase();

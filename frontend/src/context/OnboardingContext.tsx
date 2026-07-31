@@ -67,21 +67,15 @@ const ENTITY_ORDER: Record<string, Array<{ slug: string; label: string; level: n
   ],
 };
 
-const HEAD_ORDER: Record<string, Array<{ slug: string; label: string; userType: string; entitySlug: string }>> = {
+const ORGANIZATION_USER_ORDER: Record<string, Array<{ slug: string; label: string; userType: string; entitySlug: string }>> = {
   Company: [
-    { slug: "cluster-heads", label: "Cluster Heads", userType: "Cluster Head", entitySlug: "cluster" },
-    { slug: "factory-heads", label: "Factory Heads", userType: "Factory Head", entitySlug: "factory" },
-    { slug: "unit-heads", label: "Unit Heads", userType: "Unit Head", entitySlug: "unit" },
-    { slug: "department-heads", label: "Department Heads", userType: "Department Head", entitySlug: "department" },
-    { slug: "section-heads", label: "Section Heads", userType: "Section Head", entitySlug: "section" },
+    { slug: "organization-users", label: "Organization Users", userType: "Organization User", entitySlug: "" },
   ],
   Customer: [
-    { slug: "buying-office-heads", label: "Buying Office Heads", userType: "Buying Office Head", entitySlug: "buying-office" },
-    { slug: "supplier-heads", label: "Supplier Heads", userType: "Supplier Head", entitySlug: "supplier" },
+    { slug: "organization-users", label: "Organization Users", userType: "Organization User", entitySlug: "" },
   ],
   "Audit Firm": [
-    { slug: "branch-heads", label: "Branch Heads", userType: "Branch Head", entitySlug: "branch" },
-    { slug: "audit-firm-department-heads", label: "Department Heads", userType: "Audit Firm Department Head", entitySlug: "audit-firm-department" },
+    { slug: "organization-users", label: "Organization Users", userType: "Organization User", entitySlug: "" },
   ],
 };
 
@@ -100,7 +94,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   const [structureCount, setStructureCount] = useState(0);
   const [orgDone, setOrgDone] = useState(false);
   const [entityCount, setEntityCount] = useState(0);
-  const [headCount, setHeadCount] = useState(0);
+  const [organizationUserCount, setOrganizationUserCount] = useState(0);
   const [auditorCount, setAuditorCount] = useState(0);
   const [checklistCount, setChecklistCount] = useState(0);
   const [auditCount, setAuditCount] = useState(0);
@@ -114,11 +108,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     );
   }, [admin?.account_type, admin?.org_level, admin?.entity_type]);
 
-  const filteredHeadOrder = useMemo(() => {
+  const organizationUserOrder = useMemo(() => {
     const accountType = admin?.account_type || "";
     const orgLevel = admin?.org_level ?? 0;
     const entityType = admin?.entity_type || "";
-    const base = HEAD_ORDER[accountType] || [];
+    const base = ORGANIZATION_USER_ORDER[accountType] || [];
     return base.filter(it => {
       const entityConfig = (ENTITY_ORDER[accountType] || []).find(e => e.slug === it.entitySlug);
       if (!entityConfig) return true;
@@ -132,7 +126,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     const busyTimer = setTimeout(() => setBusy(true), 500);
     try {
       const order = filteredEntityOrder;
-      const headLevels = filteredHeadOrder;
+      const organizationUserLevels = organizationUserOrder;
 
       const [treeRes, auditorsRes, checklistRes, auditRes, ...restRes] = await Promise.all([
         orgTreeApi.getTree(accessToken),
@@ -140,11 +134,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         checklistApi.list(accessToken),
         auditApi.list(accessToken),
         ...order.map((t) => orgTreeApi.listEntities(accessToken, t.label)),
-        ...headLevels.map((h) => usersApi.list(accessToken, h.userType)),
+        ...organizationUserLevels.map((h) => usersApi.list(accessToken, h.userType)),
       ]);
 
       const entityRes = restRes.slice(0, order.length);
-      const headsRes = restRes.slice(order.length);
+      const organizationUsersRes = restRes.slice(order.length);
 
       setStructureCount(order.length);
 
@@ -156,8 +150,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       const totalEntities = entityRes.reduce((sum, r) => sum + ((r.success && r.data) ? (((r.data as any).items || []).length) : 0), 0);
       setEntityCount(totalEntities);
 
-      const totalHeads = headsRes.reduce((sum, r) => sum + ((r.success && r.data) ? (((r.data as any).users || []).length) : 0), 0);
-      setHeadCount(totalHeads);
+      const totalOrganizationUsers = organizationUsersRes.reduce((sum, r) => sum + ((r.success && r.data) ? (((r.data as any).users || []).length) : 0), 0);
+      setOrganizationUserCount(totalOrganizationUsers);
 
       setAuditorCount(auditorsRes.success && auditorsRes.data ? (((auditorsRes.data as any).users || []).length) : 0);
       setChecklistCount(checklistRes.success && checklistRes.data ? (((checklistRes.data as any).checklists || []).length) : 0);
@@ -168,7 +162,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       setBusy(false);
       setLoading(false);
     }
-  }, [accessToken, admin, filteredEntityOrder, filteredHeadOrder]);
+  }, [accessToken, admin, filteredEntityOrder, organizationUserOrder]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -189,7 +183,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     if (!isAdmin) return [];
 
     const order = filteredEntityOrder;
-    const headLevels = filteredHeadOrder;
+    const organizationUserLevels = organizationUserOrder;
 
     const baseSteps: StepItem[] = [];
 
@@ -231,23 +225,21 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       state: auditorCount > 0 ? "done" : "pending",
     });
 
-    // Mission 4: Entity Heads (if any below us)
-    if (admin?.account_type !== "Audit Firm") {
-      if (headLevels.length > 0) {
-        baseSteps.push({
-          key: "entity-heads",
-          title: "Assign Entity Heads",
-          description: "Invite users to manage your specific organizational units.",
-          instructions: [
-            "Add users for different head roles",
-            "Assign each user to their respective entity",
-            "One head assignment is enough to complete this mission"
-          ],
-          href: `/users/list?type=${headLevels[0].slug}`,
-          state: headCount > 0 ? "done" : "pending",
-          optional: true,
-        });
-      }
+    // Mission 4: Organization Users
+    if (organizationUserLevels.length > 0) {
+      baseSteps.push({
+        key: "organization-users",
+        title: "Create Organization Users",
+        description: "Invite users and choose the organization areas they can access.",
+        instructions: [
+          "Add an organization user",
+          "Select permitted entities from the organization tree",
+          "Choose exact or whole-branch access"
+        ],
+        href: `/users/list?type=${organizationUserLevels[0].slug}`,
+        state: organizationUserCount > 0 ? "done" : "pending",
+        optional: true,
+      });
     }
 
     // Mission 5: Checklists (Optional or skipped for Audit Firms)
@@ -278,13 +270,13 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
 
     return baseSteps;
-  }, [isAdmin, filteredEntityOrder, filteredHeadOrder, entityCount, orgDone, headCount, auditorCount, checklistCount, auditCount]);
+  }, [isAdmin, filteredEntityOrder, organizationUserOrder, entityCount, orgDone, organizationUserCount, auditorCount, checklistCount, auditCount]);
 
   useEffect(() => {
     if (!isActive) return;
     const stepIdx = steps.findIndex(s => {
       if (s.key === "entities") return pathname.startsWith("/structure/list");
-      if (s.key === "entity-heads") {
+      if (s.key === "organization-users") {
         return pathname.startsWith("/users/list") && currentType !== "auditors";
       }
       if (s.key === "auditors") {
@@ -346,8 +338,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }
     }
 
-    if (step.key === "entity-heads") {
-      const order = filteredHeadOrder;
+    if (step.key === "organization-users") {
+      const order = organizationUserOrder;
       const currentIndex = order.findIndex(o => o.slug === currentType);
 
       if (currentIndex !== -1 && currentIndex < order.length - 1) {
@@ -365,7 +357,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
     const s = steps[next];
     if (s) router.push(`${s.href}${s.href.includes("?") ? "&" : "?"}onboarding=1`);
-  }, [currentStep, currentType, steps, router, filteredEntityOrder, filteredHeadOrder]);
+  }, [currentStep, currentType, steps, router, filteredEntityOrder, organizationUserOrder]);
 
   const goBack = useCallback(() => {
     const step = steps[currentStep];
@@ -382,8 +374,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }
     }
 
-    if (step.key === "entity-heads") {
-      const order = filteredHeadOrder;
+    if (step.key === "organization-users") {
+      const order = organizationUserOrder;
       const currentIndex = order.findIndex(o => o.slug === currentType);
 
       if (currentIndex > 0) {
@@ -411,8 +403,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }
     }
 
-    if (prevStep.key === "entity-heads") {
-      const order = filteredHeadOrder;
+    if (prevStep.key === "organization-users") {
+      const order = organizationUserOrder;
       if (order.length > 0) {
         const lastSlug = order[order.length - 1].slug;
         router.push(`/users/list?type=${lastSlug}&onboarding=1`);
@@ -421,7 +413,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
 
     router.push(`${prevStep.href}${prevStep.href.includes("?") ? "&" : "?"}onboarding=1`);
-  }, [currentStep, currentType, steps, router, filteredEntityOrder, filteredHeadOrder]);
+  }, [currentStep, currentType, steps, router, filteredEntityOrder, organizationUserOrder]);
 
   const canGoBack = useMemo(() => {
     if (currentStep > 0) return true;
@@ -447,16 +439,16 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       if (currentIndex !== -1 && currentIndex < order.length - 1) return true;
     }
 
-    // Within Entity Heads
-    if (step.key === "entity-heads") {
-      const order = filteredHeadOrder;
+    // Within Organization Users
+    if (step.key === "organization-users") {
+      const order = organizationUserOrder;
       const currentIndex = order.findIndex(o => o.slug === currentType);
       if (currentIndex !== -1 && currentIndex < order.length - 1) return true;
     }
 
     // Standard mission navigation
     return currentStep < steps.length - 1 && canEnterStep(currentStep + 1);
-  }, [currentStep, currentType, steps, canEnterStep, filteredEntityOrder, filteredHeadOrder]);
+  }, [currentStep, currentType, steps, canEnterStep, filteredEntityOrder, organizationUserOrder]);
 
   const openCurrentStep = useCallback(() => {
     const step = steps[currentStep];
@@ -543,4 +535,4 @@ export function useOnboarding() {
   return ctx;
 }
 
-export { ENTITY_ORDER, HEAD_ORDER };
+export { ENTITY_ORDER, ORGANIZATION_USER_ORDER };
