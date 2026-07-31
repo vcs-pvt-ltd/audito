@@ -129,6 +129,7 @@ function resolveOwnerField(accountType, slug) {
  * Optional: registration_number, email, phone_number, address, country
  */
 const createSubEntity = async (req, res) => {
+  let quotaLock = null;
   try {
     const {
       entity_type,
@@ -159,6 +160,10 @@ const createSubEntity = async (req, res) => {
     }
 
     // --- Subscription Plan Limits Verification ---
+    quotaLock = await LimitsEnforcer.acquireQuotaLock(
+      adminCode,
+      `structure:${entity_type}`
+    );
     const limitError = await LimitsEnforcer.checkStructureLimits(adminCode, entity_type);
     if (limitError) {
       return errorResponse(res, limitError, 403);
@@ -263,11 +268,15 @@ const createSubEntity = async (req, res) => {
 
     if (!created) return errorResponse(res, 'Failed to create entity.', 500);
 
+    await quotaLock.release();
+    quotaLock = null;
     return successResponse(res, { entity_type, ...created }, `${entity_type} "${name}" created successfully.`, 201);
 
   } catch (error) {
     console.error('Create sub-entity error:', error);
     return errorResponse(res, 'Failed to create entity.', 500);
+  } finally {
+    if (quotaLock) await quotaLock.release();
   }
 };
 

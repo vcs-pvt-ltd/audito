@@ -392,29 +392,38 @@ const createAudit = async (req, res) => {
       }
     }
 
-    const limitError = await LimitsEnforcer.checkAuditLimit(req.user.entityCode);
-    if (limitError) return errorResponse(res, limitError, 403);
+    const creation = await LimitsEnforcer.withQuotaLock(
+      req.user.entityCode,
+      'audit',
+      async () => {
+        const limitError = await LimitsEnforcer.checkAuditLimit(req.user.entityCode);
+        if (limitError) return { limitError };
 
-    const audit_code = await generateAuditCode();
+        const audit_code = await generateAuditCode();
 
-    const id = await AuditModel.create({
-      audit_id: audit_code, checklist_id, title, audit_type,
-      assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
-      budget: budget ?? checklist.budget,
-      currency: currency ?? checklist.currency ?? '$',
-      num_workers: num_workers ?? checklist.num_workers,
-      start_date, end_date, notes,
-      created_by: req.user.entityCode,
-      status: 'plan',
-    });
+        const id = await AuditModel.create({
+          audit_id: audit_code, checklist_id, title, audit_type,
+          assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
+          budget: budget ?? checklist.budget,
+          currency: currency ?? checklist.currency ?? '$',
+          num_workers: num_workers ?? checklist.num_workers,
+          start_date, end_date, notes,
+          created_by: req.user.entityCode,
+          status: 'plan',
+        });
 
-    // Store only codes+types (+ org_tree_id if provided) — names are always resolved fresh on read
-    const entitiesToStore = entities.map(({ org_tree_id, entity_code, entity_type }) => ({
-      org_tree_id: org_tree_id || null,
-      entity_code,
-      entity_type,
-    }));
-    await AuditModel.addEntities(id, entitiesToStore);
+        // Store only codes+types (+ org_tree_id if provided) — names are always resolved fresh on read
+        const entitiesToStore = entities.map(({ org_tree_id, entity_code, entity_type }) => ({
+          org_tree_id: org_tree_id || null,
+          entity_code,
+          entity_type,
+        }));
+        await AuditModel.addEntities(id, entitiesToStore);
+        return { id };
+      }
+    );
+    if (creation.limitError) return errorResponse(res, creation.limitError, 403);
+    const { id } = creation;
 
     const created = await AuditModel.getWithEntities(id);
     if (created && created.entities && created.entities.length > 0) {
@@ -871,7 +880,9 @@ const getAuditCount = async (req, res) => {
       return successResponse(res, { count: 0 });
     }
     const [[{ count }]] = await db.query(
-      'SELECT COUNT(*) as count FROM audit_assignments WHERE created_by = ? AND is_active = TRUE',
+      `SELECT COUNT(*) as count
+       FROM audit_assignments
+       WHERE created_by = ? AND is_active = TRUE AND status != 'cancelled'`,
       [req.user.entityCode]
     );
     return successResponse(res, { count: Number(count) });
