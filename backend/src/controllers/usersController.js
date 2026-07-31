@@ -168,6 +168,7 @@ const HEAD_TO_ENTITY = {
 // ─── CREATE USER ──────────────────────────────────────────────────
 
 const createUser = async (req, res) => {
+  let quotaLock = null;
   try {
     const { first_name, last_name, email, phone_number, country, user_type, assigned_entity_code, assigned_entity_type, assigned_org_tree_id } = req.body;
 
@@ -185,6 +186,7 @@ const createUser = async (req, res) => {
     }
 
     if (isAuditor(user_type)) {
+      quotaLock = await LimitsEnforcer.acquireQuotaLock(req.user.entityCode, 'auditor');
       const limitError = await LimitsEnforcer.checkAuditorLimit(req.user.entityCode);
       if (limitError) return errorResponse(res, limitError, 403);
     }
@@ -254,6 +256,11 @@ const createUser = async (req, res) => {
       });
     }
 
+    if (quotaLock) {
+      await quotaLock.release();
+      quotaLock = null;
+    }
+
     // Send a workspace invitation with enough organization context for the recipient.
     try {
       const organizationType = req.user.entityType === 'Audit Firm'
@@ -298,6 +305,8 @@ const createUser = async (req, res) => {
   } catch (error) {
     console.error('Create user error:', error);
     return errorResponse(res, 'Failed to create user.', 500);
+  } finally {
+    if (quotaLock) await quotaLock.release();
   }
 };
 
@@ -706,6 +715,7 @@ const checkAdminEmail = async (req, res) => {
 // ─── CREATE USER FROM ADMIN ───────────────────────────────────────
 
 const createUserFromAdmin = async (req, res) => {
+  let quotaLock = null;
   try {
     const { email, user_type, assigned_entity_code, assigned_org_tree_id } = req.body;
 
@@ -720,6 +730,7 @@ const createUserFromAdmin = async (req, res) => {
     }
 
     if (isAuditor(user_type)) {
+      quotaLock = await LimitsEnforcer.acquireQuotaLock(req.user.entityCode, 'auditor');
       const limitError = await LimitsEnforcer.checkAuditorLimit(req.user.entityCode);
       if (limitError) return errorResponse(res, limitError, 403);
     }
@@ -775,6 +786,11 @@ const createUserFromAdmin = async (req, res) => {
       });
     }
 
+    if (quotaLock) {
+      await quotaLock.release();
+      quotaLock = null;
+    }
+
     return successResponse(res, {
       id,
       user_code: userCode,
@@ -788,6 +804,8 @@ const createUserFromAdmin = async (req, res) => {
   } catch (error) {
     console.error('Create user from admin error:', error);
     return errorResponse(res, 'Failed to create user.', 500);
+  } finally {
+    if (quotaLock) await quotaLock.release();
   }
 };
 

@@ -278,26 +278,34 @@ const createChecklist = async (req, res) => {
       console.error('Checklist uniqueness check failed:', err);
     }
 
-    const limitError = await LimitsEnforcer.checkChecklistLimit(req.user.entityCode);
-    if (limitError) return errorResponse(res, limitError, 403);
+    const creation = await LimitsEnforcer.withQuotaLock(
+      req.user.entityCode,
+      'checklist',
+      async () => {
+        const limitError = await LimitsEnforcer.checkChecklistLimit(req.user.entityCode);
+        if (limitError) return { limitError };
 
-    const checklist_id = await generateChecklistId();
-
-    const id = await ChecklistModel.create({
-      checklist_id,
-      name,
-      description,
-      media_path,
-      checklist_type_id: checklist_type_id || null,
-      time_period_value: time_period_value ? parseInt(time_period_value, 10) : null,
-      time_period_unit: time_period_unit || null,
-      repeat_duration_value: repeat_duration_value ? parseInt(repeat_duration_value, 10) : null,
-      repeat_duration_unit: repeat_duration_unit || null,
-      budget: budget ? parseFloat(budget) : null,
-      currency: currency || '$',
-      num_workers: num_workers ? parseInt(num_workers, 10) : null,
-      created_by: req.user.entityCode
-    });
+        const checklist_id = await generateChecklistId();
+        const id = await ChecklistModel.create({
+          checklist_id,
+          name,
+          description,
+          media_path,
+          checklist_type_id: checklist_type_id || null,
+          time_period_value: time_period_value ? parseInt(time_period_value, 10) : null,
+          time_period_unit: time_period_unit || null,
+          repeat_duration_value: repeat_duration_value ? parseInt(repeat_duration_value, 10) : null,
+          repeat_duration_unit: repeat_duration_unit || null,
+          budget: budget ? parseFloat(budget) : null,
+          currency: currency || '$',
+          num_workers: num_workers ? parseInt(num_workers, 10) : null,
+          created_by: req.user.entityCode
+        });
+        return { id };
+      }
+    );
+    if (creation.limitError) return errorResponse(res, creation.limitError, 403);
+    const { id } = creation;
 
     const created = await ChecklistModel.findById(id);
     return successResponse(res, { checklist: created }, 'Checklist created.', 201);
