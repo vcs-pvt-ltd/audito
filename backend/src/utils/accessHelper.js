@@ -8,6 +8,7 @@
 
 const { db } = require('../config/db');
 const OrganizationTreeModel = require('../models/OrganizationTreeModel');
+const OrganizationUserScopeModel = require('../models/OrganizationUserScopeModel');
 const LinkModel = require('../models/LinkModel');
 const { getAccountType, isCompanySupplierLink, isPeerLink } = require('./linkRules');
 
@@ -222,9 +223,9 @@ async function resolveEntityNames(codes) {
 }
 
 /**
- * Edge ids visible to an entity head: their assigned org-tree node plus all descendants.
+ * Edge ids visible to an organization user: their assigned org-tree node plus all descendants.
  */
-async function getEntityHeadOrgTreeScope(orgTreeId) {
+async function getOrganizationUserOrgTreeScope(orgTreeId) {
   const id = parseInt(orgTreeId, 10);
   if (!Number.isFinite(id)) return [];
   const ids = await OrganizationTreeModel.getDescendantEdgeIds(id);
@@ -232,11 +233,11 @@ async function getEntityHeadOrgTreeScope(orgTreeId) {
 }
 
 /**
- * Entity codes visible to an entity head when their assignment is the root
+ * Entity codes visible to an organization user when their assignment is the root
  * organization entity. Root entities do not have an organization_tree edge,
  * so there is no org_tree_id to use for access checks.
  */
-async function getEntityHeadEntityCodeScope(assignedEntityCode) {
+async function getOrganizationUserEntityCodeScope(assignedEntityCode) {
   if (!assignedEntityCode) return [];
 
   const [edges] = await db.query(
@@ -256,13 +257,35 @@ async function getEntityHeadEntityCodeScope(assignedEntityCode) {
   return [...codes];
 }
 
+/**
+ * Resolve the effective scope for an Organization User. A request user object
+ * is accepted so the result can be memoized for the duration of that request.
+ * Existing organization_users without scope rows retain their legacy subtree access.
+ */
+async function getOrganizationUserScope(user) {
+  if (!user || user.role !== 'organization_user') {
+    return { scopes: [], orgTreeIds: [], entityCodes: [] };
+  }
+  if (user.organizationUserScope) return user.organizationUserScope;
+
+  const resolved = await OrganizationUserScopeModel.resolveForUser({
+    organizationUserId: user.userCode,
+    assignedOrgTreeId: user.assignedOrgTreeId,
+    assignedEntityCode: user.assignedEntityCode || user.entityCode,
+  });
+  user.organizationUserScope = resolved;
+  return resolved;
+}
+
 function entityMatchesOrgTreeScope(entity, scopeIds, entityCodeScope = []) {
   if (!entity) return false;
   const orgId = entity.org_tree_id ?? entity.assigned_org_tree_id ?? null;
-  if (scopeIds?.length) {
-    return orgId !== null && orgId !== undefined && scopeIds.includes(Number(orgId));
-  }
-  return entityCodeScope.includes(entity.entity_code);
+  const idSet = new Set((scopeIds || []).map(String));
+  if (orgId !== null && orgId !== undefined && idSet.has(String(orgId))) return true;
+  // Entity-code matching is reserved for rows without an edge id (notably a
+  // workspace root) so repeated entity codes elsewhere in the tree do not leak.
+  return (orgId === null || orgId === undefined)
+    && (entityCodeScope || []).includes(entity.entity_code);
 }
 
 function auditEntitiesInScope(entities, scopeIds, entityCodeScope = []) {
@@ -270,9 +293,9 @@ function auditEntitiesInScope(entities, scopeIds, entityCodeScope = []) {
 }
 
 /**
- * Find the subtree rooted at the entity head's assigned edge (or the highest in-scope node).
+ * Find the subtree rooted at the organization user's assigned edge (or the highest in-scope node).
  */
-function extractEntityHeadSubtree(tree, assignedOrgTreeId, scopeIds = []) {
+function extractOrganizationUserSubtree(tree, assignedOrgTreeId, scopeIds = []) {
   if (!tree) return null;
   const assignedId = parseInt(assignedOrgTreeId, 10);
   if (!Number.isFinite(assignedId)) return tree;
@@ -308,13 +331,44 @@ function extractEntityHeadSubtree(tree, assignedOrgTreeId, scopeIds = []) {
   return pruneToScope(tree);
 }
 
+/**
+ * Prune a tree to multiple Organization User scopes. Ancestors are retained for
+ * navigation but marked navigation_only so their presence never grants access.
+ */
+function extractOrganizationUserTree(tree, scopeIds = [], entityCodeScope = []) {
+  if (!tree) return null;
+  const scopeSet = new Set((scopeIds || []).map(String));
+  const codeSet = new Set(entityCodeScope || []);
+
+  const prune = (node) => {
+    if (!node) return null;
+    const edgeId = node.edge_id ?? node.org_tree_id ?? null;
+    const directlyAccessible = edgeId !== null && edgeId !== undefined
+      ? scopeSet.has(String(edgeId))
+      : codeSet.has(node.code);
+    const children = (node.children || []).map(prune).filter(Boolean);
+
+    if (directlyAccessible) {
+      return { ...node, accessible: true, navigation_only: false, children };
+    }
+    if (children.length) {
+      return { ...node, accessible: false, navigation_only: true, children };
+    }
+    return null;
+  };
+
+  return prune(tree);
+}
+
 module.exports = {
   getPartnerAccountCodes,
   getAccessibleEntityCodes,
   resolveEntityNames,
-  getEntityHeadOrgTreeScope,
-  getEntityHeadEntityCodeScope,
+  getOrganizationUserOrgTreeScope,
+  getOrganizationUserEntityCodeScope,
+  getOrganizationUserScope,
   entityMatchesOrgTreeScope,
   auditEntitiesInScope,
-  extractEntityHeadSubtree,
+  extractOrganizationUserSubtree,
+  extractOrganizationUserTree,
 };

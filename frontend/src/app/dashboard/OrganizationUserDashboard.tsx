@@ -272,9 +272,9 @@ function PerformanceChart({ data, isFullScreen, isLoading }: { data: ChartItem[]
   );
 }
 
-/* ─── Main Entity Head Dashboard Component ──────────────────────── */
+/* ─── Main Organization User Dashboard Component ──────────────────────── */
 
-export interface EntityHeadDashboardProps {
+export interface OrganizationUserDashboardProps {
   overview: DashboardOverview;
   admin: any;
   orgTree: any;
@@ -282,7 +282,7 @@ export interface EntityHeadDashboardProps {
   onFiltersChange: (f: DashboardFilters) => void;
 }
 
-export default function EntityHeadDashboard({ overview: initialOverview, admin, orgTree, filters: initialFilters }: EntityHeadDashboardProps) {
+export default function OrganizationUserDashboard({ overview: initialOverview, admin, orgTree, filters: initialFilters }: OrganizationUserDashboardProps) {
   const router = useRouter();
   const { accessToken } = useAuth();
 
@@ -392,20 +392,6 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
     return auditDatesMap[selectedDateStr] || [];
   }, [selectedDateStr, auditDatesMap]);
 
-  const loggedEntityCode = useMemo(
-    () =>
-      initialOverview.scope.entity_code ||
-      admin.entityCode ||
-      admin.entity_code ||
-      "",
-    [initialOverview.scope.entity_code, admin.entityCode, admin.entity_code]
-  );
-
-  const loggedEntityTreeId = useMemo(
-    () => String(admin.assigned_org_tree_id || admin.assignedOrgTreeId || "").trim(),
-    [admin.assigned_org_tree_id, admin.assignedOrgTreeId]
-  );
-
   const auditStatusData = [
     { label: "Plan", status: "plan", value: summaries.audits.plan || 0, color: "text-slate-300", bg: "bg-slate-400/10" },
     { label: "In Progress", status: "in_progress", value: summaries.audits.in_progress || 0, color: "text-amber-300", bg: "bg-amber-400/10" },
@@ -489,10 +475,11 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
 
   const headRootNode = useMemo(() => {
     if (!orgTree?.tree) return null;
-    if (loggedEntityTreeId) return findNodeByEdgeId(orgTree.tree, loggedEntityTreeId);
-    if (loggedEntityCode) return findNodeByCode(orgTree.tree, loggedEntityCode);
-    return null;
-  }, [orgTree, loggedEntityCode, loggedEntityTreeId]);
+    // The backend already returns the Organization User's multi-scope tree,
+    // including navigation-only ancestors. Use the complete pruned tree instead
+    // of selecting the legacy single assigned node.
+    return orgTree.tree;
+  }, [orgTree]);
 
   const treeEntities = useMemo(() => {
     if (!headRootNode) return [];
@@ -624,7 +611,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
       rawPerf = rawPerf.filter((item: any) => item.audit_code === selectedAuditCode);
     }
 
-    // An Entity Head must never receive organization-wide fallback bars. If
+    // An Organization User must never receive organization-wide fallback bars. If
     // the assigned tree position cannot be resolved, show no chart data.
     if (!orgTree?.tree || !headRootNode) return [];
 
@@ -821,7 +808,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
                     <button
                       key={s.label}
                       type="button"
-                      onClick={() => router.push(`/entity-head/audits?status=${s.status}`)}
+                      onClick={() => router.push(`/organization-user/audits?status=${s.status}`)}
                       className={`flex flex-col items-center justify-center p-2 rounded-xl ${s.bg} border border-[#ffffff0d] hover:border-white/20 hover:bg-white/[0.08] transition-all`}
                     >
                       <span className="text-[10px] font-semibold text-white/45 mb-0.5">{s.label}</span>
@@ -845,7 +832,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
                     <button
                       key={s.label}
                       type="button"
-                      onClick={() => router.push(`/entity-head/caps?status=${s.status}`)}
+                      onClick={() => router.push(`/organization-user/caps?status=${s.status}`)}
                       className={`flex flex-col items-center justify-center p-2 rounded-xl ${s.bg} border border-[#ffffff0d] hover:border-white/20 hover:bg-white/[0.08] transition-all`}
                     >
                       <span className="text-[10px] font-semibold text-white/45 mb-0.5">{s.label}</span>
@@ -886,7 +873,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
                   {selectedDateAudits.map((a) => (
                     <div
                       key={a.audit_id}
-                      onClick={() => router.push(`/entity-head/audits/preview?audit_id=${a.audit_id}`)}
+                      onClick={() => router.push(`/organization-user/audits/preview?audit_id=${a.audit_id}`)}
                       className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all cursor-pointer flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0 flex-1">
@@ -1076,7 +1063,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
             <h2 className="text-[10px] font-bold text-[#ffffff50] tracking-wider uppercase px-0.5">Quick Navigation</h2>
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => router.push("/entity-head/audits")}
+                onClick={() => router.push("/organization-user/audits")}
                 className="flex items-center gap-2 px-3 py-3 rounded-xl bg-[#ffffff06] border border-[#ffffff0d] hover:bg-[#ffffff10] hover:border-[#ffffff1a] transition-all group"
               >
                 <FileCheck size={14} className="text-white/50 group-hover:text-emerald-400 transition-colors shrink-0" />
@@ -1084,7 +1071,7 @@ export default function EntityHeadDashboard({ overview: initialOverview, admin, 
                 <ArrowRight size={12} className="text-white/20 group-hover:text-white/45 transition-colors ml-auto shrink-0" />
               </button>
               <button
-                onClick={() => router.push("/entity-head/caps")}
+                onClick={() => router.push("/organization-user/caps")}
                 className="flex items-center gap-2 px-3 py-3 rounded-xl bg-[#ffffff06] border border-[#ffffff0d] hover:bg-[#ffffff10] hover:border-[#ffffff1a] transition-all group"
               >
                 <ClipboardCheck size={14} className="text-white/50 group-hover:text-cyan-400 transition-colors shrink-0" />

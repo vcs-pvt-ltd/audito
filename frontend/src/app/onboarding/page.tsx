@@ -38,11 +38,11 @@ function OnboardingContent() {
       };
     }
 
-    if (admin.role === "entity_head") {
+    if (admin.role === "organization_user") {
       return {
-        heading: "Entity Head Onboarding",
+        heading: "Organization User Onboarding",
         description:
-          "Welcome to Audito. As an entity head, your main responsibility is to review audit findings and analyze performance for your assigned organization units.",
+          "Welcome to Audito. As an organization user, your main responsibility is to review audit findings and analyze performance for the organization areas assigned to you.",
         notes: [
           "View audit findings and evidence in your assigned scope.",
           "Analyze performance and identify trends.",

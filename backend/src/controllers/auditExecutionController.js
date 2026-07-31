@@ -18,7 +18,7 @@
 const AuditModel = require('../models/AuditModel');
 const AuditExecutionModel = require('../models/AuditExecutionModel');
 const ChecklistModel = require('../models/ChecklistModel');
-const EntityHeadModel = require('../models/EntityHeadModel');
+const OrganizationUserModel = require('../models/OrganizationUserModel');
 const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
 const NotificationModel = require('../models/NotificationModel');
@@ -26,10 +26,9 @@ const { db } = require('../config/db');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
 const { generateCorrectiveActionId, generateAuditResponseId, generateAuditEvidenceId, generateAuditEntityProgressId } = require('../utils/codeGenerator');
 const {
-  getEntityHeadOrgTreeScope,
-  getEntityHeadEntityCodeScope,
+  getOrganizationUserScope,
   auditEntitiesInScope,
-  extractEntityHeadSubtree,
+  extractOrganizationUserTree,
 } = require('../utils/accessHelper');
 const multer = require('multer');
 const path = require('path');
@@ -85,6 +84,7 @@ const upload = multer({
 });
 
 async function recomputeAndUpsertProgressForAudit(auditId, entityQuestions) {
+  await AuditExecutionModel.deleteUnassignedProgress(auditId);
   const allResponses = await AuditExecutionModel.getAllResponses(auditId);
   const byKey = {};
   for (const r of allResponses || []) {
@@ -134,7 +134,10 @@ function buildQuestionsForEntityInstance(allQuestions, entity_code, org_tree_id)
   const generic = byEntity.filter(q => normOrgTreeId(q.org_tree_id) === null);
   const exact = byEntity.filter(q => normOrgTreeId(q.org_tree_id) === targetOrgTreeId);
 
-  const selected = exact.length > 0 ? [...generic, ...exact] : [...generic, ...byEntity];
+  // Questions are scoped to an organization-tree instance. If this edge has no
+  // exact questions, do not borrow questions from another occurrence of the
+  // same entity code elsewhere in the hierarchy.
+  const selected = targetOrgTreeId === null ? generic : [...generic, ...exact];
   const seen = new Set();
   const out = [];
   for (const q of selected) {
@@ -170,21 +173,21 @@ async function resolveEntityNames(entityList) {
   return nameMap;
 }
 
-async function getEntityHeadScope(req) {
-  if (req.user?.role !== 'entity_head') return [];
-  return getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId);
+async function getRequestOrganizationTreeScopeIds(req) {
+  if (req.user?.role !== 'organization_user') return [];
+  return (await getOrganizationUserScope(req.user)).orgTreeIds;
 }
 
-async function getEntityHeadCodeScope(req, scopeIds) {
-  if (req.user?.role !== 'entity_head' || scopeIds?.length) return [];
-  return getEntityHeadEntityCodeScope(req.user.assignedEntityCode || req.user.entityCode);
+async function getOrganizationUserCodeScope(req, scopeIds) {
+  if (req.user?.role !== 'organization_user') return [];
+  return (await getOrganizationUserScope(req.user)).entityCodes;
 }
 
 function filterProgressByScope(progress, scopeIds, entityCodeScope = []) {
   const scopeSet = new Set((scopeIds || []).map(String));
   const entityCodeSet = new Set(entityCodeScope || []);
   return (progress || []).filter((p) => {
-    if (scopeSet.size) return p.org_tree_id != null && scopeSet.has(String(p.org_tree_id));
+    if (p.org_tree_id != null) return scopeSet.has(String(p.org_tree_id));
     return entityCodeSet.has(p.entity_code);
   });
 }
@@ -193,19 +196,19 @@ function filterProgressByScope(progress, scopeIds, entityCodeScope = []) {
 const listMyAudits = async (req, res) => {
   try {
     const userCode = req.user.userCode;
-    const scopeIds = await getEntityHeadScope(req);
-    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
-    const audits = req.user.role === 'entity_head'
-      ? await AuditModel.listForEntityHead(req.user.assignedOrgTreeId, req.user.assignedEntityCode || req.user.entityCode)
+    const scopeIds = await getRequestOrganizationTreeScopeIds(req);
+    const entityCodeScope = await getOrganizationUserCodeScope(req, scopeIds);
+    const audits = req.user.role === 'organization_user'
+      ? await AuditModel.listForOrganizationUser(await getOrganizationUserScope(req.user))
       : await AuditModel.listForAuditor(userCode);
     for (const a of audits) {
       const ents = await AuditModel.getEntities(a.audit_id);
-      const scopedEnts = req.user.role === 'entity_head'
+      const scopedEnts = req.user.role === 'organization_user'
         ? ents.filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope))
         : ents;
       a.entity_count = scopedEnts.length;
       const progress = await AuditExecutionModel.getProgress(a.audit_id);
-      const scopedProgress = req.user.role === 'entity_head'
+      const scopedProgress = req.user.role === 'organization_user'
         ? filterProgressByScope(progress, scopeIds, entityCodeScope)
         : progress;
       const totalQ = scopedProgress.reduce((s, p) => s + (p.total_questions || 0), 0);
@@ -254,9 +257,9 @@ const getCorrectiveActions = async (req, res) => {
     // Prefer response org_tree_id (edge instance) so repeated entity codes under different parents don't collide.
     // Only fall back to tree-derived edge_id when the mapping is unambiguous.
     const orgTreeIds = [...new Set((items || []).map((it) => it.org_tree_id).filter(Boolean))];
-    const heads = await EntityHeadModel.findByOrgTreeIds(orgTreeIds);
-    const headByOrgTreeId = {};
-    for (const h of heads) headByOrgTreeId[h.assigned_org_tree_id] = h;
+    const organizationUsers = await OrganizationUserModel.findByOrgTreeIds(orgTreeIds);
+    const organizationUserByOrgTreeId = {};
+    for (const h of organizationUsers) organizationUserByOrgTreeId[h.assigned_org_tree_id] = h;
 
     const enrichedItems = (items || []).map((it) => {
       const orgTreeIdFromResponse = it.org_tree_id ?? null;
@@ -266,16 +269,16 @@ const getCorrectiveActions = async (req, res) => {
         : null;
 
       const assignedOrgTreeId = (orgTreeIdFromResponse ?? unambiguousFallback) || null;
-      const head = assignedOrgTreeId ? headByOrgTreeId[assignedOrgTreeId] : null;
+      const organizationUser = assignedOrgTreeId ? organizationUserByOrgTreeId[assignedOrgTreeId] : null;
       return {
         ...it,
         assigned_org_tree_id: assignedOrgTreeId,
-        responsible_entity_head: head
+        responsible_organization_user: organizationUser
           ? {
-            user_code: head.entity_head_id,
-            first_name: head.first_name,
-            last_name: head.last_name,
-            email: head.email,
+            user_code: organizationUser.organization_user_id,
+            first_name: organizationUser.first_name,
+            last_name: organizationUser.last_name,
+            email: organizationUser.email,
           }
           : null,
       };
@@ -323,9 +326,9 @@ const saveCorrectiveActions = async (req, res) => {
       const s = entityToOrgTreeIds[String(a.entity_code)];
       return s && s.size === 1 ? Array.from(s)[0] : null;
     }).filter(Boolean))];
-    const heads = await EntityHeadModel.findByOrgTreeIds(orgTreeIds);
-    const headByOrgTreeId = {};
-    for (const h of heads) headByOrgTreeId[h.assigned_org_tree_id] = h;
+    const organizationUsers = await OrganizationUserModel.findByOrgTreeIds(orgTreeIds);
+    const organizationUserByOrgTreeId = {};
+    for (const h of organizationUsers) organizationUserByOrgTreeId[h.assigned_org_tree_id] = h;
 
     const results = [];
     for (const a of actions) {
@@ -336,9 +339,9 @@ const saveCorrectiveActions = async (req, res) => {
         ? Array.from(fallbackSet)[0]
         : null;
       const orgTreeId = a.org_tree_id ?? a.assigned_org_tree_id ?? unambiguousFallback ?? null;
-      const head = orgTreeId ? headByOrgTreeId[orgTreeId] : null;
-      const responsiblePersonCode = head?.entity_head_id || null;
-      const responsiblePersonName = head ? `${head.first_name} ${head.last_name}`.trim() : null;
+      const organizationUser = orgTreeId ? organizationUserByOrgTreeId[orgTreeId] : null;
+      const responsiblePersonCode = organizationUser?.organization_user_id || null;
+      const responsiblePersonName = organizationUser ? `${organizationUser.first_name} ${organizationUser.last_name}`.trim() : null;
 
       const caId = await AuditExecutionModel.upsertCorrectiveAction({
         corrective_action_id: await generateCorrectiveActionId(),
@@ -347,7 +350,7 @@ const saveCorrectiveActions = async (req, res) => {
         entity_code: String(a.entity_code),
         checklist_question_id: a.question_id,
         org_tree_id: orgTreeId,
-        responsible_entity_head_id: responsiblePersonCode,
+        responsible_organization_user_id: responsiblePersonCode,
         responsible_person_name: responsiblePersonName,
         due_date: a.due_date ? String(a.due_date).slice(0, 10) : null,
         created_by: req.user.userCode,
@@ -374,9 +377,9 @@ const getAuditDetail = async (req, res) => {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
-    const scopeIds = await getEntityHeadScope(req);
-    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
-    if (req.user.role === 'entity_head' && !auditEntitiesInScope(audit.entities, scopeIds, entityCodeScope)) {
+    const scopeIds = await getRequestOrganizationTreeScopeIds(req);
+    const entityCodeScope = await getOrganizationUserCodeScope(req, scopeIds);
+    if (req.user.role === 'organization_user' && !auditEntitiesInScope(audit.entities, scopeIds, entityCodeScope)) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
@@ -390,7 +393,7 @@ const getAuditDetail = async (req, res) => {
 
     // Get progress per entity
     let progress = await AuditExecutionModel.getProgress(id);
-    if (req.user.role === 'entity_head') {
+    if (req.user.role === 'organization_user') {
       progress = filterProgressByScope(progress, scopeIds, entityCodeScope);
       audit.entities = (audit.entities || []).filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope));
     }
@@ -410,30 +413,12 @@ const getAuditDetail = async (req, res) => {
           org_tree_id: (q.org_tree_id ?? eq.org_tree_id ?? null),
         })));
 
-        const tree = await AuditExecutionModel.getEntityTree(id);
-        const treeEntities = [];
-        const walk = (node) => {
-          if (!node) return;
-          if (node.code && node.edge_id) {
-            treeEntities.push({ entity_code: node.code, org_tree_id: node.edge_id });
-          }
-          for (const c of node.children || []) walk(c);
-        };
-        walk(tree);
-
         const instanceMap = new Map();
         for (const ent of (audit.entities || [])) {
           const orgTreeIdRaw = ent.org_tree_id ?? ent.assigned_org_tree_id ?? null;
           const orgTreeId = (orgTreeIdRaw === null || orgTreeIdRaw === undefined || orgTreeIdRaw === '')
             ? null
             : orgTreeIdRaw;
-          const k = `${ent.entity_code}__${orgTreeId ?? 'null'}`;
-          if (!instanceMap.has(k)) instanceMap.set(k, { entity_code: ent.entity_code, org_tree_id: orgTreeId });
-        }
-        for (const ent of treeEntities) {
-          const orgTreeId = (ent.org_tree_id === null || ent.org_tree_id === undefined || ent.org_tree_id === '')
-            ? null
-            : ent.org_tree_id;
           const k = `${ent.entity_code}__${orgTreeId ?? 'null'}`;
           if (!instanceMap.has(k)) instanceMap.set(k, { entity_code: ent.entity_code, org_tree_id: orgTreeId });
         }
@@ -446,7 +431,7 @@ const getAuditDetail = async (req, res) => {
           };
         });
 
-        if (req.user.role === 'entity_head') {
+        if (req.user.role === 'organization_user') {
           audit.entity_questions = audit.entity_questions.filter((eq) =>
             auditEntitiesInScope([eq], scopeIds, entityCodeScope)
           );
@@ -454,7 +439,7 @@ const getAuditDetail = async (req, res) => {
 
         await recomputeAndUpsertProgressForAudit(id, audit.entity_questions);
         audit.entity_progress = await AuditExecutionModel.getProgress(id);
-        if (req.user.role === 'entity_head') {
+        if (req.user.role === 'organization_user') {
           audit.entity_progress = filterProgressByScope(audit.entity_progress, scopeIds, entityCodeScope);
         }
       } else {
@@ -586,9 +571,9 @@ const submitResponse = async (req, res) => {
 const getResponses = async (req, res) => {
   try {
     const { id } = req.params;
-    const scopeIds = await getEntityHeadScope(req);
-    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
-    if (req.user.role === 'entity_head') {
+    const scopeIds = await getRequestOrganizationTreeScopeIds(req);
+    const entityCodeScope = await getOrganizationUserCodeScope(req, scopeIds);
+    if (req.user.role === 'organization_user') {
       const entities = await AuditModel.getEntities(id);
       if (!auditEntitiesInScope(entities, scopeIds, entityCodeScope)) {
         return errorResponse(res, 'Not authorized.', 403);
@@ -596,7 +581,7 @@ const getResponses = async (req, res) => {
     }
 
     let responses = await AuditExecutionModel.getAllResponses(id);
-    if (req.user.role === 'entity_head') {
+    if (req.user.role === 'organization_user') {
       responses = filterProgressByScope(responses, scopeIds, entityCodeScope);
     }
 
@@ -907,9 +892,9 @@ const getEntityTree = async (req, res) => {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
-    const scopeIds = await getEntityHeadScope(req);
-    const entityCodeScope = await getEntityHeadCodeScope(req, scopeIds);
-    if (req.user.role === 'entity_head') {
+    const scopeIds = await getRequestOrganizationTreeScopeIds(req);
+    const entityCodeScope = await getOrganizationUserCodeScope(req, scopeIds);
+    if (req.user.role === 'organization_user') {
       const entities = await AuditModel.getEntities(id);
       if (!auditEntitiesInScope(entities, scopeIds, entityCodeScope)) {
         return errorResponse(res, 'Not authorized.', 403);
@@ -917,8 +902,8 @@ const getEntityTree = async (req, res) => {
     }
 
     let tree = await AuditExecutionModel.getEntityTree(id);
-    if (req.user.role === 'entity_head' && tree) {
-      tree = extractEntityHeadSubtree(tree, req.user.assignedOrgTreeId, scopeIds);
+    if (req.user.role === 'organization_user' && tree) {
+      tree = extractOrganizationUserTree(tree, scopeIds, entityCodeScope);
     }
     return successResponse(res, { tree });
   } catch (err) {

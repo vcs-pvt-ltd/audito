@@ -7,7 +7,7 @@ import { dashboardApi, orgTreeApi, DashboardFilters } from "@/lib/api";
 
 import AdminDashboard from "./AdminDashboard";
 import AuditorDashboard from "./AuditorDashboard";
-import EntityHeadDashboard from "./EntityHeadDashboard";
+import OrganizationUserDashboard from "./OrganizationUserDashboard";
 
 interface DashboardOverview {
   scope: {
@@ -52,8 +52,8 @@ export default function DashboardPage() {
   }, [isLoading, admin, router]);
 
   useEffect(() => {
-    // org-tree is only available to admin role — skip for auditor / entity_head
-    if (!accessToken || !admin || !["admin", "entity_head"].includes(admin.role)) return;
+    // org-tree is only available to admin role — skip for auditor / organization_user
+    if (!accessToken || !admin || !["admin", "organization_user"].includes(admin.role)) return;
     orgTreeApi.getTree(accessToken).then((res) => {
       if (res.success && res.data) setOrgTree(res.data);
     });
@@ -102,9 +102,9 @@ export default function DashboardPage() {
         );
       case "auditor":
         return <AuditorDashboard overview={overview as any} admin={admin} />;
-      case "entity_head":
+      case "organization_user":
         return (
-          <EntityHeadDashboard
+          <OrganizationUserDashboard
             overview={overview as any}
             admin={admin}
             orgTree={orgTree}

@@ -85,6 +85,8 @@ interface QuestionOption {
 interface AuditQuestion {
   id: number;
   checklist_question_id: string;
+  entity_code: string;
+  org_tree_id?: string | null;
   question_text: string;
   answer_type: string;
   total_marks: number;
@@ -96,7 +98,7 @@ interface AuditResponse {
   audit_response_id: string;
   checklist_question_id: string;
   entity_code: string;
-  org_tree_id: string;
+  org_tree_id: string | null;
   answer_text: string | null;
   selected_option_ids: string | null | number[];
   marks_obtained: number;
@@ -112,6 +114,10 @@ interface TreeNode {
   edge_id?: string | null;
   children?: TreeNode[];
 }
+
+type AuditPreviewStep =
+  | { mode: "cards"; parentCode: string | null; parentOrgTreeId: string | null }
+  | { mode: "questions"; entityCode: string; orgTreeId: string | null };
 
 // --- Helper Functions ---
 
@@ -137,9 +143,7 @@ function getQuestionsForNode(
   node: Pick<TreeNode, "code" | "edge_id">,
   questionsByKey: Record<string, AuditQuestion[]>
 ) {
-  const direct = questionsByKey[progressKey(node.code, node.edge_id ?? null)] || [];
-  if (direct.length > 0) return direct;
-  return questionsByKey[progressKey(node.code, null)] || [];
+  return questionsByKey[progressKey(node.code, node.edge_id ?? null)] || [];
 }
 
 function ProgressRing({ pct, size = 48 }: { pct: number; size?: number }) {
@@ -235,13 +239,13 @@ function EntityCard({
   node,
   index,
   questionsByKey,
-  responsesByQuestionId,
+  responsesByEntityKey,
   onClick,
 }: {
   node: TreeNode;
   index: number;
   questionsByKey: Record<string, AuditQuestion[]>;
-  responsesByQuestionId: Record<string, AuditResponse>;
+  responsesByEntityKey: Record<string, Record<string, AuditResponse>>;
   onClick: () => void;
 }) {
   const getSubtreeProgress = (n: TreeNode) => {
@@ -249,8 +253,9 @@ function EntityCard({
     let a = 0;
     const walk = (nd: TreeNode) => {
       const qs = getQuestionsForNode(nd, questionsByKey);
+      const nodeResponses = responsesByEntityKey[progressKey(nd.code, nd.edge_id ?? null)] || {};
       const ans = qs.reduce((s, q) => {
-        const response = responsesByQuestionId[q.checklist_question_id];
+        const response = nodeResponses[q.checklist_question_id];
         const hasAns = isResponseAnswered(response, formatAnswer(q, response));
         return s + (hasAns ? 1 : 0);
       }, 0);
@@ -411,9 +416,9 @@ function AuditDetailsContent() {
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   
-  const [stepHistory, setStepHistory] = useState<
-    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
-  >([{ mode: "cards", parentCode: null }]);
+  const [stepHistory, setStepHistory] = useState<AuditPreviewStep[]>([
+    { mode: "cards", parentCode: null, parentOrgTreeId: null },
+  ]);
 
   const fetchAuditData = useCallback(async () => {
     if (!accessToken || !auditId) return;
@@ -429,7 +434,6 @@ function AuditDetailsContent() {
       
       if (detailRes.success && detailRes.data) {
         setAudit((detailRes.data as any).audit);
-        setQuestions((detailRes.data as any).audit.entities || []); // Fallback or use detail
       }
 
       if (itemsRes.success && itemsRes.data) {
@@ -478,9 +482,13 @@ function AuditDetailsContent() {
     return m;
   }, [questions]);
 
-  const responsesByQuestionId = useMemo(() => {
-    const m: Record<string, AuditResponse> = {};
-    for (const r of responses) m[r.checklist_question_id] = r;
+  const responsesByEntityKey = useMemo(() => {
+    const m: Record<string, Record<string, AuditResponse>> = {};
+    for (const r of responses) {
+      const entityKey = progressKey(r.entity_code, r.org_tree_id ?? null);
+      if (!m[entityKey]) m[entityKey] = {};
+      m[entityKey][r.checklist_question_id] = r;
+    }
     return m;
   }, [responses]);
 
@@ -501,25 +509,20 @@ function AuditDetailsContent() {
 
   const isFirmAdmin = admin?.role === "admin" && ["Audit Firm", "Audit Firm Company"].includes((admin as any)?.account_type || "");
 
-  const findInTree = (code: string) => {
+  const findTreeNode = (code: string, edgeId: string | null) => {
+    let codeFallback: TreeNode | null = null;
     const walk = (n: TreeNode): TreeNode | null => {
-      if (n.code === code) return n;
+      if (n.code === code && !codeFallback) codeFallback = n;
+      const nodeEdgeId = n.edge_id ?? null;
+      if (n.code === code && nodeEdgeId === edgeId) return n;
       for (const c of n.children || []) {
         const f = walk(c);
         if (f) return f;
       }
       return null;
     };
-    return tree ? walk(tree) : null;
-  };
-
-  const findNodeByEdgeId = (node: TreeNode, edgeId: string | null): TreeNode | null => {
-    if (node.edge_id === edgeId) return node;
-    for (const c of node.children || []) {
-      const f = findNodeByEdgeId(c, edgeId);
-      if (f) return f;
-    }
-    return null;
+    if (!tree) return null;
+    return walk(tree) || codeFallback;
   };
 
   const subtreeHasQuestions = (node: TreeNode | null): boolean => {
@@ -662,9 +665,11 @@ function AuditDetailsContent() {
                 for (let i = 0; i < stepHistory.length; i++) {
                   const s = stepHistory[i];
                   const code = s.mode === "questions" ? s.entityCode : s.parentCode;
-                  if (code && !seen.has(code)) {
-                    seen.add(code);
-                    const nd = findInTree(code);
+                  const edgeId = s.mode === "questions" ? s.orgTreeId : s.parentOrgTreeId;
+                  const instanceKey = code ? progressKey(code, edgeId) : null;
+                  if (code && instanceKey && !seen.has(instanceKey)) {
+                    seen.add(instanceKey);
+                    const nd = findTreeNode(code, edgeId);
                     const idx = i;
                     breadcrumbNodes.push({ label: nd?.name || code, goTo: () => setStepHistory((h) => h.slice(0, idx + 1)) });
                   }
@@ -674,12 +679,20 @@ function AuditDetailsContent() {
               const navigateNode = (nd: TreeNode) => {
                 const hasQ = getQuestionsForNode(nd, questionsByKey).length > 0;
                 const hasKids = (nd.children || []).some(subtreeHasQuestions);
-                if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: nd.code }]);
+                if (!hasQ && hasKids) {
+                  setStepHistory((h) => [...h, {
+                    mode: "cards",
+                    parentCode: nd.code,
+                    parentOrgTreeId: nd.edge_id ?? null,
+                  }]);
+                }
                 else setStepHistory((h) => [...h, { mode: "questions", entityCode: nd.code, orgTreeId: nd.edge_id ?? null }]);
               };
 
               if (step.mode === "cards") {
-                const parent = step.parentCode ? findInTree(step.parentCode) : tree;
+                const parent = step.parentCode
+                  ? findTreeNode(step.parentCode, step.parentOrgTreeId)
+                  : tree;
                 const cards = parent
                   ? (step.parentCode === null
                     ? ([parent].filter(subtreeHasQuestions).length ? [parent] : (parent.children || []).filter(subtreeHasQuestions))
@@ -691,7 +704,7 @@ function AuditDetailsContent() {
                     {!isRoot && (
                       <nav className="flex items-center gap-1.5 flex-wrap mb-2 text-xs">
                         <button
-                          onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                          onClick={() => setStepHistory([{ mode: "cards", parentCode: null, parentOrgTreeId: null }])}
                           className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
                         >
                           <ArrowLeft size={12} /> All Entities
@@ -712,7 +725,7 @@ function AuditDetailsContent() {
                           node={n}
                           index={i + 1}
                           questionsByKey={questionsByKey}
-                          responsesByQuestionId={responsesByQuestionId}
+                          responsesByEntityKey={responsesByEntityKey}
                           onClick={() => navigateNode(n)}
                         />
                       ))}
@@ -721,9 +734,7 @@ function AuditDetailsContent() {
                 );
               }
 
-              const node = step.orgTreeId != null
-                ? findNodeByEdgeId(tree, step.orgTreeId)
-                : findInTree(step.entityCode);
+              const node = findTreeNode(step.entityCode, step.orgTreeId);
               const entityCode = step.entityCode;
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
               const qs = getQuestionsForNode({ code: entityCode, edge_id: edgeId }, questionsByKey)
@@ -736,7 +747,7 @@ function AuditDetailsContent() {
                 <div className="space-y-5">
                   <nav className="flex items-center gap-1.5 flex-wrap mb-2 text-xs">
                     <button
-                      onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                      onClick={() => setStepHistory([{ mode: "cards", parentCode: null, parentOrgTreeId: null }])}
                       className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
                     >
                       <ArrowLeft size={12} /> All Entities
@@ -761,7 +772,12 @@ function AuditDetailsContent() {
                   <div className="space-y-3">
                     {qs.length > 0 ? (
                       qs.map((q, idx) => (
-                        <QuestionPreviewCard key={`${progressKey(entityCode, edgeId)}::${q.checklist_question_id}::${idx}`} question={q} response={responsesByQuestionId[q.checklist_question_id]} index={idx + 1} />
+                        <QuestionPreviewCard
+                          key={`${progressKey(entityCode, edgeId)}::${q.checklist_question_id}`}
+                          question={q}
+                          response={responsesByEntityKey[progressKey(entityCode, edgeId)]?.[q.checklist_question_id]}
+                          index={idx + 1}
+                        />
                       ))
                     ) : (
                       <div className="glass rounded-xl p-8 text-center border border-dashed border-white/10">
@@ -779,7 +795,11 @@ function AuditDetailsContent() {
                     </button>
                     {hasChildrenWithQuestions && (
                       <button
-                        onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode }])}
+                        onClick={() => setStepHistory(h => [...h, {
+                          mode: "cards",
+                          parentCode: entityCode,
+                          parentOrgTreeId: edgeId,
+                        }])}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
                       >
                         Next <ChevronRight size={14} />

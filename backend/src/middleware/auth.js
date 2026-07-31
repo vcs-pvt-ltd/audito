@@ -2,18 +2,18 @@
  * Authentication Middleware
  * 
  * Verifies JWT tokens and attaches user info to request.
- * Supports all roles: admin, auditor, entity_head.
+ * Supports all roles: admin, auditor, organization_user.
  */
 
 const jwt = require('jsonwebtoken');
 const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
-const EntityHeadModel = require('../models/EntityHeadModel');
+const OrganizationUserModel = require('../models/OrganizationUserModel');
 const { errorResponse } = require('../utils/helpers');
 
 /**
  * Verify JWT token and attach user to req.user
- * Works for admin, auditor, and entity_head tokens.
+ * Works for admin, auditor, and organization_user tokens.
  */
 const authenticate = async (req, res, next) => {
   try {
@@ -26,7 +26,9 @@ const authenticate = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const role = decoded.role || 'admin'; // backward compat for old tokens
+    const tokenRole = decoded.role || 'admin';
+    // Keep sessions issued before the terminology migration valid until expiry.
+    const role = tokenRole === 'entity_head' ? 'organization_user' : tokenRole;
 
     if (role === 'admin' || role === 'audito_admin') {
       const adminId = decoded.userId || decoded.adminId; // backward compat
@@ -68,25 +70,25 @@ const authenticate = async (req, res, next) => {
         createdByEntityCode: auditor.created_by_entity_code,
       };
 
-    } else if (role === 'entity_head') {
-      const head = await EntityHeadModel.findById(decoded.userId);
-      if (!head) return errorResponse(res, 'User not found.', 401);
-      if (!head.is_active) return errorResponse(res, 'Account is deactivated.', 403);
+    } else if (role === 'organization_user') {
+      const organizationUser = await OrganizationUserModel.findById(decoded.userId);
+      if (!organizationUser) return errorResponse(res, 'User not found.', 401);
+      if (!organizationUser.is_active) return errorResponse(res, 'Account is deactivated.', 403);
 
       req.user = {
-        id:                  head.id,
-        userCode:            head.entity_head_id,
-        email:               head.email,
-        role:                'entity_head',
-        userType:            head.user_type,
+        id:                  organizationUser.id,
+        userCode:            organizationUser.organization_user_id,
+        email:               organizationUser.email,
+        role:                'organization_user',
+        userType:            organizationUser.user_type,
         accountType:         null,
-        entityType:          head.assigned_entity_type || null,
-        entityCode:          head.assigned_entity_code || head.created_by_entity_code,
+        entityType:          organizationUser.assigned_entity_type || null,
+        entityCode:          organizationUser.assigned_entity_code || organizationUser.created_by_entity_code,
         orgLevel:            0,
-        assignedEntityType:  head.assigned_entity_type,
-        assignedEntityCode:  head.assigned_entity_code,
-        assignedOrgTreeId:   head.assigned_org_tree_id || null,
-        createdByEntityCode: head.created_by_entity_code,
+        assignedEntityType:  organizationUser.assigned_entity_type,
+        assignedEntityCode:  organizationUser.assigned_entity_code,
+        assignedOrgTreeId:   organizationUser.assigned_org_tree_id || null,
+        createdByEntityCode: organizationUser.created_by_entity_code,
       };
 
     } else {

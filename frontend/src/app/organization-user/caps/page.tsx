@@ -55,7 +55,7 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-export default function EntityHeadCapsPage() {
+export default function OrganizationUserCapsPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const router = useRouter();
 
@@ -71,7 +71,7 @@ export default function EntityHeadCapsPage() {
   const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
-    if (!isLoading && (!admin || admin.role !== "entity_head")) router.push("/login");
+    if (!isLoading && (!admin || admin.role !== "organization_user")) router.push("/login");
   }, [isLoading, admin, router]);
 
   const fetchCaps = useCallback(async () => {
@@ -255,7 +255,7 @@ export default function EntityHeadCapsPage() {
                         <td className="px-4 py-3 text-gray-400 text-sm text-center">{itemIndex}</td>
                         <td className="px-4 py-3">
                           <button
-                            onClick={() => router.push(`/entity-head/caps/preview?cap_id=${c.cap_id}`)}
+                            onClick={() => router.push(`/organization-user/caps/preview?cap_id=${c.cap_id}`)}
                             className="text-secondary-400 hover:text-secondary-300 font-medium hover:underline underline-offset-2 transition-colors text-left"
                           >
                             {c.title}
@@ -295,7 +295,7 @@ export default function EntityHeadCapsPage() {
                 return (
                   <div
                     key={c.cap_id}
-                    onClick={() => router.push(`/entity-head/caps/preview?cap_id=${c.cap_id}`)}
+                    onClick={() => router.push(`/organization-user/caps/preview?cap_id=${c.cap_id}`)}
                     className="glass rounded-xl p-4 space-y-3 cursor-pointer hover:bg-white/[0.04] transition-all"
                   >
                     <div className="flex justify-between items-start">

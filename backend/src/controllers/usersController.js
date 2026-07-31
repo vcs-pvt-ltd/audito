@@ -1,11 +1,11 @@
 /**
  * Users Controller
  *
- * Admin creates users (auditors, entity heads) without passwords.
+ * Admin creates users (auditors, organization users) without passwords.
  * An invitation email is sent. The invitee verifies their email and sets a password.
  *
  * Auditors  -> auditors table     (optionally assigned to a branch for Audit Firms)
- * Heads     -> entity_heads table (assigned to a specific entity)
+ * Organization users -> organization_users table (assigned through access scopes)
  *
  * Endpoints:
  *   POST   /api/users                     Create a user (admin only)
@@ -21,7 +21,8 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const AuditorModel = require('../models/AuditorModel');
-const EntityHeadModel = require('../models/EntityHeadModel');
+const OrganizationUserModel = require('../models/OrganizationUserModel');
+const OrganizationUserScopeModel = require('../models/OrganizationUserScopeModel');
 const AdminModel = require('../models/AdminModel');
 const AuditFirmModel = require('../models/AuditFirmModel');
 const CompanyModel = require('../models/CompanyModel');
@@ -44,9 +45,9 @@ const generateAuditorCode = async () => {
   return `ADT-${String(next).padStart(6, '0')}`;
 };
 
-const generateHeadCode = async () => {
+const generateOrganizationUserCode = async () => {
   const [rows] = await db.query(
-    "SELECT MAX(CAST(SUBSTRING(entity_head_id, 4) AS UNSIGNED)) AS max_num FROM entity_heads WHERE entity_head_id LIKE 'EH-%'"
+    "SELECT MAX(CAST(SUBSTRING(organization_user_id, 4) AS UNSIGNED)) AS max_num FROM organization_users WHERE organization_user_id LIKE 'EH-%'"
   );
   const next = (rows[0].max_num || 0) + 1;
   return `EH-${String(next).padStart(6, '0')}`;
@@ -88,8 +89,18 @@ async function validateAuditFirmAuditorAssignment(createdByFirmCode, assigned_en
 async function findByCodeAny(userCode) {
   const auditor = await AuditorModel.findByCode(userCode);
   if (auditor) return { ...auditor, user_code: auditor.auditor_id, _table: 'auditor' };
-  const head = await EntityHeadModel.findByCode(userCode);
-  if (head) return { ...head, user_code: head.entity_head_id, _table: 'entity_head' };
+  const organizationUser = await OrganizationUserModel.findByCode(userCode);
+  if (organizationUser) {
+    const scopes = await OrganizationUserScopeModel.listByUser(organizationUser.organization_user_id);
+    return {
+      ...organizationUser,
+      user_code: organizationUser.organization_user_id,
+      user_type: 'Organization User',
+      scopes,
+      scope_count: scopes.length,
+      _table: 'organization_user',
+    };
+  }
 
   // Check audit firms
   const firm = await AuditFirmModel.findFirmByCode(userCode);
@@ -129,48 +140,39 @@ async function emailExistsInTable(email, userType) {
   if (isAuditor(userType)) {
     return !!(await AuditorModel.findByEmail(email));
   }
-  return !!(await EntityHeadModel.findByEmail(email));
+  return !!(await OrganizationUserModel.findByEmail(email));
 }
 
 // What user_types can each entity_type create?
 const ALLOWED_USER_TYPES = {
-  'Customer':           ['Auditor', 'Buying Office Head', 'Supplier Head'],
-  'Buying Office':      ['Auditor', 'Supplier Head'],
-  'Company':            ['Auditor', 'Cluster Head', 'Factory Head', 'Unit Head', 'Department Head'],
-  'Cluster':            ['Auditor', 'Factory Head'],
-  'Factory':            ['Auditor', 'Unit Head'],
-  'Unit':               ['Auditor', 'Department Head'],
-  'Department':         ['Auditor'],
-  'Supplier':           ['Auditor'],
-  'Audit Firm Company': ['Auditor', 'Branch Head', 'Audit Firm Department Head'],
+  'Customer':           ['Auditor', 'Organization User'],
+  'Buying Office':      ['Auditor', 'Organization User'],
+  'Company':            ['Auditor', 'Organization User'],
+  'Cluster':            ['Auditor', 'Organization User'],
+  'Factory':            ['Auditor', 'Organization User'],
+  'Unit':               ['Auditor', 'Organization User'],
+  'Department':         ['Auditor', 'Organization User'],
+  'Supplier':           ['Auditor', 'Organization User'],
+  'Audit Firm Company': ['Auditor', 'Organization User'],
 };
 
 // Map user_type to role
 function getUserRole(userType) {
   if (userType === 'Auditor') return 'auditor';
-  return 'entity_head';
+  return 'organization_user';
 }
 
-// Map user_type to assigned entity type (for heads)
-const HEAD_TO_ENTITY = {
-  'Buying Office Head': 'Buying Office',
-  'Supplier Head':      'Supplier',
-  'Company Head':       'Company',
-  'Cluster Head':       'Cluster',
-  'Factory Head':       'Factory',
-  'Unit Head':          'Unit',
-  'Department Head':    'Department',
-  'Section Head':       'Section',
-  'Branch Head':        'Branch',
-  'Audit Firm Department Head': 'Audit Firm Department',
-};
-
+// Map user_type to its assigned entity type.
 // ─── CREATE USER ──────────────────────────────────────────────────
 
 const createUser = async (req, res) => {
   let quotaLock = null;
+  let connection = null;
   try {
-    const { first_name, last_name, email, phone_number, country, user_type, assigned_entity_code, assigned_entity_type, assigned_org_tree_id } = req.body;
+    const {
+      first_name, last_name, email, phone_number, country, user_type,
+      assigned_entity_code, assigned_entity_type, assigned_org_tree_id, scopes,
+    } = req.body;
 
     const missing = validateRequiredFields(req.body, ['first_name', 'last_name', 'email', 'user_type']);
     if (missing) return errorResponse(res, missing, 400);
@@ -201,6 +203,7 @@ const createUser = async (req, res) => {
     const emailTokenExpires = tokenExpiry();
 
     let userCode, id;
+    let validatedScopes = [];
 
     if (isAuditor(user_type)) {
       // Auditors – optionally assigned to a branch (for Audit Firm)
@@ -234,26 +237,53 @@ const createUser = async (req, res) => {
         email_token_expires: emailTokenExpires,
       });
     } else {
-      // Entity heads – with entity assignment
-      const assignedEntityType = HEAD_TO_ENTITY[user_type] || null;
-      userCode = await generateHeadCode();
-      id = await EntityHeadModel.create({
-        entity_head_id: userCode,
+      // Organization users – with entity assignment
+      const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+      const scopeInput = Array.isArray(scopes) ? scopes : (
+        assigned_entity_code
+          ? [{
+              org_tree_id: assigned_org_tree_id || null,
+              entity_code: assigned_entity_code,
+              entity_type: assigned_entity_type || null,
+              scope_mode: 'SUBTREE',
+            }]
+          : []
+      );
+      const validation = await OrganizationUserScopeModel.validateForWorkspace(scopeInput, {
+        rootEntityCode: req.user.entityCode,
+        accessibleEntityCodes: accessibleCodes,
+      });
+      if (!validation.ok) return errorResponse(res, validation.message, 400);
+      validatedScopes = validation.scopes;
+      const primaryScope = validatedScopes[0];
+
+      userCode = await generateOrganizationUserCode();
+      connection = await db.getConnection();
+      await connection.beginTransaction();
+      id = await OrganizationUserModel.create({
+        organization_user_id: userCode,
         first_name,
         last_name,
         email,
         phone_number: phone_number || null,
         country: country || null,
         role,
-        user_type,
-        assigned_entity_type: assignedEntityType,
-        assigned_entity_code: assigned_entity_code || null,
-        assigned_org_tree_id: assigned_org_tree_id || null,
+        user_type: 'Organization User',
+        assigned_entity_type: primaryScope.entity_type || null,
+        assigned_entity_code: primaryScope.entity_code,
+        assigned_org_tree_id: primaryScope.org_tree_id,
         created_by_admin_id: req.user.userCode,
         created_by_entity_code: req.user.entityCode,
         email_token: emailToken,
         email_token_expires: emailTokenExpires,
-      });
+      }, connection);
+      await OrganizationUserScopeModel.replaceForUser(
+        userCode,
+        validatedScopes,
+        req.user.userCode,
+        connection
+      );
+      await connection.commit();
     }
 
     if (quotaLock) {
@@ -268,11 +298,14 @@ const createUser = async (req, res) => {
         : req.user.entityType;
       const invitedEntityType = isAuditor(user_type)
         ? assigned_entity_type
-        : (HEAD_TO_ENTITY[user_type] || assigned_entity_type);
+        : (validatedScopes[0]?.entity_type || assigned_entity_type);
+      const invitedEntityCode = isAuditor(user_type)
+        ? assigned_entity_code
+        : (validatedScopes[0]?.entity_code || assigned_entity_code);
       const [organization, assignedEntity] = await Promise.all([
         getOrgDetails(organizationType, req.user.entityCode),
-        !isAuditor(user_type) && assigned_entity_code && invitedEntityType
-          ? getOrgDetails(invitedEntityType, assigned_entity_code)
+        !isAuditor(user_type) && invitedEntityCode && invitedEntityType
+          ? getOrgDetails(invitedEntityType, invitedEntityCode)
           : Promise.resolve(null),
       ]);
       const organizationDialingCode = await getCountryDialingCode(organization?.country);
@@ -282,10 +315,14 @@ const createUser = async (req, res) => {
         organizationPhone: organization?.phoneNumber,
         organizationDialingCode,
         organizationAddress: organization?.address,
-        role: user_type,
+        role: isAuditor(user_type) ? user_type : 'Organization User',
         includeAssignedArea: !isAuditor(user_type),
         assignedEntityType: !isAuditor(user_type) ? invitedEntityType : null,
-        assignedEntityName: !isAuditor(user_type) ? (assignedEntity?.name || assigned_entity_code || null) : null,
+        assignedEntityName: !isAuditor(user_type)
+          ? (validatedScopes.length > 1
+              ? `${validatedScopes.length} organization areas`
+              : (assignedEntity?.name || invitedEntityCode || null))
+          : null,
       });
       recordResend(`verification:${email}`);
     } catch (emailErr) {
@@ -299,13 +336,18 @@ const createUser = async (req, res) => {
       last_name,
       email,
       role,
-      user_type,
+      user_type: isAuditor(user_type) ? user_type : 'Organization User',
+      scopes: validatedScopes,
     }, 'User invited. Invitation email sent.', 201);
 
   } catch (error) {
+    if (connection) {
+      try { await connection.rollback(); } catch (_) { /* transaction may already be closed */ }
+    }
     console.error('Create user error:', error);
     return errorResponse(res, 'Failed to create user.', 500);
   } finally {
+    if (connection) connection.release();
     if (quotaLock) await quotaLock.release();
   }
 };
@@ -315,7 +357,7 @@ const createUser = async (req, res) => {
 /**
  * Linked company admins surfaced as read-only "Company Head" rows.
  * A Supplier linked to a Company sees that company's admin here; the company
- * itself is in `admins` (not entity_heads), so we map it into the user shape.
+ * itself is in `admins` (not organization_users), so we map it into the user shape.
  */
 async function getLinkedCompanyHeads(accessibleCodes) {
   if (!accessibleCodes || accessibleCodes.length === 0) return [];
@@ -361,7 +403,7 @@ async function annotateInUse(users) {
     `SELECT auditor_id AS c FROM evaluation_assignments WHERE auditor_id IN (${ph})`,
     `SELECT auditor_id AS c FROM field_visit_assignments WHERE auditor_id IN (${ph})`,
     `SELECT auditor_id AS c FROM training_assignments WHERE auditor_id IN (${ph})`,
-    `SELECT responsible_entity_head_id AS c FROM corrective_actions WHERE responsible_entity_head_id IN (${ph})`,
+    `SELECT responsible_organization_user_id AS c FROM corrective_actions WHERE responsible_organization_user_id IN (${ph})`,
     `SELECT verified_by AS c FROM corrective_actions WHERE verified_by IN (${ph})`,
     `SELECT answered_by AS c FROM audit_responses WHERE answered_by IN (${ph})`,
     `SELECT responded_by AS c FROM cap_responses WHERE responded_by IN (${ph})`,
@@ -378,6 +420,25 @@ async function annotateInUse(users) {
   }
 
   return users.map((u) => ({ ...u, in_use: inUse.has(u.user_code) }));
+}
+
+async function attachOrganizationUserScopes(users) {
+  const headIds = (users || [])
+    .filter((user) => user.organization_user_id || user.role === 'organization_user')
+    .map((user) => user.organization_user_id || user.user_code);
+  const scopeMap = await OrganizationUserScopeModel.listByUsers(headIds);
+
+  return (users || []).map((user) => {
+    if (!user.organization_user_id && user.role !== 'organization_user') return user;
+    const id = user.organization_user_id || user.user_code;
+    const scopes = scopeMap.get(id) || [];
+    return {
+      ...user,
+      user_type: 'Organization User',
+      scopes,
+      scope_count: scopes.length,
+    };
+  });
 }
 
 const listUsers = async (req, res) => {
@@ -399,13 +460,16 @@ const listUsers = async (req, res) => {
       const users = await AuditorModel.listByCreators(accessibleCodes);
       return successResponse(res, { users: await annotateInUse(users) });
     } else if (userType) {
-      const users = await EntityHeadModel.listByCreators(accessibleCodes, userType);
-      return successResponse(res, { users: await annotateInUse(users) });
+      const queryType = userType === 'Organization User' ? null : userType;
+      const users = await OrganizationUserModel.listByCreators(accessibleCodes, queryType);
+      return successResponse(res, {
+        users: await annotateInUse(await attachOrganizationUserScopes(users)),
+      });
     } else {
-      // No filter – list from both tables (plus any linked company heads)
+      // No filter – list from both tables (plus any linked company organizationUsers)
       const auditors = await AuditorModel.listByCreators(accessibleCodes);
-      const heads = await EntityHeadModel.listByCreators(accessibleCodes);
-      const annotated = await annotateInUse([...auditors, ...heads]);
+      const organizationUsers = await OrganizationUserModel.listByCreators(accessibleCodes);
+      const annotated = await annotateInUse([...auditors, ...await attachOrganizationUserScopes(organizationUsers)]);
       return successResponse(res, { users: [...annotated, ...companyHeads] });
     }
   } catch (error) {
@@ -440,6 +504,7 @@ const getUser = async (req, res) => {
 // ─── UPDATE USER ──────────────────────────────────────────────────
 
 const updateUser = async (req, res) => {
+  let connection = null;
   try {
     const user = await findByCodeAny(req.params.userCode);
     if (!user) return errorResponse(res, 'User not found.', 404);
@@ -448,7 +513,7 @@ const updateUser = async (req, res) => {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
-    const Model = user._table === 'auditor' ? AuditorModel : EntityHeadModel;
+    const Model = user._table === 'auditor' ? AuditorModel : OrganizationUserModel;
     // Audit Firm auditor reassignment validation
     if (
       user._table === 'auditor' &&
@@ -463,13 +528,43 @@ const updateUser = async (req, res) => {
       );
       if (!v.ok) return errorResponse(res, v.message, 400);
     }
-    await Model.update(user.auditor_id || user.entity_head_id, req.body);
+    if (user._table === 'organization_user' && Array.isArray(req.body.scopes)) {
+      const validation = await OrganizationUserScopeModel.validateForWorkspace(req.body.scopes, {
+        rootEntityCode: req.user.entityCode,
+        accessibleEntityCodes: accessibleCodes,
+      });
+      if (!validation.ok) return errorResponse(res, validation.message, 400);
+
+      const primaryScope = validation.scopes[0];
+      connection = await db.getConnection();
+      await connection.beginTransaction();
+      await Model.update(user.organization_user_id, {
+        ...req.body,
+        assigned_entity_type: primaryScope.entity_type || null,
+        assigned_entity_code: primaryScope.entity_code,
+        assigned_org_tree_id: primaryScope.org_tree_id,
+      }, connection);
+      await OrganizationUserScopeModel.replaceForUser(
+        user.organization_user_id,
+        validation.scopes,
+        req.user.userCode,
+        connection
+      );
+      await connection.commit();
+    } else {
+      await Model.update(user.auditor_id || user.organization_user_id, req.body);
+    }
 
     const updated = await findByCodeAny(req.params.userCode);
     return successResponse(res, { user: updated }, 'User updated.');
   } catch (error) {
+    if (connection) {
+      try { await connection.rollback(); } catch (_) { /* transaction may already be closed */ }
+    }
     console.error('Update user error:', error);
     return errorResponse(res, 'Failed to update user.', 500);
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -484,7 +579,7 @@ async function getUserInUseReason(user) {
   const code = user.user_code;
   if (!code) return null;
 
-  // Run every check for every user (an auditor will never appear in entity-head
+  // Run every check for every user (an auditor will never appear in organization-user
   // columns and vice-versa, so this is safe and avoids depending on _table
   // detection). The auditor↔audit link is the first/primary check.
   const checks = [
@@ -496,7 +591,7 @@ async function getUserInUseReason(user) {
       'assigned to one or more field visits'],
     ['SELECT 1 FROM training_assignments WHERE auditor_id = ? LIMIT 1',
       'assigned to one or more trainings'],
-    ['SELECT 1 FROM corrective_actions WHERE responsible_entity_head_id = ? LIMIT 1',
+    ['SELECT 1 FROM corrective_actions WHERE responsible_organization_user_id = ? LIMIT 1',
       'assigned as the responsible person on one or more corrective actions'],
     ['SELECT 1 FROM corrective_actions WHERE verified_by = ? LIMIT 1',
       'the verifier on one or more corrective actions'],
@@ -540,8 +635,8 @@ const deleteUser = async (req, res) => {
       );
     }
 
-    const Model = user._table === 'auditor' ? AuditorModel : EntityHeadModel;
-    await Model.deleteById(user.auditor_id || user.entity_head_id);
+    const Model = user._table === 'auditor' ? AuditorModel : OrganizationUserModel;
+    await Model.deleteById(user.auditor_id || user.organization_user_id);
     return successResponse(res, null, 'User deleted.');
   } catch (error) {
     console.error('Delete user error:', error);
@@ -569,14 +664,14 @@ const resendVerification = async (req, res) => {
 
     const newToken = generateEmailToken();
     const newExpires = tokenExpiry();
-    const Model = user._table === 'auditor' ? AuditorModel : EntityHeadModel;
-    await Model.regenerateToken(user.auditor_id || user.entity_head_id, newToken, newExpires);
+    const Model = user._table === 'auditor' ? AuditorModel : OrganizationUserModel;
+    await Model.regenerateToken(user.auditor_id || user.organization_user_id, newToken, newExpires);
 
     try {
       const organization = user.created_by_entity_code
         ? await findByCodeAny(user.created_by_entity_code)
         : null;
-      const assignedEntity = user._table === 'entity_head' && user.assigned_entity_code
+      const assignedEntity = user._table === 'organization_user' && user.assigned_entity_code
         ? await findByCodeAny(user.assigned_entity_code)
         : null;
       const organizationDialingCode = await getCountryDialingCode(organization?.country);
@@ -588,10 +683,10 @@ const resendVerification = async (req, res) => {
         organizationAddress: organization
           ? [organization.address_line_1, organization.address_line_2, organization.address_line_3, organization.country].filter(Boolean).join(', ')
           : null,
-        role: user.user_type || (user._table === 'auditor' ? 'Auditor' : 'Entity Head'),
-        includeAssignedArea: user._table === 'entity_head',
-        assignedEntityType: user._table === 'entity_head' ? user.assigned_entity_type : null,
-        assignedEntityName: user._table === 'entity_head' ? (assignedEntity?.name || user.assigned_entity_code) : null,
+        role: user.user_type || (user._table === 'auditor' ? 'Auditor' : 'Organization User'),
+        includeAssignedArea: user._table === 'organization_user',
+        assignedEntityType: user._table === 'organization_user' ? user.assigned_entity_type : null,
+        assignedEntityName: user._table === 'organization_user' ? (assignedEntity?.name || user.assigned_entity_code) : null,
       });
       recordResend(`verification:${user.email}`);
     } catch (emailErr) {
@@ -617,15 +712,15 @@ const verifyEmail = async (req, res) => {
     let user = await AuditorModel.findByEmailToken(token);
     let Model = AuditorModel;
     if (!user) {
-      user = await EntityHeadModel.findByEmailToken(token);
-      Model = EntityHeadModel;
+      user = await OrganizationUserModel.findByEmailToken(token);
+      Model = OrganizationUserModel;
     }
     if (!user) return errorResponse(res, 'Invalid or expired verification link.', 400);
 
-    await Model.verifyEmail(user.auditor_id || user.entity_head_id);
+    await Model.verifyEmail(user.auditor_id || user.organization_user_id);
 
     return successResponse(res, {
-      user_code: user.auditor_id || user.entity_head_id,
+      user_code: user.auditor_id || user.organization_user_id,
       email: user.email,
       first_name: user.first_name,
       needs_password: !user.password,
@@ -649,7 +744,7 @@ const setPassword = async (req, res) => {
 
     // Search both tables – prefer the verified record that still needs a password
     const auditor = await AuditorModel.findByEmail(email);
-    const head = await EntityHeadModel.findByEmail(email);
+    const organizationUser = await OrganizationUserModel.findByEmail(email);
 
     let user = null;
     let Model = null;
@@ -658,26 +753,26 @@ const setPassword = async (req, res) => {
     if (auditor && auditor.email_verified && !auditor.password) {
       user = auditor;
       Model = AuditorModel;
-    } else if (head && head.email_verified && !head.password) {
-      user = head;
-      Model = EntityHeadModel;
+    } else if (organizationUser && organizationUser.email_verified && !organizationUser.password) {
+      user = organizationUser;
+      Model = OrganizationUserModel;
     }
 
     // Fallback – verified record that already has a password (allow re-set)
     if (!user && auditor && auditor.email_verified) {
       user = auditor;
       Model = AuditorModel;
-    } else if (!user && head && head.email_verified) {
-      user = head;
-      Model = EntityHeadModel;
+    } else if (!user && organizationUser && organizationUser.email_verified) {
+      user = organizationUser;
+      Model = OrganizationUserModel;
     }
 
-    if (!user && (auditor || head)) return errorResponse(res, 'Please verify your email first.', 400);
+    if (!user && (auditor || organizationUser)) return errorResponse(res, 'Please verify your email first.', 400);
     if (!user) return errorResponse(res, 'User not found.', 404);
 
     const salt = await bcrypt.genSalt(12);
     const hashed = await bcrypt.hash(password, salt);
-    await Model.setPassword(user.auditor_id || user.entity_head_id, hashed);
+    await Model.setPassword(user.auditor_id || user.organization_user_id, hashed);
 
     return successResponse(res, null, 'Password set successfully. You can now log in.');
   } catch (error) {
@@ -716,8 +811,9 @@ const checkAdminEmail = async (req, res) => {
 
 const createUserFromAdmin = async (req, res) => {
   let quotaLock = null;
+  let connection = null;
   try {
-    const { email, user_type, assigned_entity_code, assigned_org_tree_id } = req.body;
+    const { email, user_type, assigned_entity_code, assigned_org_tree_id, scopes } = req.body;
 
     if (!email || !user_type) return errorResponse(res, 'Email and user_type are required.', 400);
 
@@ -775,15 +871,42 @@ const createUserFromAdmin = async (req, res) => {
         assigned_org_tree_id: assigned_org_tree_id || null,
       });
     } else {
-      const assignedEntityType = HEAD_TO_ENTITY[user_type] || null;
-      userCode = await generateHeadCode();
-      id = await EntityHeadModel.createVerified({
-        ...baseData,
-        entity_head_id: userCode,
-        assigned_entity_type: assignedEntityType,
-        assigned_entity_code: assigned_entity_code || null,
-        assigned_org_tree_id: assigned_org_tree_id || null,
+      const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+      const scopeInput = Array.isArray(scopes) ? scopes : (
+        assigned_entity_code
+          ? [{
+              org_tree_id: assigned_org_tree_id || null,
+              entity_code: assigned_entity_code,
+              entity_type: req.body.assigned_entity_type || null,
+              scope_mode: 'SUBTREE',
+            }]
+          : []
+      );
+      const validation = await OrganizationUserScopeModel.validateForWorkspace(scopeInput, {
+        rootEntityCode: req.user.entityCode,
+        accessibleEntityCodes: accessibleCodes,
       });
+      if (!validation.ok) return errorResponse(res, validation.message, 400);
+      const primaryScope = validation.scopes[0];
+
+      userCode = await generateOrganizationUserCode();
+      connection = await db.getConnection();
+      await connection.beginTransaction();
+      id = await OrganizationUserModel.createVerified({
+        ...baseData,
+        organization_user_id: userCode,
+        user_type: 'Organization User',
+        assigned_entity_type: primaryScope.entity_type || null,
+        assigned_entity_code: primaryScope.entity_code,
+        assigned_org_tree_id: primaryScope.org_tree_id,
+      }, connection);
+      await OrganizationUserScopeModel.replaceForUser(
+        userCode,
+        validation.scopes,
+        req.user.userCode,
+        connection
+      );
+      await connection.commit();
     }
 
     if (quotaLock) {
@@ -798,13 +921,17 @@ const createUserFromAdmin = async (req, res) => {
       last_name: admin.last_name,
       email: admin.email,
       role,
-      user_type,
+      user_type: isAuditor(user_type) ? user_type : 'Organization User',
     }, 'User created from admin account.', 201);
 
   } catch (error) {
+    if (connection) {
+      try { await connection.rollback(); } catch (_) { /* transaction may already be closed */ }
+    }
     console.error('Create user from admin error:', error);
     return errorResponse(res, 'Failed to create user.', 500);
   } finally {
+    if (connection) connection.release();
     if (quotaLock) await quotaLock.release();
   }
 };

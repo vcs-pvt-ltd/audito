@@ -210,7 +210,7 @@ const AuditExecutionModel = {
     entity_code,
     checklist_question_id,
     org_tree_id,
-    responsible_entity_head_id,
+    responsible_organization_user_id,
     responsible_person_name,
     due_date,
     created_by,
@@ -224,7 +224,7 @@ const AuditExecutionModel = {
       await db.query(
         `INSERT INTO corrective_actions
            (corrective_action_id, audit_id, audit_response_id, entity_code, checklist_question_id, org_tree_id,
-            responsible_entity_head_id, responsible_person_name, due_date, created_by)
+            responsible_organization_user_id, responsible_person_name, due_date, created_by)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           corrective_action_id,
@@ -233,7 +233,7 @@ const AuditExecutionModel = {
           entity_code,
           checklist_question_id,
           org_tree_id || null,
-          responsible_entity_head_id || null,
+          responsible_organization_user_id || null,
           responsible_person_name || null,
           due_date || null,
           created_by,
@@ -244,13 +244,13 @@ const AuditExecutionModel = {
 
     await db.query(
       `UPDATE corrective_actions
-       SET responsible_entity_head_id = ?,
+       SET responsible_organization_user_id = ?,
            responsible_person_name = ?,
            due_date = ?,
            org_tree_id = ?
        WHERE audit_id = ? AND audit_response_id = ?`,
       [
-        responsible_entity_head_id || null,
+        responsible_organization_user_id || null,
         responsible_person_name || null,
         due_date || null,
         org_tree_id || null,
@@ -315,6 +315,21 @@ const AuditExecutionModel = {
       [audit_id, audit_id]
     );
     return rows;
+  },
+
+  async deleteUnassignedProgress(audit_id) {
+    await db.query(
+      `DELETE p
+       FROM audit_entity_progress p
+       LEFT JOIN audit_assignment_entities aae
+         ON aae.audit_id = p.audit_id
+        AND aae.entity_code = p.entity_code
+        AND aae.org_tree_id <=> p.org_tree_id
+        AND aae.is_active = TRUE
+       WHERE p.audit_id = ?
+         AND aae.id IS NULL`,
+      [audit_id]
+    );
   },
 
   async getEntityProgress(audit_id, org_tree_id, entity_code) {

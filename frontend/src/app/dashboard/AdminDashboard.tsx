@@ -66,7 +66,7 @@ export interface DashboardOverview {
   summaries: {
     audits: Record<string, number>;
     caps: Record<string, number>;
-    people: { auditors: number; entity_heads: number; checklists: number;[key: string]: number | undefined } | null;
+    people: { auditors: number; organization_users: number; checklists: number;[key: string]: number | undefined } | null;
     overdue: number;
     average_progress: number;
     average_score: number;
@@ -698,7 +698,7 @@ export default function AdminDashboard({ overview, admin, orgTree, filters, onFi
 
     base.push(
       { icon: Briefcase, title: "Auditors", value: people.auditors || 0, accent: "bg-violet-500", href: "/users/list?type=auditor" },
-      { icon: Users, title: "Entity Heads", value: people.entity_heads || 0, accent: "bg-orange-500", href: "/users/list?type=entity-head" },
+      { icon: Users, title: "Organization Users", value: people.organization_users || 0, accent: "bg-orange-500", href: "/users/list?type=organization-users" },
     );
 
     if (!isAuditFirm) {

@@ -17,7 +17,7 @@ const jwt = require('jsonwebtoken');
 const AdminModel = require('../models/AdminModel');
 const PromoCodeModel = require('../models/PromoCodeModel');
 const AuditorModel = require('../models/AuditorModel');
-const EntityHeadModel = require('../models/EntityHeadModel');
+const OrganizationUserModel = require('../models/OrganizationUserModel');
 const CustomerModel = require('../models/CustomerModel');
 const CompanyModel = require('../models/CompanyModel');
 const AuditFirmModel = require('../models/AuditFirmModel');
@@ -120,6 +120,10 @@ const PLAN_REGISTRATION_ENTITY_ACCESS = {
 // Helper: get entity code from admin (now just entity_code)
 const getEntityCode = (admin) => admin.entity_code || null;
 
+const normalizeUserRole = (role) => (
+  role === 'entity_head' ? 'organization_user' : role
+);
+
 // ─── Generate JWT tokens (supports all roles) ────────────────────
 
 const generateTokens = (admin) => generateTokensForRole('admin', admin);
@@ -133,7 +137,7 @@ function normalizeAccountType(accountType, entityType) {
 
 function generateTokensForRole(role, record) {
   let payload;
-  const actualRole = record.role || role;
+  const actualRole = normalizeUserRole(record.role || role);
 
   if (actualRole === 'admin' || actualRole === 'audito_admin') {
     payload = {
@@ -159,12 +163,12 @@ function generateTokensForRole(role, record) {
       createdByEntityCode: record.created_by_entity_code,
     };
   } else {
-    // entity_head
+    // organization_user
     payload = {
-      userId: record.entity_head_id,
-      userCode: record.entity_head_id,
+      userId: record.organization_user_id,
+      userCode: record.organization_user_id,
       email: record.email,
-      role: 'entity_head',
+      role: 'organization_user',
       userType: record.user_type,
       assignedEntityType: record.assigned_entity_type,
       assignedEntityCode: record.assigned_entity_code,
@@ -188,7 +192,7 @@ function generateTokensForRole(role, record) {
 // ─── Helpers: build user response & collect accounts ─────────────
 
 function buildUserResponse(role, record) {
-  const actualRole = record.role || role;
+  const actualRole = normalizeUserRole(record.role || role);
   if (actualRole === 'admin' || actualRole === 'audito_admin') {
     return {
       id: record.admin_id,
@@ -212,9 +216,9 @@ function buildUserResponse(role, record) {
       profile_image: record.profile_image || null,
     };
   }
-  // auditor or entity_head
+  // auditor or organization_user
   return {
-    id: role === 'auditor' ? record.auditor_id : record.entity_head_id,
+    id: role === 'auditor' ? record.auditor_id : record.organization_user_id,
     first_name: record.first_name,
     last_name: record.last_name,
     email: record.email,
@@ -223,7 +227,7 @@ function buildUserResponse(role, record) {
     role,
     account_type: null,
     entity_type: record.assigned_entity_type || null,
-    entity_code: role === 'entity_head'
+    entity_code: role === 'organization_user'
       ? (record.assigned_entity_code || record.created_by_entity_code)
       : record.created_by_entity_code,
     org_level: 0,
@@ -231,7 +235,7 @@ function buildUserResponse(role, record) {
     auditor_type: record.auditor_type || null,
     assigned_entity_type: record.assigned_entity_type || null,
     assigned_entity_code: record.assigned_entity_code || null,
-    assigned_org_tree_id: role === 'entity_head' ? (record.assigned_org_tree_id || null) : null,
+    assigned_org_tree_id: role === 'organization_user' ? (record.assigned_org_tree_id || null) : null,
     created_by_entity_code: record.created_by_entity_code,
     onboarding_completed: !!record.onboarding_completed,
     onboarding_skipped: !!record.onboarding_skipped,
@@ -300,18 +304,18 @@ async function collectAccounts(email) {
     });
   }
 
-  const head = await EntityHeadModel.findByEmail(email);
-  if (head && head.is_active && head.email_verified && head.password) {
+  const organizationUser = await OrganizationUserModel.findByEmail(email);
+  if (organizationUser && organizationUser.is_active && organizationUser.email_verified && organizationUser.password) {
     accounts.push({
-      role: 'entity_head',
-      user_code: head.entity_head_id,
-      first_name: head.first_name,
-      last_name: head.last_name,
+      role: 'organization_user',
+      user_code: organizationUser.organization_user_id,
+      first_name: organizationUser.first_name,
+      last_name: organizationUser.last_name,
       account_type: null,
-      entity_type: head.assigned_entity_type || null,
-      entity_code: head.assigned_entity_code || head.created_by_entity_code,
+      entity_type: organizationUser.assigned_entity_type || null,
+      entity_code: organizationUser.assigned_entity_code || organizationUser.created_by_entity_code,
       org_level: 0,
-      user_type: head.user_type,
+      user_type: organizationUser.user_type,
     });
   }
 
@@ -639,7 +643,7 @@ const register = async (req, res) => {
  * POST /api/auth/login
  * Body: { email, password, preferred_role? }
  *
- * Unified login — checks admins, auditors, and entity_heads tables.
+ * Unified login — checks admins, auditors, and organization_users tables.
  * If the email exists in multiple tables, returns all available accounts
  * and logs into the first one whose password matches. A previous-role preference
  * may be supplied by the client, but it never bypasses password verification.
@@ -654,7 +658,7 @@ const login = async (req, res) => {
     // Find the email in all 3 tables
     const adminRec = await AdminModel.findByEmail(email);
     const auditorRec = await AuditorModel.findByEmail(email);
-    const headRec = await EntityHeadModel.findByEmail(email);
+    const organizationUserRecord = await OrganizationUserModel.findByEmail(email);
 
     // A custom-plan administrator is created before checkout but intentionally
     // stays inactive until payment succeeds. If checkout was cancelled, allow
@@ -690,9 +694,9 @@ const login = async (req, res) => {
       if (adminRec.is_verified) candidates.push({ role: adminRec.role || 'admin', record: adminRec });
       else unverifiedCandidates.push({ role: adminRec.role || 'admin', record: adminRec });
     }
-    if (headRec && headRec.is_active && headRec.password) {
-      if (headRec.email_verified) candidates.push({ role: 'entity_head', record: headRec });
-      else unverifiedCandidates.push({ role: 'entity_head', record: headRec });
+    if (organizationUserRecord && organizationUserRecord.is_active && organizationUserRecord.password) {
+      if (organizationUserRecord.email_verified) candidates.push({ role: 'organization_user', record: organizationUserRecord });
+      else unverifiedCandidates.push({ role: 'organization_user', record: organizationUserRecord });
     }
     if (auditorRec && auditorRec.is_active && auditorRec.password) {
       if (auditorRec.email_verified) candidates.push({ role: 'auditor', record: auditorRec });
@@ -703,7 +707,7 @@ const login = async (req, res) => {
     // email address. Prefer the last role they used when it is available, while
     // retaining the existing fallback order and password checks for every role.
     if (typeof preferredRole === 'string' && preferredRole.trim()) {
-      const normalizedPreferredRole = preferredRole.trim();
+      const normalizedPreferredRole = normalizeUserRole(preferredRole.trim());
       candidates.sort((a, b) => {
         if (a.role === normalizedPreferredRole) return -1;
         if (b.role === normalizedPreferredRole) return 1;
@@ -853,7 +857,7 @@ const login = async (req, res) => {
       ? activeRecord.admin_id
       : activeRole === 'auditor'
         ? activeRecord.auditor_id
-        : activeRecord.entity_head_id;
+        : activeRecord.organization_user_id;
         const refreshTokenId = await generateRefreshTokenId();
 
     await db.query(
@@ -897,7 +901,7 @@ const refreshToken = async (req, res) => {
 
     const decoded = jwt.verify(refresh_token, process.env.JWT_REFRESH_SECRET);
 
-    const role = decoded.role || 'admin';           // backward compat
+    const role = normalizeUserRole(decoded.role || 'admin');
     const userId = decoded.userId || decoded.adminId;  // backward compat
 
     const [rows] = await db.query(
@@ -911,8 +915,8 @@ const refreshToken = async (req, res) => {
       record = await AdminModel.findById(userId);
     } else if (role === 'auditor') {
       record = await AuditorModel.findById(userId);
-    } else if (role === 'entity_head') {
-      record = await EntityHeadModel.findById(userId);
+    } else if (role === 'organization_user') {
+      record = await OrganizationUserModel.findById(userId);
     }
     if (!record || !record.is_active) return errorResponse(res, 'Account not found or deactivated.', 401);
 
@@ -925,7 +929,7 @@ const refreshToken = async (req, res) => {
       ? record.admin_id
       : role === 'auditor'
         ? record.auditor_id
-        : record.entity_head_id;
+        : record.organization_user_id;
 const refreshTokenId = await generateRefreshTokenId();
 
     await db.query(
@@ -999,10 +1003,10 @@ const getMe = async (req, res) => {
       const auditor = await AuditorModel.findById(req.user.userCode);
       if (!auditor) return errorResponse(res, 'Auditor not found.', 404);
       userResponse = buildUserResponse('auditor', auditor);
-    } else if (role === 'entity_head') {
-      const head = await EntityHeadModel.findById(req.user.userCode);
-      if (!head) return errorResponse(res, 'Entity head not found.', 404);
-      userResponse = buildUserResponse('entity_head', head);
+    } else if (role === 'organization_user') {
+      const organizationUser = await OrganizationUserModel.findById(req.user.userCode);
+      if (!organizationUser) return errorResponse(res, 'Organization user not found.', 404);
+      userResponse = buildUserResponse('organization_user', organizationUser);
     } else {
       return errorResponse(res, 'Invalid role.', 400);
     }
@@ -1013,7 +1017,7 @@ const getMe = async (req, res) => {
     // Fetch plan limits
     const record = (role === 'admin' || role === 'audito_admin') ? await AdminModel.findById(req.user.userCode) :
       role === 'auditor' ? await AuditorModel.findById(req.user.userCode) :
-        await EntityHeadModel.findById(req.user.userCode);
+        await OrganizationUserModel.findById(req.user.userCode);
 
     // Identify & handle plan expiry first so plan limits reflect any downgrade.
     const subscription = await resolveSubscriptionStatus(role, record);
@@ -1115,8 +1119,8 @@ const changePassword = async (req, res) => {
       record = await AdminModel.findByEmail(req.user.email);
     } else if (role === 'auditor') {
       record = await AuditorModel.findByEmail(req.user.email);
-    } else if (role === 'entity_head') {
-      record = await EntityHeadModel.findByEmail(req.user.email);
+    } else if (role === 'organization_user') {
+      record = await OrganizationUserModel.findByEmail(req.user.email);
     }
     if (!record) return errorResponse(res, 'User not found.', 404);
 
@@ -1130,8 +1134,8 @@ const changePassword = async (req, res) => {
       await AdminModel.updatePassword(record.admin_id, hashedPassword);
     } else if (role === 'auditor') {
       await AuditorModel.setPassword(record.auditor_id, hashedPassword);
-    } else if (role === 'entity_head') {
-      await EntityHeadModel.setPassword(record.entity_head_id, hashedPassword);
+    } else if (role === 'organization_user') {
+      await OrganizationUserModel.setPassword(record.organization_user_id, hashedPassword);
     }
 
     return successResponse(res, null, 'Password changed successfully.');
@@ -1145,19 +1149,20 @@ const changePassword = async (req, res) => {
 
 /**
  * POST /api/auth/switch-account
- * Body: { target_role: 'admin'|'auditor'|'entity_head', password }
+ * Body: { target_role: 'admin'|'auditor'|'organization_user', password }
  *
  * Switches the active session to a different role's account.
  * Requires the password for the target account (may differ per role).
  */
 const switchAccount = async (req, res) => {
   try {
-    const { target_role, password } = req.body;
+    const { target_role: requestedTargetRole, password } = req.body;
+    const target_role = normalizeUserRole(requestedTargetRole);
 
-    if (!target_role || !password) {
+    if (!requestedTargetRole || !password) {
       return errorResponse(res, 'target_role and password are required.', 400);
     }
-    if (!['admin', 'auditor', 'entity_head'].includes(target_role)) {
+    if (!['admin', 'auditor', 'organization_user'].includes(target_role)) {
       return errorResponse(res, 'Invalid target_role.', 400);
     }
 
@@ -1172,8 +1177,8 @@ const switchAccount = async (req, res) => {
       record = await AuditorModel.findByEmail(email);
       if (!record || !record.is_active || !record.email_verified) return errorResponse(res, 'Auditor account not found or not verified.', 404);
     } else {
-      record = await EntityHeadModel.findByEmail(email);
-      if (!record || !record.is_active || !record.email_verified) return errorResponse(res, 'Entity head account not found or not verified.', 404);
+      record = await OrganizationUserModel.findByEmail(email);
+      if (!record || !record.is_active || !record.email_verified) return errorResponse(res, 'Organization user account not found or not verified.', 404);
     }
 
     if (!record.password) return errorResponse(res, 'Target account has no password set.', 400);
@@ -1189,7 +1194,7 @@ const switchAccount = async (req, res) => {
       ? record.admin_id
       : target_role === 'auditor'
         ? record.auditor_id
-        : record.entity_head_id;
+        : record.organization_user_id;
         const refreshTokenId = await generateRefreshTokenId();
 
     await db.query(
@@ -1236,17 +1241,17 @@ const forgotPassword = async (req, res) => {
     }
 
     // A single email can be used by an administrator, auditor, and/or entity
-    // head. Every active, verified account that can sign in must be able to
+    // organizationUser. Every active, verified account that can sign in must be able to
     // request a password reset, not only organization administrators.
-    const [admin, auditor, entityHead] = await Promise.all([
+    const [admin, auditor, organizationUser] = await Promise.all([
       AdminModel.findByEmail(email),
       AuditorModel.findByEmail(email),
-      EntityHeadModel.findByEmail(email),
+      OrganizationUserModel.findByEmail(email),
     ]);
     const recipient = [
       admin && admin.is_active && admin.is_verified ? admin : null,
       auditor && auditor.is_active && auditor.email_verified && auditor.password ? auditor : null,
-      entityHead && entityHead.is_active && entityHead.email_verified && entityHead.password ? entityHead : null,
+      organizationUser && organizationUser.is_active && organizationUser.email_verified && organizationUser.password ? organizationUser : null,
     ].find(Boolean);
 
     if (!recipient) {
@@ -1318,8 +1323,8 @@ const resendVerificationEmail = async (req, res) => {
     const resendInvitation = async (record, type) => {
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
-      const model = type === 'auditor' ? AuditorModel : EntityHeadModel;
-      const recordId = type === 'auditor' ? record.auditor_id : record.entity_head_id;
+      const model = type === 'auditor' ? AuditorModel : OrganizationUserModel;
+      const recordId = type === 'auditor' ? record.auditor_id : record.organization_user_id;
       await model.regenerateToken(recordId, token, expiresAt);
 
       const ownerAdmin = record.created_by_entity_code
@@ -1335,10 +1340,10 @@ const resendVerificationEmail = async (req, res) => {
         organizationPhone: organization?.phoneNumber,
         organizationDialingCode: dialingCode,
         organizationAddress: organization?.address,
-        role: record.user_type || (type === 'auditor' ? 'Auditor' : 'Entity Head'),
-        includeAssignedArea: type === 'entity_head',
-        assignedEntityType: type === 'entity_head' ? record.assigned_entity_type : null,
-        assignedEntityName: type === 'entity_head' ? record.assigned_entity_code : null,
+        role: record.user_type || (type === 'auditor' ? 'Auditor' : 'Organization User'),
+        includeAssignedArea: type === 'organization_user',
+        assignedEntityType: type === 'organization_user' ? record.assigned_entity_type : null,
+        assignedEntityName: type === 'organization_user' ? record.assigned_entity_code : null,
       });
     };
 
@@ -1349,9 +1354,9 @@ const resendVerificationEmail = async (req, res) => {
       return successResponse(res, null, 'A verification email has been sent if the account is awaiting verification.');
     }
 
-    const entityHead = await EntityHeadModel.findByEmail(email);
-    if (entityHead && !entityHead.email_verified && entityHead.is_active) {
-      await resendInvitation(entityHead, 'entity_head');
+    const organizationUser = await OrganizationUserModel.findByEmail(email);
+    if (organizationUser && !organizationUser.email_verified && organizationUser.is_active) {
+      await resendInvitation(organizationUser, 'organization_user');
       recordResend(cooldownKey);
       return successResponse(res, null, 'A verification email has been sent if the account is awaiting verification.');
     }
@@ -1449,15 +1454,15 @@ const resetPassword = async (req, res) => {
     await db.query('UPDATE password_reset_otps SET used = TRUE WHERE password_reset_otp_id = ?', [rows[0].password_reset_otp_id]);
 
     // Find admin — required (forgot password is admin-initiated)
-    const [admin, auditor, head] = await Promise.all([
+    const [admin, auditor, organizationUser] = await Promise.all([
       AdminModel.findByEmail(email),
       AuditorModel.findByEmail(email),
-      EntityHeadModel.findByEmail(email),
+      OrganizationUserModel.findByEmail(email),
     ]);
     const accounts = [
       { type: 'admin', record: admin },
       { type: 'auditor', record: auditor },
-      { type: 'entity_head', record: head },
+      { type: 'organization_user', record: organizationUser },
     ].filter(({ record }) => record?.is_active);
 
     if (accounts.length === 0) return errorResponse(res, 'Account not found.', 404);
@@ -1469,7 +1474,7 @@ const resetPassword = async (req, res) => {
     await Promise.all(accounts.map(({ type, record }) => {
       if (type === 'admin') return AdminModel.updatePassword(record.admin_id, hashedPassword);
       if (type === 'auditor') return AuditorModel.setPassword(record.auditor_id, hashedPassword);
-      return EntityHeadModel.setPassword(record.entity_head_id, hashedPassword);
+      return OrganizationUserModel.setPassword(record.organization_user_id, hashedPassword);
     }));
 
     return successResponse(res, null, 'Password reset successfully. You can now log in.');
@@ -1578,14 +1583,14 @@ const verifyEmail = async (req, res) => {
       }, 'Email verified successfully.', 200);
     }
 
-    // 3. Check Entity Heads (uses email_token + expires)
-    const head = await EntityHeadModel.findByEmailToken(token);
-    if (head) {
-      await EntityHeadModel.verifyEmail(head.entity_head_id);
+    // 3. Check Organization Users (uses email_token + expires)
+    const organizationUser = await OrganizationUserModel.findByEmailToken(token);
+    if (organizationUser) {
+      await OrganizationUserModel.verifyEmail(organizationUser.organization_user_id);
       return successResponse(res, {
-        email: head.email,
-        first_name: head.first_name,
-        needs_password: !head.password
+        email: organizationUser.email,
+        first_name: organizationUser.first_name,
+        needs_password: !organizationUser.password
       }, 'Email verified successfully.', 200);
     }
 
@@ -1648,8 +1653,8 @@ const updateProfile = async (req, res) => {
     } else if (role === 'auditor') {
       const [rows] = await db.query('SELECT profile_image FROM auditors WHERE auditor_id = ?', [req.user.userCode]);
       if (rows && rows.length > 0) oldProfileImage = rows[0].profile_image;
-    } else if (role === 'entity_head') {
-      const [rows] = await db.query('SELECT profile_image FROM entity_heads WHERE entity_head_id = ?', [req.user.userCode]);
+    } else if (role === 'organization_user') {
+      const [rows] = await db.query('SELECT profile_image FROM organization_users WHERE organization_user_id = ?', [req.user.userCode]);
       if (rows && rows.length > 0) oldProfileImage = rows[0].profile_image;
     }
 
@@ -1699,9 +1704,9 @@ const updateProfile = async (req, res) => {
         'UPDATE auditors SET first_name = ?, last_name = ?, phone_number = ?, country = ?, profile_image = ? WHERE auditor_id = ?',
         [first_name.trim(), last_name.trim(), phone_number || null, country || null, finalProfileImagePath, req.user.userCode]
       );
-    } else if (role === 'entity_head') {
+    } else if (role === 'organization_user') {
       await db.query(
-        'UPDATE entity_heads SET first_name = ?, last_name = ?, phone_number = ?, country = ?, profile_image = ? WHERE entity_head_id = ?',
+        'UPDATE organization_users SET first_name = ?, last_name = ?, phone_number = ?, country = ?, profile_image = ? WHERE organization_user_id = ?',
         [first_name.trim(), last_name.trim(), phone_number || null, country || null, finalProfileImagePath, req.user.userCode]
       );
     } else {
@@ -1731,9 +1736,9 @@ const getOnboardingStatus = async (req, res) => {
     } else if (role === 'auditor') {
       record = await AuditorModel.findById(req.user.userCode);
       status = await AuditorModel.getOnboardingStatus(req.user.userCode);
-    } else if (role === 'entity_head') {
-      record = await EntityHeadModel.findById(req.user.userCode);
-      status = await EntityHeadModel.getOnboardingStatus(req.user.userCode);
+    } else if (role === 'organization_user') {
+      record = await OrganizationUserModel.findById(req.user.userCode);
+      status = await OrganizationUserModel.getOnboardingStatus(req.user.userCode);
     } else {
       return errorResponse(res, 'Only valid system users can access onboarding status.', 403);
     }
@@ -1769,8 +1774,8 @@ const updateOnboardingStatus = async (req, res) => {
       record = await AdminModel.findById(req.user.userCode);
     } else if (role === 'auditor') {
       record = await AuditorModel.findById(req.user.userCode);
-    } else if (role === 'entity_head') {
-      record = await EntityHeadModel.findById(req.user.userCode);
+    } else if (role === 'organization_user') {
+      record = await OrganizationUserModel.findById(req.user.userCode);
     } else {
       return errorResponse(res, 'Only valid system users can update onboarding status.', 403);
     }
@@ -1793,13 +1798,13 @@ const updateOnboardingStatus = async (req, res) => {
       } else {
         await AuditorModel.resetOnboardingStatus(record.auditor_id);
       }
-    } else if (role === 'entity_head') {
+    } else if (role === 'organization_user') {
       if (action === 'complete') {
-        await EntityHeadModel.updateOnboardingStatus(record.entity_head_id, { completed: true, skipped: false });
+        await OrganizationUserModel.updateOnboardingStatus(record.organization_user_id, { completed: true, skipped: false });
       } else if (action === 'skip') {
-        await EntityHeadModel.updateOnboardingStatus(record.entity_head_id, { completed: false, skipped: true });
+        await OrganizationUserModel.updateOnboardingStatus(record.organization_user_id, { completed: false, skipped: true });
       } else {
-        await EntityHeadModel.resetOnboardingStatus(record.entity_head_id);
+        await OrganizationUserModel.resetOnboardingStatus(record.organization_user_id);
       }
     }
 
@@ -1808,7 +1813,7 @@ const updateOnboardingStatus = async (req, res) => {
         ? await AdminModel.getOnboardingStatus(record.admin_id)
         : role === 'auditor'
           ? await AuditorModel.getOnboardingStatus(record.auditor_id)
-          : await EntityHeadModel.getOnboardingStatus(record.entity_head_id);
+          : await OrganizationUserModel.getOnboardingStatus(record.organization_user_id);
 
     return successResponse(res, {
       onboarding_completed: !!updatedStatus.onboarding_completed,

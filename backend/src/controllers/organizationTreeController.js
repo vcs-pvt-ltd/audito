@@ -15,7 +15,11 @@ const OrganizationTreeModel = require('../models/OrganizationTreeModel');
 const LinkModel = require('../models/LinkModel');
 const { db } = require('../config/db');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
-const { getAccessibleEntityCodes, getEntityHeadOrgTreeScope, extractEntityHeadSubtree } = require('../utils/accessHelper');
+const {
+  getAccessibleEntityCodes,
+  getOrganizationUserScope,
+  extractOrganizationUserTree,
+} = require('../utils/accessHelper');
 const { isCompanySupplierLink } = require('../utils/linkRules');
 
 
@@ -158,10 +162,10 @@ function getAllowedChildrenMap(accountType) {
 
 const getTree = async (req, res) => {
   try {
-    const entityCode = req.user.role === 'entity_head'
+    const entityCode = req.user.role === 'organization_user'
       ? (req.user.createdByEntityCode || req.user.entityCode)
       : req.user.entityCode;
-    const entityType = req.user.role === 'entity_head'
+    const entityType = req.user.role === 'organization_user'
       ? await resolveEntityType(entityCode)
       : req.user.entityType;
 
@@ -243,22 +247,9 @@ const getTree = async (req, res) => {
       children: buildChildren('ROOT', new Set([entityCode])) // top-level children have no parent path
     };
 
-    if (req.user.role === 'entity_head') {
-      const scopeIds = await getEntityHeadOrgTreeScope(req.user.assignedOrgTreeId);
-      tree = extractEntityHeadSubtree(tree, req.user.assignedOrgTreeId, scopeIds) || tree;
-
-      if ((!req.user.assignedOrgTreeId || !scopeIds.length) && req.user.assignedEntityCode) {
-        const findByCode = (node) => {
-          if (!node) return null;
-          if (node.code === req.user.assignedEntityCode) return node;
-          for (const child of node.children || []) {
-            const found = findByCode(child);
-            if (found) return found;
-          }
-          return null;
-        };
-        tree = findByCode(tree) || tree;
-      }
+    if (req.user.role === 'organization_user') {
+      const scope = await getOrganizationUserScope(req.user);
+      tree = extractOrganizationUserTree(tree, scope.orgTreeIds, scope.entityCodes);
     }
 
     return successResponse(res, { tree, hierarchyChain, allowedChildren });
@@ -381,10 +372,10 @@ const removeNode = async (req, res) => {
       return errorResponse(res, 'Not authorized to modify this tree.', 403);
     }
 
-    // Dependency check: block if users/heads or checklists exist
+    // Dependency check: block if users or checklists exist.
     const hasDeps = await OrganizationTreeModel.hasDependencies(id);
     if (hasDeps) {
-      return errorResponse(res, 'This entity is in use by users (Entity Heads) or checklists and cannot be removed here. Remove dependencies first.', 400);
+      return errorResponse(res, 'This entity is in use by Organization Users or checklists and cannot be removed here. Remove dependencies first.', 400);
     }
 
     // Scope the subtree delete to the edge's own root — NOT adminCode.

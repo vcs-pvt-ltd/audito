@@ -86,6 +86,10 @@ function normalizeAccountType(accountType: string | null | undefined): string | 
   return accountType;
 }
 
+function normalizeRole(role: string | null | undefined): string {
+  return role === "entity_head" ? "organization_user" : String(role || "");
+}
+
 const LAST_ROLE_BY_EMAIL_STORAGE_KEY = "audito_last_role_by_email";
 
 function normalizedEmail(email: string | null | undefined) {
@@ -95,7 +99,8 @@ function normalizedEmail(email: string | null | undefined) {
 function getLastRoleForEmail(email: string) {
   try {
     const roles = JSON.parse(localStorage.getItem(LAST_ROLE_BY_EMAIL_STORAGE_KEY) || "{}") as Record<string, string>;
-    return roles[normalizedEmail(email)] || undefined;
+    const role = roles[normalizedEmail(email)];
+    return role ? normalizeRole(role) : undefined;
   } catch {
     return undefined;
   }
@@ -106,7 +111,7 @@ function rememberLastRoleForEmail(email: string | null | undefined, role: string
   if (!key || !role) return;
   try {
     const roles = JSON.parse(localStorage.getItem(LAST_ROLE_BY_EMAIL_STORAGE_KEY) || "{}") as Record<string, string>;
-    roles[key] = role;
+    roles[key] = normalizeRole(role);
     localStorage.setItem(LAST_ROLE_BY_EMAIL_STORAGE_KEY, JSON.stringify(roles));
   } catch {
     // A saved role is only a convenience preference. Login remains fully functional without it.
@@ -129,6 +134,7 @@ function normalizeAuthState(input: AuthState): AuthState {
     admin: input.admin
       ? {
           ...input.admin,
+          role: normalizeRole(input.admin.role),
           account_type: normalizeAccountType(input.admin.account_type),
           plan_limits: input.admin.plan_limits
             ? {
@@ -141,6 +147,7 @@ function normalizeAuthState(input: AuthState): AuthState {
       : null,
     accounts: (input.accounts || []).map((a) => ({
       ...a,
+      role: normalizeRole(a.role),
       account_type: normalizeAccountType(a.account_type),
     })),
   };

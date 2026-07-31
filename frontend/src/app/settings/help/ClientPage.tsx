@@ -23,22 +23,19 @@ interface RoleGuide {
   sections: HelpSection[];
 }
 
-// ─── Entity / head wording per account type (mirrors onboarding) ──
-const ACCOUNT_STRUCTURE: Record<string, { units: string; examples: string; heads: string }> = {
+// ─── Entity wording per account type (mirrors onboarding) ──
+const ACCOUNT_STRUCTURE: Record<string, { units: string; examples: string }> = {
   Customer: {
     units: "Buying Offices and Suppliers",
     examples: "buying offices and the suppliers that report to them",
-    heads: "Buying Office Heads and Supplier Heads",
   },
   Company: {
     units: "Clusters, Factories, Units, Departments and Sections",
     examples: "your clusters, factories, units, departments and sections",
-    heads: "Cluster, Factory, Unit, Department and Section Heads",
   },
   "Audit Firm": {
     units: "Branches and Departments",
     examples: "your branches and the departments inside them",
-    heads: "Branch Heads and Department Heads",
   },
 };
 
@@ -82,18 +79,16 @@ function buildAdminGuide(accountType: string): RoleGuide {
     ],
   });
 
-  // 4. Entity heads (not for audit firms)
-  if (!isAuditFirm) {
-    sections.push({
-      icon: Users,
-      title: "4. Assign entity heads",
-      description: `Entity heads oversee a specific unit. Invite your ${cfg.heads}.`,
-      steps: [
-        { title: "Open Users", detail: "Pick the head level you want to fill and invite a user for it." },
-        { title: "One head per entity", detail: "Each head is tied to their entity and gets read-only visibility into that unit's audits and findings." },
-      ],
-    });
-  }
+  // 4. Organization users
+  sections.push({
+    icon: Users,
+    title: "4. Add organization users",
+    description: "Organization users have read-only oversight of the organization areas you select.",
+    steps: [
+      { title: "Open Users → Organization Users", detail: "Invite a user and select any combination of non-root entities from the organization tree." },
+      { title: "Choose exact or branch access", detail: "Grant access to only the selected entity, or include all of its current and future subentities." },
+    ],
+  });
 
   // 5 & 6. Checklists + Audits — only the assigning side (not Audit Firm)
   if (!isAuditFirm) {
@@ -218,17 +213,17 @@ function buildAuditorGuide(): RoleGuide {
   };
 }
 
-// ─── Entity head guide (workflow follows the entity-head pages) ───
-function buildEntityHeadGuide(): RoleGuide {
+// ─── Organization user guide (workflow follows the organization-user pages) ───
+function buildOrganizationUserGuide(): RoleGuide {
   return {
-    badge: "Entity Head",
-    heading: "Reviewing audits for your unit",
-    intro: "As an entity head you have read-only oversight of the audits and findings for your assigned organization unit. You review and stay informed — you do not perform audits or make approvals.",
+    badge: "Organization User",
+    heading: "Reviewing audits for your organization areas",
+    intro: "As an organization user you have read-only oversight of audits and findings for the organization areas assigned to you. You review and stay informed — you do not perform audits or make approvals.",
     sections: [
       {
         icon: BarChart3,
         title: "Start at your Dashboard",
-        description: "Your dashboard summarizes audit activity and performance for your unit.",
+        description: "Your dashboard summarizes audit activity and performance across your permitted organization areas.",
         steps: [
           { title: "Spot trends", detail: "Use the dashboard to analyze performance and identify recurring issues across your scope." },
         ],
@@ -236,7 +231,7 @@ function buildEntityHeadGuide(): RoleGuide {
       {
         icon: Eye,
         title: "Review Audits",
-        description: "See every audit carried out within your assigned unit.",
+        description: "See every audit carried out within your permitted organization areas.",
         steps: [
           { title: "Open an audit", detail: "Browse audits in your scope and open one to view its findings and evidence." },
           { title: "Read-only access", detail: "You can review everything but cannot change answers or approve — your role is oversight." },
@@ -245,7 +240,7 @@ function buildEntityHeadGuide(): RoleGuide {
       {
         icon: Network,
         title: "Monitor CAPs",
-        description: "Track the Corrective Action Plans raised for your unit.",
+        description: "Track the Corrective Action Plans raised for your permitted organization areas.",
         steps: [
           { title: "Follow resolution", detail: "Open a CAP to see the finding and watch its progress until it is resolved." },
         ],
@@ -323,7 +318,7 @@ function buildAuditoAdminGuide(): RoleGuide {
 function buildGuide(role: string, accountType: string | null | undefined): RoleGuide {
   if (role === "audito_admin" || accountType === "audito_admin") return buildAuditoAdminGuide();
   if (role === "auditor") return buildAuditorGuide();
-  if (role === "entity_head") return buildEntityHeadGuide();
+  if (role === "organization_user") return buildOrganizationUserGuide();
   return buildAdminGuide(accountType === "Audit Firm Company" ? "Audit Firm" : (accountType || "Customer"));
 }
 

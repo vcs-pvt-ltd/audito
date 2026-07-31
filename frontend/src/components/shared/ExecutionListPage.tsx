@@ -154,7 +154,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
-    if (!isLoading && admin && admin.role !== "auditor" && admin.role !== "entity_head") {
+    if (!isLoading && admin && admin.role !== "auditor" && admin.role !== "organization_user") {
       router.push("/audits");
     }
   }, [isLoading, admin, router]);
@@ -351,7 +351,7 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
       </div>
     );
   }
-  if (!admin || (admin.role !== "auditor" && admin.role !== "entity_head")) return null;
+  if (!admin || (admin.role !== "auditor" && admin.role !== "organization_user")) return null;
 
   const Icon = workflowType === "audit" ? ClipboardCheck : ClipboardList;
 

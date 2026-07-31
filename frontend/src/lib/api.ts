@@ -384,6 +384,14 @@ export interface CreateUserPayload {
   assigned_entity_code?: string;
   assigned_entity_type?: string;
   assigned_org_tree_id?: string;
+  scopes?: OrganizationUserScopePayload[];
+}
+
+export interface OrganizationUserScopePayload {
+  org_tree_id: string | null;
+  entity_code: string;
+  entity_type?: string | null;
+  scope_mode: "EXACT" | "SUBTREE";
 }
 
 export const usersApi = {
@@ -419,7 +427,14 @@ export const usersApi = {
       token,
     }),
 
-  createFromAdmin: (token: string, data: { email: string; user_type: string; assigned_entity_code?: string; assigned_entity_type?: string; assigned_org_tree_id?: string }) =>
+  createFromAdmin: (token: string, data: {
+    email: string;
+    user_type: string;
+    assigned_entity_code?: string;
+    assigned_entity_type?: string;
+    assigned_org_tree_id?: string;
+    scopes?: OrganizationUserScopePayload[];
+  }) =>
     apiRequest("/users/create-from-admin", {
       method: "POST",
       body: data as unknown as Record<string, unknown>,
@@ -981,8 +996,8 @@ export const capApi = {
       token,
     }),
 
-  getEntityHeads: (token: string, entityCode: string) =>
-    apiRequest(`/caps/entity-heads/${entityCode}`, { token }),
+  getOrganizationUsers: (token: string, entityCode: string) =>
+    apiRequest(`/caps/organization-users/${entityCode}`, { token }),
 };
 
 // ─── Countries API (external) ─────────────────────────────────────

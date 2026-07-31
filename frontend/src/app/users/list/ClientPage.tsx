@@ -12,6 +12,7 @@ import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Table, THead, Th } from "@/components/ui";
 import PhoneNumber from "@/components/shared/PhoneNumber";
+import Loading from "@/components/shared/Loading";
 
 // ─── Config per user type slug ───────────────────────────────────
 
@@ -27,19 +28,18 @@ interface UserTypeConfig {
   // When per-account steps are needed, use treeStepsByAccount.
   treeSteps: string[];
   treeStepsByAccount?: Record<string, string[]>;
-  // Read-only view (no add/edit/delete). Used for linked-partner records
-  // like a linked Company's admin shown to a Supplier as "Company Head".
   viewOnly?: boolean;
+  customScopes?: boolean;
 }
 
 const USER_TYPE_CONFIGS: Record<string, UserTypeConfig> = {
-  "company-heads": {
-    label: "Company Head",
-    labelPlural: "Company Heads",
-    backendType: "Company Head",
-    accountTypes: ["Customer"],
+  "organization-users": {
+    label: "Organization User",
+    labelPlural: "Organization Users",
+    backendType: "Organization User",
+    accountTypes: ["Customer", "Company", "Audit Firm"],
     treeSteps: [],
-    viewOnly: true,
+    customScopes: true,
   },
   auditors: {
     label: "Auditor",
@@ -50,69 +50,6 @@ const USER_TYPE_CONFIGS: Record<string, UserTypeConfig> = {
     treeStepsByAccount: {
       "Audit Firm": ["Branch", "Audit Firm Department"],
     },
-  },
-  "branch-heads": {
-    label: "Branch Head",
-    labelPlural: "Branch Heads",
-    backendType: "Branch Head",
-    accountTypes: ["Audit Firm"],
-    treeSteps: ["Branch"],
-  },
-  "audit-firm-department-heads": {
-    label: "Department Head",
-    labelPlural: "Department Heads",
-    backendType: "Audit Firm Department Head",
-    accountTypes: ["Audit Firm"],
-    treeSteps: ["Branch", "Audit Firm Department"],
-  },
-  "buying-office-heads": {
-    label: "Buying Office Head",
-    labelPlural: "Buying Office Heads",
-    backendType: "Buying Office Head",
-    accountTypes: ["Customer"],
-    treeSteps: ["Buying Office"],
-  },
-  "supplier-heads": {
-    label: "Supplier Head",
-    labelPlural: "Supplier Heads",
-    backendType: "Supplier Head",
-    accountTypes: ["Customer"],
-    treeSteps: ["Supplier"],
-  },
-  "cluster-heads": {
-    label: "Cluster Head",
-    labelPlural: "Cluster Heads",
-    backendType: "Cluster Head",
-    accountTypes: ["Company", "Customer"],
-    treeSteps: ["Cluster"],
-  },
-  "factory-heads": {
-    label: "Factory Head",
-    labelPlural: "Factory Heads",
-    backendType: "Factory Head",
-    accountTypes: ["Company", "Customer"],
-    treeSteps: ["Cluster", "Factory"],
-  },
-  "unit-heads": {
-    label: "Unit Head",
-    labelPlural: "Unit Heads",
-    backendType: "Unit Head",
-    accountTypes: ["Company", "Customer"],
-    treeSteps: ["Cluster", "Factory", "Unit"],
-  },
-  "department-heads": {
-    label: "Department Head",
-    labelPlural: "Department Heads",
-    backendType: "Department Head",
-    accountTypes: ["Company", "Customer"],
-    treeSteps: ["Cluster", "Factory", "Unit", "Department"],
-  },
-  "section-heads": {
-    label: "Section Head",
-    labelPlural: "Section Heads",
-    backendType: "Section Head",
-    accountTypes: ["Company", "Customer"],
-    treeSteps: ["Cluster", "Factory", "Unit", "Department", "Section"],
   },
 };
 
@@ -131,6 +68,8 @@ interface User {
   assigned_entity_type?: string;
   assigned_entity_code?: string;
   assigned_org_tree_id?: string;
+  scopes?: OrganizationUserScope[];
+  scope_count?: number;
   email_verified: boolean;
   is_active: boolean;
   is_linked?: boolean;
@@ -149,6 +88,14 @@ interface UserFormData {
   assigned_entity_code: string;
   assigned_entity_type: string;
   assigned_org_tree_id?: string;
+  scopes: OrganizationUserScope[];
+}
+
+interface OrganizationUserScope {
+  org_tree_id: string | null;
+  entity_code: string;
+  entity_type?: string | null;
+  scope_mode: "EXACT" | "SUBTREE";
 }
 
 // Flattened tree node with parentage info
@@ -158,6 +105,8 @@ export interface FlatNode {
   name: string;
   entity_type: string;
   parent_id: string | null; // parent org-tree edge_id (null for root-level)
+  depth: number;
+  path: string;
 }
 
 // Tree node from API
@@ -171,21 +120,201 @@ interface TreeNode {
 }
 
 /** Flatten org tree into a flat list with parent references */
-function flattenTree(node: TreeNode, parentId: string | null = null): FlatNode[] {
+function flattenTree(
+  node: TreeNode,
+  parentId: string | null = null,
+  depth = 0,
+  parentPath = ""
+): FlatNode[] {
   const id = node.edge_id ? String(node.edge_id) : node.code;
+  const path = parentPath ? `${parentPath} → ${node.name}` : node.name;
   const result: FlatNode[] = [{
     id,
     code: node.code,
     name: node.name,
     entity_type: node.entity_type,
     parent_id: parentId,
+    depth,
+    path,
   }];
   if (node.children) {
     for (const child of node.children) {
-      result.push(...flattenTree(child as TreeNode, node.edge_id ? String(node.edge_id) : null));
+      result.push(...flattenTree(
+        child as TreeNode,
+        id,
+        depth + 1,
+        path
+      ));
     }
   }
   return result;
+}
+
+function OrganizationScopeSelector({
+  nodes,
+  value,
+  onChange,
+  loading,
+}: {
+  nodes: FlatNode[];
+  value: OrganizationUserScope[];
+  onChange: (scopes: OrganizationUserScope[]) => void;
+  loading: boolean;
+}) {
+  const [search, setSearch] = useState("");
+  const scopeByKey = useMemo(() => {
+    const map = new Map<string, OrganizationUserScope>();
+    for (const scope of value) {
+      map.set(scope.org_tree_id ? `tree:${scope.org_tree_id}` : `root:${scope.entity_code}`, scope);
+    }
+    return map;
+  }, [value]);
+  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+
+  const keyForNode = (node: FlatNode) =>
+    node.parent_id === null ? `root:${node.code}` : `tree:${node.id}`;
+
+  const coveringSubtree = (node: FlatNode) => {
+    let parentId = node.parent_id;
+    while (parentId) {
+      const parent = nodeById.get(parentId);
+      if (!parent) break;
+      const scope = scopeByKey.get(keyForNode(parent));
+      if (scope?.scope_mode === "SUBTREE") return parent;
+      parentId = parent.parent_id;
+    }
+    return null;
+  };
+
+  const isDescendantOf = (node: FlatNode, ancestorId: string) => {
+    let parentId = node.parent_id;
+    while (parentId) {
+      if (parentId === ancestorId) return true;
+      parentId = nodeById.get(parentId)?.parent_id || null;
+    }
+    return false;
+  };
+
+  const toggle = (node: FlatNode) => {
+    if (coveringSubtree(node)) return;
+    const key = keyForNode(node);
+    if (scopeByKey.has(key)) {
+      onChange(value.filter((scope) =>
+        (scope.org_tree_id ? `tree:${scope.org_tree_id}` : `root:${scope.entity_code}`) !== key
+      ));
+      return;
+    }
+    onChange([...value, {
+      org_tree_id: node.parent_id === null ? null : node.id,
+      entity_code: node.code,
+      entity_type: node.entity_type,
+      scope_mode: "EXACT",
+    }]);
+  };
+
+  const setMode = (node: FlatNode, mode: "EXACT" | "SUBTREE") => {
+    const key = keyForNode(node);
+    const next = value.map((scope) =>
+      (scope.org_tree_id ? `tree:${scope.org_tree_id}` : `root:${scope.entity_code}`) === key
+        ? { ...scope, scope_mode: mode }
+        : scope
+    );
+    onChange(mode === "SUBTREE"
+      ? next.filter((scope) => {
+          if (!scope.org_tree_id) return true;
+          const selectedNode = nodeById.get(String(scope.org_tree_id));
+          return !selectedNode || !isDescendantOf(selectedNode, node.id);
+        })
+      : next);
+  };
+
+  const query = search.trim().toLowerCase();
+  // The workspace root is monitored by its administrator and must never be
+  // assigned to an Organization User. Only child entities/branches are shown.
+  const assignableNodes = nodes.filter((node) => node.parent_id !== null);
+  const visibleNodes = query
+    ? assignableNodes.filter((node) =>
+        `${node.name} ${node.entity_type} ${node.path}`.toLowerCase().includes(query)
+      )
+    : assignableNodes;
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Organization access</p>
+        <p className="mt-1 text-xs text-gray-500">
+          Select individual entities or grant access to an entity and all of its subentities.
+        </p>
+      </div>
+      <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+        <Search size={14} className="text-gray-500" />
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search organization..."
+          className="w-full bg-transparent text-sm text-white outline-none placeholder:text-gray-600"
+        />
+      </div>
+      <div className="max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-black/10 p-2">
+        {loading ? (
+          <Loading className="h-64" />
+        ) : visibleNodes.map((node) => {
+          const key = keyForNode(node);
+          const selected = scopeByKey.get(key);
+          const inheritedFrom = coveringSubtree(node);
+          return (
+            <div
+              key={key}
+              className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/[0.04]"
+              style={{ paddingLeft: `${8 + Math.max(0, node.depth - 1) * 18}px` }}
+            >
+              <input
+                type="checkbox"
+                checked={!!selected || !!inheritedFrom}
+                disabled={!!inheritedFrom}
+                onChange={() => toggle(node)}
+                className="h-4 w-4 shrink-0 accent-emerald-500"
+              />
+              <div className="min-w-0 flex-1">
+                <p className={`truncate text-sm ${selected ? "text-white" : "text-gray-300"}`}>{node.name}</p>
+                <p className="truncate text-[10px] text-gray-600">{node.entity_type}</p>
+              </div>
+              {inheritedFrom ? (
+                <span className="shrink-0 text-[10px] text-emerald-400">Inherited</span>
+              ) : selected ? (
+                <select
+                  value={selected.scope_mode}
+                  onChange={(event) => setMode(node, event.target.value as "EXACT" | "SUBTREE")}
+                  className="max-w-36 rounded-md border border-white/10 bg-primary-900 px-2 py-1 text-[11px] text-gray-300 outline-none"
+                >
+                  <option value="EXACT">This entity only</option>
+                  <option value="SUBTREE">Include subentities</option>
+                </select>
+              ) : null}
+            </div>
+          );
+        })}
+        {!loading && !visibleNodes.length && (
+          <p className="px-3 py-8 text-center text-sm text-gray-500">No organization entities found.</p>
+        )}
+      </div>
+      {value.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs text-gray-500">{value.length} access rule{value.length === 1 ? "" : "s"} selected</p>
+          {value.map((scope) => {
+            const node = scope.org_tree_id
+              ? nodeById.get(String(scope.org_tree_id))
+              : nodes.find((item) => item.parent_id === null && item.code === scope.entity_code);
+            return (
+              <p key={`${scope.org_tree_id || "root"}:${scope.entity_code}`} className="truncate text-xs text-gray-400">
+                {node?.path || "Selected organization area"} · {scope.scope_mode === "SUBTREE" ? "Whole branch" : "Exact"}
+              </p>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UserModal({
@@ -198,6 +327,7 @@ function UserModal({
   accessToken,
   accountType,
   orgCountry,
+  customScopes,
 }: {
   open: boolean;
   onClose: () => void;
@@ -208,6 +338,7 @@ function UserModal({
   accessToken: string | null;
   accountType: string;
   orgCountry?: string;
+  customScopes?: boolean;
 }) {
   const [form, setForm] = useState<UserFormData>({
     first_name: "",
@@ -218,6 +349,7 @@ function UserModal({
     assigned_entity_code: "",
     assigned_entity_type: "",
     assigned_org_tree_id: undefined,
+    scopes: [],
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -231,6 +363,7 @@ function UserModal({
 
   // Flat list of all entities from org tree
   const [flatNodes, setFlatNodes] = useState<FlatNode[]>([]);
+  const [treeLoading, setTreeLoading] = useState(false);
   // Selected code per step
   const [stepSelections, setStepSelections] = useState<Record<number, string>>({});
 
@@ -245,45 +378,43 @@ function UserModal({
 
   // Fetch org tree and flatten when modal opens
   useEffect(() => {
-    if (!open || !accessToken || treeSteps.length === 0 || editData) return;
+    if (!open || !accessToken || (!customScopes && treeSteps.length === 0)) return;
+    let cancelled = false;
+    setTreeLoading(true);
+    setFlatNodes([]);
 
-    // Audit Firm: use configured org-tree links (Branch -> Audit Firm Department)
-    if (accountType === "Audit Firm") {
-      const fetchAuditFirmTreeNodes = async () => {
+    const fetchTree = async () => {
+      try {
         const res = await orgTreeApi.getTree(accessToken);
-        if (res.success && res.data) {
+        if (!cancelled && res.success && res.data) {
           const data = res.data as { tree: TreeNode };
           if (data.tree) {
             const all = flattenTree(data.tree);
-            setFlatNodes(
-              all.filter(
+            setFlatNodes(accountType === "Audit Firm" && !customScopes
+              ? all.filter(
                 (n) =>
                   n.entity_type === "Branch" || n.entity_type === "Audit Firm Department"
               )
+              : all
             );
           } else {
             setFlatNodes([]);
           }
-        } else {
+        } else if (!cancelled) {
           setFlatNodes([]);
         }
-      };
-
-      fetchAuditFirmTreeNodes();
-      return;
-    }
-
-    const fetchTree = async () => {
-      const res = await orgTreeApi.getTree(accessToken);
-      if (res.success && res.data) {
-        const data = res.data as { tree: TreeNode };
-        if (data.tree) {
-          setFlatNodes(flattenTree(data.tree));
-        }
+      } catch {
+        if (!cancelled) setFlatNodes([]);
+      } finally {
+        if (!cancelled) setTreeLoading(false);
       }
     };
-    fetchTree();
-  }, [open, accessToken, treeSteps.length, accountType, editData]);
+
+    void fetchTree();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, accessToken, treeSteps.length, accountType, customScopes]);
 
   // Handle edit prepopulation
   useEffect(() => {
@@ -356,6 +487,7 @@ function UserModal({
         assigned_entity_code: editData.assigned_entity_code || "",
         assigned_entity_type: editData.assigned_entity_type || "",
         assigned_org_tree_id: editData.assigned_org_tree_id || undefined,
+        scopes: editData.scopes || [],
       });
     } else {
       setForm({
@@ -367,6 +499,7 @@ function UserModal({
         assigned_entity_code: "",
         assigned_entity_type: "",
         assigned_org_tree_id: undefined,
+        scopes: [],
       });
     }
     setStepSelections({});
@@ -394,6 +527,9 @@ function UserModal({
     if (treeSteps.length > 0 && !form.assigned_entity_code) {
       return setError(`Please select a ${treeSteps[treeSteps.length - 1]} to assign.`);
     }
+    if (customScopes && form.scopes.length === 0) {
+      return setError("Please select at least one organization entity.");
+    }
     setLoading(true);
     setError("");
     try {
@@ -412,7 +548,7 @@ function UserModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative glass rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className={`relative glass rounded-2xl w-full ${customScopes ? "max-w-3xl" : "max-w-lg"} max-h-[90vh] overflow-y-auto`}>
         <div className="flex items-center justify-between p-5 border-b border-white/10">
           <h2 className="text-lg font-semibold text-white">
             {isEdit ? `Edit ${userTypeLabel}` : `Add ${userTypeLabel}`}
@@ -584,6 +720,15 @@ function UserModal({
                 );
               })}
             </div>
+          )}
+
+          {customScopes && (
+            <OrganizationScopeSelector
+              nodes={flatNodes}
+              value={form.scopes}
+              onChange={(nextScopes) => setForm((current) => ({ ...current, scopes: nextScopes }))}
+              loading={treeLoading}
+            />
           )}
 
           <div className="flex gap-3 pt-2">
@@ -844,7 +989,8 @@ export default function UsersClientPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const typeSlug = searchParams.get("type") || "auditors";
+  const requestedTypeSlug = searchParams.get("type") || "auditors";
+  const typeSlug = requestedTypeSlug === "auditors" ? "auditors" : "organization-users";
   const config = USER_TYPE_CONFIGS[typeSlug];
 
   const [users, setUsers] = useState<User[]>([]);
@@ -864,11 +1010,11 @@ export default function UsersClientPage() {
   // the prompt reliably reappears (it never persisted correctly before).
   const [registerMeDismissed, setRegisterMeDismissed] = useState(false);
 
-  // The admin may self-register at most one auditor AND one entity head from
+  // The admin may self-register at most one auditor AND one organization user from
   // their email. Suppress Register Me only for the role of the current page —
-  // an existing auditor account must not block registering as an entity head
+  // an existing auditor account must not block registering as an organization user
   // (and vice versa).
-  const selfRegisterRole = config?.backendType === "Auditor" ? "auditor" : "entity_head";
+  const selfRegisterRole = config?.backendType === "Auditor" ? "auditor" : "organization_user";
   const hasSelfAccountForRole = useMemo(
     () => accounts.some((a) => a.role === selfRegisterRole),
     [accounts, selfRegisterRole]
@@ -922,6 +1068,12 @@ export default function UsersClientPage() {
   }, [isLoading, admin, router]);
 
   useEffect(() => {
+    if (requestedTypeSlug !== typeSlug) {
+      router.replace(`/users/list?type=${typeSlug}`);
+    }
+  }, [requestedTypeSlug, typeSlug, router]);
+
+  useEffect(() => {
     if (!accessToken) return;
     authApi
       .getMe(accessToken)
@@ -951,6 +1103,7 @@ export default function UsersClientPage() {
 
   useEffect(() => {
     if (loading) return;
+    if (config?.customScopes) return;
     if (isRegisterMeCompleted()) return;
     if (hasSelfAccountForRole) return;
     const alreadyInList = admin?.email
@@ -961,7 +1114,7 @@ export default function UsersClientPage() {
     if (isRegistering) {
       setRegisterSelfOpen(true);
     }
-  }, [loading, users, searchParams, admin?.email, hasSelfAccountForRole]);
+  }, [loading, users, searchParams, admin?.email, hasSelfAccountForRole, config?.customScopes]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -990,7 +1143,7 @@ export default function UsersClientPage() {
     const alreadyInList = admin?.email
       ? users.some((u) => u.email.toLowerCase() === admin.email.toLowerCase())
       : true;
-    if (!alreadyInList && !isRegisterMeCompleted() && !hasSelfAccountForRole) {
+    if (!config.customScopes && !alreadyInList && !isRegisterMeCompleted() && !hasSelfAccountForRole) {
       setRegisterSelfOpen(true);
       return;
     }
@@ -1065,7 +1218,30 @@ export default function UsersClientPage() {
       const node = entities.find(n => n.id === orgTreeId);
       if (node) return node.name;
     }
+    if (entityCode) {
+      const node = entities.find((item) => item.code === entityCode);
+      return node?.name || "Organization area";
+    }
     return entityCode || "—";
+  };
+
+  const getOrganizationAccessSummary = (user: User) => {
+    const scopes = user.scopes || [];
+    if (!scopes.length) {
+      const node = user.assigned_org_tree_id
+        ? entities.find((item) => item.id === user.assigned_org_tree_id)
+        : entities.find((item) => item.parent_id === null && item.code === user.assigned_entity_code);
+      return node?.name || "1 organization area";
+    }
+    if (scopes.length === 1) {
+      const scope = scopes[0];
+      const node = scope.org_tree_id
+        ? entities.find((item) => item.id === String(scope.org_tree_id))
+        : entities.find((item) => item.parent_id === null && item.code === scope.entity_code);
+      const name = node?.name || "1 organization area";
+      return `${name} · ${scope.scope_mode === "SUBTREE" ? "Whole branch" : "Exact"}`;
+    }
+    return `${scopes.length} organization areas`;
   };
 
   const handleSubmit = async (formData: UserFormData) => {
@@ -1081,6 +1257,7 @@ export default function UsersClientPage() {
         assigned_entity_code: formData.assigned_entity_code || undefined,
         assigned_entity_type: formData.assigned_entity_type || undefined,
         assigned_org_tree_id: formData.assigned_org_tree_id || undefined,
+        scopes: config.customScopes ? formData.scopes : undefined,
       });
       if (!res.success) throw new Error(res.message || "Failed to update.");
       toast("User updated successfully.", "success");
@@ -1095,6 +1272,7 @@ export default function UsersClientPage() {
         assigned_entity_code: formData.assigned_entity_code || undefined,
         assigned_entity_type: formData.assigned_entity_type || undefined,
         assigned_org_tree_id: formData.assigned_org_tree_id || undefined,
+        scopes: config.customScopes ? formData.scopes : undefined,
       });
       if (!res.success) throw new Error(res.message || "Failed to create.");
       toast("User added successfully.", "success");
@@ -1164,7 +1342,9 @@ export default function UsersClientPage() {
               {config.labelPlural}
             </h1>
             <p className="hidden sm:block text-sm text-gray-400 mt-0.5">
-              Invite and manage {config.labelPlural.toLowerCase()} who will be responsible for audits and data entry.
+              {config.customScopes
+                ? "Manage organization users and control which entities and subentities they can access."
+                : `Invite and manage ${config.labelPlural.toLowerCase()} who will be responsible for audits and data entry.`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1204,7 +1384,9 @@ export default function UsersClientPage() {
           <EmptyState
             icon={Users}
             title={`No ${config.labelPlural.toLowerCase()} yet`}
-            message={`Invite and manage ${config.labelPlural.toLowerCase()} who will be responsible for audits and data entry.`}
+            message={config.customScopes
+              ? "Add an organization user and choose the parts of the organization they can access."
+              : `Invite and manage ${config.labelPlural.toLowerCase()} who will be responsible for audits and data entry.`}
             action={!config.viewOnly ? (
               <Button onClick={handleAdd} leftIcon={<Plus size={16} />}>
                 {`Add ${config.label}`}
@@ -1227,7 +1409,9 @@ export default function UsersClientPage() {
                     <Th>Email</Th>
                     <Th>Phone</Th>
                     <Th>Country</Th>
-                    {effectiveTreeSteps.length > 0 && <Th>Assigned To</Th>}
+                    {(config.customScopes || effectiveTreeSteps.length > 0) && (
+                      <Th>{config.customScopes ? "Entity Access" : "Assigned To"}</Th>
+                    )}
                     <Th>Status</Th>
                     <Th align="right">Actions</Th>
                   </THead>
@@ -1247,9 +1431,11 @@ export default function UsersClientPage() {
                           <td className="px-4 py-3 text-gray-400">{user.email}</td>
                           <td className="px-4 py-3 text-gray-400"><PhoneNumber phone={user.phone_number} country={user.country} /></td>
                           <td className="px-4 py-3 text-gray-400">{user.country || "—"}</td>
-                          {effectiveTreeSteps.length > 0 && (
+                          {(config.customScopes || effectiveTreeSteps.length > 0) && (
                             <td className="px-4 py-3 text-gray-400 text-xs">
-                              {getEntityName(user.assigned_org_tree_id, user.assigned_entity_code)}
+                              {config.customScopes
+                                ? getOrganizationAccessSummary(user)
+                                : getEntityName(user.assigned_org_tree_id, user.assigned_entity_code)}
                             </td>
                           )}
                           <td className="px-4 py-3">
@@ -1332,11 +1518,13 @@ export default function UsersClientPage() {
                         <p className="text-gray-500">Country</p>
                         <p className="text-gray-300 mt-0.5 truncate">{user.country || "-"}</p>
                       </div>
-                      {effectiveTreeSteps.length > 0 && (
+                      {(config.customScopes || effectiveTreeSteps.length > 0) && (
                         <div className="col-span-2 rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
-                          <p className="text-gray-500">Assigned To</p>
+                          <p className="text-gray-500">{config.customScopes ? "Entity Access" : "Assigned To"}</p>
                           <p className="text-gray-300 mt-0.5 truncate">
-                            {getEntityName(user.assigned_org_tree_id, user.assigned_entity_code)}
+                            {config.customScopes
+                              ? getOrganizationAccessSummary(user)
+                              : getEntityName(user.assigned_org_tree_id, user.assigned_entity_code)}
                           </p>
                         </div>
                       )}
@@ -1412,6 +1600,7 @@ export default function UsersClientPage() {
           accessToken={accessToken}
           accountType={admin.account_type || ""}
           orgCountry={orgCountry}
+          customScopes={config.customScopes}
         />
 
         {/* Register self confirmation */}

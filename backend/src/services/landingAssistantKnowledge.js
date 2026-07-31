@@ -7,7 +7,7 @@ const PUBLIC_KNOWLEDGE = [
   },
   {
     topic: 'Organization structure',
-    content: 'Audito supports company-layer management and department structures. Organizations can create company entities and departments, assign department heads, and use the same entity structure across multiple relevant places in the workspace.',
+    content: 'Audito supports company-layer management and department structures. Organizations can create company entities and departments, grant Organization Users access to selected areas, and use the same entity structure across multiple relevant places in the workspace.',
   },
   {
     topic: 'Audit workflow',
@@ -19,7 +19,7 @@ const PUBLIC_KNOWLEDGE = [
   },
   {
     topic: 'Corrective actions and reports',
-    content: 'Audito helps teams record corrective actions, assign due dates, monitor progress, and use audit and CAP information in reports. It supports visibility for administrators and relevant entity heads.',
+    content: 'Audito helps teams record corrective actions, assign due dates, monitor progress, and use audit and CAP information in reports. It supports visibility for administrators and relevant organization users.',
   },
   {
     topic: 'Auditors and analytics',

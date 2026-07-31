@@ -67,7 +67,7 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-export default function EntityHeadAuditsPage() {
+export default function OrganizationUserAuditsPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const router = useRouter();
 
@@ -84,7 +84,7 @@ export default function EntityHeadAuditsPage() {
   const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
-    if (!isLoading && (!admin || admin.role !== "entity_head")) router.push("/login");
+    if (!isLoading && (!admin || admin.role !== "organization_user")) router.push("/login");
   }, [isLoading, admin, router]);
 
   const fetchAudits = useCallback(async () => {
@@ -275,7 +275,7 @@ export default function EntityHeadAuditsPage() {
                         <td className="px-4 py-3 text-gray-400 text-sm text-center">{itemIndex}</td>
                         <td className="px-4 py-3">
                           <button
-                            onClick={() => router.push(`/entity-head/audits/preview?audit_id=${a.audit_id}`)}
+                            onClick={() => router.push(`/organization-user/audits/preview?audit_id=${a.audit_id}`)}
                             className="text-secondary-400 hover:text-secondary-300 font-medium hover:underline underline-offset-2 transition-colors text-left"
                           >
                             {a.title}
@@ -316,7 +316,7 @@ export default function EntityHeadAuditsPage() {
                 return (
                   <div
                     key={a.audit_id}
-                    onClick={() => router.push(`/entity-head/audits/preview?audit_id=${a.audit_id}`)}
+                    onClick={() => router.push(`/organization-user/audits/preview?audit_id=${a.audit_id}`)}
                     className="glass rounded-xl p-4 space-y-3 cursor-pointer hover:bg-white/[0.04] transition-all"
                   >
                     <div className="flex justify-between items-start">

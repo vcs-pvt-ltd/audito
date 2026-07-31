@@ -117,7 +117,7 @@ function VerifyEmailContent() {
       // Admin invited by audito_admin — use token-based set-password
       res = await authApi.setAdminPassword(token!, password);
     } else {
-      // Auditor / Entity Head — use email-based set-password
+      // Auditor / Organization User — use email-based set-password
       res = await usersApi.setPassword(userData.email, password);
     }
     setSetupLoading(false);

@@ -29,7 +29,7 @@ const features = [
   { id: 1, anchor: "company-layer-management", icon: Building2, title: "Company Layer Management", layout: "left", image: companyManagementHierarchyImg,
     description: "Manage audits across different company entities or organizations within the platform. This allows users to organize audits separately for each company or business unit." },
   { id: 2, anchor: "department-structure", icon: PieChart, title: "Department Structure", layout: "right", image: departmentStructureHierarchyImg,
-    description: "Create and manage multiple departments and department heads inside a company (such as HR, Operations, Quality, Warehouse) to organize audits and assign responsibilities more efficiently." },
+    description: "Create and manage multiple departments, then grant Organization Users access to the exact areas they need for audit oversight." },
   { id: 3, anchor: "number-of-audits", icon: Gauge, title: "Number Of Audits", layout: "left", image: auditCapacityDashboardImg,
     description: "The total number of audits that can be conducted within the system. This controls how many audit processes or inspection cycles can be performed." },
   { id: 4, anchor: "different-types-of-auditss", icon: ClipboardList, title: "Different Types of Audits", layout: "right", image: checklistLibraryImg,

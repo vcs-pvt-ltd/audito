@@ -77,8 +77,7 @@ const CUSTOMER_STRUCTURE_NAV_ITEMS: NavItem[] = [
   { label: "Suppliers", path: "/structure/list?type=supplier", icon: Building2, minOrgLevel: 6, excludeEntityTypes: ["Supplier"] },
 ];
 const CUSTOMER_USER_NAV_ITEMS: NavItem[] = [
-  { label: "Buying Office Heads", path: "/users/list?type=buying-office-heads", icon: Users, minOrgLevel: 7 },
-  { label: "Supplier Heads", path: "/users/list?type=supplier-heads", icon: Users, minOrgLevel: 6, excludeEntityTypes: ["Supplier"] },
+  { label: "Organization Users", path: "/users/list?type=organization-users", icon: Users },
 ];
 
 const COMPANY_STRUCTURE_NAV_ITEMS: NavItem[] = [
@@ -89,11 +88,7 @@ const COMPANY_STRUCTURE_NAV_ITEMS: NavItem[] = [
   { label: "Sections", path: "/structure/list?type=section", icon: Building2, minOrgLevel: 0 },
 ];
 const COMPANY_USER_NAV_ITEMS: NavItem[] = [
-  { label: "Cluster Heads", path: "/users/list?type=cluster-heads", icon: Users, minOrgLevel: 4 },
-  { label: "Factory Heads", path: "/users/list?type=factory-heads", icon: Users, minOrgLevel: 3 },
-  { label: "Unit Heads", path: "/users/list?type=unit-heads", icon: Users, minOrgLevel: 2 },
-  { label: "Department Heads", path: "/users/list?type=department-heads", icon: Users, minOrgLevel: 1 },
-  { label: "Section Heads", path: "/users/list?type=section-heads", icon: Users, minOrgLevel: 0 },
+  { label: "Organization Users", path: "/users/list?type=organization-users", icon: Users },
 ];
 
 // Audit Firm: Audit Firm Company=6, Branch=3, Audit Firm Department=1 (distinct levels — no shared-level ambiguity)
@@ -104,8 +99,7 @@ const AUDIT_FIRM_STRUCTURE_NAV_ITEMS: NavItem[] = [
   { label: "Departments", path: "/structure/list?type=audit-firm-department", icon: Building2, minOrgLevel: 1 },
 ];
 const AUDIT_FIRM_USER_NAV_ITEMS: NavItem[] = [
-  { label: "Branch Heads", path: "/users/list?type=branch-heads", icon: Users, minOrgLevel: 3 },
-  { label: "Department Heads", path: "/users/list?type=audit-firm-department-heads", icon: Users, minOrgLevel: 1 },
+  { label: "Organization Users", path: "/users/list?type=organization-users", icon: Users },
 ];
 
 function stripOrgLevel(items: NavItem[]): NavItem[] {
@@ -219,10 +213,10 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
     ]},
     { type: "link", label: "Help", path: "/settings/help", icon: HelpCircle },
   ],
-  entity_head: [
+  organization_user: [
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-    { type: "link", label: "Audits", path: "/entity-head/audits", icon: FileCheck, matchPrefix: true },
-    { type: "link", label: "CAPs", path: "/entity-head/caps", icon: ClipboardList, matchPrefix: true },
+    { type: "link", label: "Audits", path: "/organization-user/audits", icon: FileCheck, matchPrefix: true },
+    { type: "link", label: "CAPs", path: "/organization-user/caps", icon: ClipboardList, matchPrefix: true },
     { type: "link", label: "Help", path: "/settings/help", icon: HelpCircle },
   ],
   audito_admin: [
@@ -242,12 +236,13 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
   ],
 };
 
-const ACCOUNT_LABELS: Record<string, string> = {
-  Customer: "Customer", Company: "Company", "Audit Firm": "Audit Firm",
-};
 const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin", auditor: "Auditor", entity_head: "Entity Head", audito_admin: "Audito Admin",
+  admin: "Admin", auditor: "Auditor", organization_user: "Organization User", audito_admin: "Audito Admin",
 };
+
+function getRoleLabel(role: string, userType?: string | null): string {
+  return ROLE_LABELS[role] || userType || role;
+}
 
 function resolveNavKey(role: string, accountType?: string | null): string {
   if (role === "audito_admin") return "audito_admin";
@@ -388,7 +383,7 @@ function AccountSwitcher({ accounts, currentRole, onSwitch }: {
               </div>
               <div className="space-y-2">
                 {otherAccounts.map((acct) => {
-                  const label = acct.role === "admin" ? acct.entity_type || acct.account_type || "Admin" : acct.user_type || ROLE_LABELS[acct.role] || acct.role;
+                  const label = getRoleLabel(acct.role, acct.user_type);
                   return (
                     <div key={acct.role} className="flex items-center gap-3 p-2 rounded-lg bg-white/5">
                       <Avatar
@@ -427,7 +422,7 @@ function AccountSwitcher({ accounts, currentRole, onSwitch }: {
               />
               <div>
                 <p className="text-sm text-white font-medium">{modalAccount.first_name} {modalAccount.last_name}</p>
-                <p className="text-xs text-gray-500">{modalRole === "admin" ? modalAccount.entity_type || modalAccount.account_type || "Admin" : modalAccount.user_type || ROLE_LABELS[modalRole] || modalRole}</p>
+                <p className="text-xs text-gray-500">{getRoleLabel(modalRole, modalAccount.user_type)}</p>
               </div>
             </div>
             <p className="text-sm text-gray-400 mb-4">Enter the password for this account to switch.</p>
@@ -635,11 +630,6 @@ export default function Sidebar() {
         const companyItem: NavItem = { label: "Company", path: "/structure/list?type=company", icon: Building2 };
         return { ...entry, items: [...coreItems, companyItem, ...stripOrgLevel(COMPANY_STRUCTURE_NAV_ITEMS), ...orgItems] };
       }
-      if (entry.label === "Users") {
-        // Linked Company's admin shown as a read-only "Company Head" + company sub-heads.
-        const companyHeadItem: NavItem = { label: "Company Heads", path: "/users/list?type=company-heads", icon: Users };
-        return { ...entry, items: [...entry.items, companyHeadItem, ...stripOrgLevel(COMPANY_USER_NAV_ITEMS)] };
-      }
       return entry;
     });
   }, [navKey, hasCompanyLink, admin?.entity_type]);
@@ -647,9 +637,7 @@ export default function Sidebar() {
   if (isLoading || !admin) return null;
 
   const orgLevel = admin.org_level ?? Infinity;
-  const accountLabel = admin.role === "admin"
-    ? admin.entity_type || admin.account_type || "Admin"
-    : admin.user_type ?? ROLE_LABELS[admin.role] ?? admin.role;
+  const accountLabel = getRoleLabel(admin.role, admin.user_type);
 
   const closeMobile = () => setSidebarOpen(false);
   const closeFlyout = () => setFlyoutSectionLabel(null);

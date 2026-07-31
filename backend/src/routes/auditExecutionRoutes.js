@@ -6,7 +6,7 @@ const ctrl = require('../controllers/auditExecutionController');
 router.use(authenticate);
 
 // Auditor's assigned audits
-router.get('/my-audits', authorize('auditor', 'entity_head'), ctrl.listMyAudits);
+router.get('/my-audits', authorize('auditor', 'organization_user'), ctrl.listMyAudits);
 
 // Corrective actions (CAP-required questions)
 router.get('/:id/corrective-actions', authorize('auditor'), ctrl.getCorrectiveActions);
