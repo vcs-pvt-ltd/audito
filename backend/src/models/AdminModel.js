@@ -6,6 +6,11 @@
  */
 
 const { db } = require('../config/db');
+const crypto = require('crypto');
+
+const consumedVerificationToken = (token) => (
+  `verified:${crypto.createHash('sha256').update(String(token), 'utf8').digest('hex')}`
+);
 
 const AdminModel = {
 
@@ -38,6 +43,19 @@ const AdminModel = {
     return rows[0] || null;
   },
 
+  // Includes inactive workspace owners, since paid custom-plan accounts remain
+  // inactive until their manual payment approval is completed.
+  async findPaymentOwnerByEntityCode(entity_code) {
+    const [rows] = await db.query(
+      `SELECT * FROM admins
+       WHERE entity_code = ? AND role = 'admin'
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [entity_code]
+    );
+    return rows[0] || null;
+  },
+
   async updateLastLogin(admin_id) {
     await db.query('UPDATE admins SET last_login = CURRENT_TIMESTAMP WHERE admin_id = ?', [admin_id]);
   },
@@ -63,8 +81,19 @@ const AdminModel = {
     return rows[0] || null;
   },
 
-  async markAsVerified(admin_id) {
-    await db.query('UPDATE admins SET is_verified = TRUE, verification_token = NULL WHERE admin_id = ?', [admin_id]);
+  async findByConsumedVerificationToken(token) {
+    const [rows] = await db.query(
+      'SELECT * FROM admins WHERE verification_token = ? AND is_verified = TRUE LIMIT 1',
+      [consumedVerificationToken(token)]
+    );
+    return rows[0] || null;
+  },
+
+  async markAsVerified(admin_id, token = null) {
+    await db.query(
+      'UPDATE admins SET is_verified = TRUE, verification_token = ? WHERE admin_id = ?',
+      [token ? consumedVerificationToken(token) : null, admin_id]
+    );
   },
 
   async getOnboardingStatus(admin_id) {

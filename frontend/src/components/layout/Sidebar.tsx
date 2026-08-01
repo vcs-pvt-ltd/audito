@@ -488,10 +488,11 @@ export default function Sidebar() {
     if (notice?.type === "field_visit_assigned") return "/my-learning/field-visits";
     if (notice?.type === "evaluation_assigned") return "/my-learning/evaluation-papers";
     if (notice?.type === "subscription_expiry") return "/settings/billing";
+    if (notice?.type === "manual_payment_approval_requested") return "/admin-panel/payments";
     if (notice?.type === "cap_created" || notice?.type === "sub_cap_created") {
       return admin?.role === "admin" || admin?.role === "audito_admin" ? "/caps" : "/my-caps";
     }
-    return "/dashboard";
+    return admin?.role === "audito_admin" ? "/admin-panel/dashboard" : "/dashboard";
   };
 
   useEffect(() => {

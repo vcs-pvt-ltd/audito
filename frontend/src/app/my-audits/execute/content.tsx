@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditExecutionApi } from "@/lib/api";
+import { isPastAuditEndDate } from "@/lib/auditSchedule";
 import { useExecution } from "@/context/ExecutionContext";
 
 // Shared utilities
@@ -826,6 +827,11 @@ export default function MyAuditExecutePage() {
       if (res.success && res.data) {
         const data = res.data as { audit: AuditDetail };
         const auditData = data.audit;
+        if (auditData.status !== "completed" && isPastAuditEndDate(auditData.end_date)) {
+          router.replace(`/my-audits/details?id=${auditId}`);
+          setLoading(false);
+          return;
+        }
         setAudit(auditData);
 
         // Build entity tree from audit entities
@@ -856,7 +862,7 @@ export default function MyAuditExecutePage() {
       setError("Network error.");
     }
     setLoading(false);
-  }, [accessToken, auditId]);
+  }, [accessToken, auditId, router]);
 
   useEffect(() => { loadAudit(); }, [loadAudit]);
   useEffect(() => { contentRef.current?.scrollTo(0, 0); }, [stepHistory]);

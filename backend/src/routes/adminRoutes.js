@@ -90,5 +90,6 @@ router.get('/organizations', adminController.listOrganizations);
 
 // Payment transactions
 router.get('/payments', adminController.listPayments);
+router.post('/payments/:transactionId/approve', adminController.approveManualPayment);
 
 module.exports = router;

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { capApi } from "@/lib/api";
 import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
-import { IconButton } from "@/components/ui";
+import { Button, IconButton } from "@/components/ui";
 import {
   AlertCircle,
   ArrowLeft,
@@ -357,6 +357,7 @@ export default function OrganizationUserCapPreviewPage() {
   const [responsesByQuestion, setResponsesByQuestion] = useState<Record<string, CapResponse>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [hasCorrectiveActions, setHasCorrectiveActions] = useState(false);
 
   useEffect(() => {
     if (!isLoading && (!admin || admin.role !== "organization_user")) router.push("/login");
@@ -367,15 +368,20 @@ export default function OrganizationUserCapPreviewPage() {
     setLoading(true);
     setError("");
     try {
-      const [itemsRes, detailRes] = await Promise.all([
+      const [itemsRes, detailRes, correctiveActionsRes] = await Promise.all([
         capApi.getItems(accessToken, capId),
         capApi.get(accessToken, capId),
+        capApi.getCorrectiveActions(accessToken, capId),
       ]);
 
       if (detailRes.success && detailRes.data) {
         setCap((detailRes.data as any).cap || null);
       } else {
         setError(detailRes.message || "CAP not found.");
+      }
+
+      if (correctiveActionsRes.success && correctiveActionsRes.data) {
+        setHasCorrectiveActions(((correctiveActionsRes.data as any).corrective_actions || []).length > 0);
       }
 
       if (!itemsRes.success || !itemsRes.data) {
@@ -427,11 +433,12 @@ export default function OrganizationUserCapPreviewPage() {
   return (
     <div className="h-screen bg-transparent flex">
       <main className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto">
-        <div className="flex items-center gap-3 mb-6">
-          <IconButton bordered onClick={() => router.push("/organization-user/caps")}>
-            <ArrowLeft size={16} />
-          </IconButton>
-          <div className="min-w-0">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <IconButton bordered onClick={() => router.push("/organization-user/caps")}>
+              <ArrowLeft size={16} />
+            </IconButton>
+            <div className="min-w-0">
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               <ClipboardList size={22} className="text-secondary-400" />
               CAP Preview
@@ -441,7 +448,13 @@ export default function OrganizationUserCapPreviewPage() {
                 {cap.title}
               </p>
             )}
+            </div>
           </div>
+          {hasCorrectiveActions && (
+            <Button leftIcon={<ClipboardList size={17}/>} onClick={() => router.push(`/organization-user/caps/corrective-actions?id=${capId}`)}>
+              Corrective Actions
+            </Button>
+          )}
         </div>
 
         {loading ? (

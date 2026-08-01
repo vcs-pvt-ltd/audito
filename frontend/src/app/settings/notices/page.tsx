@@ -23,6 +23,7 @@ import {
   Building2,
 } from "lucide-react";
 import { Button, IconButton, Modal, Input, Textarea, Table, THead, Th, TBody, Tr, Td } from "@/components/ui";
+import EmptyState from "@/components/shared/EmptyState";
 
 interface AuditorOption {
   id: number;
@@ -353,16 +354,7 @@ export default function SettingsNoticesPage() {
             <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : notices.length === 0 ? (
-          <div className="glass rounded-xl p-16 text-center border border-white/5">
-             <div className="w-16 h-16 rounded-2xl bg-secondary-500/10 flex items-center justify-center mx-auto mb-4">
-               <Bell size={32} className="text-gray-600" />
-            </div>
-            <p className="text-white font-semibold text-lg mb-2">No Active Notices</p>
-            <p className="text-gray-400 text-sm max-w-sm mx-auto mb-6">Create and send announcements to your auditors.</p>
-             <Button onClick={() => setAddOpen(true)} leftIcon={<Plus size={16} />}>
-              Create Notice
-            </Button>
-          </div>
+          <EmptyState icon={Bell} title="No active notices" message="Create and send announcements to your auditors." action={<Button onClick={() => setAddOpen(true)} leftIcon={<Plus size={16} />}>Create notice</Button>} />
         ) : (
           <>
             {/* Desktop Table View */}

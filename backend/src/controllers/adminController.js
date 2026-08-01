@@ -7,7 +7,8 @@ const PlanSettingsModel = require('../models/PlanSettingsModel');
 const PromotionCampaignModel = require('../models/PromotionCampaignModel');
 const PrivacyPolicyModel = require('../models/PrivacyPolicyModel');
 const { db } = require('../config/db');
-const { sendContactReplyEmail, sendVerificationEmail, sendCustomSolutionPriceEmail } = require('../services/emailService');
+const { sendContactReplyEmail, sendVerificationEmail, sendCustomSolutionPriceEmail, sendManualPaymentApprovedEmail } = require('../services/emailService');
+const { settleVerifiedPayment } = require('../services/paymentSettlementService');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -668,6 +669,7 @@ const listPayments = async (req, res) => {
     const [rows] = await db.query(`
       SELECT
         pt.payment_transaction_id AS transaction_id,
+        pt.payment_code,
         pt.amount,
         pt.currency,
         pt.status,
@@ -679,6 +681,12 @@ const listPayments = async (req, res) => {
         pt.invoice_number,
         pt.paid_at,
         pt.created_at,
+        pt.manual_approval_status,
+        pt.manual_approval_requested_at,
+        pt.manual_approval_reviewed_at,
+        pt.manual_approval_reviewed_by,
+        reviewer.first_name AS approval_reviewer_first_name,
+        reviewer.last_name AS approval_reviewer_last_name,
         a.first_name AS admin_first_name,
         a.last_name AS admin_last_name,
         a.email AS admin_email,
@@ -689,6 +697,7 @@ const listPayments = async (req, res) => {
         ) AS org_name_resolved
       FROM payment_transactions pt
       LEFT JOIN admins a ON a.entity_code = pt.root_entity_code
+      LEFT JOIN admins reviewer ON reviewer.admin_id = pt.manual_approval_reviewed_by
       LEFT JOIN companies comp ON comp.comp_code = pt.root_entity_code
       LEFT JOIN customers cus ON cus.cust_code = pt.root_entity_code
       LEFT JOIN customer_suppliers csup ON csup.csup_code = pt.root_entity_code
@@ -709,6 +718,47 @@ const listPayments = async (req, res) => {
   }
 };
 
+const approveManualPayment = async (req, res) => {
+  try {
+    const payment = await PaymentModel.findByTransactionId(req.params.transactionId);
+    if (!payment) return errorResponse(res, 'Payment not found.', 404);
+
+    if (payment.status === 'paid') {
+      return successResponse(res, { payment }, 'Payment is already completed.');
+    }
+    if (payment.manual_approval_status !== 'requested') {
+      return errorResponse(res, 'This payment has not been submitted for manual approval.', 409);
+    }
+    if (payment.status !== 'pending') {
+      return errorResponse(res, 'This payment is already being processed.', 409);
+    }
+
+    const result = await settleVerifiedPayment(payment, {
+      gateway: 'manual_admin',
+      gatewayReference: `MANUAL-${payment.payment_transaction_id}`,
+      manualApprovalReviewedBy: req.user.userCode,
+    });
+
+    if (result.processing) {
+      return errorResponse(res, 'This payment is already being processed.', 409);
+    }
+
+    if (payment.payer_email && !result.alreadyCompleted) {
+      sendManualPaymentApprovedEmail(payment.payer_email, payment.payer_name, result.payment)
+        .catch((emailError) => console.error('Failed to send manual payment approval email:', emailError.message));
+    }
+
+    return successResponse(res, {
+      payment: result.payment,
+      credit_applied: result.creditApplied || 0,
+      net_amount: result.netAmount ?? Number(payment.amount),
+    }, result.alreadyCompleted ? 'Payment is already completed.' : 'Payment approved and subscription activated.');
+  } catch (error) {
+    console.error('Approve manual payment error:', error);
+    return errorResponse(res, 'Failed to approve payment.', 500);
+  }
+};
+
 module.exports = {
   listMessages,
   replyMessage,
@@ -726,6 +776,7 @@ module.exports = {
   getDashboardStats,
   listOrganizations,
   listPayments,
+  approveManualPayment,
   listPlanSettings,
   updatePlanSettings,
   createPlanSettings,

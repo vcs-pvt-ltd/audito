@@ -65,6 +65,7 @@ export default function OrganizationUserCapsPage() {
   const [q, setQ] = useState("");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
+  const [sortBy, setSortBy] = useState("newest");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -105,16 +106,29 @@ export default function OrganizationUserCapsPage() {
     });
   }, [caps, filter, q, fromDate, toDate]);
 
+  const sorted = useMemo(() => [...filtered].sort((a, b) => {
+    if (sortBy === "title") return (a.title || "").localeCompare(b.title || "");
+    const aTotal = a.total_questions || 0;
+    const bTotal = b.total_questions || 0;
+    const aProgress = typeof a.progress_pct === "number" ? a.progress_pct : (aTotal > 0 ? ((a.completed_questions ?? a.answered_questions ?? 0) / aTotal) * 100 : 0);
+    const bProgress = typeof b.progress_pct === "number" ? b.progress_pct : (bTotal > 0 ? ((b.completed_questions ?? b.answered_questions ?? 0) / bTotal) * 100 : 0);
+    if (sortBy === "progress_desc") return bProgress - aProgress;
+    if (sortBy === "progress_asc") return aProgress - bProgress;
+    const aCreated = new Date(a.created_at || 0).getTime();
+    const bCreated = new Date(b.created_at || 0).getTime();
+    return sortBy === "oldest" ? aCreated - bCreated : bCreated - aCreated;
+  }), [filtered, sortBy]);
+
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, q, fromDate, toDate]);
+  }, [filter, q, fromDate, toDate, sortBy]);
 
-  const totalPages = Math.ceil(filtered.length / pageSize);
+  const totalPages = Math.ceil(sorted.length / pageSize);
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   const counts = {
     all: caps.length,
@@ -183,31 +197,19 @@ export default function OrganizationUserCapsPage() {
         )}
 
         {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-            <input
-              type="text"
-              placeholder="Search plans..."
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-secondary-500/50 transition-all"
-            />
-          </div>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-secondary-500/50 transition-all cursor-pointer"
-            title="From Date"
-          />
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-secondary-500/50 transition-all cursor-pointer"
-            title="To Date"
-          />
+        <div className="mb-6 grid gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="grid gap-1 text-[11px] font-medium text-gray-400">Search CAPs
+            <span className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} /><input type="text" placeholder="CAP or source audit..." value={q} onChange={(e) => setQ(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-10 pr-3 text-sm text-white outline-none focus:border-secondary-500/50" /></span>
+          </label>
+          <label className="grid gap-1 text-[11px] font-medium text-gray-400">Created date from
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white outline-none focus:border-secondary-500/50 [color-scheme:dark]" />
+          </label>
+          <label className="grid gap-1 text-[11px] font-medium text-gray-400">Created date to
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white outline-none focus:border-secondary-500/50 [color-scheme:dark]" />
+          </label>
+          <label className="grid gap-1 text-[11px] font-medium text-gray-400">Sort by
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white outline-none focus:border-secondary-500/50"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="progress_desc">Most progress</option><option value="progress_asc">Least progress</option><option value="title">Title A-Z</option></select>
+          </label>
         </div>
 
         {/* Content */}
@@ -326,7 +328,7 @@ export default function OrganizationUserCapsPage() {
               currentPage={currentPage}
               totalPages={totalPages}
               pageSize={pageSize}
-              totalItems={filtered.length}
+              totalItems={sorted.length}
               onPageChange={setCurrentPage}
               onPageSizeChange={setPageSize}
             />

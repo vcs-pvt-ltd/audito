@@ -87,7 +87,7 @@ export default function LandingAssistant() {
           <header className="flex items-center justify-between border-b border-white/[.09] bg-gradient-to-r from-secondary-500/15 to-transparent px-4 py-3.5">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-secondary-400/25 bg-secondary-500/15 text-secondary-300"><Bot size={19} /></div>
-              <div><h2 className="text-sm font-bold text-white">Audito AI</h2><p className="text-[11px] text-secondary-300">Published knowledge only</p></div>
+              <div><h2 className="text-sm font-bold text-white">Audito AI</h2><p className="text-[11px] text-secondary-300">Online</p></div>
             </div>
             <div className="flex items-center gap-1">
               <button type="button" onClick={reset} title="Start new chat" className="rounded-lg p-2 text-gray-400 transition hover:bg-white/[.07] hover:text-white"><RotateCcw size={15} /></button>

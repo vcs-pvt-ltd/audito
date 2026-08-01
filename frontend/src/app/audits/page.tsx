@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditApi } from "@/lib/api";
+import { isPastAuditEndDate } from "@/lib/auditSchedule";
 import {
   ClipboardCheck,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
   ExternalLink,
   Crown,
   BarChart3,
+  AlertTriangle,
 } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { structureApi, usersApi } from "@/lib/api";
@@ -420,6 +422,7 @@ export default function AuditsPage() {
                 <tbody className="divide-y divide-white/[0.06]">
                   {paginated.map((a, index) => {
                     const pct = a.progress_pct || 0;
+                    const isOverdue = ["plan", "in_progress"].includes(a.status) && isPastAuditEndDate(a.end_date);
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
                     return (
                       <tr
@@ -461,8 +464,9 @@ export default function AuditsPage() {
                         </>
                         )}
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-medium ${STATUS_BADGE[a.status] || ""}`}>
-                            {STATUS_LABEL[a.status] || a.status}
+                          <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-medium ${isOverdue ? "bg-red-500/15 text-red-400 border-red-500/20" : STATUS_BADGE[a.status] || ""}`}>
+                            {isOverdue && <AlertTriangle size={11} />}
+                            {isOverdue ? "Overdue" : STATUS_LABEL[a.status] || a.status}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -538,6 +542,7 @@ export default function AuditsPage() {
             <div className="md:hidden space-y-3">
               {paginated.map((a, index) => {
                 const pct = a.progress_pct || 0;
+                const isOverdue = ["plan", "in_progress"].includes(a.status) && isPastAuditEndDate(a.end_date);
                 const itemIndex = (currentPage - 1) * pageSize + index + 1;
                 return (
                   <div key={a.audit_id} className="glass rounded-xl border border-white/10 p-4 cursor-pointer" onClick={() => router.push(`/audits/details?id=${a.audit_id}`)}>
@@ -551,8 +556,9 @@ export default function AuditsPage() {
                           {a.title}
                         </button>
                       </div>
-                      <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-medium ${STATUS_BADGE[a.status] || ""}`}>
-                        {STATUS_LABEL[a.status] || a.status}
+                      <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-medium ${isOverdue ? "bg-red-500/15 text-red-400 border-red-500/20" : STATUS_BADGE[a.status] || ""}`}>
+                        {isOverdue && <AlertTriangle size={11} />}
+                        {isOverdue ? "Overdue" : STATUS_LABEL[a.status] || a.status}
                       </span>
                     </div>
 
@@ -561,6 +567,7 @@ export default function AuditsPage() {
                         {AUDIT_TYPE_LABEL[a.audit_type] || a.audit_type}
                       </span>}
                       <span className="text-xs text-gray-400">{fmtDate(a.start_date)} - {fmtDate(a.end_date)}</span>
+                      {isOverdue && <span className="text-[10px] font-bold text-red-400">END DATE PASSED</span>}
                     </div>
 
                     {/* Show Budget and Workers in Mobile view */}

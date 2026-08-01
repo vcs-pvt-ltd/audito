@@ -328,7 +328,7 @@ export default function MyTrainingsPage() {
 
       {loading ? <div className="flex justify-center py-20"><div className="h-8 w-8 animate-spin rounded-full border-2 border-secondary-400 border-t-transparent" /></div>
         : items.length === 0 ? <EmptyState icon={Play} title="No trainings assigned" message="Trainings assigned to you will appear here once your organization adds them." />
-          : filtered.length === 0 ? <div className="glass rounded-xl p-16 text-center"><Play size={36} className="mx-auto mb-4 text-gray-600" /><p className="mb-1 font-medium text-white">No matching trainings</p><p className="text-sm text-gray-400">Try adjusting your search query.</p></div>
+          : filtered.length === 0 ? <EmptyState icon={Play} title="No matching trainings" message="Try adjusting your search query." />
             : <div className="space-y-4">
               <div className="hidden lg:block"><Table className="text-left"><THead><Th>Training</Th><Th align="center">Progress</Th><Th align="center">Status</Th><Th align="right">Action</Th></THead><tbody className="divide-y divide-white/5">
                 {paginated.map((training) => {

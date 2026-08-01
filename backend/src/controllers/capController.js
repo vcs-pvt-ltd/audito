@@ -411,20 +411,40 @@ const listCapsByAudit = async (req, res) => {
 const getCorrectiveActions = async (req, res) => {
   try {
     const { id } = req.params;
+    const cap = await CapModel.getCapById(id);
+    if (!cap) return errorResponse(res, 'CAP not found.', 404);
+
+    const entities = await CapModel.getCapEntities(id);
+    const audit = await AuditModel.findById(cap.audit_id);
+    const isAuditor = req.user.role === 'auditor' && audit?.assigned_auditor_id === req.user.userCode;
+    const scope = req.user.role === 'organization_user'
+      ? await getOrganizationUserScope(req.user)
+      : { orgTreeIds: [], entityCodes: [] };
+    const isOrganizationUser = req.user.role === 'organization_user'
+      && auditEntitiesInScope(entities, scope.orgTreeIds, scope.entityCodes);
+
+    if (req.user.role !== 'admin' && !isAuditor && !isOrganizationUser) {
+      return errorResponse(res, 'Not authorized.', 403);
+    }
+
     let [items, corrective_actions, tree] = await Promise.all([
       CapModel.getCapCorrectiveActionItems(id),
       CapModel.getCapCorrectiveActions(id),
       CapModel.getCapEntityTree(id),
     ]);
     if (req.user.role === 'organization_user') {
-      const scope = await getOrganizationUserScope(req.user);
       items = items.filter((item) => auditEntitiesInScope([item], scope.orgTreeIds, scope.entityCodes));
       corrective_actions = corrective_actions.filter((action) =>
         auditEntitiesInScope([action], scope.orgTreeIds, scope.entityCodes)
       );
       tree = extractOrganizationUserTree(tree, scope.orgTreeIds, scope.entityCodes);
     }
-    return successResponse(res, { items, corrective_actions, tree });
+    return successResponse(res, {
+      cap: { cap_id: cap.cap_id, title: cap.title, status: cap.status },
+      items,
+      corrective_actions,
+      tree,
+    });
   } catch (err) {
     console.error('getCorrectiveActions error:', err);
     return errorResponse(res, 'Failed to fetch corrective actions.', 500);

@@ -1423,6 +1423,10 @@ CREATE TABLE `payment_transactions` (
   `gateway` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `gateway_reference` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `gateway_status` varchar(64) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `manual_approval_status` enum('not_requested','requested','approved') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'not_requested',
+  `manual_approval_requested_at` datetime DEFAULT NULL,
+  `manual_approval_reviewed_at` datetime DEFAULT NULL,
+  `manual_approval_reviewed_by` varchar(20) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `gateway_attempt_id` varchar(64) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `initiated_at` datetime DEFAULT NULL,
   `failed_at` datetime DEFAULT NULL,
@@ -2276,6 +2280,8 @@ ALTER TABLE `payment_transactions`
   ADD KEY `idx_status` (`status`),
   ADD KEY `idx_payment_gateway_reference` (`gateway`,`gateway_reference`),
   ADD KEY `idx_payment_status_created` (`status`,`created_at`),
+  ADD KEY `idx_payment_manual_approval_queue` (`manual_approval_status`,`status`,`manual_approval_requested_at`),
+  ADD KEY `idx_payment_manual_approval_reviewer` (`manual_approval_reviewed_by`),
   ADD KEY `idx_payment_transactions_promotion_campaign` (`promotion_campaign_id`);
 
 --

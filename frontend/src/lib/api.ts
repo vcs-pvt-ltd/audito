@@ -1430,6 +1430,15 @@ export interface PaymentDetails {
   list_amount?: number;
   promotion_discount_amount?: number;
   promotion_campaign_id?: string | null;
+  manual_approval_status?: "not_requested" | "requested" | "approved";
+  manual_approval_requested_at?: string | null;
+  manual_approval_reviewed_at?: string | null;
+}
+
+export interface PaymentPageData {
+  payment: PaymentDetails;
+  payment_mode: "manual_approval" | "gateway";
+  payment_contact_email: string;
 }
 
 export interface SavedPaymentMethod {
@@ -1488,6 +1497,7 @@ export interface AdminDashboardStats {
 
 export interface AdminPayment {
   transaction_id: string;
+  payment_code: string;
   amount: number;
   currency: string;
   status: string;
@@ -1504,6 +1514,12 @@ export interface AdminPayment {
   admin_last_name: string | null;
   admin_email: string | null;
   entity_type: string | null;
+  manual_approval_status: "not_requested" | "requested" | "approved";
+  manual_approval_requested_at: string | null;
+  manual_approval_reviewed_at: string | null;
+  manual_approval_reviewed_by: string | null;
+  approval_reviewer_first_name: string | null;
+  approval_reviewer_last_name: string | null;
 }
 
 export interface RegisteredOrganization {
@@ -1527,11 +1543,11 @@ export interface RegisteredOrganization {
 
 export const paymentApi = {
   // Public — payment page lookup & confirmation (temporary; gateway webhook later)
-  get: (code: string) => apiRequest<{ payment: PaymentDetails }>(`/payments/${code}`),
+  get: (code: string) => apiRequest<PaymentPageData>(`/payments/${code}`),
   initiate: (code: string, body: { save_payment_method?: boolean } = {}) =>
     apiRequest<{ payment: PaymentDetails; checkout: { action: string; method: "GET" | "POST"; fields: Record<string, string> } }>(`/payments/${code}/initiate`, { method: "POST", body }),
-  temporaryAccept: (code: string) =>
-    apiRequest<{ payment: PaymentDetails }>(`/payments/${code}/temporary-accept`, { method: "POST" }),
+  requestManualApproval: (code: string) =>
+    apiRequest<PaymentPageData>(`/payments/${code}/manual-approval-request`, { method: "POST" }),
 
   // Authenticated (admin)
   checkout: (token: string, body: { plan_name: string; billing_cycle: string; purpose: "upgrade" | "renewal" }) =>
@@ -1782,4 +1798,6 @@ export const adminApi = {
   // Payment transactions
   listPayments: (token: string) =>
     apiRequest<AdminPayment[]>("/admin/payments", { token }),
+  approvePayment: (token: string, transactionId: string) =>
+    apiRequest<{ payment: PaymentDetails; credit_applied: number; net_amount: number }>(`/admin/payments/${transactionId}/approve`, { method: "POST", token }),
 };

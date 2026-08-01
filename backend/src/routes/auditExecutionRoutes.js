@@ -9,7 +9,7 @@ router.use(authenticate);
 router.get('/my-audits', authorize('auditor', 'organization_user'), ctrl.listMyAudits);
 
 // Corrective actions (CAP-required questions)
-router.get('/:id/corrective-actions', authorize('auditor'), ctrl.getCorrectiveActions);
+router.get('/:id/corrective-actions', authorize('auditor', 'admin', 'organization_user'), ctrl.getCorrectiveActions);
 router.put('/:id/corrective-actions', authorize('auditor'), ctrl.saveCorrectiveActions);
 
 // Audit detail (auditor or admin)

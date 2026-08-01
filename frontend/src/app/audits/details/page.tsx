@@ -415,6 +415,7 @@ function AuditDetailsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [hasCorrectiveActions, setHasCorrectiveActions] = useState(false);
   
   const [stepHistory, setStepHistory] = useState<AuditPreviewStep[]>([
     { mode: "cards", parentCode: null, parentOrgTreeId: null },
@@ -425,11 +426,12 @@ function AuditDetailsContent() {
 
     try {
       setLoading(true);
-      const [detailRes, itemsRes, responsesRes, treeRes] = await Promise.all([
+      const [detailRes, itemsRes, responsesRes, treeRes, correctiveActionsRes] = await Promise.all([
         auditApi.get(accessToken, auditId),
         auditExecutionApi.getDetail(accessToken, auditId),
         auditExecutionApi.getResponses(accessToken, auditId),
         auditExecutionApi.getEntityTree(accessToken, auditId),
+        auditExecutionApi.getCorrectiveActions(accessToken, auditId),
       ]);
       
       if (detailRes.success && detailRes.data) {
@@ -459,6 +461,10 @@ function AuditDetailsContent() {
 
       if (treeRes.success && treeRes.data) {
         setTree((treeRes.data as any).tree || null);
+      }
+
+      if (correctiveActionsRes.success && correctiveActionsRes.data) {
+        setHasCorrectiveActions(((correctiveActionsRes.data as any).corrective_actions || []).length > 0);
       }
     } catch (err) {
       console.error("Error fetching audit details:", err);
@@ -565,7 +571,14 @@ function AuditDetailsContent() {
                   <h2 className="text-2xl font-bold text-white mb-2">{audit.title}</h2>
                   <p className="text-sm text-gray-400 max-w-2xl">Open the question preview to review recorded answers, scores, evidence, and corrective actions.</p>
                 </div>
-                <Button leftIcon={<Eye size={18}/>} onClick={() => setShowPreview(true)}>Preview Questions</Button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {hasCorrectiveActions && (
+                    <Button variant="secondary" leftIcon={<ClipboardList size={18}/>} onClick={() => router.push(`/audits/corrective-actions?id=${audit.audit_id}`)}>
+                      Corrective Actions
+                    </Button>
+                  )}
+                  <Button leftIcon={<Eye size={18}/>} onClick={() => setShowPreview(true)}>Preview Questions</Button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">

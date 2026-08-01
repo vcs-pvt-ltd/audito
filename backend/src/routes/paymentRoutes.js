@@ -10,10 +10,10 @@ router.get('/methods', authenticate, authorize('admin'), paymentController.listP
 router.post('/methods/:id/default', authenticate, authorize('admin'), paymentController.setDefaultPaymentMethod);
 router.delete('/methods/:id', authenticate, authorize('admin'), paymentController.deletePaymentMethod);
 
-// Public — payment page lookup & confirmation (temporary; gateway webhook later)
+// Public payment-page lookup, manual-review request, and gateway callbacks.
 router.post('/sampath/webhook', paymentController.handleSampathWebhook);
 router.all('/sampath/return', paymentController.handleSampathReturn);
-router.post('/:code/temporary-accept', paymentController.temporarilyAcceptPayment);
+router.post('/:code/manual-approval-request', paymentController.requestManualApproval);
 router.post('/:code/initiate', paymentController.initiatePayment);
 router.get('/:code', paymentController.getPayment);
 // Kept temporarily for older clients; it no longer has a route that can mark payment paid.

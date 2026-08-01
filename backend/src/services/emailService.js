@@ -563,6 +563,31 @@ const sendSubscriptionExpiryReminderEmail = async (toEmail, adminName, { planNam
   await transporter.sendMail({ from: `"Audito" <${process.env.EMAIL_USER}>`, to: toEmail, subject: `Audito - Your ${planName} plan expires in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`, html, attachments });
 };
 
+const sendManualPaymentApprovedEmail = async (toEmail, customerName, payment) => {
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const paymentUrl = `${baseUrl}/payment?code=${encodeURIComponent(payment.payment_code)}`;
+  const safeName = escapeHtml(customerName || 'there');
+  const safePlan = escapeHtml(payment.plan_name || 'selected');
+  const safeCycle = escapeHtml(payment.billing_cycle || '');
+  const { html, attachments } = getEmailTemplate({
+    title: 'Payment Approved',
+    subtitle: 'Your Audito subscription is now active',
+    content: `
+      <p style="color:#333;font-size:16px;">Hi ${safeName},</p>
+      <p style="color:#555;font-size:14px;line-height:1.6;">Audito has verified your payment and activated your <strong>${safePlan}</strong> ${safeCycle ? `(${safeCycle})` : ''} subscription.</p>
+      <div style="text-align:center;margin:26px 0;"><a href="${paymentUrl}" style="background-color:#12B572;color:white;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;display:inline-block;">View Payment Confirmation</a></div>
+      <p style="color:#888;font-size:12px;line-height:1.5;">You can now sign in and use your Audito workspace.</p>
+    `,
+  });
+  await transporter.sendMail({
+    from: `"Audito" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: 'Audito - Payment Approved',
+    html,
+    attachments,
+  });
+};
+
 module.exports = {
   sendVerificationEmail,
   sendUserInvitationEmail,
@@ -578,4 +603,5 @@ module.exports = {
   sendCustomSolutionPriceEmail,
   sendCustomSolutionRequestEmail,
   sendSubscriptionExpiryReminderEmail,
+  sendManualPaymentApprovedEmail,
 };
