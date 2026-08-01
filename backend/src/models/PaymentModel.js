@@ -67,6 +67,14 @@ const PaymentModel = {
     return rows[0] || null;
   },
 
+  async findByTransactionId(paymentTransactionId) {
+    const [rows] = await db.query(
+      `SELECT * FROM payment_transactions WHERE payment_transaction_id = ? LIMIT 1`,
+      [paymentTransactionId]
+    );
+    return rows[0] || null;
+  },
+
   // Latest still-pending transaction of a given purpose for an org — used so a
   // renewal attempt reuses one pending record instead of spawning duplicates.
   async findPendingByOrgPurpose(rootEntityCode, purpose) {
@@ -79,17 +87,46 @@ const PaymentModel = {
     return rows[0] || null;
   },
 
-  async markPaid(payment_transaction_id, { periodStart, periodEnd, gateway = 'manual', gatewayReference = null }) {
+  async markPaid(payment_transaction_id, {
+    periodStart,
+    periodEnd,
+    gateway = 'manual',
+    gatewayReference = null,
+    manualApprovalReviewedBy = null,
+  }) {
     const year = new Date().getFullYear();
     const invoiceNumber = `INV-${year}-${String(payment_transaction_id).padStart(6, '0')}`;
     await db.query(
       `UPDATE payment_transactions
        SET status = 'paid', invoice_number = ?, gateway = ?, gateway_reference = ?, gateway_status = 'paid',
-           period_start = ?, period_end = ?, paid_at = NOW()
+           period_start = ?, period_end = ?, paid_at = NOW(),
+           manual_approval_status = CASE WHEN ? IS NOT NULL THEN 'approved' ELSE manual_approval_status END,
+           manual_approval_reviewed_at = CASE WHEN ? IS NOT NULL THEN NOW() ELSE manual_approval_reviewed_at END,
+           manual_approval_reviewed_by = COALESCE(?, manual_approval_reviewed_by)
        WHERE payment_transaction_id = ? AND status = 'processing'`,
-      [invoiceNumber, gateway, gatewayReference, periodStart, periodEnd, payment_transaction_id]
+      [
+        invoiceNumber, gateway, gatewayReference, periodStart, periodEnd,
+        manualApprovalReviewedBy, manualApprovalReviewedBy, manualApprovalReviewedBy,
+        payment_transaction_id,
+      ]
     );
     return invoiceNumber;
+  },
+
+  /** Moves a pending/failed payment into the Audito Admin manual-review queue. */
+  async requestManualApproval(paymentTransactionId) {
+    const [result] = await db.query(
+      `UPDATE payment_transactions
+       SET status = 'pending', gateway = 'manual_admin', gateway_status = 'awaiting_admin_approval',
+           manual_approval_status = 'requested', manual_approval_requested_at = NOW(),
+           manual_approval_reviewed_at = NULL, manual_approval_reviewed_by = NULL,
+           failure_reason = NULL, failed_at = NULL
+       WHERE payment_transaction_id = ?
+         AND status IN ('pending', 'failed')
+         AND manual_approval_status = 'not_requested'`,
+      [paymentTransactionId]
+    );
+    return result.affectedRows === 1;
   },
 
   async markGatewayInitiated(payment_transaction_id, { gateway, attemptId, savePaymentMethodRequested = false }) {
@@ -147,7 +184,8 @@ const PaymentModel = {
     const [rows] = await db.query(
       `SELECT payment_code, purpose, plan_name, billing_cycle, amount, currency, status,
               payer_name, payer_email, org_name, promotion_campaign_id, list_amount, promotion_discount_amount,
-              invoice_number, period_start, period_end, paid_at, created_at
+              invoice_number, period_start, period_end, paid_at, created_at,
+              manual_approval_status, manual_approval_requested_at, manual_approval_reviewed_at
        FROM payment_transactions
        WHERE root_entity_code = ?
        ORDER BY payment_transaction_id DESC`,

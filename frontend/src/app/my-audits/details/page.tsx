@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditApi, auditExecutionApi } from "@/lib/api";
+import { isPastAuditEndDate } from "@/lib/auditSchedule";
 import Loading from "@/components/shared/Loading";
 import {
   ArrowLeft,
@@ -31,11 +32,13 @@ function ProgressMeter({
   answered,
   total,
   endDate,
+  completed,
 }: {
   pct: number;
   answered: number;
   total: number;
   endDate: string;
+  completed: boolean;
 }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -43,7 +46,7 @@ function ProgressMeter({
   const remaining = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
   const isUrgent = remaining > 0 && remaining <= 5;
-  const isOverdue = remaining <= 0;
+  const isOverdue = !completed && remaining < 0;
 
   const r = 54;
   const cx = 70;
@@ -198,9 +201,11 @@ function MyAuditDetailsContent() {
   const isCompleted = audit.status === "completed";
   const isInProgress = audit.status === "in_progress";
   const isPending = audit.status === "plan" || audit.status === "pending";
+  const isOverdue = !isCompleted && isPastAuditEndDate(audit.end_date);
+  const allAnswered = audit.total_questions > 0 && audit.answered_questions >= audit.total_questions;
 
   const handleStart = async () => {
-    if (!accessToken || !auditId) return;
+    if (!accessToken || !auditId || isOverdue) return;
     setStarting(true);
     const res = await auditExecutionApi.start(accessToken, auditId);
     setStarting(false);
@@ -237,6 +242,20 @@ function MyAuditDetailsContent() {
           </div>
         </div>
 
+        {isOverdue && (
+          <div className="flex items-start gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 p-4">
+            <AlertTriangle size={20} className="mt-0.5 shrink-0 text-red-400" />
+            <div>
+              <p className="text-sm font-bold text-red-300">This audit is overdue</p>
+              <p className="mt-1 text-xs leading-relaxed text-red-200/70">
+                {isInProgress && allAnswered
+                  ? "All questions are answered. You can complete the audit, but responses can no longer be changed."
+                  : "The audit can no longer be started or continued because its end date has passed."}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Info & Progress Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Main Hero Card */}
@@ -249,6 +268,7 @@ function MyAuditDetailsContent() {
                 answered={audit.answered_questions || 0}
                 total={audit.total_questions || 0}
                 endDate={audit.end_date}
+                completed={isCompleted}
               />
               <div className="flex-1 space-y-6 text-center sm:text-left">
                 <div className="grid grid-cols-2 gap-4">
@@ -281,17 +301,31 @@ function MyAuditDetailsContent() {
             {/* Actions */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-white/5">
               {isPending && (
-                <Button fullWidth leftIcon={starting ? undefined : <PlayCircle size={18}/>} loading={starting} onClick={handleStart}>Start Audit</Button>
+                isOverdue ? (
+                  <Button fullWidth disabled leftIcon={<AlertTriangle size={18}/>}>Audit Overdue</Button>
+                ) : (
+                  <Button fullWidth leftIcon={starting ? undefined : <PlayCircle size={18}/>} loading={starting} onClick={handleStart}>Start Audit</Button>
+                )
               )}
               {isInProgress && (
                 <>
-                  <button
-                    onClick={() => router.push(`/my-audits/execute?id=${audit.audit_id}`)}
-                    className="w-full bg-blue-500 hover:bg-blue-400 text-white font-black py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/15"
-                  >
-                    <Zap size={18} /> Continue
-                  </button>
-                  {audit.progress_pct >= 100 && (
+                  {!isOverdue && (
+                    <button
+                      onClick={() => router.push(`/my-audits/execute?id=${audit.audit_id}`)}
+                      className="w-full bg-blue-500 hover:bg-blue-400 text-white font-black py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/15"
+                    >
+                      <Zap size={18} /> Continue
+                    </button>
+                  )}
+                  {isOverdue && !allAnswered && (
+                    <button
+                      disabled
+                      className="w-full bg-red-500/10 text-red-300 font-black py-3 rounded-xl text-sm border border-red-500/20 flex items-center justify-center gap-2 cursor-not-allowed"
+                    >
+                      <AlertTriangle size={18} /> Audit Overdue
+                    </button>
+                  )}
+                  {allAnswered && (
                     <button
                       onClick={() => setCompleteModalOpen(true)}
                       className="w-full bg-emerald-500 hover:bg-emerald-400 text-white font-black py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/15"

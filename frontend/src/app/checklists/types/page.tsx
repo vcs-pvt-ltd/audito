@@ -279,11 +279,7 @@ export default function ChecklistTypesPage() {
             )}
           />
         ) : filteredTypes.length === 0 ? (
-          <div className="glass rounded-xl p-16 text-center">
-            <Search size={36} className="mx-auto mb-4 text-gray-600" />
-            <p className="font-medium text-white">No matching checklist types</p>
-            <p className="mt-1 text-sm text-gray-400">Try a different name or description.</p>
-          </div>
+          <EmptyState icon={Search} title="No matching checklist types" message="Try a different name or description." />
         ) : (
           <>
             <div className="hidden md:block">

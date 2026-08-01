@@ -23,6 +23,7 @@ import { useAuth } from "@/context/AuthContext";
 import { auditApi, checklistApi, usersApi, structureApi, paymentApi, billingCreditsApi, plansApi, type PaymentDetails, type LinkBillingCredit, type SavedPaymentMethod, type PlanCatalog } from "@/lib/api";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui";
+import EmptyState from "@/components/shared/EmptyState";
 
 const PLANS = [
   {
@@ -589,7 +590,7 @@ export default function BillingPage() {
           </div>
         )}
 
-        {payments.length > 0 && (
+        {payments.length > 0 ? (
           <div>
             <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
               <Receipt size={15} className="text-secondary-400" />
@@ -629,6 +630,14 @@ export default function BillingPage() {
                 })}
               </div>
             </div>
+          </div>
+        ) : (
+          <div>
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Receipt size={15} className="text-secondary-400" />
+              Billing History
+            </h2>
+            <EmptyState icon={Receipt} title="No billing history yet" message="Completed and pending subscription payments will appear here." />
           </div>
         )}
 

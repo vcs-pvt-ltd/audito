@@ -635,10 +635,10 @@ const CapModel = {
   async getCapCorrectiveActionItems(cap_id) {
     const [rows] = await db.query(
       `SELECT cr.cap_response_id AS response_id, cr.cap_question_id, cr.response_text AS answer_text, 
-              cr.selected_option_ids, cr.remarks, cr.cap_required, cr.status, 
+              cr.selected_option_ids, cr.remarks, cr.cap_required, cr.status, cr.marks_obtained,
               cr.responded_by AS answered_by, cr.responded_at AS answered_at,
               cq.cap_id, cq.entity_code, cq.org_tree_id AS assigned_org_tree_id,
-              cq.checklist_question_id AS question_id, q.question_text, q.order_index,
+              cq.checklist_question_id AS question_id, q.question_text, q.order_index, q.total_marks,
               cae.entity_type
          FROM cap_responses cr
          JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id
@@ -674,7 +674,9 @@ const CapModel = {
     const [rows] = await db.query(
       `SELECT corrective_action_id AS id, cap_response_id AS response_id,
               entity_code, checklist_question_id AS question_id, org_tree_id,
-              due_date, created_at, updated_at
+              description, severity, responsible_organization_user_id,
+              responsible_person_name, due_date, status, resolution_notes,
+              resolved_at, verified_by, verified_at, created_at, updated_at
          FROM corrective_actions WHERE cap_response_id IN (
          SELECT cr.cap_response_id FROM cap_responses cr JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id WHERE cq.cap_id = ?
        )`,

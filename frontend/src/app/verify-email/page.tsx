@@ -16,6 +16,7 @@ function VerifyEmailContent() {
   const [userData, setUserData] = useState<{ email: string; first_name: string; admin_id?: string } | null>(null);
   const [paymentCode, setPaymentCode] = useState<string | null>(null);
   const [customSolutionPending, setCustomSolutionPending] = useState(false);
+  const [alreadyVerified, setAlreadyVerified] = useState(false);
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -74,6 +75,7 @@ function VerifyEmailContent() {
       .then((res: any) => {
         if (res.success) {
           const data = res.data;
+          setAlreadyVerified(Boolean(data?.already_verified));
           if (data?.needs_password) {
             setUserData({ email: data.email, first_name: data.first_name, admin_id: data.admin_id });
             setStatus("set-password");
@@ -144,7 +146,7 @@ function VerifyEmailContent() {
         {status === "success" && (
           <div className="flex flex-col items-center text-center">
             <CheckCircle2 className="text-green-500 mb-4" size={48} />
-            <h1 className="text-xl font-bold text-white mb-2">Email Verified</h1>
+            <h1 className="text-xl font-bold text-white mb-2">{alreadyVerified ? "Already Verified" : "Email Verified"}</h1>
             <p className="text-gray-400 mb-8">{message}</p>
             {paymentCode ? (
               <Link

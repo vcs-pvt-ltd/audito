@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi } from "@/lib/api";
+import { isPastAuditEndDate } from "@/lib/auditSchedule";
 import {
   ClipboardCheck,
   RefreshCw,
@@ -28,6 +29,7 @@ interface AuditAssignment {
   status: "plan" | "in_progress" | "completed";
   start_date: string;
   end_date: string;
+  created_at: string;
   entity_count: number;
   progress_pct?: number;
   total_questions?: number;
@@ -78,6 +80,7 @@ export default function OrganizationUserAuditsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
+  const [sortBy, setSortBy] = useState("newest");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -119,16 +122,27 @@ export default function OrganizationUserAuditsPage() {
     });
   }, [audits, filter, q, typeFilter, fromDate, toDate]);
 
+  const sorted = useMemo(() => [...filtered].sort((a, b) => {
+    if (sortBy === "title") return (a.title || "").localeCompare(b.title || "");
+    if (sortBy === "start_soonest") return new Date(a.start_date || 0).getTime() - new Date(b.start_date || 0).getTime();
+    if (sortBy === "end_soonest") return new Date(a.end_date || 0).getTime() - new Date(b.end_date || 0).getTime();
+    if (sortBy === "progress_desc") return Number(b.progress_pct || 0) - Number(a.progress_pct || 0);
+    if (sortBy === "progress_asc") return Number(a.progress_pct || 0) - Number(b.progress_pct || 0);
+    const aCreated = new Date(a.created_at || 0).getTime();
+    const bCreated = new Date(b.created_at || 0).getTime();
+    return sortBy === "oldest" ? aCreated - bCreated : bCreated - aCreated;
+  }), [filtered, sortBy]);
+
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, q, typeFilter, fromDate, toDate]);
+  }, [filter, q, typeFilter, fromDate, toDate, sortBy]);
 
-  const totalPages = Math.ceil(filtered.length / pageSize);
+  const totalPages = Math.ceil(sorted.length / pageSize);
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   const counts = {
     all: audits.length,
@@ -197,40 +211,22 @@ export default function OrganizationUserAuditsPage() {
         )}
 
         {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-            <input
-              type="text"
-              placeholder="Search audits..."
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-secondary-500/50 transition-all"
-            />
-          </div>
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-secondary-500/50 transition-all cursor-pointer"
-          >
-            <option value="all">All Types</option>
-            <option value="internal">Internal</option>
-            <option value="external">External</option>
-          </select>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-secondary-500/50 transition-all cursor-pointer"
-            title="From Date"
-          />
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-secondary-500/50 transition-all cursor-pointer"
-            title="To Date"
-          />
+        <div className="mb-6 grid gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="grid gap-1 text-[11px] font-medium text-gray-400">Search audits
+            <span className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} /><input type="text" placeholder="Title or checklist..." value={q} onChange={(e) => setQ(e.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-10 pr-3 text-sm text-white outline-none focus:border-secondary-500/50" /></span>
+          </label>
+          <label className="grid gap-1 text-[11px] font-medium text-gray-400">Audit type
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white outline-none focus:border-secondary-500/50"><option value="all">All types</option><option value="internal">Internal</option><option value="external">External</option></select>
+          </label>
+          <label className="grid gap-1 text-[11px] font-medium text-gray-400">Start date from
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white outline-none focus:border-secondary-500/50 [color-scheme:dark]" />
+          </label>
+          <label className="grid gap-1 text-[11px] font-medium text-gray-400">End date to
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white outline-none focus:border-secondary-500/50 [color-scheme:dark]" />
+          </label>
+          <label className="grid gap-1 text-[11px] font-medium text-gray-400">Sort by
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-10 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white outline-none focus:border-secondary-500/50"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="start_soonest">Start date</option><option value="end_soonest">End date</option><option value="progress_desc">Most progress</option><option value="progress_asc">Least progress</option><option value="title">Title A-Z</option></select>
+          </label>
         </div>
 
         {/* Content */}
@@ -266,6 +262,7 @@ export default function OrganizationUserAuditsPage() {
                 <tbody className="divide-y divide-white/[0.06]">
                   {paginated.map((a, index) => {
                     const pct = a.progress_pct || 0;
+                    const isOverdue = ["plan", "in_progress"].includes(a.status) && isPastAuditEndDate(a.end_date);
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
                     return (
                       <tr
@@ -293,9 +290,9 @@ export default function OrganizationUserAuditsPage() {
                           {fmtDate(a.end_date)}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-medium ${STATUS_BADGE[a.status] || ""}`}>
-                            {STATUS_ICON[a.status]}
-                            {STATUS_LABEL[a.status] || a.status}
+                          <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-medium ${isOverdue ? "bg-red-500/15 text-red-400 border-red-500/20" : STATUS_BADGE[a.status] || ""}`}>
+                            {isOverdue ? <AlertTriangle size={13} /> : STATUS_ICON[a.status]}
+                            {isOverdue ? "Overdue" : STATUS_LABEL[a.status] || a.status}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -312,6 +309,7 @@ export default function OrganizationUserAuditsPage() {
             <div className="md:hidden space-y-4">
               {paginated.map((a, index) => {
                 const pct = a.progress_pct || 0;
+                const isOverdue = ["plan", "in_progress"].includes(a.status) && isPastAuditEndDate(a.end_date);
                 const itemIndex = (currentPage - 1) * pageSize + index + 1;
                 return (
                   <div
@@ -324,8 +322,9 @@ export default function OrganizationUserAuditsPage() {
                         <p className="text-[10px] text-gray-500 mb-1">#{itemIndex}</p>
                         <h3 className="text-white font-medium truncate pr-2">{a.title}</h3>
                       </div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium shrink-0 ${STATUS_BADGE[a.status] || ""}`}>
-                        {STATUS_LABEL[a.status] || a.status}
+                      <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-medium shrink-0 ${isOverdue ? "bg-red-500/15 text-red-400 border-red-500/20" : STATUS_BADGE[a.status] || ""}`}>
+                        {isOverdue && <AlertTriangle size={11} />}
+                        {isOverdue ? "Overdue" : STATUS_LABEL[a.status] || a.status}
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
@@ -333,6 +332,7 @@ export default function OrganizationUserAuditsPage() {
                       <div className="text-gray-300">{AUDIT_TYPE_LABEL[a.audit_type] || a.audit_type}</div>
                       <div className="text-gray-500 uppercase tracking-wider text-[10px]">Timeline</div>
                       <div className="text-gray-300">{fmtDate(a.start_date)} — {fmtDate(a.end_date)}</div>
+                      {isOverdue && <div className="col-span-2 text-right text-[10px] font-bold text-red-400">End date passed</div>}
                     </div>
                     <div className="flex justify-between pt-2 text-[10px] text-gray-500">
                       <span>Progress</span>
@@ -347,7 +347,7 @@ export default function OrganizationUserAuditsPage() {
               currentPage={currentPage}
               totalPages={totalPages}
               pageSize={pageSize}
-              totalItems={filtered.length}
+              totalItems={sorted.length}
               onPageChange={setCurrentPage}
               onPageSizeChange={setPageSize}
             />

@@ -3,7 +3,8 @@
  *
  * Handles checkout creation, payment lookup, confirmation and billing history.
  *
- * Subscription activation is performed only after a verified gateway callback.
+ * Subscription activation is performed only after a verified gateway callback
+ * or an authenticated Audito Admin manual approval.
  */
 
 const PaymentModel = require('../models/PaymentModel');
@@ -14,8 +15,11 @@ const CustomSolutionModel = require('../models/CustomSolutionModel');
 const AdminModel = require('../models/AdminModel');
 const LinkBillingCreditModel = require('../models/LinkBillingCreditModel');
 const PaymentMethodModel = require('../models/PaymentMethodModel');
+const NotificationModel = require('../models/NotificationModel');
+const { db } = require('../config/db');
 const { getOrgName } = require('../utils/orgLookup');
 const { successResponse, errorResponse } = require('../utils/helpers');
+const { settleVerifiedPayment } = require('../services/paymentSettlementService');
 const {
   GatewayConfigurationError,
   createHostedCheckout,
@@ -28,6 +32,18 @@ const {
 const crypto = require('crypto');
 
 const VALID_CYCLES = ['Monthly', 'Yearly'];
+const PAYMENT_CONTACT_EMAIL = process.env.PAYMENT_CONTACT_EMAIL || 'hi@audito.cloud';
+
+function getPaymentMode() {
+  return process.env.PAYMENT_MODE === 'gateway' ? 'gateway' : 'manual_approval';
+}
+
+function paymentConfiguration() {
+  return {
+    payment_mode: getPaymentMode(),
+    payment_contact_email: PAYMENT_CONTACT_EMAIL,
+  };
+}
 
 async function hasCompletedCustomAdminSetup(payment) {
   if (payment.plan_name !== 'Custom' || payment.purpose !== 'registration') return true;
@@ -55,6 +71,9 @@ function publicPayment(p) {
     list_amount: p.list_amount == null ? Number(p.amount) : Number(p.list_amount),
     promotion_discount_amount: Number(p.promotion_discount_amount || 0),
     promotion_campaign_id: p.promotion_campaign_id || null,
+    manual_approval_status: p.manual_approval_status || 'not_requested',
+    manual_approval_requested_at: p.manual_approval_requested_at || null,
+    manual_approval_reviewed_at: p.manual_approval_reviewed_at || null,
   };
 }
 
@@ -112,78 +131,6 @@ const createCheckout = async (req, res) => {
   }
 };
 
-async function activateVerifiedPayment(payment, gatewayReference) {
-  const claimed = await PaymentModel.claimForSettlement(payment.payment_transaction_id);
-  if (!claimed) {
-    const current = await PaymentModel.findByCode(payment.payment_code);
-    if (current?.status === 'paid') return { payment: current, alreadyCompleted: true };
-    return { payment: current || payment, processing: true };
-  }
-
-  try {
-    let customLimits = null;
-    if (payment.plan_name === 'Custom') {
-      const csr = await CustomSolutionModel.findByOrgCode(payment.root_entity_code);
-      if (csr) {
-        customLimits = await SubscriptionModel.normalizeCustomLimits({
-          company_level: csr.max_company_levels,
-          department: csr.max_departments,
-          audits: csr.max_audits,
-          checklists: csr.max_checklists,
-          auditors: csr.max_auditors,
-          auditor_eval: csr.allow_auditor_eval,
-          company_to_company: csr.allow_company_to_company,
-        });
-      }
-    }
-
-    const { start, end } = await SubscriptionModel.activatePaidSubscription(
-      payment.root_entity_code,
-      payment.plan_name,
-      payment.billing_cycle,
-      customLimits
-    );
-
-    // Credits are applied only by the one callback that claimed this payment.
-    let creditApplied = 0;
-    try {
-      const available = await LinkBillingCreditModel.getAvailableCreditAmount(payment.root_entity_code);
-      if (available > 0 && payment.amount > 0) {
-        const result = await LinkBillingCreditModel.applyCredits(
-          payment.root_entity_code,
-          payment.payment_transaction_id,
-          Math.min(available, payment.amount)
-        );
-        creditApplied = result.total_applied;
-      }
-    } catch (creditErr) {
-      console.error('Failed to apply link credits:', creditErr.message);
-    }
-
-    await PaymentModel.markPaid(payment.payment_transaction_id, {
-      periodStart: start,
-      periodEnd: end,
-      gateway: 'sampath',
-      gatewayReference,
-    });
-    if (payment.plan_name === 'Custom') {
-      const request = await CustomSolutionModel.findByPaymentCode(payment.payment_code);
-      if (request) {
-        await CustomSolutionModel.updateStatus(request.request_id, 'accepted');
-        if (request.admin_id) await AdminModel.activate(request.admin_id);
-      }
-    }
-    return {
-      payment: await PaymentModel.findByCode(payment.payment_code),
-      creditApplied,
-      netAmount: Math.round((payment.amount - creditApplied) * 100) / 100,
-    };
-  } catch (error) {
-    await PaymentModel.releaseSettlementClaim(payment.payment_transaction_id, error.message);
-    throw error;
-  }
-}
-
 /**
  * GET /api/payments/:code   (public)
  * Returns the payment summary so the payment page can render the invoice.
@@ -192,7 +139,7 @@ const getPayment = async (req, res) => {
   try {
     const payment = await PaymentModel.findByCode(req.params.code);
     if (!payment) return errorResponse(res, 'Payment not found.', 404);
-    return successResponse(res, { payment: publicPayment(payment) });
+    return successResponse(res, { payment: publicPayment(payment), ...paymentConfiguration() });
   } catch (error) {
     console.error('getPayment error:', error);
     return errorResponse(res, 'Failed to fetch payment.', 500);
@@ -289,9 +236,12 @@ const confirmPayment = async (req, res) => {
 
 const initiatePayment = async (req, res) => {
   try {
+    if (getPaymentMode() !== 'gateway') {
+      return errorResponse(res, 'Online payments are temporarily unavailable. Request manual payment approval instead.', 409);
+    }
     const payment = await PaymentModel.findByCode(req.params.code);
     if (!payment) return errorResponse(res, 'Payment not found.', 404);
-    if (payment.status === 'paid') return successResponse(res, { payment: publicPayment(payment) }, 'Payment already completed.');
+    if (payment.status === 'paid') return successResponse(res, { payment: publicPayment(payment), ...paymentConfiguration() }, 'Payment already completed.');
     if (!['pending', 'failed'].includes(payment.status)) return errorResponse(res, 'This payment is already being processed.', 409);
     if (!await hasCompletedCustomAdminSetup(payment)) {
       return errorResponse(res, 'Set up the workspace administrator before proceeding to payment.', 409);
@@ -319,33 +269,60 @@ const initiatePayment = async (req, res) => {
   }
 };
 
-/** Development-only simulator; it is always disabled in production. */
-const temporarilyAcceptPayment = async (req, res) => {
+/**
+ * Public payment-link action. It can only request review; payment settlement
+ * remains restricted to an authenticated Audito Admin.
+ */
+const requestManualApproval = async (req, res) => {
   try {
-    if (process.env.NODE_ENV === 'production' || process.env.ENABLE_TEMPORARY_PAYMENT_ACCEPTANCE !== 'true') {
-      return errorResponse(res, 'Temporary payment acceptance is disabled.', 404);
+    if (getPaymentMode() !== 'manual_approval') {
+      return errorResponse(res, 'Manual payment approval is not currently available.', 409);
     }
 
-    let payment = await PaymentModel.findByCode(req.params.code);
+    const payment = await PaymentModel.findByCode(req.params.code);
     if (!payment) return errorResponse(res, 'Payment not found.', 404);
-    if (payment.status === 'paid') return successResponse(res, { payment: publicPayment(payment) }, 'Payment already completed.');
+    if (payment.status === 'paid') return successResponse(res, { payment: publicPayment(payment), ...paymentConfiguration() }, 'Payment already completed.');
     if (!['pending', 'failed'].includes(payment.status)) return errorResponse(res, 'This payment is already being processed.', 409);
     if (!await hasCompletedCustomAdminSetup(payment)) {
       return errorResponse(res, 'Set up the workspace administrator before proceeding to payment.', 409);
     }
 
-    if (payment.status === 'failed') {
-      await PaymentModel.markGatewayInitiated(payment.payment_transaction_id, {
-        gateway: 'temporary_test', attemptId: `TEMP-${crypto.randomUUID()}`,
-      });
-      payment = await PaymentModel.findByCode(req.params.code);
+    const owner = await AdminModel.findPaymentOwnerByEntityCode(payment.root_entity_code);
+    if (!owner?.is_verified) {
+      return errorResponse(res, 'Verify the workspace administrator email before requesting payment approval.', 409);
     }
 
-    const result = await activateVerifiedPayment(payment, `TEMP-${crypto.randomUUID()}`);
-    return successResponse(res, { payment: publicPayment(result.payment) }, 'Temporary test payment accepted.');
+    const newlyRequested = await PaymentModel.requestManualApproval(payment.payment_transaction_id);
+    const updated = await PaymentModel.findByCode(payment.payment_code);
+
+    if (newlyRequested) {
+      try {
+        const [auditoAdmins] = await db.query(
+          `SELECT admin_id FROM admins
+           WHERE role = 'audito_admin' AND is_active = TRUE AND is_verified = TRUE`
+        );
+        await Promise.all(auditoAdmins.map((admin) => NotificationModel.createIfNotExists({
+          recipient_user_code: admin.admin_id,
+          recipient_role: 'audito_admin',
+          created_by_entity_code: payment.root_entity_code,
+          type: 'manual_payment_approval_requested',
+          title: 'Payment approval requested',
+          message: `${payment.org_name || 'An organization'} requested approval for ${payment.plan_name} (${payment.billing_cycle}).`,
+          notification_key: `manual-payment:${payment.payment_transaction_id}:${admin.admin_id}`,
+        })));
+      } catch (notificationError) {
+        console.error('Failed to notify Audito admins of payment approval request:', notificationError.message);
+      }
+    }
+
+    return successResponse(
+      res,
+      { payment: publicPayment(updated), ...paymentConfiguration() },
+      newlyRequested ? 'Payment approval request sent to Audito Admin.' : 'Payment approval is already awaiting review.'
+    );
   } catch (error) {
-    console.error('temporarilyAcceptPayment error:', error);
-    return errorResponse(res, 'Unable to accept the temporary test payment.', 500);
+    console.error('requestManualApproval error:', error);
+    return errorResponse(res, 'Unable to request payment approval.', 500);
   }
 };
 
@@ -365,7 +342,7 @@ const handleSampathWebhook = async (req, res) => {
       });
       return res.status(200).send('ACK');
     }
-    await activateVerifiedPayment(payment, result.gatewayReference);
+    await settleVerifiedPayment(payment, { gateway: 'sampath', gatewayReference: result.gatewayReference });
 
     // Only a signed, successful callback may result in saving a gateway token.
     // A token storage error must not undo an already-valid customer payment.
@@ -461,7 +438,7 @@ module.exports = {
   getPayment,
   confirmPayment,
   initiatePayment,
-  temporarilyAcceptPayment,
+  requestManualApproval,
   handleSampathWebhook,
   handleSampathReturn,
   listPaymentMethods,

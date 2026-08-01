@@ -23,7 +23,14 @@ import {
   Td,
 } from "@/components/ui";
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, manualApprovalStatus }: { status: string; manualApprovalStatus?: string }) {
+  if (status === "pending" && manualApprovalStatus === "requested") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold">
+        <Clock size={10} /> Approval requested
+      </span>
+    );
+  }
   if (status === "paid") {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
@@ -73,13 +80,14 @@ function FilterSelect({ label, value, onChange, children }: { label: string; val
 
 export default function PaymentsPage() {
   const { admin, accessToken, isLoading } = useAuth();
-  const { toast } = useUiFeedback();
+  const { toast, confirm } = useUiFeedback();
   const router = useRouter();
   const [payments, setPayments] = useState<AdminPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "paid" | "pending" | "other">("all");
+  const [filter, setFilter] = useState<"all" | "paid" | "pending" | "approval" | "other">("all");
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [planFilter, setPlanFilter] = useState("all");
   const [billingFilter, setBillingFilter] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -129,6 +137,7 @@ export default function PaymentsPage() {
   const filtered = payments.filter((p) => {
     if (filter === "paid" && p.status !== "paid") return false;
     if (filter === "pending" && p.status !== "pending") return false;
+    if (filter === "approval" && !(p.status === "pending" && p.manual_approval_status === "requested")) return false;
     if (filter === "other" && (p.status === "paid" || p.status === "pending")) return false;
     if (planFilter !== "all" && p.plan_name !== planFilter) return false;
     if (billingFilter !== "all" && p.billing_cycle !== billingFilter) return false;
@@ -163,6 +172,28 @@ export default function PaymentsPage() {
     setPlanFilter("all");
     setBillingFilter("all");
     setFilter("all");
+  };
+
+  const approvePayment = async (payment: AdminPayment) => {
+    if (!accessToken || approvingId) return;
+    const accepted = await confirm({
+      title: "Approve this payment?",
+      message: `Confirm that Audito has received and verified ${payment.currency} ${Number(payment.amount).toLocaleString()} from ${payment.org_name_resolved || payment.org_name || "this organization"}. Approval activates the subscription immediately.`,
+      confirmText: "Approve payment",
+      cancelText: "Cancel",
+      variant: "warning",
+    });
+    if (!accepted) return;
+
+    setApprovingId(payment.transaction_id);
+    const res = await adminApi.approvePayment(accessToken, payment.transaction_id);
+    if (res.success) {
+      toast("Payment approved and subscription activated.", "success");
+      await loadPayments();
+    } else {
+      toast(res.message || "Failed to approve payment.", "error");
+    }
+    setApprovingId(null);
   };
 
   const downloadReport = () => {
@@ -240,7 +271,7 @@ export default function PaymentsPage() {
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <ShieldCheck size={22} className="text-secondary-400" /> Payments
           </h1>
-          <p className="text-sm text-gray-400 mt-1">All payment transactions across the platform.</p>
+          <p className="text-sm text-gray-400 mt-1">Review manual approval requests and view all platform payments.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button onClick={openReportModal} disabled={loading} size="md" leftIcon={<Download size={15} />}>Download report</Button>
@@ -263,7 +294,7 @@ export default function PaymentsPage() {
             <FilterSelect label="Plan" value={planFilter} onChange={setPlanFilter}><option value="all">All plans</option><option value="Basic">Basic</option><option value="Pro">Pro</option><option value="Elite">Elite</option><option value="Custom">Custom</option></FilterSelect>
             <FilterSelect label="Billing cycle" value={billingFilter} onChange={setBillingFilter}><option value="all">All cycles</option><option value="Monthly">Monthly</option><option value="Yearly">Yearly</option><option value="None">None</option></FilterSelect>
           </div>
-          <FilterSelect label="Status" value={filter} onChange={(value) => setFilter(value as "all" | "paid" | "pending" | "other")}><option value="all">All statuses</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="other">Other</option></FilterSelect>
+          <FilterSelect label="Status" value={filter} onChange={(value) => setFilter(value as "all" | "paid" | "pending" | "approval" | "other")}><option value="all">All statuses</option><option value="approval">Approval requested</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="other">Other</option></FilterSelect>
         </div>}
         <div className="hidden grid-cols-4 gap-2.5 p-3 sm:p-4 md:grid xl:grid-cols-7 sm:gap-4">
           <div className="relative"><label className="mb-1 block text-[11px] text-gray-400">Search</label><Search size={14} className="absolute left-3 top-[31px] text-gray-500" /><input type="text" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search payments..." className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-white placeholder:text-gray-500 focus:border-secondary-500/50 focus:outline-none" /></div>
@@ -271,7 +302,7 @@ export default function PaymentsPage() {
           <FilterDate label="End date" value={filterEndDate} min={filterStartDate || undefined} onChange={setFilterEndDate} />
           <FilterSelect label="Plan" value={planFilter} onChange={setPlanFilter}><option value="all">All plans</option><option value="Basic">Basic</option><option value="Pro">Pro</option><option value="Elite">Elite</option><option value="Custom">Custom</option></FilterSelect>
           <FilterSelect label="Billing cycle" value={billingFilter} onChange={setBillingFilter}><option value="all">All cycles</option><option value="Monthly">Monthly</option><option value="Yearly">Yearly</option><option value="None">None</option></FilterSelect>
-          <FilterSelect label="Status" value={filter} onChange={(value) => setFilter(value as "all" | "paid" | "pending" | "other")}><option value="all">All statuses</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="other">Other</option></FilterSelect>
+          <FilterSelect label="Status" value={filter} onChange={(value) => setFilter(value as "all" | "paid" | "pending" | "approval" | "other")}><option value="all">All statuses</option><option value="approval">Approval requested</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="other">Other</option></FilterSelect>
           <div className="flex items-end"><Button variant="secondary" fullWidth onClick={resetFilters}>Reset</Button></div>
         </div>
       </section>
@@ -327,6 +358,7 @@ export default function PaymentsPage() {
               <Th>Amount</Th>
               <Th>Status</Th>
               <Th>Date</Th>
+              <Th>Action</Th>
             </THead>
             <TBody>
               {paginated.map((p) => (
@@ -357,8 +389,13 @@ export default function PaymentsPage() {
                       {p.currency} {Number(p.amount).toLocaleString()}
                     </span>
                   </Td>
-                  <Td><StatusBadge status={p.status} /></Td>
+                  <Td><StatusBadge status={p.status} manualApprovalStatus={p.manual_approval_status} /></Td>
                   <Td><span className="text-xs text-gray-500">{new Date(p.created_at).toLocaleDateString()}</span></Td>
+                  <Td>
+                    {p.status === "pending" && p.manual_approval_status === "requested" ? (
+                      <Button size="sm" disabled={Boolean(approvingId)} loading={approvingId === p.transaction_id} onClick={() => void approvePayment(p)}>Approve</Button>
+                    ) : <span className="text-xs text-gray-600">-</span>}
+                  </Td>
                 </Tr>
               ))}
             </TBody>
@@ -369,13 +406,16 @@ export default function PaymentsPage() {
               <article key={p.transaction_id} className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] shadow-lg shadow-black/10">
                 <div className="flex items-start justify-between gap-3 p-4">
                   <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">{p.invoice_number || "Payment transaction"}</p><h2 className="mt-1 truncate text-sm font-semibold text-white">{p.org_name_resolved || p.org_name || "Organization"}</h2><p className="mt-1 truncate text-xs text-gray-400">{p.admin_first_name ? `${p.admin_first_name} ${p.admin_last_name || ""}` : p.admin_email || "No admin"}</p></div>
-                  <div className="flex shrink-0 flex-col items-end gap-2"><StatusBadge status={p.status} /><span className="text-sm font-semibold text-white">{p.currency} {Number(p.amount).toLocaleString()}</span></div>
+                  <div className="flex shrink-0 flex-col items-end gap-2"><StatusBadge status={p.status} manualApprovalStatus={p.manual_approval_status} /><span className="text-sm font-semibold text-white">{p.currency} {Number(p.amount).toLocaleString()}</span></div>
                 </div>
                 <div className="grid grid-cols-2 gap-px border-y border-white/[0.08] bg-white/[0.08] text-xs">
                   <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Plan</p><div className="mt-1"><PlanBadge plan={p.plan_name} /></div></div>
                   <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Billing</p><p className="mt-1 truncate text-gray-200">{p.billing_cycle || "—"}</p></div>
                   <div className="col-span-2 min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Account · date</p><p className="mt-1 truncate text-gray-200">{p.entity_type || "—"} · {new Date(p.created_at).toLocaleDateString()}</p></div>
                 </div>
+                {p.status === "pending" && p.manual_approval_status === "requested" && (
+                  <div className="p-3"><Button fullWidth disabled={Boolean(approvingId)} loading={approvingId === p.transaction_id} onClick={() => void approvePayment(p)}>Approve payment</Button></div>
+                )}
               </article>
             ))}
           </div>

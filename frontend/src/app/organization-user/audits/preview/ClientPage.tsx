@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi } from "@/lib/api";
 import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
-import { IconButton } from "@/components/ui";
+import { Button, IconButton } from "@/components/ui";
 import {
   AlertCircle,
   ArrowLeft,
@@ -19,6 +19,12 @@ import {
   ClipboardCheck,
   FileText,
   CheckCircle2,
+  Calendar,
+  Clock,
+  Eye,
+  Mail,
+  Phone,
+  User,
 } from "lucide-react";
 
 // ── Interfaces ────────────────────────────────────────────────────
@@ -79,6 +85,11 @@ interface AuditDetail {
   audit_code: string;
   title: string;
   status: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  auditor_name?: string | null;
+  auditor_email?: string | null;
+  auditor_phone?: string | null;
   entities: AuditEntity[];
   entity_questions?: EntityQuestion[];
   entity_progress?: Array<{
@@ -102,6 +113,11 @@ interface TreeNode {
 
 function progressKey(entityCode: string, orgTreeId: string | null | undefined) {
   return `${entityCode}__${orgTreeId ?? "null"}`;
+}
+
+function fmtDate(value?: string | null) {
+  if (!value) return "Not set";
+  return new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function getQuestionListForNode(
@@ -393,6 +409,8 @@ export default function OrganizationUserAuditPreviewPage() {
   const [responses, setResponses] = useState<AuditResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [hasCorrectiveActions, setHasCorrectiveActions] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     if (!isLoading && (!admin || admin.role !== "organization_user")) router.push("/login");
@@ -403,10 +421,11 @@ export default function OrganizationUserAuditPreviewPage() {
     setLoading(true);
     setError("");
     try {
-      const [detailRes, respRes, treeRes] = await Promise.all([
+      const [detailRes, respRes, treeRes, correctiveActionsRes] = await Promise.all([
         auditExecutionApi.getDetail(accessToken, auditId),
         auditExecutionApi.getResponses(accessToken, auditId),
         auditExecutionApi.getEntityTree(accessToken, auditId),
+        auditExecutionApi.getCorrectiveActions(accessToken, auditId),
       ]);
       if (detailRes.success && detailRes.data) {
         setAudit((detailRes.data as { audit: AuditDetail }).audit);
@@ -418,6 +437,9 @@ export default function OrganizationUserAuditPreviewPage() {
       }
       if (treeRes.success && treeRes.data) {
         setTree((treeRes.data as { tree: TreeNode }).tree || null);
+      }
+      if (correctiveActionsRes.success && correctiveActionsRes.data) {
+        setHasCorrectiveActions(((correctiveActionsRes.data as any).corrective_actions || []).length > 0);
       }
     } catch {
       setError("Network error.");
@@ -470,20 +492,22 @@ export default function OrganizationUserAuditPreviewPage() {
   return (
     <div className="h-screen bg-transparent flex">
       <main className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto">
-        <div className="flex items-center gap-3 mb-6">
-          <IconButton bordered onClick={() => router.push("/organization-user/audits")}>
-            <ArrowLeft size={16} />
-          </IconButton>
-          <div className="min-w-0">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <IconButton bordered onClick={() => showPreview ? setShowPreview(false) : router.push("/organization-user/audits")}>
+              <ArrowLeft size={16} />
+            </IconButton>
+            <div className="min-w-0">
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               <ClipboardCheck size={22} className="text-secondary-400" />
-              Audit Preview
+              {showPreview ? "Question Preview" : "Audit Details"}
             </h1>
             {audit && (
               <p className="text-sm text-gray-400 mt-0.5 font-mono truncate">
                {audit.title}
               </p>
             )}
+            </div>
           </div>
         </div>
 
@@ -495,6 +519,76 @@ export default function OrganizationUserAuditPreviewPage() {
           <div className="glass rounded-xl p-8 text-center">
             <AlertCircle size={32} className="text-red-400 mx-auto mb-2" />
             <p className="text-red-400">{error}</p>
+          </div>
+        ) : !showPreview ? (
+          <div className="mx-auto max-w-5xl space-y-6">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-secondary-400">Scoped audit</p>
+                  <h2 className="break-words text-2xl font-black text-white">{audit?.title || "Audit"}</h2>
+                  <p className="mt-2 max-w-2xl text-sm text-gray-400">
+                    The information and question preview are limited to the organization entities assigned to your account.
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                  {hasCorrectiveActions && (
+                    <Button variant="secondary" leftIcon={<ClipboardCheck size={17}/>} onClick={() => router.push(`/organization-user/audits/corrective-actions?id=${auditId}`)}>
+                      Corrective Actions
+                    </Button>
+                  )}
+                  <Button leftIcon={<Eye size={17}/>} onClick={() => setShowPreview(true)}>
+                    Preview Questions
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-secondary-500/20 bg-secondary-500/10 text-secondary-400">
+                      <User size={18} />
+                    </span>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-400">Auditor details</p>
+                      <h3 className="text-lg font-black text-white">{audit?.auditor_name || "Not assigned"}</h3>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                      <Mail size={15} className="shrink-0 text-gray-500" />
+                      <div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-wider text-gray-600">Email</p><p className="mt-0.5 truncate text-xs text-gray-300">{audit?.auditor_email || "Not available"}</p></div>
+                    </div>
+                    <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                      <Phone size={15} className="shrink-0 text-gray-500" />
+                      <div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-wider text-gray-600">Phone</p><p className="mt-0.5 truncate text-xs text-gray-300">{audit?.auditor_phone || "Not available"}</p></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-secondary-500/20 bg-secondary-500/10 text-secondary-400">
+                      <Calendar size={18} />
+                    </span>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-400">Audit timeline</p>
+                      <h3 className="text-lg font-black text-white">Scheduled period</h3>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                      <p className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-600"><Calendar size={12} /> Start date</p>
+                      <p className="mt-2 text-sm font-semibold text-gray-300">{fmtDate(audit?.start_date)}</p>
+                    </div>
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                      <p className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-600"><Clock size={12} /> End date</p>
+                      <p className="mt-2 text-sm font-semibold text-gray-300">{fmtDate(audit?.end_date)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         ) : tree ? (
           <div className="max-w-5xl mx-auto">

@@ -418,6 +418,7 @@ export default function ClientPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showPreview, setShowPreview] = useState(false);
+  const [hasCorrectiveActions, setHasCorrectiveActions] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -429,14 +430,19 @@ export default function ClientPage() {
     setLoading(true);
     setError("");
     try {
-      const [itemsRes, detailRes] = await Promise.all([
+      const [itemsRes, detailRes, correctiveActionsRes] = await Promise.all([
         capApi.getItems(accessToken, capId),
         capApi.get(accessToken, capId),
+        capApi.getCorrectiveActions(accessToken, capId),
       ]);
 
       if (detailRes.success && detailRes.data) {
         setCap((detailRes.data as any).cap || null);
         setSourceAudit((detailRes.data as any).source_audit || null);
+      }
+
+      if (correctiveActionsRes.success && correctiveActionsRes.data) {
+        setHasCorrectiveActions(((correctiveActionsRes.data as any).corrective_actions || []).length > 0);
       }
 
       if (!itemsRes.success || !itemsRes.data) {
@@ -528,7 +534,14 @@ export default function ClientPage() {
                     Review the corrective action plan context before opening the question preview.
                   </p>
                 </div>
-                <Button leftIcon={<Eye size={18}/>} onClick={() => setShowPreview(true)}>Preview Questions</Button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {hasCorrectiveActions && (
+                    <Button variant="secondary" leftIcon={<ClipboardList size={18}/>} onClick={() => router.push(`/caps/corrective-actions?id=${capId}`)}>
+                      Corrective Actions
+                    </Button>
+                  )}
+                  <Button leftIcon={<Eye size={18}/>} onClick={() => setShowPreview(true)}>Preview Questions</Button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">

@@ -58,6 +58,22 @@ function formatPhoneWithDialingCode(phoneNumber, dialingCode) {
   return `${code} ${phone.replace(/^0+/, '')}`.trim();
 }
 
+function dateOnlyKey(value) {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+function isAuditOverdue(endDate) {
+  const endDateKey = dateOnlyKey(endDate);
+  return Boolean(endDateKey) && endDateKey < new Date().toISOString().slice(0, 10);
+}
+
 // ── File upload setup ────────────────────────────────────────────
 const uploadDir = path.join(__dirname, '../public/uploads/evidence');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -228,20 +244,34 @@ const listMyAudits = async (req, res) => {
 const getCorrectiveActions = async (req, res) => {
   try {
     const { id } = req.params;
-    const audit = await AuditModel.findById(id);
+    const audit = await AuditModel.getWithEntities(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
 
     if (req.user.role === 'auditor' && audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
     }
 
+    const scopeIds = await getRequestOrganizationTreeScopeIds(req);
+    const entityCodeScope = await getOrganizationUserCodeScope(req, scopeIds);
+    if (req.user.role === 'organization_user' && !auditEntitiesInScope(audit.entities, scopeIds, entityCodeScope)) {
+      return errorResponse(res, 'Not authorized.', 403);
+    }
+
     audit.evidence_policy = await getEvidencePolicy(audit.created_by);
 
-    const [items, corrective_actions, tree] = await Promise.all([
+    let [items, corrective_actions, tree] = await Promise.all([
       AuditExecutionModel.listCapRequiredItems(id),
       AuditExecutionModel.listCorrectiveActionsByAudit(id),
       AuditExecutionModel.getEntityTree(id),
     ]);
+
+    if (req.user.role === 'organization_user') {
+      items = items.filter((item) => auditEntitiesInScope([item], scopeIds, entityCodeScope));
+      corrective_actions = corrective_actions.filter((action) =>
+        auditEntitiesInScope([action], scopeIds, entityCodeScope)
+      );
+      tree = extractOrganizationUserTree(tree, scopeIds, entityCodeScope);
+    }
 
     const entityToOrgTreeIds = {};
     const walk = (node) => {
@@ -284,7 +314,12 @@ const getCorrectiveActions = async (req, res) => {
       };
     });
 
-    return successResponse(res, { items: enrichedItems, corrective_actions, tree });
+    return successResponse(res, {
+      audit: { audit_id: audit.audit_id, title: audit.title, status: audit.status },
+      items: enrichedItems,
+      corrective_actions,
+      tree,
+    });
   } catch (err) {
     console.error('getCorrectiveActions error:', err);
     return errorResponse(res, 'Failed to fetch corrective actions.', 500);
@@ -447,6 +482,21 @@ const getAuditDetail = async (req, res) => {
       }
     }
 
+    // Organization Users need only the assigned auditor identity and contact
+    // details for their scoped audit summary. Question/entity data above is
+    // already reduced to their configured organization access.
+    if (audit.assigned_auditor_id) {
+      const auditor = await AuditorModel.findByCode(audit.assigned_auditor_id);
+      if (auditor) {
+        audit.auditor_name = `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim() || auditor.auditor_id;
+        audit.auditor_email = auditor.email || null;
+        audit.auditor_phone = formatPhoneWithDialingCode(
+          auditor.phone_number,
+          await getCountryDialingCode(auditor.country)
+        );
+      }
+    }
+
     return successResponse(res, { audit });
   } catch (err) {
     console.error('getAuditDetail error:', err);
@@ -464,6 +514,9 @@ const startAudit = async (req, res) => {
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
     if (audit.assigned_auditor_id !== req.user.userCode) {
       return errorResponse(res, 'Not authorized.', 403);
+    }
+    if (isAuditOverdue(audit.end_date)) {
+      return errorResponse(res, 'This audit is overdue and can no longer be started.', 409);
     }
 
     // Check start date
@@ -516,6 +569,9 @@ const submitResponse = async (req, res) => {
     }
     if (audit.status !== 'in_progress') {
       return errorResponse(res, 'Audit is not in progress.', 400);
+    }
+    if (isAuditOverdue(audit.end_date)) {
+      return errorResponse(res, 'This audit is overdue. Responses can no longer be added or changed.', 409);
     }
 
     const {
@@ -639,6 +695,10 @@ const uploadEvidence = async (req, res) => {
       discardUploadedFile();
       return errorResponse(res, 'Not authorized to upload evidence for this audit.', 403);
     }
+    if (isAuditOverdue(audit.end_date)) {
+      discardUploadedFile();
+      return errorResponse(res, 'This audit is overdue. Evidence can no longer be added.', 409);
+    }
 
     const [responseRows] = await db.query(
       `SELECT audit_response_id FROM audit_responses WHERE audit_response_id = ? AND audit_id = ? LIMIT 1`,
@@ -692,6 +752,24 @@ const uploadEvidence = async (req, res) => {
 const deleteEvidence = async (req, res) => {
   try {
     const { evidenceId } = req.params;
+    const [evidenceRows] = await db.query(
+      `SELECT e.audit_evidence_id, r.audit_id, a.assigned_auditor_id, a.end_date
+         FROM audit_evidence e
+         INNER JOIN audit_responses r ON r.audit_response_id = e.audit_response_id
+         INNER JOIN audit_assignments a ON a.audit_id = r.audit_id
+        WHERE e.audit_evidence_id = ?
+        LIMIT 1`,
+      [evidenceId]
+    );
+    const evidenceAudit = evidenceRows[0];
+    if (!evidenceAudit) return errorResponse(res, 'Evidence not found.', 404);
+    if (evidenceAudit.assigned_auditor_id !== req.user.userCode) {
+      return errorResponse(res, 'Not authorized to delete evidence for this audit.', 403);
+    }
+    if (isAuditOverdue(evidenceAudit.end_date)) {
+      return errorResponse(res, 'This audit is overdue. Evidence can no longer be removed.', 409);
+    }
+
     const evidence = await AuditExecutionModel.deleteEvidence(evidenceId);
     if (!evidence) return errorResponse(res, 'Evidence not found.', 404);
 

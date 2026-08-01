@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import auditoLogo from "../../assets/logo/audito_logo.png";
 import {
-  Loader2, ShieldCheck, ArrowRight, CheckCircle2, AlertTriangle, CreditCard, Lock,
+  Loader2, ShieldCheck, ArrowRight, CheckCircle2, AlertTriangle, CreditCard, Lock, Mail, RefreshCw, Clock3,
 } from "lucide-react";
 import { paymentApi, type PaymentDetails } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -28,9 +28,9 @@ function PaymentContent() {
 
   const code = searchParams.get("code") || "";
   const gatewayReturn = searchParams.get("gateway_return");
-  const temporaryPaymentMode = process.env.NEXT_PUBLIC_ENABLE_TEMPORARY_PAYMENT_ACCEPTANCE === "true";
-
   const [payment, setPayment] = useState<PaymentDetails | null>(null);
+  const [paymentMode, setPaymentMode] = useState<"manual_approval" | "gateway">("manual_approval");
+  const [paymentContactEmail, setPaymentContactEmail] = useState("hi@audito.cloud");
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -48,6 +48,8 @@ function PaymentContent() {
         if (cancelled) return;
         if (res.success && res.data?.payment) {
           setPayment(res.data.payment);
+          setPaymentMode(res.data.payment_mode);
+          setPaymentContactEmail(res.data.payment_contact_email);
           if (res.data.payment.status === "paid") setPaid(true);
         } else {
           setNotFound(true);
@@ -76,18 +78,35 @@ function PaymentContent() {
     return () => window.clearInterval(timer);
   }, [accessToken, code, gatewayReturn, paid, refreshMe]);
 
+  useEffect(() => {
+    if (!code || paid || paymentMode !== "manual_approval" || payment?.manual_approval_status !== "requested") return;
+    const timer = window.setInterval(async () => {
+      const res = await paymentApi.get(code);
+      if (!res.success || !res.data?.payment) return;
+      setPayment(res.data.payment);
+      if (res.data.payment.status === "paid") {
+        setPaid(true);
+        window.clearInterval(timer);
+        if (accessToken) await refreshMe();
+      }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [accessToken, code, paid, payment?.manual_approval_status, paymentMode, refreshMe]);
+
   const handlePay = async () => {
     setPaying(true);
     setError("");
     try {
-      if (temporaryPaymentMode) {
-        const res = await paymentApi.temporaryAccept(code);
+      if (paymentMode === "manual_approval") {
+        const res = await paymentApi.requestManualApproval(code);
         if (res.success && res.data?.payment) {
           setPayment(res.data.payment);
+          setPaymentMode(res.data.payment_mode);
+          setPaymentContactEmail(res.data.payment_contact_email);
           setPaid(res.data.payment.status === "paid");
           if (accessToken) await refreshMe();
         } else {
-          setError(res.message || "Could not accept the temporary test payment.");
+          setError(res.message || "Could not send the payment approval request.");
         }
         return;
       }
@@ -112,6 +131,25 @@ function PaymentContent() {
       }
     } catch {
       setError("Something went wrong while starting secure payment.");
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  const refreshPaymentStatus = async () => {
+    setPaying(true);
+    setError("");
+    try {
+      const res = await paymentApi.get(code);
+      if (!res.success || !res.data?.payment) {
+        setError(res.message || "Could not refresh the payment status.");
+        return;
+      }
+      setPayment(res.data.payment);
+      setPaid(res.data.payment.status === "paid");
+      if (res.data.payment.status === "paid" && accessToken) await refreshMe();
+    } catch {
+      setError("Could not refresh the payment status.");
     } finally {
       setPaying(false);
     }
@@ -155,6 +193,16 @@ function PaymentContent() {
 
   const purpose = payment.purpose ?? "upgrade";
   const isRegistration = purpose === "registration";
+  const approvalRequested = payment.manual_approval_status === "requested";
+  const contactBody = [
+    "Hello Audito team,",
+    "",
+    "I would like to arrange payment for the following subscription:",
+    `Organization: ${payment.org_name || "-"}`,
+    `Plan: ${payment.plan_name} (${payment.billing_cycle})`,
+    `Amount: ${formatMoney(payment.amount, payment.currency)}`,
+  ].join("\n");
+  const contactHref = `mailto:${paymentContactEmail}?subject=${encodeURIComponent("Audito subscription payment")}&body=${encodeURIComponent(contactBody)}`;
 
   // ── Success screen ──
   if (paid) {
@@ -230,13 +278,15 @@ function PaymentContent() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-lg">
-        <div className="text-center mb-6">
+       
+
+        <div className="rounded-2xl border border-white/10 bg-[#053B36] p-6 sm:p-8 shadow-2xl">
+           <div className="text-center mb-6">
           <Link href="/" className="inline-block">
             <Image src={auditoLogo} alt="Audito" width={110} height={28} className="h-8 mx-auto" />
           </Link>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-[#053B36] p-6 sm:p-8 shadow-2xl">
+        </div>  
+          
           <div className="flex items-center gap-2 mb-6">
             <CreditCard size={20} className="text-secondary-400" />
             <h1 className="text-lg font-semibold text-white">{titleByPurpose[purpose] ?? "Checkout"}</h1>
@@ -276,17 +326,41 @@ function PaymentContent() {
             </div>
           )}
 
-          {/* Temporary payment action — replace with the real gateway later */}
-          <div className="mt-5 rounded-lg border border-dashed border-white/15 bg-white/[0.02] p-3 mb-4">
-            <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
-              <Lock size={12} className="text-secondary-500 shrink-0" />
-              {temporaryPaymentMode
-                ? "Temporary development mode is enabled. No bank payment or card data is used."
-                : "You will be redirected to Sampath Bank's secure payment page. Audito never receives or stores card details."}
-            </p>
-          </div>
+          {/* Backend-selected manual approval or hosted gateway flow */}
+          {paymentMode === "manual_approval" ? (
+            <div className="mt-5 mb-4 space-y-3">
+              <div className="rounded-xl border border-secondary-500/20 bg-secondary-500/[0.06] p-4">
+                <div className="flex items-start gap-3">
+                  <Mail size={18} className="mt-0.5 shrink-0 text-secondary-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-white">Contact Audito to arrange payment</p>
+                    <p className="mt-1 text-xs leading-relaxed text-gray-400">
+                      Email <span className="font-medium text-secondary-400">{paymentContactEmail}</span> from your registered organization email. After payment is arranged, send the approval request below.
+                    </p>
+                  </div>
+                </div>
+                <a href={contactHref} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-secondary-500/30 bg-secondary-500/10 py-2.5 text-sm font-semibold text-secondary-300 transition-colors hover:bg-secondary-500/15">
+                  <Mail size={15} /> Email {paymentContactEmail}
+                </a>
+              </div>
+              {approvalRequested && (
+                <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-4 text-center">
+                  <Clock3 size={24} className="mx-auto text-amber-400" />
+                  <p className="mt-2 text-sm font-semibold text-white">Awaiting Audito approval</p>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-400">Your request is in the Audito Admin payment queue. This page updates automatically after approval.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-5 rounded-lg border border-dashed border-white/15 bg-white/[0.02] p-3 mb-4">
+              <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
+                <Lock size={12} className="text-secondary-500 shrink-0" />
+                You will be redirected to Sampath Bank&apos;s secure payment page. Audito never receives or stores card details.
+              </p>
+            </div>
+          )}
 
-          {!temporaryPaymentMode && <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3.5 transition-colors hover:border-secondary-500/30">
+          {paymentMode === "gateway" && <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3.5 transition-colors hover:border-secondary-500/30">
             <input
               type="checkbox"
               checked={savePaymentMethod}
@@ -306,16 +380,16 @@ function PaymentContent() {
           )}
 
           <button
-            onClick={handlePay}
+            onClick={approvalRequested ? refreshPaymentStatus : handlePay}
             disabled={paying}
             className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#059669] py-3 font-semibold text-white shadow-lg shadow-[#059669]/25 transition-all hover:bg-[#047A55] disabled:opacity-50"
           >
-            {paying ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
-            {temporaryPaymentMode ? (
-              paying ? "Accepting test payment..." : `Accept Temporary Payment — ${formatMoney(payment.amount, payment.currency)}`
-            ) : (<>
-            {paying ? "Redirecting securely..." : `Proceed to Payment — ${formatMoney(payment.amount, payment.currency)}`}
-            </>)}
+            {paying ? <Loader2 size={18} className="animate-spin" /> : approvalRequested ? <RefreshCw size={18} /> : <ShieldCheck size={18} />}
+            {paymentMode === "manual_approval"
+              ? approvalRequested
+                ? (paying ? "Checking approval..." : "Refresh Approval Status")
+                : (paying ? "Sending request..." : "Request Payment Approval")
+              : (paying ? "Redirecting securely..." : `Proceed to Payment — ${formatMoney(payment.amount, payment.currency)}`)}
           </button>
 
           <button

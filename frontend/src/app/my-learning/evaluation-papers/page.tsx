@@ -147,11 +147,7 @@ export default function MyEvaluationPapersPage() {
           message="Evaluation papers assigned to you will appear here once your organization adds them."
         />
       ) : filtered.length === 0 ? (
-        <div className="glass rounded-xl p-16 text-center">
-          <ClipboardList size={36} className="text-gray-600 mx-auto mb-4" />
-          <p className="text-white font-medium mb-1">No matching papers</p>
-          <p className="text-gray-400 text-sm">Try adjusting your search query.</p>
-        </div>
+        <EmptyState icon={ClipboardList} title="No matching papers" message="Try adjusting your search query." />
       ) : (
         <div className="space-y-4">
           {/* Desktop Table */}

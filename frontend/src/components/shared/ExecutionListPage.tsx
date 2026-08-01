@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi, capApi } from "@/lib/api";
+import { dateValueKey, isPastAuditEndDate, localDateKey } from "@/lib/auditSchedule";
 import { useExecution } from "@/context/ExecutionContext";
 
 import {
@@ -18,6 +19,7 @@ import {
   Search,
   SlidersHorizontal,
   ChevronDown,
+  AlertTriangle,
 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
@@ -68,8 +70,8 @@ function fmtDate(d: string) {
 
 function isStartable(startDate?: string) {
   if (!startDate) return true;
-  const today = new Date().toISOString().split("T")[0];
-  const start = new Date(startDate).toISOString().split("T")[0];
+  const today = localDateKey();
+  const start = dateValueKey(startDate);
   return today >= start;
 }
 
@@ -260,9 +262,9 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
 
       const matchesAudit = workflowType !== "cap" || capAuditFilter === "all" || item.audit_code === capAuditFilter;
       const progress = item.progress_pct ?? Math.round(((item.answered_questions || 0) / Math.max(item.total_questions || 1, 1)) * 100);
-      const today = new Date().toISOString().slice(0, 10);
-      const startDay = String(item.start_date || "").slice(0, 10);
-      const endDay = String(item.end_date || "").slice(0, 10);
+      const today = localDateKey();
+      const startDay = dateValueKey(item.start_date);
+      const endDay = dateValueKey(item.end_date);
       const matchesAuditSchedule =
         workflowType !== "audit" ||
         auditScheduleFilter === "all" ||
@@ -616,6 +618,8 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                     const pct = item.progress_pct || Math.round(((item.answered_questions || 0) / (item.total_questions || 1)) * 100);
                     const remaining = daysRemaining(item.end_date);
                     const canStart = isStartable(item.start_date);
+                    const isOverdue = workflowType === "audit" && displayStatus !== "completed" && isPastAuditEndDate(item.end_date);
+                    const allAnswered = (item.total_questions || 0) > 0 && (item.answered_questions || 0) >= (item.total_questions || 0);
                     const itemIndex = (currentPage - 1) * pageSize + index + 1;
 
                     return (
@@ -659,7 +663,11 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                             </Td>
                             <Td className="text-gray-400">
                               {fmtDate(item.end_date || "")}
-                              {remaining < 7 && remaining >= 0 && <p className="text-[10px] text-red-500 mt-1 font-bold">{remaining} DAYS LEFT</p>}
+                              {isOverdue ? (
+                                <p className="text-[10px] text-red-400 mt-1 font-bold">OVERDUE</p>
+                              ) : remaining < 7 && remaining >= 0 ? (
+                                <p className="text-[10px] text-red-500 mt-1 font-bold">{remaining} DAYS LEFT</p>
+                              ) : null}
                             </Td>
                           </>
                         )}
@@ -674,7 +682,11 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                                 bg-secondary-500/10 text-secondary-400 border-secondary-500/20 hover:bg-secondary-500/20 hover:border-secondary-500/40 whitespace-nowrap"
                             >
                               {workflowType === "audit" ? (
-                                displayStatus === "plan" ? (
+                                isOverdue ? (
+                                  displayStatus === "in_progress" && allAnswered
+                                    ? <><CheckCircle2 size={12} /> Complete</>
+                                    : <><AlertTriangle size={12} /> Overdue</>
+                                ) : displayStatus === "plan" ? (
                                   canStart ? <><Play size={12} /> Start</> : <><Clock size={12} /> Scheduled</>
                                 ) : displayStatus === "in_progress" ? (
                                   <><Play size={12} /> Continue</>
@@ -706,6 +718,8 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                 const pct = item.progress_pct || Math.round(((item.answered_questions || 0) / (item.total_questions || 1)) * 100);
                 const remaining = daysRemaining(item.end_date);
                 const canStart = isStartable(item.start_date);
+                const isOverdue = workflowType === "audit" && displayStatus !== "completed" && isPastAuditEndDate(item.end_date);
+                const allAnswered = (item.total_questions || 0) > 0 && (item.answered_questions || 0) >= (item.total_questions || 0);
                 const itemIndex = (currentPage - 1) * pageSize + index + 1;
 
                 return (
@@ -766,7 +780,11 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                           </div>
                         )}
                         
-                        {workflowType === "audit" && remaining < 7 && remaining >= 0 ? (
+                        {workflowType === "audit" && isOverdue ? (
+                           <p className="text-[9px] text-red-400 font-extrabold uppercase tracking-widest bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 w-fit">
+                            Overdue
+                           </p>
+                        ) : workflowType === "audit" && remaining < 7 && remaining >= 0 ? (
                            <p className="text-[9px] text-red-500 font-extrabold uppercase tracking-widest bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 w-fit">
                             {remaining} {remaining === 1 ? "DAY" : "DAYS"} LEFT
                            </p>
@@ -778,7 +796,9 @@ export default function ExecutionListPage({ basePath }: ExecutionListPageProps) 
                         rightIcon={<ChevronRight size={16} strokeWidth={3} />}
                       >
                         {workflowType === "audit" ? (
-                          displayStatus === "plan"
+                          isOverdue
+                            ? (displayStatus === "in_progress" && allAnswered ? "Complete" : "Overdue")
+                            : displayStatus === "plan"
                             ? (canStart ? "Start" : "Wait")
                             : displayStatus === "in_progress"
                               ? "Resume"

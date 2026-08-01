@@ -31,7 +31,6 @@ import {
   ClipboardList,
   Sparkles,
   TableProperties,
-  Crown,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -791,7 +790,7 @@ function AiHierarchyPreview({ tree, hierarchyChain, scopeCode, onSelectScope }: 
 }
 
 export default function CreateChecklistPage({ readOnly = false }: { readOnly?: boolean }) {
-  const { admin, accessToken, isLoading, subscription } = useAuth();
+  const { admin, accessToken, isLoading } = useAuth();
   const { toast } = useUiFeedback();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -845,7 +844,6 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [mediaFileName, setMediaFileName] = useState("");
   const [showAiGenerator, setShowAiGenerator] = useState(false);
-  const [showAiUpgradeModal, setShowAiUpgradeModal] = useState(false);
   const [showAiReview, setShowAiReview] = useState(false);
   const [aiSourceFile, setAiSourceFile] = useState<File | null>(null);
   const [aiQuestionCount, setAiQuestionCount] = useState("10");
@@ -857,7 +855,6 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
   const fileRef = useRef<HTMLInputElement>(null);
   const mediaRef = useRef<HTMLInputElement>(null);
   const aiDocumentRef = useRef<HTMLInputElement>(null);
-  const canUseAiChecklistGeneration = subscription?.plan_name === "Elite" || subscription?.plan_name === "Custom";
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -1335,33 +1332,19 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold text-white">Generate questions with AI</p>
-                        <span className="rounded-full border border-secondary-500/25 bg-secondary-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-secondary-300">Review before adding</span>
-                        {!canUseAiChecklistGeneration && <span className="rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Elite &amp; Custom</span>}
+                        <span className="rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Coming soon</span>
                       </div>
-                      <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-gray-400">Upload a policy, procedure, SOP, or standard. Audito will prepare entity-aware questions for your confirmation.</p>
+                      <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-gray-400">AI-assisted, organization-aware question generation is being prepared for a future release.</p>
                     </div>
                   </div>
                   <Button
-                    disabled={canUseAiChecklistGeneration && treeEntities.length === 0}
-                    leftIcon={canUseAiChecklistGeneration ? <Sparkles size={15} /> : <Crown size={15} />}
+                    disabled
+                    leftIcon={<Sparkles size={15} />}
                     className="shrink-0"
-                    onClick={() => {
-                      setSaveError("");
-                      if (!canUseAiChecklistGeneration) {
-                        setShowAiUpgradeModal(true);
-                        return;
-                      }
-                      setShowAiGenerator(true);
-                    }}
                   >
-                    {canUseAiChecklistGeneration ? "Generate questions" : "Upgrade to use AI"}
+                    Coming soon
                   </Button>
                 </div>
-                {treeEntities.length === 0 && (
-                  <p className="border-t border-white/[0.06] px-4 py-2.5 text-xs text-amber-200/80 sm:px-5">
-                    Set up your organization structure before generating AI questions.
-                  </p>
-                )}
               </div>
             )}
 
@@ -1586,25 +1569,6 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
         </div>
 
         {/* Modals */}
-        <Modal
-          open={showAiUpgradeModal}
-          onClose={() => setShowAiUpgradeModal(false)}
-          title="AI checklist generation"
-          description="A premium capability for faster checklist creation."
-          icon={<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/15 text-amber-300"><Crown size={20} /></div>}
-          size="sm"
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setShowAiUpgradeModal(false)}>Not now</Button>
-              <Button leftIcon={<Crown size={15} />} onClick={() => { setShowAiUpgradeModal(false); router.push("/settings/billing"); }}>View upgrade options</Button>
-            </>
-          }
-        >
-          <p className="text-sm leading-6 text-gray-300">
-            Generate questions with AI is available with Elite and Custom plans. Upgrade your workspace to use your reference documents to create organization-aware checklist questions.
-          </p>
-        </Modal>
-
         <Modal
           open={showAiGenerator}
           onClose={() => {

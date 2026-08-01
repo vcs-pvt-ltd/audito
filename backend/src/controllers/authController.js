@@ -1486,6 +1486,46 @@ const resetPassword = async (req, res) => {
 
 // ─── VERIFY EMAIL ────────────────────────────────────────────────
 
+async function getVerifiedAdminResponseData(admin) {
+  const pendingPayment = await PaymentModel.findPendingByOrgPurpose(admin.entity_code, 'registration');
+
+  let customSolutionPayment = null;
+  let custom_solution_pending = false;
+  if (!pendingPayment && admin.entity_code) {
+    const customRequest = await CustomSolutionModel.findByOrgCode(admin.entity_code);
+    if (customRequest) {
+      if (customRequest.status === 'priced' && customRequest.payment_code) {
+        const payment = await PaymentModel.findByCode(customRequest.payment_code);
+        if (payment && payment.status === 'pending') {
+          customSolutionPayment = {
+            payment_code: payment.payment_code,
+            plan_name: 'Custom',
+            billing_cycle: payment.billing_cycle,
+            amount: Number(payment.amount),
+          };
+        }
+      } else if (customRequest.status === 'pending') {
+        custom_solution_pending = true;
+      }
+    }
+  }
+
+  return {
+    email: admin.email,
+    first_name: admin.first_name,
+    needs_password: false,
+    custom_solution_pending,
+    payment: pendingPayment
+      ? {
+          payment_code: pendingPayment.payment_code,
+          plan_name: pendingPayment.plan_name,
+          billing_cycle: pendingPayment.billing_cycle,
+          amount: Number(pendingPayment.amount),
+        }
+      : customSolutionPayment,
+  };
+}
+
 /**
  * POST /api/auth/verify-email
  * Body: { token }
@@ -1508,45 +1548,16 @@ const verifyEmail = async (req, res) => {
           admin_id: admin.admin_id,
         }, 'Email verified. Please set your password.', 200);
       }
-      await AdminModel.markAsVerified(admin.admin_id);
-      const pendingPayment = await PaymentModel.findPendingByOrgPurpose(admin.entity_code, 'registration');
+      await AdminModel.markAsVerified(admin.admin_id, token);
+      return successResponse(res, await getVerifiedAdminResponseData(admin), 'Email verified successfully. You may now log in.', 200);
+    }
 
-      // Check if this is a custom solution that has been priced
-      let customSolutionPayment = null;
-      let custom_solution_pending = false;
-      if (!pendingPayment && admin.entity_code) {
-        const customReq = await CustomSolutionModel.findByOrgCode(admin.entity_code);
-        if (customReq) {
-          if (customReq.status === 'priced' && customReq.payment_code) {
-            const cp = await PaymentModel.findByCode(customReq.payment_code);
-            if (cp && cp.status === 'pending') {
-              customSolutionPayment = {
-                payment_code: cp.payment_code,
-                plan_name: 'Custom',
-                billing_cycle: cp.billing_cycle,
-                amount: Number(cp.amount),
-              };
-            }
-          } else if (customReq.status === 'pending') {
-            custom_solution_pending = true;
-          }
-        }
-      }
-
+    const alreadyVerifiedAdmin = await AdminModel.findByConsumedVerificationToken(token);
+    if (alreadyVerifiedAdmin) {
       return successResponse(res, {
-        email: admin.email,
-        first_name: admin.first_name,
-        needs_password: false,
-        custom_solution_pending,
-        payment: pendingPayment
-          ? {
-              payment_code: pendingPayment.payment_code,
-              plan_name: pendingPayment.plan_name,
-              billing_cycle: pendingPayment.billing_cycle,
-              amount: Number(pendingPayment.amount),
-            }
-          : customSolutionPayment,
-      }, 'Email verified successfully. You may now log in.', 200);
+        ...await getVerifiedAdminResponseData(alreadyVerifiedAdmin),
+        already_verified: true,
+      }, 'This email address is already verified.', 200);
     }
 
     // Custom solution requests are verified before a workspace admin exists.

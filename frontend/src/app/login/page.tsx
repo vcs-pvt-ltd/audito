@@ -138,7 +138,7 @@ function LoginForm() {
         </div>
       )}
       {verificationModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary-950/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="verify-email-title">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="verify-email-title">
           <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-secondary-500/25 bg-[#053B36] p-6 shadow-2xl shadow-black/40 sm:p-8">
             <button type="button" onClick={() => setVerificationModalOpen(false)} aria-label="Close" className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-white/10 hover:text-white"><X size={18} /></button>
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-secondary-500/25 bg-secondary-500/15 text-secondary-300"><Mail size={23} /></div>

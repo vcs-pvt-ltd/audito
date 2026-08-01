@@ -40,3 +40,16 @@ column, foreign-key columns, application role, models, and routes use
 The rename migration also converts existing refresh-token metadata and
 notification recipient roles. Already-issued JWTs continue to work because the
 application normalizes the legacy role until those tokens expire.
+
+## Manual payment approval
+
+Apply `20260802_manual_payment_approval.sql` before deploying the manual-payment
+approval workflow. It adds the review state and immutable reviewer timestamps
+used by the customer payment page and the Audito Admin payment queue.
+
+Set `PAYMENT_MODE=manual_approval` (or leave it unset) while payments are being
+verified manually. When the payment gateway is ready, set
+`PAYMENT_MODE=gateway`; existing gateway checkout and callback settlement will
+then become the active customer flow without removing the approval history.
+
+`PAYMENT_CONTACT_EMAIL` is optional and defaults to `hi@audito.cloud`.
