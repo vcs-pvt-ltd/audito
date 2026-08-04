@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { usersApi, orgTreeApi, countriesApi, authApi, type Country } from "@/lib/api";
 
-import { Plus, RefreshCw, Pencil, Trash2, Mail, CheckCircle, Clock, X, UserCheck, Users, Search, Crown, Lock } from "lucide-react";
+import { Plus, RefreshCw, Pencil, Trash2, Mail, CheckCircle, Clock, X, UserCheck, Users, Search, Crown, Lock, Star } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
@@ -74,6 +74,8 @@ interface User {
   is_active: boolean;
   is_linked?: boolean;
   in_use?: boolean;
+  average_rating?: number | null;
+  rating_count?: number;
   created_at: string;
 }
 
@@ -981,6 +983,18 @@ function EmailBadge({ verified, hasPassword }: { verified: boolean; hasPassword:
   );
 }
 
+function AuditorRatingSummary({ user }: { user: User }) {
+  const count = Number(user.rating_count || 0);
+  const average = Number(user.average_rating || 0);
+  if (!count) return <span className="text-xs text-gray-500">Not rated</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-secondary-300" title={`${average.toFixed(1)} out of 5 from ${count} completed audit rating${count === 1 ? "" : "s"}`}>
+      <Star size={13} fill="currentColor" className="text-secondary-400" />
+      {average.toFixed(1)} <span className="font-normal text-gray-500">({count})</span>
+    </span>
+  );
+}
+
 // ─── Page ────────────────────────────────────────────────────────
 
 export default function UsersClientPage() {
@@ -992,6 +1006,7 @@ export default function UsersClientPage() {
   const requestedTypeSlug = searchParams.get("type") || "auditors";
   const typeSlug = requestedTypeSlug === "auditors" ? "auditors" : "organization-users";
   const config = USER_TYPE_CONFIGS[typeSlug];
+  const isAuditorList = config.backendType === "Auditor";
 
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1402,6 +1417,7 @@ export default function UsersClientPage() {
                   <THead>
                     <Th className="w-12">#</Th>
                     <Th>Name</Th>
+                    {isAuditorList && <Th>Rating</Th>}
                     <Th>Email</Th>
                     <Th>Phone</Th>
                     <Th>Country</Th>
@@ -1423,6 +1439,10 @@ export default function UsersClientPage() {
                           <td className="px-4 py-3 text-white font-medium">
                             {user.first_name} {user.last_name}
                           </td>
+
+                          {isAuditorList && (
+                            <td className="px-4 py-3"><AuditorRatingSummary user={user} /></td>
+                          )}
 
                           <td className="px-4 py-3 text-gray-400">{user.email}</td>
                           <td className="px-4 py-3 text-gray-400"><PhoneNumber phone={user.phone_number} country={user.country} /></td>
@@ -1514,6 +1534,12 @@ export default function UsersClientPage() {
                         <p className="text-gray-500">Country</p>
                         <p className="text-gray-300 mt-0.5 truncate">{user.country || "-"}</p>
                       </div>
+                      {isAuditorList && (
+                        <div className="rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
+                          <p className="text-gray-500">Rating</p>
+                          <p className="mt-0.5"><AuditorRatingSummary user={user} /></p>
+                        </div>
+                      )}
                       {(config.customScopes || effectiveTreeSteps.length > 0) && (
                         <div className="col-span-2 rounded-lg bg-white/[0.03] border border-white/10 px-2.5 py-2">
                           <p className="text-gray-500">{config.customScopes ? "Entity Access" : "Assigned To"}</p>

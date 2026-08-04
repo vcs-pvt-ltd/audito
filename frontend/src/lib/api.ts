@@ -350,11 +350,21 @@ export const linksApi = {
 
   createLink: (
     token: string,
-    target_email: string
+    target_email: string,
+    target: {
+      entity_type: string;
+      entity_code: string;
+      target_org_tree_id: string | null;
+    }
   ) =>
     apiRequest("/links", {
       method: "POST",
-      body: { target_email },
+      body: {
+        target_email,
+        target_entity_type: target.entity_type,
+        target_entity_code: target.entity_code,
+        target_org_tree_id: target.target_org_tree_id,
+      },
       token,
     }),
 
@@ -364,6 +374,9 @@ export const linksApi = {
       body: verification_key ? { action, verification_key } : { action },
       token,
     }),
+
+  regenerateVerificationKey: (token: string, linkCode: string) =>
+    apiRequest(`/links/${linkCode}/key`, { method: "POST", token }),
 
   removeLink: (token: string, linkCode: string) =>
     apiRequest(`/links/${linkCode}`, { method: "DELETE", token }),
@@ -482,6 +495,7 @@ export interface QuestionOption {
 }
 
 export interface QuestionPayload {
+  checklist_question_id?: string;
   entity_code: string;
   org_tree_id?: string | null;
   entity_type: string;
@@ -533,6 +547,12 @@ export const checklistApi = {
   addQuestions: (token: string, checklistId: string, questions: QuestionPayload[]) =>
     apiRequest(`/checklists/${checklistId}/questions`, {
       method: "POST",
+      body: { questions } as unknown as Record<string, unknown>,
+      token,
+    }),
+  syncQuestions: (token: string, checklistId: string, questions: QuestionPayload[]) =>
+    apiRequest(`/checklists/${checklistId}/questions`, {
+      method: "PUT",
       body: { questions } as unknown as Record<string, unknown>,
       token,
     }),
@@ -644,6 +664,17 @@ export interface AuditPayload {
   entities: Array<{ org_tree_id?: string | null; entity_code: string; entity_type: string; entity_name: string }>;
 }
 
+export interface AuditorRating {
+  auditor_rating_id: string;
+  audit_id: string;
+  auditor_id: string;
+  rated_by_admin_id: string;
+  stars: number;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export const auditApi = {
   getChecklistEntities: (token: string, checklistId: string) =>
     apiRequest(`/audits/checklist/${checklistId}/entities`, { token }),
@@ -656,6 +687,12 @@ export const auditApi = {
 
   get: (token: string, id: string) =>
     apiRequest(`/audits/${id}`, { token }),
+
+  getAuditorRating: (token: string, id: string) =>
+    apiRequest<{ rating: AuditorRating | null }>(`/audits/${id}/auditor-rating`, { token }),
+
+  saveAuditorRating: (token: string, id: string, data: Pick<AuditorRating, "stars" | "comment">) =>
+    apiRequest<{ rating: AuditorRating }>(`/audits/${id}/auditor-rating`, { method: "PUT", body: data, token }),
 
   update: (token: string, id: string, data: Partial<AuditPayload>) =>
     apiRequest(`/audits/${id}`, { method: "PUT", body: data as unknown as Record<string, unknown>, token }),
@@ -784,6 +821,9 @@ export const auditExecutionApi = {
   getDetail: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}`, { token }),
 
+  getFirmProgressDetail: (token: string, id: string) =>
+    apiRequest(`/audit-execution/${id}/firm-progress`, { token }),
+
   getEntityTree: (token: string, id: string) =>
     apiRequest(`/audit-execution/${id}/entity-tree`, { token }),
 
@@ -894,6 +934,9 @@ export const capApi = {
 
   get: (token: string, id: string) =>
     apiRequest(`/caps/${id}`, { token }),
+
+  getFirmProgressDetail: (token: string, id: string) =>
+    apiRequest(`/caps/${id}/firm-progress`, { token }),
 
   // Get CAP questions for execution view
   getItems: (token: string, id: string) =>
@@ -1536,6 +1579,7 @@ export interface RegisteredOrganization {
   account_type: string | null;
   entity_type: string | null;
   country: string | null;
+  phone_number: string | null;
   admin_active: number | null;
   email_verified: number | null;
   org_name: string | null;

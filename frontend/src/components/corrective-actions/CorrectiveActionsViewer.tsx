@@ -17,10 +17,15 @@ import {
   ChevronRight,
   ClipboardCheck,
   Clock3,
+  Camera,
   HelpCircle,
+  Music,
+  Paperclip,
   Search,
   User,
+  Video,
 } from "lucide-react";
+import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
 
 type SourceType = "audit" | "cap";
 type RequiredRole = "admin" | "organization_user";
@@ -40,7 +45,9 @@ interface CorrectiveActionItem {
   assigned_org_tree_id?: string | number | null;
   question_text?: string;
   answer_text?: string | null;
+  selected_option_ids?: string | string[] | number[] | null;
   remarks?: string | null;
+  evidence?: EvidenceAttachment[];
   marks_obtained?: string | number | null;
   total_marks?: string | number | null;
   order_index?: number | null;
@@ -48,6 +55,14 @@ interface CorrectiveActionItem {
     first_name?: string;
     last_name?: string;
   } | null;
+}
+
+interface EvidenceAttachment {
+  id?: string | number;
+  evidence_id?: string | number;
+  file_type?: string;
+  file_path: string;
+  file_name?: string;
 }
 
 interface CorrectiveAction {
@@ -118,9 +133,46 @@ interface ActionViewRow {
   responsible: string;
 }
 
+function EvidenceAttachments({ evidence }: { evidence?: EvidenceAttachment[] }) {
+  if (!evidence?.length) return null;
+
+  return (
+    <div className="mt-3 border-t border-white/[0.06] pt-3">
+      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500">
+        <Camera size={12} className="text-secondary-400" />
+        Evidence ({evidence.length})
+      </div>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {evidence.map((file, index) => {
+          const kind = inferEvidenceKind(file.file_type, file.file_name, file.file_path);
+          const url = getEvidenceUrl(file.file_path);
+          return (
+            <a
+              key={`${file.id || file.evidence_id || file.file_path || file.file_name || "evidence"}::${index}`}
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-white/10 bg-white/[0.03] p-2 transition-colors hover:border-white/20"
+            >
+              {kind === "image" ? (
+                <img src={url} alt={file.file_name || "Evidence"} className="h-24 w-full rounded-md object-cover" />
+              ) : (
+                <div className="flex h-24 w-full items-center justify-center rounded-md bg-white/[0.04] text-gray-300">
+                  {kind === "video" ? <Video size={18} /> : kind === "audio" ? <Music size={18} /> : <Paperclip size={18} />}
+                </div>
+              )}
+              <p className="mt-1 truncate text-[11px] text-gray-400">{file.file_name || "Evidence"}</p>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CorrectiveActionCard({ row, index, showStatus, viewerRole }: { row: ActionViewRow; index: number; showStatus: boolean; viewerRole: RequiredRole }) {
   const { action, item, entityName, status, overdue, responsible } = row;
-  const questionNumber = Number(item?.order_index ?? index) + 1;
+  const questionNumber = index + 1;
   const obtainedMarks = Number(item?.marks_obtained ?? 0);
   const totalMarks = Number(item?.total_marks ?? 0);
   const hasMarks = item?.marks_obtained !== null && item?.marks_obtained !== undefined;
@@ -152,14 +204,21 @@ function CorrectiveActionCard({ row, index, showStatus, viewerRole }: { row: Act
       <div className="mt-4 rounded-xl border border-white/[0.07] bg-black/10 p-4">
         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Action details</p>
         <p className="mt-2 text-sm leading-relaxed text-gray-300">
-          {action.description || item?.remarks || "No additional action description was provided."}
+          {action.description || "No additional action description was provided."}
         </p>
-        {item?.answer_text && (
+        {item && (item.answer_text || item.selected_option_ids) && (
           <div className="mt-3 border-t border-white/[0.06] pt-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Recorded response</p>
-            <p className="mt-1 text-sm text-gray-300">{item.answer_text}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Response</p>
+            <p className="mt-1 text-sm text-gray-300">{item.answer_text || "Response recorded"}</p>
           </div>
         )}
+        {item?.remarks && (
+          <div className="mt-3 border-t border-white/[0.06] pt-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Remarks</p>
+            <p className="mt-1 text-sm text-gray-300">{item.remarks}</p>
+          </div>
+        )}
+        <EvidenceAttachments evidence={item?.evidence} />
         {action.resolution_notes && (
           <div className="mt-3 border-t border-white/[0.06] pt-3">
             <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400/70">Resolution notes</p>
@@ -472,7 +531,7 @@ export default function CorrectiveActionsViewer({ sourceType, requiredRole, back
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <h2 className="text-base font-bold leading-relaxed text-white">
-                          <span className="mr-2 text-secondary-400">{Number(item?.order_index ?? index) + 1}.</span>
+                          <span className="mr-2 text-secondary-400">{index + 1}.</span>
                           {item?.question_text || "Corrective action"}
                         </h2>
                       </div>
@@ -493,14 +552,21 @@ export default function CorrectiveActionsViewer({ sourceType, requiredRole, back
                     <div className="mt-4 rounded-xl border border-white/[0.07] bg-black/10 p-4">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Action details</p>
                       <p className="mt-2 text-sm leading-relaxed text-gray-300">
-                        {action.description || item?.remarks || "No additional action description was provided."}
+                        {action.description || "No additional action description was provided."}
                       </p>
-                      {item?.answer_text && (
+                      {item && (item.answer_text || item.selected_option_ids) && (
                         <div className="mt-3 border-t border-white/[0.06] pt-3">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Recorded response</p>
-                          <p className="mt-1 text-sm text-gray-300">{item.answer_text}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Response</p>
+                          <p className="mt-1 text-sm text-gray-300">{item.answer_text || "Response recorded"}</p>
                         </div>
                       )}
+                      {item?.remarks && (
+                        <div className="mt-3 border-t border-white/[0.06] pt-3">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Remarks</p>
+                          <p className="mt-1 text-sm text-gray-300">{item.remarks}</p>
+                        </div>
+                      )}
+                      <EvidenceAttachments evidence={item?.evidence} />
                       {action.resolution_notes && (
                         <div className="mt-3 border-t border-white/[0.06] pt-3">
                           <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400/70">Resolution notes</p>

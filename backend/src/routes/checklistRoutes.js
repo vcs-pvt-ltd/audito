@@ -20,6 +20,7 @@ const {
   updateChecklist,
   deactivateChecklist,
   addQuestions,
+  syncQuestions,
   updateQuestion,
   deleteQuestion,
   downloadExcelTemplate,
@@ -117,6 +118,7 @@ router.delete('/:id',   deactivateChecklist);
 
 // ── Questions under a checklist ──────────────────────────────────
 router.post('/:id/questions',        addQuestions);
+router.put ('/:id/questions',        syncQuestions);
 router.post('/:id/questions/upload', upload.single('questions_file'), uploadQuestionsExcel);
 
 module.exports = router;

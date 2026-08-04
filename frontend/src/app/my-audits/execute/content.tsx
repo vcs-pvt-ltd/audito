@@ -197,8 +197,11 @@ function EntityCard({
   const statusCls = pct >= 100 ? "bg-emerald-500 text-white" : aQ > 0 ? "bg-blue-500 text-white" : "bg-gray-600 text-white";
 
   return (
-    <div onClick={onClick}
-      className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group">
+    <button
+      type="button"
+      onClick={onClick}
+      className="block w-full rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] text-left hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group"
+    >
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
         <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-secondary-500/30">
@@ -231,7 +234,7 @@ function EntityCard({
           <span className={`text-[10px] font-semibold px-3 py-1 rounded-full ${statusCls}`}>{status}</span>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -800,8 +803,8 @@ export default function MyAuditExecutePage() {
   const [prunedTree, setPrunedTree] = useState<TreeNode | null>(null);
   const [responses, setResponses] = useState<Record<string, AuditResponse[]>>({});
   const [stepHistory, setStepHistory] = useState<
-    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
-  >([{ mode: "cards", parentCode: null }]);
+    ({ mode: "cards"; parentCode: string | null; parentOrgTreeId: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
+  >([{ mode: "cards", parentCode: null, parentOrgTreeId: null }]);
   const contentRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1091,7 +1094,7 @@ export default function MyAuditExecutePage() {
                 }
                 const hasKids = (nd.children ?? []).length > 0;
                 if (!hasQ && hasKids) {
-                  pushStep({ mode: "cards", parentCode: code });
+                  pushStep({ mode: "cards", parentCode: code, parentOrgTreeId: edgeId });
                 } else {
                   pushStep({ mode: "questions", entityCode: code, orgTreeId: resolvedTreeId });
                 }
@@ -1110,9 +1113,13 @@ export default function MyAuditExecutePage() {
                 for (let i = 0; i < stepHistory.length; i++) {
                   const s = stepHistory[i];
                   const code = s.mode === "questions" ? s.entityCode : s.parentCode;
-                  if (code && !seenCodes.has(code)) {
-                    seenCodes.add(code);
-                    const nd = prunedTree ? findNode(prunedTree, code) : null;
+                  const edgeId = s.mode === "questions" ? s.orgTreeId : s.parentOrgTreeId;
+                  const instanceKey = code ? progressKey(code, edgeId) : null;
+                  if (code && instanceKey && !seenCodes.has(instanceKey)) {
+                    seenCodes.add(instanceKey);
+                    const nd = prunedTree
+                      ? (edgeId ? findNodeByEdgeId(prunedTree, edgeId) : findNode(prunedTree, code))
+                      : null;
                     const ent = audit.entities.find(e => e.entity_code === code);
                     const lbl = nd?.name || ent?.entity_name || code;
                     const idx = i;
@@ -1131,7 +1138,11 @@ export default function MyAuditExecutePage() {
                   }
                 } else {
                   // Non-root: show all direct children of parent (don't filter by audit codes)
-                  const parentNode = prunedTree ? findNode(prunedTree, step.parentCode) : null;
+                  const parentNode = prunedTree
+                    ? (step.parentOrgTreeId
+                      ? findNodeByEdgeId(prunedTree, step.parentOrgTreeId)
+                      : findNode(prunedTree, step.parentCode))
+                    : null;
                   cards = parentNode ? (parentNode.children ?? []) : [];
                 }
 
@@ -1154,18 +1165,15 @@ export default function MyAuditExecutePage() {
                       {/* Breadcrumb */}
                       {!isRoot && (
                         <nav className="flex items-center gap-1.5 flex-wrap mb-5 text-xs">
-                          <button onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                          <button onClick={goBack}
                             className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors">
-                            <ArrowLeft size={12} /> All Entities
+                            <ArrowLeft size={12} /> Back
                           </button>
-                          {breadcrumbNodes.map((bc, i) => (
-                            <span key={i} className="flex items-center gap-1.5">
-                              <ChevronRight size={12} className="text-gray-600" />
-                              {i < breadcrumbNodes.length - 1 ? (
-                                <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">{bc.label}</button>
-                              ) : (
-                                <span className="text-gray-300">{bc.label}</span>
-                              )}
+                          {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />…</span>}
+                          {breadcrumbNodes.slice(-1).map((bc) => (
+                            <span key={bc.label} className="flex min-w-0 items-center gap-1.5">
+                              <ChevronRight size={12} className="shrink-0 text-gray-600" />
+                              <span className="truncate text-gray-300" title={bc.label}>{bc.label}</span>
                             </span>
                           ))}
                           <span className="flex items-center gap-1.5">
@@ -1279,18 +1287,15 @@ export default function MyAuditExecutePage() {
                   {/* Breadcrumb + Progress */}
                   <div className="flex items-start justify-between gap-3 mb-5">
                     <nav className="flex items-center gap-1.5 flex-wrap text-xs">
-                      <button onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                      <button onClick={goBack}
                         className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors">
-                        <ArrowLeft size={12} /> All Entities
+                        <ArrowLeft size={12} /> Back
                       </button>
-                      {breadcrumbNodes.map((bc, i) => (
-                        <span key={i} className="flex items-center gap-1.5">
-                          <ChevronRight size={12} className="text-gray-600" />
-                          {i < breadcrumbNodes.length - 1 ? (
-                            <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">{bc.label}</button>
-                          ) : (
-                            <span className="text-white font-medium">{bc.label}</span>
-                          )}
+                      {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />…</span>}
+                      {breadcrumbNodes.slice(-1).map((bc) => (
+                        <span key={bc.label} className="flex min-w-0 items-center gap-1.5">
+                          <ChevronRight size={12} className="shrink-0 text-gray-600" />
+                          <span className="truncate font-medium text-white" title={bc.label}>{bc.label}</span>
                         </span>
                       ))}
                     </nav>
@@ -1379,7 +1384,7 @@ export default function MyAuditExecutePage() {
                       {hasNextQuestionEntities && (
                         <button
                           onClick={() => {
-                            if (hasChildren) pushStep({ mode: "cards", parentCode: entityCode });
+                            if (hasChildren) pushStep({ mode: "cards", parentCode: entityCode, parentOrgTreeId: orgTreeIdForKey });
                           }}
                           className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all shadow-lg shadow-secondary-500/20 bg-secondary-500 text-white hover:bg-secondary-600"
                         >

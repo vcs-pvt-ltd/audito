@@ -277,6 +277,15 @@ async function getOrganizationUserScope(user) {
   return resolved;
 }
 
+async function isAuditFirmOrganizationUser(user) {
+  if (!user || user.role !== 'organization_user' || !user.createdByEntityCode) return false;
+  const [rows] = await db.query(
+    'SELECT 1 FROM audit_firm_companies WHERE afc_code = ? AND is_active = TRUE LIMIT 1',
+    [user.createdByEntityCode]
+  );
+  return rows.length > 0;
+}
+
 function entityMatchesOrgTreeScope(entity, scopeIds, entityCodeScope = []) {
   if (!entity) return false;
   const orgId = entity.org_tree_id ?? entity.assigned_org_tree_id ?? null;
@@ -367,6 +376,7 @@ module.exports = {
   getOrganizationUserOrgTreeScope,
   getOrganizationUserEntityCodeScope,
   getOrganizationUserScope,
+  isAuditFirmOrganizationUser,
   entityMatchesOrgTreeScope,
   auditEntitiesInScope,
   extractOrganizationUserSubtree,

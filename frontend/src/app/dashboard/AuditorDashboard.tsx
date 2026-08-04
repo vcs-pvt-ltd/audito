@@ -97,7 +97,7 @@ function MiniCard({ icon: Icon, title, value, accent, onClick }: { icon: LucideI
 
 function NoticeBoard({ notices }: { notices: Notice[] }) {
   return (
-    <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.08] flex-1 min-h-0 select-none">
+    <div className="flex flex-col gap-2 flex-1 min-h-0 select-none">
       <div className="flex items-center justify-between px-0.5">
         <h2 className="text-sm font-medium text-[#ffffffe6] tracking-wide flex items-center gap-1.5">
           <Bell size={14} className="text-secondary-400" />
@@ -504,9 +504,7 @@ export default function AuditorDashboard({ overview, admin }: { overview: Dashbo
                         <span>{percent(a.progress_pct)}% Progress</span>
                       </div>
 
-                      <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-secondary-400 rounded-full transition-all duration-300" style={{ width: `${percent(a.progress_pct)}%` }} />
-                      </div>
+                   
                     </button>
                   ))
                 )}

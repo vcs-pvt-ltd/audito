@@ -15,6 +15,9 @@
 const AuditModel = require('../models/AuditModel');
 const ChecklistModel = require('../models/ChecklistModel');
 const AuditorModel = require('../models/AuditorModel');
+const AuditorRatingModel = require('../models/AuditorRatingModel');
+const AdminModel = require('../models/AdminModel');
+const OrganizationTreeModel = require('../models/OrganizationTreeModel');
 const { db } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const {
@@ -24,9 +27,10 @@ const {
 } = require('../utils/accessHelper');
 const AuditExecutionModel = require('../models/AuditExecutionModel');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
-const { sendAuditAssignedEmail } = require('../services/emailService');
+const { sendAuditAssignedEmail, sendAuditFirmAssignmentEmail } = require('../services/emailService');
 const NotificationModel = require('../models/NotificationModel');
 const { getCountryDialingCode } = require('../utils/orgLookup');
+const { generateAuditorRatingId } = require('../utils/codeGenerator');
 
 function formatPhoneWithDialingCode(phoneNumber, dialingCode) {
   const phone = String(phoneNumber || '').trim();
@@ -151,25 +155,63 @@ const getChecklistEntities = async (req, res) => {
       return errorResponse(res, 'Checklist not found.', 404);
     }
 
-    const questions = await ChecklistModel.listQuestions(checklist_id);
+    const [questions, visibleEdges] = await Promise.all([
+      ChecklistModel.listQuestions(checklist_id),
+      OrganizationTreeModel.getTreeDescendants(req.user.entityCode, accessibleCodes),
+    ]);
 
-    // Collect distinct entity instances (entity_code + org_tree_id)
-    const seen = new Set();
-    const entities = [];
-    for (const q of questions) {
-      const k = `${q.entity_code}__${q.org_tree_id || 'null'}`;
-      if (!seen.has(k)) {
-        seen.add(k);
-        entities.push({
+    const visibleEdgeById = new Map(visibleEdges.map((edge) => [String(edge.org_tree_id), edge]));
+    const visibleEdgesByEntityCode = new Map();
+    for (const edge of visibleEdges) {
+      const code = String(edge.child_code);
+      if (!visibleEdgesByEntityCode.has(code)) visibleEdgesByEntityCode.set(code, []);
+      visibleEdgesByEntityCode.get(code).push(edge);
+    }
+
+    // Translate checklist question targets into entity instances in the
+    // assigning organization's tree. A linked checklist's root question has
+    // org_tree_id NULL in its owner workspace, but appears under a link edge in
+    // the target workspace and must be displayed/assigned using that edge.
+    const entitiesByKey = new Map();
+    const addEntityQuestion = (q, orgTreeId, edge = null) => {
+      const normalizedId = orgTreeId === undefined || orgTreeId === null || orgTreeId === ''
+        ? null
+        : orgTreeId;
+      const key = `${q.entity_code}__${normalizedId ?? 'null'}`;
+      if (!entitiesByKey.has(key)) {
+        entitiesByKey.set(key, {
           entity_code: q.entity_code,
-          org_tree_id: q.org_tree_id || null,
-          entity_type: q.entity_type,
+          org_tree_id: normalizedId,
+          entity_type: edge?.child_type || q.entity_type,
           question_count: 0,
         });
       }
-      const ent = entities.find(e => e.entity_code === q.entity_code && (e.org_tree_id ?? null) === (q.org_tree_id || null));
-      if (ent) ent.question_count++;
+      entitiesByKey.get(key).question_count++;
+    };
+
+    for (const q of questions) {
+      const sourceTreeId = q.org_tree_id === undefined || q.org_tree_id === null || q.org_tree_id === ''
+        ? null
+        : q.org_tree_id;
+      if (sourceTreeId !== null) {
+        const exactEdge = visibleEdgeById.get(String(sourceTreeId));
+        if (exactEdge && String(exactEdge.child_code) === String(q.entity_code)) {
+          addEntityQuestion(q, exactEdge.org_tree_id, exactEdge);
+        }
+        continue;
+      }
+
+      if (String(q.entity_code) === String(req.user.entityCode)) {
+        addEntityQuestion(q, null);
+        continue;
+      }
+
+      for (const edge of visibleEdgesByEntityCode.get(String(q.entity_code)) || []) {
+        addEntityQuestion(q, edge.org_tree_id, edge);
+      }
     }
+
+    const entities = Array.from(entitiesByKey.values());
 
     // Fetch names for all codes in one UNION query
     if (entities.length > 0) {
@@ -394,6 +436,53 @@ const createAudit = async (req, res) => {
         return errorResponse(res, 'Select a verified auditor available to your organization.', 400);
       }
     }
+    if (audit_type === 'external') {
+      if (!assigned_firm_code) {
+        return errorResponse(res, 'Select an audit firm for an external audit.', 400);
+      }
+      if (assigned_auditor_id) {
+        return errorResponse(res, 'The audit firm must assign its own auditor for an external audit.', 400);
+      }
+      const [firmRows] = await db.query(
+        'SELECT afc_code FROM audit_firm_companies WHERE afc_code = ? AND is_active = TRUE LIMIT 1',
+        [assigned_firm_code]
+      );
+      if (!firmRows.length) {
+        return errorResponse(res, 'Select an active audit firm.', 400);
+      }
+    }
+
+    const [visibleTreeEdges, checklistQuestions] = await Promise.all([
+      OrganizationTreeModel.getTreeDescendants(req.user.entityCode, accessibleCodes),
+      ChecklistModel.listQuestions(checklist_id),
+    ]);
+    const visibleEdgeById = new Map(visibleTreeEdges.map((edge) => [String(edge.org_tree_id), edge]));
+    for (const entity of entities) {
+      const orgTreeId = entity.org_tree_id === undefined || entity.org_tree_id === null || entity.org_tree_id === ''
+        ? null
+        : entity.org_tree_id;
+      if (orgTreeId === null) {
+        if (String(entity.entity_code) !== String(req.user.entityCode)) {
+          return errorResponse(res, 'One or more selected entities are not in your organization tree.', 400);
+        }
+      } else {
+        const edge = visibleEdgeById.get(String(orgTreeId));
+        if (!edge || String(edge.child_code) !== String(entity.entity_code)) {
+          return errorResponse(res, 'One or more selected entities are no longer available in your organization tree.', 400);
+        }
+      }
+
+      const hasQuestions = checklistQuestions.some((question) => {
+        if (String(question.entity_code) !== String(entity.entity_code)) return false;
+        const questionTreeId = question.org_tree_id === undefined || question.org_tree_id === null || question.org_tree_id === ''
+          ? null
+          : question.org_tree_id;
+        return questionTreeId === null || String(questionTreeId) === String(orgTreeId);
+      });
+      if (!hasQuestions) {
+        return errorResponse(res, 'One or more selected entities do not have questions in this checklist.', 400);
+      }
+    }
 
     const creation = await LimitsEnforcer.withQuotaLock(
       req.user.entityCode,
@@ -480,6 +569,31 @@ const createAudit = async (req, res) => {
         });
       } catch (e) {
         console.error('sendAuditAssignedEmail error:', e);
+      }
+    }
+
+    if (audit_type === 'external' && assigned_firm_code) {
+      try {
+        const firmAdmin = await AdminModel.findByEntityCode(assigned_firm_code);
+        if (firmAdmin?.admin_id) {
+          const firmAdminName = `${firmAdmin.first_name || ''} ${firmAdmin.last_name || ''}`.trim();
+          if (firmAdmin.email) {
+            await sendAuditFirmAssignmentEmail(firmAdmin.email, firmAdminName, created || { title, start_date, end_date });
+          }
+          await NotificationModel.createIfNotExists({
+            recipient_user_code: firmAdmin.admin_id,
+            recipient_role: 'admin',
+            created_by_entity_code: req.user.entityCode,
+            type: 'audit_firm_assigned',
+            title: 'External Audit Assigned',
+            message: `An external audit${title ? `, ${title},` : ''} has been assigned to your firm. Assign an auditor to continue.`,
+            audit_id: id,
+            notification_key: `audit_firm_assigned:${id}:${firmAdmin.admin_id}`,
+          });
+        }
+      } catch (e) {
+        // The audit assignment is valid even if a notification provider is unavailable.
+        console.error('notifyAuditFirmAssignment error:', e);
       }
     }
 
@@ -571,6 +685,73 @@ const listAudits = async (req, res) => {
   } catch (err) {
     console.error('listAudits error:', err);
     return errorResponse(res, 'Failed to fetch audits.', 500);
+  }
+};
+
+async function getRateableAuditForAdmin(req, auditId, res) {
+  if (req.user.role !== 'admin') {
+    errorResponse(res, 'Only workspace administrators can rate auditors.', 403);
+    return null;
+  }
+
+  const audit = await AuditModel.findById(auditId);
+  if (!audit || audit.created_by !== req.user.entityCode) {
+    errorResponse(res, 'Audit not found.', 404);
+    return null;
+  }
+  if (String(audit.status || '').toLowerCase() !== 'completed') {
+    errorResponse(res, 'An auditor can only be rated after the audit is completed.', 400);
+    return null;
+  }
+  if (!audit.assigned_auditor_id) {
+    errorResponse(res, 'This audit does not have an assigned auditor.', 400);
+    return null;
+  }
+  return audit;
+}
+
+// GET /api/audits/:id/auditor-rating
+const getAuditorRating = async (req, res) => {
+  try {
+    const audit = await getRateableAuditForAdmin(req, req.params.id, res);
+    if (!audit) return;
+
+    const rating = await AuditorRatingModel.findByAuditId(audit.audit_id);
+    return successResponse(res, { rating });
+  } catch (err) {
+    console.error('getAuditorRating error:', err);
+    return errorResponse(res, 'Failed to load auditor rating.', 500);
+  }
+};
+
+// PUT /api/audits/:id/auditor-rating
+const saveAuditorRating = async (req, res) => {
+  try {
+    const audit = await getRateableAuditForAdmin(req, req.params.id, res);
+    if (!audit) return;
+
+    const stars = Number(req.body?.stars);
+    const comment = String(req.body?.comment || '').trim();
+    if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
+      return errorResponse(res, 'Rating must be a whole number between 1 and 5.', 400);
+    }
+    if (comment.length > 2000) {
+      return errorResponse(res, 'Rating feedback must be 2,000 characters or less.', 400);
+    }
+
+    const existing = await AuditorRatingModel.findByAuditId(audit.audit_id);
+    const rating = await AuditorRatingModel.upsert({
+      auditor_rating_id: existing?.auditor_rating_id || await generateAuditorRatingId(),
+      audit_id: audit.audit_id,
+      auditor_id: audit.assigned_auditor_id,
+      rated_by_admin_id: req.user.userCode,
+      stars,
+      comment: comment || null,
+    });
+    return successResponse(res, { rating }, existing ? 'Auditor rating updated.' : 'Auditor rated successfully.');
+  } catch (err) {
+    console.error('saveAuditorRating error:', err);
+    return errorResponse(res, 'Failed to save auditor rating.', 500);
   }
 };
 
@@ -752,6 +933,7 @@ const updateAudit = async (req, res) => {
     } = req.body;
 
     const previousAssignedAuditor = audit.assigned_auditor_id || null;
+    const previousAssignedFirm = audit.assigned_firm_code || null;
 
     // Allow status-only updates without requiring other fields
     if (status && !title && !audit_type) {
@@ -771,6 +953,14 @@ const updateAudit = async (req, res) => {
     // Full update requires all core fields
     if (!title || !audit_type || !start_date || !end_date) {
       return errorResponse(res, 'title, audit_type, start_date, end_date are required.', 400);
+    }
+    if (audit_type === 'external') {
+      if (!assigned_firm_code) return errorResponse(res, 'Select an audit firm for an external audit.', 400);
+      const [firmRows] = await db.query(
+        'SELECT afc_code FROM audit_firm_companies WHERE afc_code = ? AND is_active = TRUE LIMIT 1',
+        [assigned_firm_code]
+      );
+      if (!firmRows.length) return errorResponse(res, 'Select an active audit firm.', 400);
     }
 
     await AuditModel.update(id, {
@@ -794,6 +984,28 @@ const updateAudit = async (req, res) => {
     }
 
     const nextAssignedAuditor = updated ? (updated.assigned_auditor_id || null) : (assigned_auditor_id || null);
+    const nextAssignedFirm = updated ? (updated.assigned_firm_code || null) : (assigned_firm_code || null);
+    if (audit_type === 'external' && nextAssignedFirm && nextAssignedFirm !== previousAssignedFirm) {
+      try {
+        const firmAdmin = await AdminModel.findByEntityCode(nextAssignedFirm);
+        if (firmAdmin?.admin_id) {
+          const firmAdminName = `${firmAdmin.first_name || ''} ${firmAdmin.last_name || ''}`.trim();
+          if (firmAdmin.email) await sendAuditFirmAssignmentEmail(firmAdmin.email, firmAdminName, updated || audit);
+          await NotificationModel.createIfNotExists({
+            recipient_user_code: firmAdmin.admin_id,
+            recipient_role: 'admin',
+            created_by_entity_code: audit.created_by,
+            type: 'audit_firm_assigned',
+            title: 'External Audit Assigned',
+            message: `An external audit${(updated && updated.title) || audit.title ? `, ${(updated && updated.title) || audit.title},` : ''} has been assigned to your firm. Assign an auditor to continue.`,
+            audit_id: id,
+            notification_key: `audit_firm_assigned:${id}:${firmAdmin.admin_id}`,
+          });
+        }
+      } catch (e) {
+        console.error('notifyAuditFirmAssignment error:', e);
+      }
+    }
     if (nextAssignedAuditor && nextAssignedAuditor !== previousAssignedAuditor) {
       try {
         const auditor = await AuditorModel.findByCode(nextAssignedAuditor);
@@ -918,6 +1130,8 @@ module.exports = {
   compareAudits,
   createAudit,
   listAudits,
+  getAuditorRating,
+  saveAuditorRating,
   getAudit,
   updateAudit,
   deleteAudit,

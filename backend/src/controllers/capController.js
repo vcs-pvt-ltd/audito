@@ -28,6 +28,7 @@ const { db } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const {
   getOrganizationUserScope,
+  isAuditFirmOrganizationUser,
   getAccessibleEntityCodes,
   resolveEntityNames,
   auditEntitiesInScope,
@@ -333,6 +334,7 @@ const listCaps = async (req, res) => {
     const organizationScope = req.user?.role === 'organization_user'
       ? await getOrganizationUserScope(req.user)
       : { orgTreeIds: [], entityCodes: [] };
+    const isFirmOrganizationUser = await isAuditFirmOrganizationUser(req.user);
     const scopeIds = req.user?.role === 'organization_user'
       ? organizationScope.orgTreeIds
       : [];
@@ -347,11 +349,9 @@ const listCaps = async (req, res) => {
         c.entity_name = ownerCode && ownerCode !== req.user.entityCode ? (nameMap.get(ownerCode)?.name || null) : null;
       }
     } else if (req.user?.role === 'organization_user') {
-      caps = await CapModel.listCapsForOrganizationUser(
-        organizationScope,
-        null,
-        listOpts
-      );
+      caps = isFirmOrganizationUser
+        ? await CapModel.listCapsForFirm(req.user.createdByEntityCode, listOpts)
+        : await CapModel.listCapsForOrganizationUser(organizationScope, null, listOpts);
     } else {
       caps = await CapModel.listCapsForUser(req.user.userCode, listOpts);
     }
@@ -359,13 +359,13 @@ const listCaps = async (req, res) => {
     // Attach entity count and calculate progress per CAP mirroring listAudits pattern
     for (const c of caps) {
       const ents = await CapModel.getCapEntities(c.cap_id);
-      const scopedEnts = req.user?.role === 'organization_user'
+      const scopedEnts = req.user?.role === 'organization_user' && !isFirmOrganizationUser
         ? ents.filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope))
         : ents;
       c.entity_count = scopedEnts.length;
 
       const progress = await CapModel.getCapProgress(c.cap_id);
-      const scopedProgress = req.user?.role === 'organization_user'
+      const scopedProgress = req.user?.role === 'organization_user' && !isFirmOrganizationUser
         ? filterCapProgressByScope(progress, scopeIds, entityCodeScope)
         : progress;
 
@@ -381,6 +381,47 @@ const listCaps = async (req, res) => {
   } catch (err) {
     console.error('listCaps error:', err);
     return errorResponse(res, 'Failed to fetch CAPs.', 500);
+  }
+};
+
+// ── GET /api/caps/:id/firm-progress ───────────────────────────────
+const getFirmCapProgressDetail = async (req, res) => {
+  try {
+    if (!await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'This progress view is available to audit firm organization users only.', 403);
+    }
+    const cap = await CapModel.getCapById(req.params.id);
+    if (!cap) return errorResponse(res, 'CAP not found.', 404);
+    const audit = await AuditModel.findById(cap.audit_id);
+    if (!audit || audit.assigned_firm_code !== req.user.createdByEntityCode) {
+      return errorResponse(res, 'CAP not found.', 404);
+    }
+
+    const [progress, auditor] = await Promise.all([
+      CapModel.getCapProgress(cap.cap_id),
+      audit.assigned_auditor_id ? AuditorModel.findByCode(audit.assigned_auditor_id) : null,
+    ]);
+    const totalQuestions = progress.reduce((sum, row) => sum + Number(row.total_questions || 0), 0);
+    const answeredQuestions = progress.reduce((sum, row) => sum + Number(row.answered_questions || 0), 0);
+    return successResponse(res, {
+      cap: {
+        cap_id: cap.cap_id,
+        title: cap.title,
+        status: cap.status,
+        created_at: cap.created_at,
+        audit_id: audit.audit_id,
+        audit_title: audit.title,
+        auditor_name: auditor ? `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim() || null : null,
+        progress: {
+          total_questions: totalQuestions,
+          answered_questions: answeredQuestions,
+          progress_pct: totalQuestions ? Math.round((answeredQuestions / totalQuestions) * 100) : 0,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('getFirmCapProgressDetail error:', err);
+    return errorResponse(res, 'Failed to fetch CAP progress.', 500);
   }
 };
 
@@ -410,6 +451,9 @@ const listCapsByAudit = async (req, res) => {
 // ── GET /api/caps/:id/corrective-actions ──────────────────────────
 const getCorrectiveActions = async (req, res) => {
   try {
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'Audit firm organization users can view progress only.', 403);
+    }
     const { id } = req.params;
     const cap = await CapModel.getCapById(id);
     if (!cap) return errorResponse(res, 'CAP not found.', 404);
@@ -439,6 +483,13 @@ const getCorrectiveActions = async (req, res) => {
       );
       tree = extractOrganizationUserTree(tree, scope.orgTreeIds, scope.entityCodes);
     }
+    const evidenceByResponseId = await CapModel.getEvidenceByResponseIds(
+      items.map((item) => item.response_id)
+    );
+    items = items.map((item) => ({
+      ...item,
+      evidence: evidenceByResponseId[String(item.response_id)] || [],
+    }));
     return successResponse(res, {
       cap: { cap_id: cap.cap_id, title: cap.title, status: cap.status },
       items,
@@ -467,6 +518,9 @@ const saveCorrectiveActions = async (req, res) => {
 // ── GET /api/caps/:id ─────────────────────────────────────────────
 const getCapDetail = async (req, res) => {
   try {
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'Audit firm organization users can view progress only.', 403);
+    }
     const { id } = req.params;
     const cap = await CapModel.getCapById(id);
     if (!cap) return errorResponse(res, 'CAP not found.', 404);
@@ -597,6 +651,9 @@ const getCapDetail = async (req, res) => {
 // ── GET /api/caps/:id/items ───────────────────────────────────────
 const getCapItems = async (req, res) => {
   try {
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'Audit firm organization users can view progress only.', 403);
+    }
     const { id } = req.params;
     const cap = await CapModel.getCapById(id);
     if (!cap) return errorResponse(res, 'CAP not found.', 404);
@@ -699,6 +756,9 @@ const submitCapResponse = async (req, res) => {
 // ── GET /api/caps/:id/responses ───────────────────────────────────
 const getCapResponses = async (req, res) => {
   try {
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'Audit firm organization users can view progress only.', 403);
+    }
     const { id } = req.params;
     let responses = await CapModel.getCapResponses(id);
     if (req.user.role === 'organization_user') {
@@ -718,6 +778,11 @@ const getCapResponses = async (req, res) => {
 const getCapProgress = async (req, res) => {
   try {
     const { id } = req.params;
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      const cap = await CapModel.getCapById(id);
+      const audit = cap ? await AuditModel.findById(cap.audit_id) : null;
+      if (!audit || audit.assigned_firm_code !== req.user.createdByEntityCode) return errorResponse(res, 'CAP not found.', 404);
+    }
     let progress = await CapModel.getCapProgress(id);
     if (req.user.role === 'organization_user') {
       const scope = await getOrganizationUserScope(req.user);
@@ -993,6 +1058,7 @@ const deleteCapEvidence = async (req, res) => {
 module.exports = {
   createCap,
   listCaps,
+  getFirmCapProgressDetail,
   listCapsByAudit,
   getCapDetail,
   getCapItems,

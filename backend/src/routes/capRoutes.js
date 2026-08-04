@@ -23,6 +23,7 @@ router.post('/create-follow-up', ctrl.createFollowUpAudit);
 router.get('/audit/:auditId', ctrl.listCapsByAudit);
 
 // CAP detail
+router.get('/:id/firm-progress', ctrl.getFirmCapProgressDetail);
 router.get('/:id', ctrl.getCapDetail);
 
 // Corrective actions / findings of a CAP (recursive)

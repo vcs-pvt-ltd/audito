@@ -310,6 +310,32 @@ const sendAuditAssignedEmail = async (toEmail, auditorName, audit) => {
   await transporter.sendMail(mailOptions);
 };
 
+const sendAuditFirmAssignmentEmail = async (toEmail, adminName, audit) => {
+  const safeName = adminName || 'Audit Firm Administrator';
+  const startDate = String(audit.start_date || '').slice(0, 10);
+  const endDate = String(audit.end_date || '').slice(0, 10);
+  const { html, attachments } = getEmailTemplate({
+    title: 'External Audit Assigned',
+    subtitle: 'Assign an auditor from your audit firm',
+    content: `
+      <p style="color: #333; font-size: 16px;">Hi ${safeName},</p>
+      <p style="color: #555; font-size: 14px; line-height: 1.6;">An external audit has been assigned to your firm. Please open Audito and assign a verified auditor before the audit starts.</p>
+      <div style="margin-top: 14px;"><table style="width: 100%; border-collapse: collapse;">
+        <tr><td style="padding: 10px 0; color: #999; font-size: 12px;">Audit Title</td><td style="padding: 10px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${audit.title || ''}</td></tr>
+        <tr><td style="padding: 10px 0; color: #999; font-size: 12px;">Start Date</td><td style="padding: 10px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${startDate}</td></tr>
+        <tr><td style="padding: 10px 0; color: #999; font-size: 12px;">End Date</td><td style="padding: 10px 0; color: #00374B; font-size: 13px; font-weight: 700; text-align: right;">${endDate}</td></tr>
+      </table></div>
+    `,
+  });
+  await transporter.sendMail({
+    from: `"Audito" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: 'Audito - External Audit Assigned to Your Firm',
+    html,
+    attachments,
+  });
+};
+
 /**
  * Send a learning-assignment email without exposing any assessment content.
  */
@@ -597,6 +623,7 @@ module.exports = {
   sendLinkRequestEmail,
   sendOtpEmail,
   sendAuditAssignedEmail,
+  sendAuditFirmAssignmentEmail,
   sendLearningAssignmentEmail,
   sendContactEmail,
   sendContactReplyEmail,

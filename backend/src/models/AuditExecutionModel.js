@@ -156,6 +156,27 @@ const AuditExecutionModel = {
     return rows;
   },
 
+  async getEvidenceByResponseIds(responseIds) {
+    const ids = [...new Set((responseIds || []).filter(Boolean))];
+    if (!ids.length) return {};
+
+    const [rows] = await db.query(
+      `SELECT audit_response_id, audit_evidence_id AS id, audit_evidence_id,
+              file_type, file_path, file_name, file_size, uploaded_by, created_at
+         FROM audit_evidence
+        WHERE audit_response_id IN (?)
+        ORDER BY audit_response_id, created_at`,
+      [ids]
+    );
+
+    return rows.reduce((byResponseId, evidence) => {
+      const key = String(evidence.audit_response_id);
+      if (!byResponseId[key]) byResponseId[key] = [];
+      byResponseId[key].push(evidence);
+      return byResponseId;
+    }, {});
+  },
+
   async deleteEvidence(audit_evidence_id) {
     const [rows] = await db.query('SELECT * FROM audit_evidence WHERE audit_evidence_id = ?', [audit_evidence_id]);
     if (!rows[0]) return null;

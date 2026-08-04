@@ -28,6 +28,7 @@ interface EntityConfig {
   accountTypes: string[];
   apiSlug: string;
   entityTypeBody: string;
+  readOnly?: boolean;
 }
 
 const ENTITY_CONFIGS: Record<string, EntityConfig> = {
@@ -40,6 +41,7 @@ const ENTITY_CONFIGS: Record<string, EntityConfig> = {
     accountTypes: ["Company", "Customer"],
     apiSlug: "company",
     entityTypeBody: "Company",
+    readOnly: true,
   },
   "buying-office": {
     label: "Buying Office",
@@ -212,7 +214,10 @@ export default function SetupStructurePage() {
           const prevConfig = ENTITY_CONFIGS[prevSlug];
           if (prevConfig) {
             const prevRes = await structureApi.listByType(accessToken, prevConfig.apiSlug);
-            const prevCount = prevRes.success && prevRes.data ? (((prevRes.data as any).items || []).length) : 0;
+            const prevItems = prevRes.success && prevRes.data
+              ? (((prevRes.data as { items?: EntityRow[] }).items) || [])
+              : [];
+            const prevCount = prevItems.filter((item) => !item.is_linked).length;
             if (prevCount <= 0) {
               setOrderBlockMessage(`Create at least one ${prevConfig.label} before creating ${config.labelPlural}.`);
             } else {
@@ -295,7 +300,9 @@ export default function SetupStructurePage() {
 
   const normalizedAccountType =
     admin.account_type === "Audit Firm Company" ? "Audit Firm" : admin.account_type || "";
-  const canCreateEntities = config.accountTypes[0] === normalizedAccountType;
+  const canCreateEntities = !config.readOnly && config.accountTypes[0] === normalizedAccountType;
+  const localEntityCount = entities.filter((entity) => !entity.is_linked).length;
+  const hasLinkedEntities = entities.some((entity) => entity.is_linked);
 
   const usesDepartmentPlanLimit =
     (normalizedAccountType === "Company" || normalizedAccountType === "Audit Firm")
@@ -304,7 +311,7 @@ export default function SetupStructurePage() {
     ? admin.plan_limits?.department
     : undefined;
 
-  const isLimitExceeded = entityLimit !== undefined && entities.length >= entityLimit;
+  const isLimitExceeded = entityLimit !== undefined && localEntityCount >= entityLimit;
 
   const handleAdd = async () => {
     if (orderBlockMessage) {
@@ -315,7 +322,7 @@ export default function SetupStructurePage() {
       });
       return;
     }
-    if (entityLimit !== undefined && entities.length >= entityLimit) {
+    if (entityLimit !== undefined && localEntityCount >= entityLimit) {
       setLimitModalOpen(true);
       return;
     }
@@ -424,7 +431,9 @@ export default function SetupStructurePage() {
               {config.labelPlural}
             </h1>
             <p className="hidden sm:block text-sm text-gray-400 mt-0.5">
-              Define and manage {config.labelPlural.toLowerCase()} to build your organizational hierarchy.
+              {canCreateEntities
+                ? `Define and manage ${config.labelPlural.toLowerCase()} to build your organizational hierarchy.`
+                : `View ${config.labelPlural.toLowerCase()} shared through accepted organization links.`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -449,7 +458,9 @@ export default function SetupStructurePage() {
           </div>
           <div>
             <p className="mt-1 text-sm leading-relaxed text-gray-300">
-              Create each {config.label.toLowerCase()} once, then use that same entity in multiple places when you set up your organization structure. There&apos;s no need to add duplicate names.
+              {hasLinkedEntities
+                ? `Linked ${config.labelPlural.toLowerCase()} belong to the requester organization and are available here as read-only records. They do not use your plan limits.`
+                : `Create each ${config.label.toLowerCase()} once, then use that same entity in multiple places when you set up your organization structure. There’s no need to add duplicate names.`}
             </p>
           </div>
         </div>
@@ -518,7 +529,12 @@ export default function SetupStructurePage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-xs text-gray-500">#{itemIndex}</p>
-                        <h3 className="text-sm font-semibold text-white truncate">{entity.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="truncate text-sm font-semibold text-white">{entity.name}</h3>
+                          {entity.is_linked && (
+                            <span className="shrink-0 rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-medium text-blue-300">Linked</span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -542,14 +558,18 @@ export default function SetupStructurePage() {
                     </div>
 
                     <div className="mt-3 flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => handleEdit(entity)}
-                        className="p-2 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all font-medium"
-                        title="Edit"
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      {entity.in_tree ? (
+                      {entity.is_linked ? (
+                        <span className="text-[11px] italic text-gray-500">Read only</span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleEdit(entity)}
+                            className="p-2 rounded-lg text-gray-400 hover:text-secondary-400 hover:bg-secondary-500/10 transition-all font-medium"
+                            title="Edit"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          {entity.in_tree ? (
                         <button
                           onClick={() => handleDelete(entity)}
                           className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all font-medium"
@@ -565,6 +585,8 @@ export default function SetupStructurePage() {
                         >
                           <Trash2 size={15} />
                         </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

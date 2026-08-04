@@ -145,6 +145,10 @@ export default function OrganizationUserCapsPage() {
     );
   }
   if (!admin) return null;
+  const isAuditFirmOrganizationUser = ["Branch", "Audit Firm Department"].includes((admin.assigned_entity_type || admin.entity_type || "") as string);
+  const capDetailsPath = (capId: string) => isAuditFirmOrganizationUser
+    ? `/organization-user/caps/details?cap_id=${capId}`
+    : `/organization-user/caps/preview?cap_id=${capId}`;
 
   return (
     <div className="h-screen bg-transparent flex">
@@ -160,7 +164,7 @@ export default function OrganizationUserCapsPage() {
               My CAP Plans
             </h1>
             <p className="text-sm text-gray-400 mt-1 ml-[46px]">
-              Corrective action plans for your organization tree
+              {isAuditFirmOrganizationUser ? "Progress for CAPs linked to your audit firm" : "Corrective action plans for your organization tree"}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -257,7 +261,7 @@ export default function OrganizationUserCapsPage() {
                         <td className="px-4 py-3 text-gray-400 text-sm text-center">{itemIndex}</td>
                         <td className="px-4 py-3">
                           <button
-                            onClick={() => router.push(`/organization-user/caps/preview?cap_id=${c.cap_id}`)}
+                            onClick={() => router.push(capDetailsPath(c.cap_id))}
                             className="text-secondary-400 hover:text-secondary-300 font-medium hover:underline underline-offset-2 transition-colors text-left"
                           >
                             {c.title}
@@ -297,7 +301,7 @@ export default function OrganizationUserCapsPage() {
                 return (
                   <div
                     key={c.cap_id}
-                    onClick={() => router.push(`/organization-user/caps/preview?cap_id=${c.cap_id}`)}
+                    onClick={() => router.push(capDetailsPath(c.cap_id))}
                     className="glass rounded-xl p-4 space-y-3 cursor-pointer hover:bg-white/[0.04] transition-all"
                   >
                     <div className="flex justify-between items-start">

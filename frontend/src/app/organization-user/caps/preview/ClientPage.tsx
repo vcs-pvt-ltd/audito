@@ -418,8 +418,8 @@ export default function OrganizationUserCapPreviewPage() {
   }, [questions]);
 
   const [stepHistory, setStepHistory] = useState<
-    ({ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
-  >([{ mode: "cards", parentCode: null }]);
+    ({ mode: "cards"; parentCode: string | null; parentOrgTreeId: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null })[]
+  >([{ mode: "cards", parentCode: null, parentOrgTreeId: null }]);
 
   if (isLoading) {
     return (
@@ -472,9 +472,9 @@ export default function OrganizationUserCapPreviewPage() {
               const step = stepHistory[stepHistory.length - 1];
               const isRoot = step.mode === "cards" && step.parentCode === null;
 
-              const findInTree = (code: string) => {
+              const findInTree = (code: string, edgeId: string | null = null) => {
                 const walk = (n: TreeNode): TreeNode | null => {
-                  if (n.code === code) return n;
+                  if (edgeId ? String(n.edge_id ?? "") === String(edgeId) : n.code === code) return n;
                   for (const c of n.children || []) {
                     const f = walk(c);
                     if (f) return f;
@@ -490,9 +490,11 @@ export default function OrganizationUserCapPreviewPage() {
                 for (let i = 0; i < stepHistory.length; i++) {
                   const s = stepHistory[i];
                   const code = s.mode === "questions" ? s.entityCode : s.parentCode;
-                  if (code && !seen.has(code)) {
-                    seen.add(code);
-                    const nd = findInTree(code);
+                  const edgeId = s.mode === "questions" ? s.orgTreeId : s.parentOrgTreeId;
+                  const instanceKey = code ? `${code}__${edgeId ?? "null"}` : null;
+                  if (code && instanceKey && !seen.has(instanceKey)) {
+                    seen.add(instanceKey);
+                    const nd = findInTree(code, edgeId);
                     const idx = i;
                     breadcrumbNodes.push({ label: nd?.name || code, goTo: () => setStepHistory((h) => h.slice(0, idx + 1)) });
                   }
@@ -502,12 +504,12 @@ export default function OrganizationUserCapPreviewPage() {
               const navigateNode = (nd: TreeNode) => {
                 const hasQ = getCapQuestionsForNode(nd, capsMap).length > 0;
                 const hasKids = (nd.children || []).some((c) => subtreeHasCaps(c, capsMap));
-                if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: nd.code }]);
+                if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: nd.code, parentOrgTreeId: nd.edge_id ?? null }]);
                 else setStepHistory((h) => [...h, { mode: "questions", entityCode: nd.code, orgTreeId: nd.edge_id ?? null }]);
               };
 
               if (step.mode === "cards") {
-                const parent = step.parentCode ? findInTree(step.parentCode) : tree;
+                const parent = step.parentCode ? findInTree(step.parentCode, step.parentOrgTreeId) : tree;
                 const cards = parent
                   ? (step.parentCode === null
                     ? ([parent].filter((n) => subtreeHasCaps(n, capsMap))
@@ -522,17 +524,13 @@ export default function OrganizationUserCapPreviewPage() {
                     {!isRoot && (
                       <nav className="flex items-center gap-1.5 flex-wrap mb-2 text-xs">
                         <button
-                          onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                          onClick={() => setStepHistory((history) => history.length > 1 ? history.slice(0, -1) : history)}
                           className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
                         >
-                          <ArrowLeft size={12} /> All Entities
+                          <ArrowLeft size={12} /> Back
                         </button>
-                        {breadcrumbNodes.map((bc, i) => (
-                          <span key={i} className="flex items-center gap-1.5">
-                            <ChevronRight size={12} className="text-gray-600" />
-                            <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">{bc.label}</button>
-                          </span>
-                        ))}
+                        {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />…</span>}
+                        {breadcrumbNodes.slice(-1).map((bc) => <span key={bc.label} className="flex min-w-0 items-center gap-1.5"><ChevronRight size={12} className="shrink-0 text-gray-600" /><span className="truncate text-gray-300" title={bc.label}>{bc.label}</span></span>)}
                       </nav>
                     )}
 
@@ -564,17 +562,13 @@ export default function OrganizationUserCapPreviewPage() {
                 <div className="space-y-5">
                   <nav className="flex items-center gap-1.5 flex-wrap mb-2 text-xs">
                     <button
-                      onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                      onClick={() => setStepHistory((history) => history.length > 1 ? history.slice(0, -1) : history)}
                       className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
                     >
-                      <ArrowLeft size={12} /> All Entities
+                      <ArrowLeft size={12} /> Back
                     </button>
-                    {breadcrumbNodes.map((bc, i) => (
-                      <span key={i} className="flex items-center gap-1.5">
-                        <ChevronRight size={12} className="text-gray-600" />
-                        <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">{bc.label}</button>
-                      </span>
-                    ))}
+                    {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />…</span>}
+                    {breadcrumbNodes.slice(-1).map((bc) => <span key={bc.label} className="flex min-w-0 items-center gap-1.5"><ChevronRight size={12} className="shrink-0 text-gray-600" /><span className="truncate font-medium text-white" title={bc.label}>{bc.label}</span></span>)}
                   </nav>
 
                   <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
@@ -606,7 +600,7 @@ export default function OrganizationUserCapPreviewPage() {
                     </button>
                     {hasSubEntityQuestions && (
                       <button
-                        onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode }])}
+                        onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode, parentOrgTreeId: edgeId }])}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
                       >
                         Next <ChevronRight size={14} />

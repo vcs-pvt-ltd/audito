@@ -12,7 +12,7 @@ import { noticeApi, linksApi } from "@/lib/api";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
   ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
-  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Trash2, Inbox, Tag, BadgePercent, Bot,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Trash2, Inbox, Tag, BadgePercent, Bot, CheckCheck,
 } from "lucide-react";
 
 // ─── Avatar helper (mirrors profile page) ────────────────────────
@@ -113,6 +113,14 @@ function hasAcceptedCompanySupplierLink(
     (l) => l.status === "accepted" &&
       ((l.requester_type === "Supplier" && l.target_type === "Company") ||
        (l.requester_type === "Company" && l.target_type === "Supplier"))
+  );
+}
+
+function hasAcceptedCompanyPeerLink(
+  links: { status: string; requester_type: string; target_type: string }[]
+): boolean {
+  return links.some(
+    (link) => link.status === "accepted" && link.requester_type === "Company" && link.target_type === "Company"
   );
 }
 
@@ -466,11 +474,13 @@ export default function Sidebar() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notices, setNotices] = useState<any[]>([]);
   const [loadingNotices, setLoadingNotices] = useState(false);
+  const [markingAllNoticesRead, setMarkingAllNoticesRead] = useState(false);
   const desktopNotifButtonRef = useRef<HTMLButtonElement | null>(null);
   const mobileNotifButtonRef = useRef<HTMLButtonElement | null>(null);
   const notifPopupRef = useRef<HTMLDivElement | null>(null);
   const [popupPos, setPopupPos] = useState<{ left: number; top: number } | null>(null);
   const [hasCompanyLink, setHasCompanyLink] = useState(false);
+  const [hasCompanyPeerLink, setHasCompanyPeerLink] = useState(false);
   const canAccessNotices = Boolean(admin);
   const canUseNotificationPanel = Boolean(admin);
   const isNotificationRead = (notice: any) => notice?.is_read === true || notice?.is_read === 1 || notice?.is_read === "1";
@@ -496,17 +506,29 @@ export default function Sidebar() {
   };
 
   useEffect(() => {
-    if (!accessToken || admin?.entity_type !== "Supplier") { setHasCompanyLink(false); return; }
+    if (!accessToken || !["Customer", "Company"].includes(admin?.account_type || "")) {
+      setHasCompanyLink(false);
+      setHasCompanyPeerLink(false);
+      return;
+    }
     let cancelled = false;
-    void linksApi.getMyLinks(accessToken).then((res) => {
-      if (cancelled) return;
-      const links = res.success && res.data
-        ? ((res.data as { links?: { status: string; requester_type: string; target_type: string }[] }).links ?? [])
-        : [];
-      setHasCompanyLink(hasAcceptedCompanySupplierLink(links));
-    });
-    return () => { cancelled = true; };
-  }, [accessToken, admin?.entity_type, pathname]);
+    const refreshLinkedNavigation = () => {
+      void linksApi.getMyLinks(accessToken).then((res) => {
+        if (cancelled) return;
+        const links = res.success && res.data
+          ? ((res.data as { links?: { status: string; requester_type: string; target_type: string }[] }).links ?? [])
+          : [];
+        setHasCompanyLink(hasAcceptedCompanySupplierLink(links));
+        setHasCompanyPeerLink(hasAcceptedCompanyPeerLink(links));
+      });
+    };
+    refreshLinkedNavigation();
+    window.addEventListener("organization-links-updated", refreshLinkedNavigation);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("organization-links-updated", refreshLinkedNavigation);
+    };
+  }, [accessToken, admin?.account_type, pathname]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -603,6 +625,24 @@ export default function Sidebar() {
     } catch { void loadNotices(); }
   };
 
+  const handleMarkAllNoticesRead = async () => {
+    if (!accessToken || unreadNotificationCount === 0 || markingAllNoticesRead) return;
+
+    setMarkingAllNoticesRead(true);
+    try {
+      const result = await noticeApi.markAllRead(accessToken);
+      if (result.success) {
+        setNotices((prev) => prev.map((notice) => ({ ...notice, is_read: true })));
+      } else {
+        void loadNotices();
+      }
+    } catch {
+      void loadNotices();
+    } finally {
+      setMarkingAllNoticesRead(false);
+    }
+  };
+
   const handleNotificationClick = async (notice: any) => {
     const notificationId = getNotificationId(notice);
     if (accessToken && notificationId && !isNotificationRead(notice)) {
@@ -621,19 +661,23 @@ export default function Sidebar() {
   const navKey = resolveNavKey(admin?.role ?? "", admin?.account_type);
   const navEntries = useMemo(() => {
     const base = NAV_CONFIG[navKey] ?? [];
-    if (navKey !== "admin:Customer" || !hasCompanyLink || admin?.entity_type !== "Supplier") return base;
+    const showCustomerCompanyStructure = navKey === "admin:Customer" && hasCompanyLink;
+    const showPeerCompanies = navKey === "admin:Company" && hasCompanyPeerLink;
+    if (!showCustomerCompanyStructure && !showPeerCompanies) return base;
     return base.map((entry) => {
       if (isTopLevel(entry) || !("items" in entry)) return entry;
       if (entry.label === "Structure") {
         const orgItems = entry.items.filter((i) => i.label === "Org Tree" || i.label === "Links");
         const coreItems = entry.items.filter((i) => i.label !== "Org Tree" && i.label !== "Links");
-        // Linked Company itself (read-only) + its sub-structure, before Org Tree/Links.
-        const companyItem: NavItem = { label: "Company", path: "/structure/list?type=company", icon: Building2 };
-        return { ...entry, items: [...coreItems, companyItem, ...stripOrgLevel(COMPANY_STRUCTURE_NAV_ITEMS), ...orgItems] };
+        const companyItem: NavItem = { label: "Linked Companies", path: "/structure/list?type=company", icon: Building2 };
+        if (showCustomerCompanyStructure) {
+          return { ...entry, items: [...coreItems, companyItem, ...stripOrgLevel(COMPANY_STRUCTURE_NAV_ITEMS), ...orgItems] };
+        }
+        return { ...entry, items: [companyItem, ...coreItems, ...orgItems] };
       }
       return entry;
     });
-  }, [navKey, hasCompanyLink, admin?.entity_type]);
+  }, [navKey, hasCompanyLink, hasCompanyPeerLink]);
 
   if (isLoading || !admin) return null;
 
@@ -660,7 +704,13 @@ export default function Sidebar() {
         <button onClick={() => { setCollapsed(false); setSidebarOpen(true); }} className="text-gray-400 hover:text-white">
           <Menu size={22} />
         </button>
-        <Image src={auditoLogo} alt="Audito" width={90} height={20} className="h-5 ml-3" />
+        <Image
+          src={auditoLogo}
+          alt="Audito"
+          width={90}
+          height={20}
+          className="ml-3 h-5 w-[90px] object-contain"
+        />
         <div className="ml-auto flex items-center gap-1">
           {canUseNotificationPanel && <button ref={mobileNotifButtonRef}
             onClick={() => void openNotifications(mobileNotifButtonRef.current, true)}
@@ -698,7 +748,13 @@ export default function Sidebar() {
           <div className="flex items-center gap-2">
             {!collapsed && (
               <Link href={admin?.role === "audito_admin" ? "/admin-panel/dashboard" : "/dashboard"} aria-label="Go to dashboard">
-                <Image src={auditoLogo} alt="Audito" width={90} height={20} className="h-6 w-auto object-contain" />
+                <Image
+                  src={auditoLogo}
+                  alt="Audito"
+                  width={90}
+                  height={20}
+                  className="h-5 w-[90px] object-contain lg:h-6 lg:w-auto"
+                />
               </Link>
             )}
           </div>
@@ -859,7 +915,21 @@ export default function Sidebar() {
                   <p className="text-[11px] text-gray-400">{notices.filter((n) => !(n as any).is_read).length > 0 ? `${notices.filter((n) => !(n as any).is_read).length} unread item${notices.filter((n) => !(n as any).is_read).length === 1 ? "" : "s"}` : "You’re all caught up"}</p>
                 </div>
               </div>
-              <button onClick={() => setNotificationsOpen(false)} aria-label="Close notifications" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-white/[0.08] hover:text-white"><X size={16} /></button>
+              <div className="flex shrink-0 items-center gap-1">
+                {unreadNotificationCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleMarkAllNoticesRead()}
+                    disabled={markingAllNoticesRead}
+                    title="Mark all as read"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10px] font-semibold text-secondary-300 transition hover:bg-secondary-500/10 hover:text-secondary-200 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {markingAllNoticesRead ? <Loader2 size={13} className="animate-spin" /> : <CheckCheck size={13} />}
+                    <span className="hidden sm:inline">Mark all read</span>
+                  </button>
+                )}
+                <button onClick={() => setNotificationsOpen(false)} aria-label="Close notifications" className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition hover:bg-white/[0.08] hover:text-white"><X size={16} /></button>
+              </div>
             </div>
           </div>
           {loadingNotices ? (

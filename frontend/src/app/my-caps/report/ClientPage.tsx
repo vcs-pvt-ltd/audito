@@ -103,7 +103,7 @@ function sameEntityInstance(
 // ─── Entity Tree Section ──────────────────────────────────────────
 
 function EntityTreeSection({
-  node, questions, responses, depth = 0, aggregatedMap, capEntityCodes,
+  node, questions, responses, depth = 0, aggregatedMap, capEntityCodes, activePath, onSelectPath, path = [],
 }: {
   node: EntityTreeNode;
   questions: CapQuestion[];
@@ -111,10 +111,13 @@ function EntityTreeSection({
   depth?: number;
   aggregatedMap?: Map<string, { total_marks: number; obtained_marks: number; cap_required_count: number; answered_questions: number; total_questions: number }>;
   capEntityCodes?: Set<string>;
+  activePath?: string[];
+  onSelectPath?: (path: string[]) => void;
+  path?: string[];
 }) {
-  const [expanded, setExpanded] = useState(false);
   const nodeOrgTreeId = node.edge_id ?? null;
   const nodeKey = `${node.code}__${nodeOrgTreeId ?? "null"}`;
+  const [expanded, setExpanded] = useState(false);
 
   const isCapEntity = !capEntityCodes || capEntityCodes.has(nodeKey);
 
@@ -155,8 +158,8 @@ function EntityTreeSection({
   const hasVisibleChildren = visibleChildren.length > 0;
 
   return (
-    <div className={depth > 0 ? "ml-4 border-l border-white/[0.06] pl-3 mt-1" : "mt-1.5"}>
-      <div className="rounded-xl border border-white/[0.08] overflow-hidden">
+    <div className={depth > 0 ? "ml-4 mt-1 border-l border-white/[0.06] pl-3" : "mt-1.5"}>
+      <div className="overflow-hidden rounded-xl border border-white/[0.08]">
         {/* Entity header row */}
         <button
           onClick={() => setExpanded(!expanded)}
@@ -283,7 +286,7 @@ function EntityTreeSection({
 
             {/* Children */}
             {hasVisibleChildren && (
-              <div className={`px-3 pb-3 space-y-0 ${hasQuestions ? "border-t border-white/[0.06] pt-2" : "pt-2"}`}>
+              <div className={`space-y-0 px-3 pb-3 ${hasQuestions ? "border-t border-white/[0.06] pt-2" : "pt-2"}`}>
                 {visibleChildren.map((child) => (
                   <EntityTreeSection
                     key={`${child.code}__${child.edge_id ?? "null"}`}
@@ -293,6 +296,9 @@ function EntityTreeSection({
                     depth={depth + 1}
                     aggregatedMap={aggregatedMap}
                     capEntityCodes={capEntityCodes}
+                    activePath={activePath}
+                    onSelectPath={onSelectPath}
+                    path={path}
                   />
                 ))}
               </div>
@@ -306,6 +312,71 @@ function EntityTreeSection({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function CapEntityBreakdownNavigator({
+  tree, entities, aggregatedMap, capEntityCodes,
+}: {
+  tree: EntityTreeNode | null;
+  entities: CapEntity[];
+  aggregatedMap: Map<string, { total_marks: number; obtained_marks: number; cap_required_count: number; answered_questions: number; total_questions: number }>;
+  capEntityCodes: Set<string>;
+}) {
+  const [history, setHistory] = useState<EntityTreeNode[]>([]);
+  const current = history[history.length - 1] || null;
+
+  const hasCapInBranch = (node: EntityTreeNode): boolean => {
+    const key = `${node.code}__${node.edge_id ?? "null"}`;
+    return capEntityCodes.has(key) || (node.children || []).some(hasCapInBranch);
+  };
+
+  const nodes = current
+    ? (current.children || []).filter(hasCapInBranch)
+    : tree
+      ? (tree.code === "__root__" ? tree.children || [] : [tree]).filter(hasCapInBranch)
+      : entities.map((entity) => ({ code: entity.entity_code, name: entity.entity_code, entity_type: entity.entity_type || "", edge_id: entity.org_tree_id ?? null, children: [] }));
+
+  return (
+    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 sm:p-4">
+      {current && (
+        <div className="mb-3 flex items-center gap-2 border-b border-white/[0.06] pb-3">
+          <button type="button" onClick={() => setHistory((items) => items.slice(0, -1))} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-gray-300 transition-colors hover:border-white/20 hover:text-white">
+            <ArrowLeft size={12} /> Back
+          </button>
+          <span className="min-w-0 truncate text-xs text-gray-400">{current.name || current.code}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {nodes.map((node, index) => {
+          const key = `${node.code}__${node.edge_id ?? "null"}`;
+          const progress = aggregatedMap.get(key);
+          const pct = progress && progress.total_marks > 0 ? Math.round((progress.obtained_marks / progress.total_marks) * 100) : 0;
+          const childCount = (node.children || []).filter(hasCapInBranch).length;
+          const capCount = progress?.cap_required_count || 0;
+
+          return (
+            <button key={key} type="button" disabled={childCount === 0} onClick={() => childCount > 0 && setHistory((items) => [...items, node])}
+              className="group overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] text-left transition-all hover:border-white/20 hover:bg-white/[0.05] disabled:cursor-default disabled:hover:border-white/10 disabled:hover:bg-white/[0.03]">
+              <div className="flex items-center gap-3 bg-gradient-to-r from-primary-800 to-primary-800/60 px-3.5 py-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary-500 text-xs font-bold text-white shadow-lg shadow-secondary-500/30">{index + 1}</span>
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-white">{node.name || node.code}</p><span className="mt-0.5 inline-block rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-gray-300">{node.entity_type || "Entity"}</span></div>
+                {childCount > 0 && <ChevronRight size={18} className="text-white/60 transition-transform group-hover:translate-x-0.5 group-hover:text-white" />}
+              </div>
+              <div className="space-y-2.5 p-3.5">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  {capCount > 0 ? <span className="inline-flex items-center gap-1 rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-0.5 text-[10px] text-orange-400"><AlertTriangle size={9} /> {capCount} CAP</span> : <span className="text-gray-500">{childCount > 0 ? `${childCount} sub-entities` : "No sub-entities"}</span>}
+                  <span className={`font-semibold ${getScoreColor(pct)}`}>{pct}%</span>
+                </div>
+                {progress && <div className="flex items-center gap-2"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10"><div className={`h-full rounded-full bg-gradient-to-r ${getScoreBarColor(pct)}`} style={{ width: `${pct}%` }} /></div><span className="text-[10px] text-gray-500">{progress.obtained_marks}/{progress.total_marks}</span></div>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {nodes.length === 0 && <p className="py-6 text-center text-xs text-gray-500">No sub-entities available.</p>}
     </div>
   );
 }
@@ -624,46 +695,16 @@ export default function MyCapReportPage() {
                   {entityTree ? (
                     entityTree.code === "__root__" ? (
                       (entityTree.children as EntityTreeNode[]).map((node, idx) => (
-                        <EntityTreeSection
-                          key={`${node.code}-${idx}`}
-                          node={node}
-                          questions={questions}
-                          responses={responses}
-                          aggregatedMap={aggregatedProgressMap}
-                          capEntityCodes={capEntityCodes}
-                        />
+                        <EntityTreeSection key={`${node.code}-${idx}`} node={node} questions={questions} responses={responses} aggregatedMap={aggregatedProgressMap} capEntityCodes={capEntityCodes} />
                       ))
                     ) : (
-                      <EntityTreeSection
-                        node={entityTree}
-                        questions={questions}
-                        responses={responses}
-                        aggregatedMap={aggregatedProgressMap}
-                        capEntityCodes={capEntityCodes}
-                      />
+                      <EntityTreeSection node={entityTree} questions={questions} responses={responses} aggregatedMap={aggregatedProgressMap} capEntityCodes={capEntityCodes} />
                     )
-                  ) : (
-                    entities.length > 0 ? (
-                      entities.map((entity, idx) => (
-                        <EntityTreeSection
-                          key={`${entity.entity_code}-${idx}`}
-                          node={{
-                            code: entity.entity_code,
-                            name: entity.entity_code,
-                            entity_type: entity.entity_type || "",
-                            edge_id: entity.org_tree_id ?? null,
-                            children: [],
-                          }}
-                          questions={questions}
-                          responses={responses}
-                          aggregatedMap={aggregatedProgressMap}
-                          capEntityCodes={capEntityCodes}
-                        />
-                      ))
-                    ) : (
-                      <p className="text-xs text-gray-500 italic">No entity data available.</p>
-                    )
-                  )}
+                  ) : entities.length > 0 ? (
+                    entities.map((entity, idx) => (
+                      <EntityTreeSection key={`${entity.entity_code}-${idx}`} node={{ code: entity.entity_code, name: entity.entity_code, entity_type: entity.entity_type || "", edge_id: entity.org_tree_id ?? null, children: [] }} questions={questions} responses={responses} aggregatedMap={aggregatedProgressMap} capEntityCodes={capEntityCodes} />
+                    ))
+                  ) : <p className="text-xs italic text-gray-500">No entity data available.</p>}
                 </div>
               </div>
             </>
