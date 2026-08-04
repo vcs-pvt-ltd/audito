@@ -6,6 +6,7 @@
  */
 
 const { db } = require('../config/db');
+const AuditorRatingModel = require('./AuditorRatingModel');
 
 const AuditorModel = {
 
@@ -95,7 +96,7 @@ const AuditorModel = {
       'SELECT auditor_id AS user_code, auditor_id, first_name, last_name, email, phone_number, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM auditors WHERE created_by_entity_code = ? AND is_active = TRUE ORDER BY created_at DESC',
       [entityCode]
     );
-    return rows;
+    return this.attachRatingSummaries(rows);
   },
 
   async listByCreators(entityCodes) {
@@ -105,7 +106,21 @@ const AuditorModel = {
       `SELECT auditor_id AS user_code, auditor_id, first_name, last_name, email, phone_number, country, role, user_type, auditor_type, assigned_entity_type, assigned_entity_code, assigned_org_tree_id, email_verified, is_active, created_at, created_by_entity_code FROM auditors WHERE created_by_entity_code IN (${placeholders}) AND is_active = TRUE ORDER BY created_at DESC`,
       entityCodes
     );
-    return rows;
+    return this.attachRatingSummaries(rows);
+  },
+
+  async attachRatingSummaries(auditors) {
+    const summaries = await AuditorRatingModel.getSummariesByAuditorIds(
+      (auditors || []).map((auditor) => auditor.auditor_id)
+    );
+    return (auditors || []).map((auditor) => {
+      const summary = summaries.get(String(auditor.auditor_id));
+      return {
+        ...auditor,
+        average_rating: summary ? Number(summary.average_rating) : null,
+        rating_count: summary ? Number(summary.rating_count) : 0,
+      };
+    });
   },
 
   async update(auditor_id, fields) {

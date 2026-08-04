@@ -11,6 +11,7 @@ import { Button, IconButton, Input, Textarea, fieldClass } from "@/components/ui
 const ENTITY_TYPE_COLORS: Record<string, string> = {
   "Customer": "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
   "Buying Office": "bg-purple-500/20 text-purple-300 border-purple-500/30",
+  "Supplier": "bg-amber-500/20 text-amber-300 border-amber-500/30",
   "Company": "bg-blue-500/20 text-blue-300 border-blue-500/30",
   "Cluster": "bg-teal-500/20 text-teal-300 border-teal-500/30",
   "Factory": "bg-amber-500/20 text-amber-300 border-amber-500/30",
@@ -18,7 +19,9 @@ const ENTITY_TYPE_COLORS: Record<string, string> = {
   "Department": "bg-pink-500/20 text-pink-300 border-pink-500/30",
   "Section": "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
   "Audit Firm": "bg-rose-500/20 text-rose-300 border-rose-500/30",
+  "Audit Firm Company": "bg-rose-500/20 text-rose-300 border-rose-500/30",
   "Branch": "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+  "Audit Firm Department": "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/30",
 };
 
 interface TreeNode { code: string; name: string; entity_type: string; edge_id?: string | null; children?: TreeNode[]; [key: string]: unknown; }
@@ -86,10 +89,20 @@ export default function AssignAuditPage() {
     setLoadingData(true);
     setDataError("");
     try {
-      const [clRes, entRes, treeRes, auditorRes, firmRes] = await Promise.all([
+      // Load the tree first. For legacy accepted links this call also repairs
+      // the link edge before checklist question targets are translated into
+      // the current workspace's entity instances.
+      const treeRes = await orgTreeApi.getTree(accessToken);
+      if (treeRes.success && treeRes.data) {
+        const tree = (treeRes.data as any).tree;
+        if (tree) setTreeRoot(tree);
+      } else {
+        setDataError(treeRes.message || "Failed to load organization tree.");
+      }
+
+      const [clRes, entRes, auditorRes, firmRes] = await Promise.all([
         checklistApi.get(accessToken, checklistId),
         auditApi.getChecklistEntities(accessToken, checklistId),
-        orgTreeApi.getTree(accessToken),
         usersApi.list(accessToken, "Auditor"),
         orgTreeApi.listEntities(accessToken, "Audit Firm Company"),
       ]);
@@ -109,7 +122,6 @@ export default function AssignAuditPage() {
         setEntities(ents);
         setSelectedKeys(new Set(ents.map((e: ChecklistEntity) => `${e.entity_code}__${e.org_tree_id || 'null'}`)));
       } else setDataError("Failed to load checklist entities.");
-      if (treeRes.success && treeRes.data) { const t = (treeRes.data as any).tree; if (t) setTreeRoot(t); }
     } catch { setDataError("Network error. Please try again."); }
     setLoadingData(false);
   }, [accessToken, checklistId]);

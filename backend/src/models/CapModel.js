@@ -153,6 +153,21 @@ const CapModel = {
     return rows;
   },
 
+  async listCapsForFirm(firmCode, { rootOnly = true } = {}) {
+    const rootFilter = rootOnly ? 'AND c.parent_cap_id IS NULL' : '';
+    const [rows] = await db.query(
+      `SELECT c.*, aa.audit_id AS audit_code, aa.title AS audit_title,
+              (SELECT COUNT(*) FROM cap_questions cq WHERE cq.cap_id = c.cap_id) AS total_questions,
+              (SELECT COUNT(*) FROM cap_responses cr JOIN cap_questions cq ON cq.cap_question_id = cr.cap_question_id WHERE cq.cap_id = c.cap_id AND cr.status = 'completed') AS completed_questions
+         FROM caps c
+         JOIN audit_assignments aa ON aa.audit_id = c.audit_id
+        WHERE aa.assigned_firm_code = ? AND aa.is_active = TRUE ${rootFilter}
+        ORDER BY c.created_at DESC`,
+      [firmCode]
+    );
+    return rows;
+  },
+
   async listCapsForAdmin(entityCodes, { rootOnly = true } = {}) {
     const rootFilter = rootOnly ? 'AND c.parent_cap_id IS NULL' : '';
     const codes = Array.isArray(entityCodes) ? entityCodes : [entityCodes];
@@ -620,6 +635,27 @@ const CapModel = {
       [cap_response_id]
     );
     return rows;
+  },
+
+  async getEvidenceByResponseIds(responseIds) {
+    const ids = [...new Set((responseIds || []).filter(Boolean))];
+    if (!ids.length) return {};
+
+    const [rows] = await db.query(
+      `SELECT cap_response_id, cap_response_evidence_id AS id, cap_response_evidence_id,
+              file_type, file_path, file_name, file_size, uploaded_by, created_at
+         FROM cap_response_evidence
+        WHERE cap_response_id IN (?)
+        ORDER BY cap_response_id, created_at`,
+      [ids]
+    );
+
+    return rows.reduce((byResponseId, evidence) => {
+      const key = String(evidence.cap_response_id);
+      if (!byResponseId[key]) byResponseId[key] = [];
+      byResponseId[key].push(evidence);
+      return byResponseId;
+    }, {});
   },
 
   async deleteEvidence(cap_response_evidence_id) {

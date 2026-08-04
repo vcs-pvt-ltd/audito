@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import Loading from "@/components/shared/Loading";
 import EmptyState from "@/components/shared/EmptyState";
+import PhoneNumber from "@/components/shared/PhoneNumber";
 import TablePagination from "@/components/shared/TablePagination";
 import {
   Button,
@@ -180,6 +181,8 @@ export default function OrganizationsPage() {
                             <Th>Account Type</Th>
 
               <Th>Admin</Th>
+              <Th>Phone</Th>
+              <Th>Country</Th>
               <Th>Plan</Th>
               <Th>Billing</Th>
               <Th>Status</Th>
@@ -211,6 +214,8 @@ export default function OrganizationsPage() {
                       {org.email && <p className="text-xs text-gray-500">{org.email}</p>}
                     </div>
                   </Td>
+                  <Td><PhoneNumber phone={org.phone_number} country={org.country} className="text-xs text-gray-400" /></Td>
+                  <Td><span className="text-xs text-gray-400">{org.country || "-"}</span></Td>
                   <Td><PlanBadge plan={org.plan_name} /></Td>
                   <Td>
                     <span className="text-xs text-gray-400">{org.billing_cycle}</span>
@@ -248,6 +253,8 @@ export default function OrganizationsPage() {
                 <div className="grid grid-cols-2 gap-px border-y border-white/[0.08] bg-white/[0.08] text-xs">
                   <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Billing</p><p className="mt-1 truncate text-gray-200">{org.billing_cycle || "—"}</p></div>
                   <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Registered</p><p className="mt-1 truncate text-gray-200">{new Date(org.created_at).toLocaleDateString()}</p></div>
+                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Phone</p><p className="mt-1 truncate text-gray-200"><PhoneNumber phone={org.phone_number} country={org.country} emptyValue="-" /></p></div>
+                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Country</p><p className="mt-1 truncate text-gray-200">{org.country || "-"}</p></div>
                   {org.email && <div className="col-span-2 min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Admin email</p><p className="mt-1 truncate text-gray-200">{org.email}</p></div>}
                 </div>
               </article>

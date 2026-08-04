@@ -561,7 +561,16 @@ const listOrganizations = async (req, res) => {
         a.email,
         a.account_type,
         a.entity_type,
-        a.country,
+        COALESCE(
+          comp.country, cus.country, csup.country, clus.country, fact.country,
+          unit.country, dept.country, sec.country, afc.country, afcb.country, afcd.country,
+          a.country
+        ) AS country,
+        COALESCE(
+          comp.phone_number, cus.phone_number, csup.phone_number, clus.phone_number, fact.phone_number,
+          unit.phone_number, dept.phone_number, sec.phone_number, afc.phone_number, afcb.phone_number, afcd.phone_number,
+          a.phone_number
+        ) AS phone_number,
         a.is_active AS admin_active,
         a.email_verified,
         COALESCE(

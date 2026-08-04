@@ -7,6 +7,8 @@ const {
   compareAudits,
   createAudit,
   listAudits,
+  getAuditorRating,
+  saveAuditorRating,
   getAudit,
   updateAudit,
   deleteAudit,
@@ -27,6 +29,8 @@ router.post('/comparison', compareAudits);
 
 router.post('/',     createAudit);
 router.get('/',      listAudits);
+router.get('/:id/auditor-rating', getAuditorRating);
+router.put('/:id/auditor-rating', saveAuditorRating);
 router.get('/:id',   getAudit);
 router.put('/:id',   updateAudit);
 router.delete('/:id', deleteAudit);

@@ -7,6 +7,7 @@ router.use(authenticate);
 
 // Auditor's assigned audits
 router.get('/my-audits', authorize('auditor', 'organization_user'), ctrl.listMyAudits);
+router.get('/:id/firm-progress', authorize('organization_user'), ctrl.getFirmProgressDetail);
 
 // Corrective actions (CAP-required questions)
 router.get('/:id/corrective-actions', authorize('auditor', 'admin', 'organization_user'), ctrl.getCorrectiveActions);

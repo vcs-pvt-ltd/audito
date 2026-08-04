@@ -59,8 +59,8 @@ const generateAdminUserCode = async () => {
 /**
  * Generic [table]_id generator: prefix + zero-padded digits (e.g. ADM0001).
  */
-const generateTableId = async (table, idField, prefix, padLen = 4) => {
-  const [rows] = await db.query(
+const generateTableId = async (table, idField, prefix, padLen = 4, executor = db) => {
+  const [rows] = await executor.query(
     `SELECT MAX(CAST(SUBSTRING(\`${idField}\`, ${prefix.length + 1}) AS UNSIGNED)) AS max_num FROM \`${table}\``
   );
   const next = (rows[0].max_num || 0) + 1;
@@ -76,8 +76,8 @@ const generateAuditId = () => generateTableId('audit_assignments', 'audit_id', '
 const generateCapId = () => generateTableId('caps', 'cap_id', 'CAP', 4);
 const generateChecklistTypeId = () => generateTableId('checklist_types', 'checklist_type_id', 'CHKLT', 4);
 const generateChecklistId = () => generateTableId('checklists', 'checklist_id', 'CHKL', 4);
-const generateChecklistQuestionId = () => generateTableId('checklist_questions', 'checklist_question_id', 'CHKQ', 4);
-const generateChecklistQuestionOptionId = () => generateTableId('checklist_question_options', 'checklist_question_option_id', 'CHKQO', 5);
+const generateChecklistQuestionId = (executor = db) => generateTableId('checklist_questions', 'checklist_question_id', 'CHKQ', 4, executor);
+const generateChecklistQuestionOptionId = (executor = db) => generateTableId('checklist_question_options', 'checklist_question_option_id', 'CHKQO', 5, executor);
 const generateCorrectiveActionId = () => generateTableId('corrective_actions', 'corrective_action_id', 'CA', 4);
 const generateTrainingId = () => generateTableId('trainings', 'training_id', 'TRN', 4);
 const generateFieldVisitId = () => generateTableId('field_visits', 'field_visit_id', 'FV', 4);
@@ -142,6 +142,7 @@ const generateAiChecklistSuggestionId = () => generateTableId('ai_checklist_ques
 const generatePrivacyPolicyId = () => generateTableId('privacy_policies', 'privacy_policy_id', 'PPOL', 5);
 const generatePrivacyPolicyAgreementId = () => generateTableId('privacy_policy_agreements', 'privacy_policy_agreement_id', 'PPAG', 6);
 const generateAiKnowledgeSettingId = () => generateTableId('ai_knowledge_settings', 'ai_knowledge_setting_id', 'AIKS', 5);
+const generateAuditorRatingId = () => generateTableId('auditor_audit_ratings', 'auditor_rating_id', 'ARAT', 5);
 
 module.exports = {
   generateTableId,
@@ -212,4 +213,5 @@ module.exports = {
   generatePrivacyPolicyId,
   generatePrivacyPolicyAgreementId,
   generateAiKnowledgeSettingId,
+  generateAuditorRatingId,
 };

@@ -53,3 +53,14 @@ verified manually. When the payment gateway is ready, set
 then become the active customer flow without removing the approval history.
 
 `PAYMENT_CONTACT_EMAIL` is optional and defaults to `hi@audito.cloud`.
+
+## Workspace-scoped organization links
+
+Apply `20260803_workspace_scoped_organization_links.sql` before deploying the
+updated organization-link workflow. It separates the selected hierarchy entity
+from the workspace administrator that approves the request, and stores the exact
+tree occurrence selected by the requester.
+
+The migration backfills every existing link so its current target remains both
+the selected entity and approving workspace. Existing link behavior is therefore
+preserved without recreating any links.

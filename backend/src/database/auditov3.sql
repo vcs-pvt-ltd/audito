@@ -1303,6 +1303,9 @@ CREATE TABLE `organization_links` (
   `target_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `target_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `target_level` tinyint NOT NULL,
+  `target_workspace_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `target_workspace_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `target_org_tree_id` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `verification_key_hash` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `verification_key_verified_at` timestamp NULL DEFAULT NULL,
   `status` enum('pending','accepted','rejected') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'pending',
@@ -2225,6 +2228,8 @@ ALTER TABLE `organization_links`
   ADD UNIQUE KEY `uq_link` (`requester_type`,`requester_code`,`target_type`,`target_code`),
   ADD KEY `idx_requester` (`requester_type`,`requester_code`),
   ADD KEY `idx_target` (`target_type`,`target_code`),
+  ADD KEY `idx_org_links_target_workspace` (`target_workspace_type`,`target_workspace_code`,`status`,`is_active`),
+  ADD KEY `idx_org_links_target_tree` (`target_org_tree_id`),
   ADD KEY `idx_status` (`status`);
 
 --

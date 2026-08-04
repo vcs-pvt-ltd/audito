@@ -7,6 +7,7 @@ const {
   respondToLink,
   getMyLinks,
   getPendingLinks,
+  regenerateLinkVerificationKey,
   removeLink,
   getLinkedEntityData
 } = require('../controllers/linkController');
@@ -18,6 +19,7 @@ router.post('/',                  createLink);
 router.post('/preview',           previewLinkTarget);
 router.get('/',                   getMyLinks);
 router.get('/pending',            getPendingLinks);
+router.post('/:linkCode/key',     regenerateLinkVerificationKey);
 router.get('/:linkCode/data',     getLinkedEntityData);
 router.put('/:linkCode/respond',  respondToLink);
 router.delete('/:linkCode',       removeLink);

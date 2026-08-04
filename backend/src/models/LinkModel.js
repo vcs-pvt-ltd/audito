@@ -27,12 +27,41 @@ async function ensureSecurityColumns() {
 }
 
 const LinkModel = {
-  async create({ organization_link_id, link_code, requester_type, requester_code, requester_level, target_type, target_code, target_level, verification_key_hash }) {
+  async create({
+    organization_link_id,
+    link_code,
+    requester_type,
+    requester_code,
+    requester_level,
+    target_type,
+    target_code,
+    target_level,
+    target_workspace_type,
+    target_workspace_code,
+    target_org_tree_id = null,
+    verification_key_hash,
+  }) {
     await ensureSecurityColumns();
     const [result] = await db.query(
-      `INSERT INTO organization_links (organization_link_id, link_code, requester_type, requester_code, requester_level, target_type, target_code, target_level, verification_key_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [organization_link_id, link_code, requester_type, requester_code, requester_level, target_type, target_code, target_level, verification_key_hash || null]
+      `INSERT INTO organization_links
+        (organization_link_id, link_code, requester_type, requester_code, requester_level,
+         target_type, target_code, target_level, target_workspace_type, target_workspace_code,
+         target_org_tree_id, verification_key_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        organization_link_id,
+        link_code,
+        requester_type,
+        requester_code,
+        requester_level,
+        target_type,
+        target_code,
+        target_level,
+        target_workspace_type,
+        target_workspace_code,
+        target_org_tree_id,
+        verification_key_hash || null,
+      ]
     );
     return result;
   },
@@ -81,6 +110,17 @@ const LinkModel = {
     return rows[0] || null;
   },
 
+  async removeRejectedLink(requester_type, requester_code, target_type, target_code) {
+    const [result] = await db.query(
+      `DELETE FROM organization_links
+       WHERE requester_type = ? AND requester_code = ?
+         AND target_type = ? AND target_code = ?
+         AND status = 'rejected'`,
+      [requester_type, requester_code, target_type, target_code]
+    );
+    return result;
+  },
+
   async updateVerificationKey(link_code, verification_key_hash) {
     await ensureSecurityColumns();
     const [result] = await db.query(
@@ -96,10 +136,13 @@ const LinkModel = {
     await ensureSecurityColumns();
     const [rows] = await db.query(
       `SELECT * FROM organization_links
-       WHERE ((requester_type = ? AND requester_code = ?) OR (target_type = ? AND target_code = ?))
+       WHERE ((requester_type = ? AND requester_code = ?)
+          OR (target_type = ? AND target_code = ?)
+          OR (COALESCE(target_workspace_type, target_type) = ?
+              AND COALESCE(target_workspace_code, target_code) = ?))
          AND is_active = TRUE
        ORDER BY created_at DESC`,
-      [entity_type, entity_code, entity_type, entity_code]
+      [entity_type, entity_code, entity_type, entity_code, entity_type, entity_code]
     );
     return rows;
   },
@@ -108,9 +151,12 @@ const LinkModel = {
     await ensureSecurityColumns();
     const [rows] = await db.query(
       `SELECT * FROM organization_links
-       WHERE ((requester_type = ? AND requester_code = ?) OR (target_type = ? AND target_code = ?))
+       WHERE ((requester_type = ? AND requester_code = ?)
+          OR (target_type = ? AND target_code = ?)
+          OR (COALESCE(target_workspace_type, target_type) = ?
+              AND COALESCE(target_workspace_code, target_code) = ?))
          AND status = 'accepted' AND is_active = TRUE`,
-      [entity_type, entity_code, entity_type, entity_code]
+      [entity_type, entity_code, entity_type, entity_code, entity_type, entity_code]
     );
     return rows;
   },
@@ -119,11 +165,28 @@ const LinkModel = {
     await ensureSecurityColumns();
     const [rows] = await db.query(
       `SELECT * FROM organization_links
-       WHERE target_type = ? AND target_code = ? AND status = 'pending' AND is_active = TRUE
+       WHERE COALESCE(target_workspace_type, target_type) = ?
+         AND COALESCE(target_workspace_code, target_code) = ?
+         AND status = 'pending' AND is_active = TRUE
        ORDER BY requested_at DESC`,
       [entity_type, entity_code]
     );
     return rows;
+  },
+
+  async findActiveByTargetTreeIds(target_org_tree_ids) {
+    const ids = [...new Set((target_org_tree_ids || []).filter(Boolean))];
+    if (ids.length === 0) return null;
+    const placeholders = ids.map(() => '?').join(',');
+    const [rows] = await db.query(
+      `SELECT * FROM organization_links
+       WHERE target_org_tree_id IN (${placeholders})
+         AND status IN ('pending', 'accepted')
+         AND is_active = TRUE
+       LIMIT 1`,
+      ids
+    );
+    return rows[0] || null;
   },
 
   async remove(link_code) {

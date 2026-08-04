@@ -735,7 +735,7 @@ export default function MyCapExecutePage() {
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [prunedTree, setPrunedTree] = useState<TreeNode | null>(null);
   const [responses, setResponses] = useState<Record<string, CapResponse[]>>({});
-  const [stepHistory, setStepHistory] = useState<Array<{ mode: "cards"; parentCode: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null }>>([{ mode: "cards", parentCode: null }]);
+  const [stepHistory, setStepHistory] = useState<Array<{ mode: "cards"; parentCode: string | null; parentOrgTreeId: string | null } | { mode: "questions"; entityCode: string; orgTreeId: string | null }>>([{ mode: "cards", parentCode: null, parentOrgTreeId: null }]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -962,6 +962,7 @@ export default function MyCapExecutePage() {
             {(() => {
               const step = stepHistory[stepHistory.length - 1];
               if (!prunedTree) return <p className="text-gray-500 text-center mt-10">Entity tree unavailable.</p>;
+              const goBack = () => setStepHistory((history) => history.length > 1 ? history.slice(0, -1) : history);
 
               const findInTree = (code: string) => findNode(prunedTree, code);
 
@@ -969,16 +970,15 @@ export default function MyCapExecutePage() {
               const seenStepKeys = new Set<string>();
               for (let i = 0; i < stepHistory.length; i++) {
                 const s = stepHistory[i];
-                const key = s.mode === "questions" ? `${s.entityCode}__${s.orgTreeId}` : `parent__${s.parentCode}`;
+                const key = s.mode === "questions" ? `${s.entityCode}__${s.orgTreeId}` : `parent__${s.parentCode}__${s.parentOrgTreeId}`;
                 if (key && !seenStepKeys.has(key)) {
                   seenStepKeys.add(key);
                   const code = s.mode === "questions" ? s.entityCode : s.parentCode;
                   const idx = i;
                   let label = code;
                   if (code) {
-                    const nd = s.mode === "questions" && s.orgTreeId
-                      ? findNodeByEdgeId(prunedTree, s.orgTreeId)
-                      : findNode(prunedTree, code);
+                    const edgeId = s.mode === "questions" ? s.orgTreeId : s.parentOrgTreeId;
+                    const nd = edgeId ? findNodeByEdgeId(prunedTree, edgeId) : findNode(prunedTree, code);
                     label = nd?.name || code;
                   }
                   breadcrumbNodes.push({
@@ -998,7 +998,11 @@ export default function MyCapExecutePage() {
                     cards = ENTITY_TYPE_COLORS[prunedTree.entity_type] ? [prunedTree] : (prunedTree.children ?? []);
                   }
                 } else {
-                  const parentNode = prunedTree ? findNode(prunedTree, step.parentCode) : null;
+                  const parentNode = prunedTree
+                    ? (step.parentOrgTreeId
+                      ? findNodeByEdgeId(prunedTree, step.parentOrgTreeId)
+                      : findNode(prunedTree, step.parentCode))
+                    : null;
                   cards = parentNode ? (parentNode.children ?? []) : [];
                 }
 
@@ -1019,21 +1023,16 @@ export default function MyCapExecutePage() {
                     {!isRoot && (
                       <nav className="flex items-center gap-1.5 flex-wrap mb-5 text-xs">
                         <button
-                          onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                          onClick={goBack}
                           className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
                         >
-                          <ArrowLeft size={12} /> All Entities
+                          <ArrowLeft size={12} /> Back
                         </button>
-                        {breadcrumbNodes.map((bc, idx) => (
-                          <span key={idx} className="flex items-center gap-1.5">
-                            <ChevronRight size={12} className="text-gray-600" />
-                            {idx < breadcrumbNodes.length - 1 ? (
-                              <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">
-                                {bc.label}
-                              </button>
-                            ) : (
-                              <span className="text-secondary-400 font-medium">{bc.label}</span>
-                            )}
+                        {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />…</span>}
+                        {breadcrumbNodes.slice(-1).map((bc) => (
+                          <span key={bc.label} className="flex min-w-0 items-center gap-1.5">
+                            <ChevronRight size={12} className="shrink-0 text-gray-600" />
+                            <span className="truncate font-medium text-secondary-400" title={bc.label}>{bc.label}</span>
                           </span>
                         ))}
                       </nav>
@@ -1075,7 +1074,7 @@ export default function MyCapExecutePage() {
                             }
                             const hasKids = (n.children ?? []).length > 0;
                             if (!hasQ && hasKids) {
-                              setStepHistory((h) => [...h, { mode: "cards", parentCode: code }]);
+                              setStepHistory((h) => [...h, { mode: "cards", parentCode: code, parentOrgTreeId: edgeId }]);
                             } else {
                               setOpenQuestionId(null);
                               setStepHistory((h) => [...h, { mode: "questions", entityCode: code, orgTreeId: resolvedTreeId }]);
@@ -1105,21 +1104,16 @@ export default function MyCapExecutePage() {
                   <div className="flex items-start justify-between gap-3 mb-5">
                     <nav className="flex items-center gap-1.5 flex-wrap text-xs">
                     <button
-                      onClick={() => setStepHistory([{ mode: "cards", parentCode: null }])}
+                      onClick={goBack}
                       className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
                     >
-                      <ArrowLeft size={12} /> All Entities
+                      <ArrowLeft size={12} /> Back
                     </button>
-                    {breadcrumbNodes.map((bc, idx) => (
-                      <span key={idx} className="flex items-center gap-1.5">
-                        <ChevronRight size={12} className="text-gray-600" />
-                        {idx < breadcrumbNodes.length - 1 ? (
-                          <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">
-                            {bc.label}
-                          </button>
-                        ) : (
-                          <span className="text-white font-medium">{bc.label}</span>
-                        )}
+                    {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />…</span>}
+                    {breadcrumbNodes.slice(-1).map((bc) => (
+                      <span key={bc.label} className="flex min-w-0 items-center gap-1.5">
+                        <ChevronRight size={12} className="shrink-0 text-gray-600" />
+                        <span className="truncate font-medium text-white" title={bc.label}>{bc.label}</span>
                       </span>
                     ))}
                     </nav>
@@ -1189,7 +1183,7 @@ export default function MyCapExecutePage() {
                       {hasNextQuestionEntities && (
                         <button
                           onClick={() => {
-                            setStepHistory((h) => [...h, { mode: "cards", parentCode: entityCode }]);
+                            setStepHistory((h) => [...h, { mode: "cards", parentCode: entityCode, parentOrgTreeId: orgTreeId }]);
                           }}
                           className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all shadow-lg shadow-secondary-500/20 bg-secondary-500 text-white hover:bg-secondary-600"
                         >

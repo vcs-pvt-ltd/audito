@@ -44,6 +44,31 @@ const { generateChecklistTypeId, generateChecklistId, generateChecklistQuestionI
 
 const VALID_ANSWER_TYPES = ['free_text', 'single_option', 'multiple_options', 'dropdown'];
 
+async function getVisibleQuestionTargetMap(user) {
+  const accessibleRootCodes = await getAccessibleEntityCodes(user.entityCode, user.entityType);
+  const edges = await OrganizationTreeModel.getTreeDescendants(user.entityCode, accessibleRootCodes);
+  return new Map(edges.map((edge) => [String(edge.org_tree_id), edge]));
+}
+
+function validateQuestionTarget(question, user, visibleEdgeMap) {
+  const orgTreeId = question.org_tree_id;
+  if (orgTreeId === undefined || orgTreeId === null || orgTreeId === '') {
+    if (String(question.entity_code) !== String(user.entityCode)) {
+      return 'Select this entity from your organization tree before assigning questions to it.';
+    }
+    return null;
+  }
+
+  const edge = visibleEdgeMap.get(String(orgTreeId));
+  if (!edge || String(edge.child_code) !== String(question.entity_code)) {
+    return 'The selected entity is no longer available in your organization tree.';
+  }
+  if (question.entity_type && edge.child_type && String(question.entity_type) !== String(edge.child_type)) {
+    return 'The selected entity type does not match your organization tree.';
+  }
+  return null;
+}
+
 function parseQuestionsFromExcelBuffer({ buffer, entityCode }) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets['Template'];
@@ -82,7 +107,7 @@ async function saveOptions(question_id, options, answer_type, executor = db) {
     if (!opt.option_text || !String(opt.option_text).trim()) {
       throw new Error(`Option ${i + 1} is missing text.`);
     }
-    const checklist_question_option_id = await generateChecklistQuestionOptionId();
+    const checklist_question_option_id = await generateChecklistQuestionOptionId(executor);
 
     await ChecklistModel.createOption({
       checklist_question_option_id,
@@ -455,6 +480,18 @@ const addQuestions = async (req, res) => {
       return errorResponse(res, 'Questions array is required.', 400);
     }
 
+    const visibleEdgeMap = await getVisibleQuestionTargetMap(req.user);
+    for (let index = 0; index < questions.length; index++) {
+      const q = questions[index];
+      const missing = validateRequiredFields(q, ['entity_code', 'entity_type', 'question_text', 'answer_type']);
+      if (missing) return errorResponse(res, `Question ${index + 1}: ${missing}`, 400);
+      if (!VALID_ANSWER_TYPES.includes(q.answer_type)) {
+        return errorResponse(res, `Question ${index + 1}: Invalid answer_type "${q.answer_type}".`, 400);
+      }
+      const targetError = validateQuestionTarget(q, req.user, visibleEdgeMap);
+      if (targetError) return errorResponse(res, `Question ${index + 1}: ${targetError}`, 400);
+    }
+
     const existing = await ChecklistModel.listQuestions(id);
     const entityOrderMap = {};
     for (const q of existing) {
@@ -463,50 +500,160 @@ const addQuestions = async (req, res) => {
     }
 
     const created = [];
-    for (const q of questions) {
-      const missing = validateRequiredFields(q, ['entity_code', 'entity_type', 'question_text', 'answer_type']);
-      if (missing) return errorResponse(res, `Question validation: ${missing}`, 400);
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      for (const q of questions) {
+        const orgTreeId = q.org_tree_id === undefined || q.org_tree_id === null || q.org_tree_id === ''
+          ? null
+          : q.org_tree_id;
+        const key = `${q.entity_code}__${orgTreeId ?? 'null'}`;
+        const orderIndex = entityOrderMap[key] || 0;
+        const checklist_question_id = await generateChecklistQuestionId(connection);
+        const questionId = await ChecklistModel.createQuestion({
+          checklist_question_id,
+          checklist_id: id,
+          entity_code: q.entity_code,
+          org_tree_id: orgTreeId,
+          entity_type: q.entity_type,
+          entity_name: q.entity_name || null,
+          question_text: q.question_text,
+          answer_type: q.answer_type,
+          total_marks: 10,
+          order_index: orderIndex
+        }, connection);
 
-      if (!VALID_ANSWER_TYPES.includes(q.answer_type)) {
-        return errorResponse(res, `Invalid answer_type "${q.answer_type}". Allowed: ${VALID_ANSWER_TYPES.join(', ')}`, 400);
+        await saveOptions(questionId, q.options || [], q.answer_type, connection);
+        entityOrderMap[key] = orderIndex + 1;
+        created.push(questionId);
       }
-
-      let orgTreeId = null;
-      if (q.org_tree_id !== undefined && q.org_tree_id !== null && q.org_tree_id !== '') {
-        orgTreeId = q.org_tree_id;
-        const edge = await OrganizationTreeModel.findById(orgTreeId);
-        if (!edge || edge.root_entity_code !== req.user.entityCode || edge.child_code !== q.entity_code) {
-          return errorResponse(res, 'Invalid org_tree_id for selected entity.', 400);
-        }
-      }
-
-      const key = `${q.entity_code}__${orgTreeId ?? 'null'}`;
-      const orderIndex = entityOrderMap[key] || 0;
-
-      const checklist_question_id = await generateChecklistQuestionId();
-
-      const questionId = await ChecklistModel.createQuestion({
-        checklist_question_id,
-        checklist_id: id,
-        entity_code: q.entity_code,
-        org_tree_id: orgTreeId,
-        entity_type: q.entity_type,
-        entity_name: q.entity_name || null,
-        question_text: q.question_text,
-        answer_type: q.answer_type,
-        total_marks: 10,
-        order_index: orderIndex
-      });
-
-      await saveOptions(questionId, q.options || [], q.answer_type);
-      entityOrderMap[key] = orderIndex + 1;
-      created.push(questionId);
+      await connection.commit();
+    } catch (transactionError) {
+      await connection.rollback();
+      throw transactionError;
+    } finally {
+      connection.release();
     }
 
     return successResponse(res, { created_count: created.length }, `${created.length} question(s) added.`, 201);
   } catch (err) {
     console.error('addQuestions error:', err);
     return errorResponse(res, err.message || 'Failed to add questions.', 400);
+  }
+};
+
+/**
+ * Atomically synchronize every question in a checklist. Existing question IDs
+ * are retained, new questions are inserted, and removed questions are deleted.
+ */
+const syncQuestions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const checklist = await ChecklistModel.findById(id);
+    if (!checklist || checklist.created_by !== req.user.entityCode) {
+      return errorResponse(res, 'Checklist not found.', 404);
+    }
+
+    const { questions } = req.body;
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return errorResponse(res, 'At least one checklist question is required.', 400);
+    }
+
+    const existing = await ChecklistModel.listQuestions(id);
+    const existingById = new Map(existing.map((question) => [String(question.checklist_question_id), question]));
+    const visibleEdgeMap = await getVisibleQuestionTargetMap(req.user);
+    const incomingExistingIds = new Set();
+
+    for (let index = 0; index < questions.length; index++) {
+      const q = questions[index];
+      const missing = validateRequiredFields(q, ['entity_code', 'entity_type', 'question_text', 'answer_type']);
+      if (missing) return errorResponse(res, `Question ${index + 1}: ${missing}`, 400);
+      if (!VALID_ANSWER_TYPES.includes(q.answer_type)) {
+        return errorResponse(res, `Question ${index + 1}: Invalid answer type.`, 400);
+      }
+      const targetError = validateQuestionTarget(q, req.user, visibleEdgeMap);
+      if (targetError) return errorResponse(res, `Question ${index + 1}: ${targetError}`, 400);
+
+      if (q.checklist_question_id) {
+        const questionId = String(q.checklist_question_id);
+        if (!existingById.has(questionId)) {
+          return errorResponse(res, `Question ${index + 1} does not belong to this checklist.`, 400);
+        }
+        if (incomingExistingIds.has(questionId)) {
+          return errorResponse(res, `Question ${index + 1} is duplicated.`, 400);
+        }
+        incomingExistingIds.add(questionId);
+      }
+    }
+
+    const connection = await db.getConnection();
+    let createdCount = 0;
+    let updatedCount = 0;
+    let deletedCount = 0;
+    try {
+      await connection.beginTransaction();
+
+      for (const existingQuestion of existing) {
+        const questionId = String(existingQuestion.checklist_question_id);
+        if (incomingExistingIds.has(questionId)) continue;
+        await ChecklistModel.deleteOptions(questionId, connection);
+        await ChecklistModel.deleteQuestion(questionId, connection);
+        deletedCount++;
+      }
+
+      const entityOrderMap = {};
+      for (const q of questions) {
+        const orgTreeId = q.org_tree_id === undefined || q.org_tree_id === null || q.org_tree_id === ''
+          ? null
+          : q.org_tree_id;
+        const entityKey = `${q.entity_code}__${orgTreeId ?? 'null'}`;
+        const orderIndex = entityOrderMap[entityKey] || 0;
+        const questionData = {
+          checklist_id: id,
+          entity_code: q.entity_code,
+          org_tree_id: orgTreeId,
+          entity_type: q.entity_type,
+          entity_name: q.entity_name || null,
+          question_text: q.question_text,
+          answer_type: q.answer_type,
+          total_marks: 10,
+          order_index: orderIndex,
+        };
+
+        if (q.checklist_question_id) {
+          const questionId = String(q.checklist_question_id);
+          await ChecklistModel.deleteOptions(questionId, connection);
+          await ChecklistModel.updateQuestion(questionId, questionData, connection);
+          await saveOptions(questionId, q.options || [], q.answer_type, connection);
+          updatedCount++;
+        } else {
+          const checklist_question_id = await generateChecklistQuestionId(connection);
+          const questionId = await ChecklistModel.createQuestion({
+            ...questionData,
+            checklist_question_id,
+          }, connection);
+          await saveOptions(questionId, q.options || [], q.answer_type, connection);
+          createdCount++;
+        }
+        entityOrderMap[entityKey] = orderIndex + 1;
+      }
+
+      await connection.commit();
+    } catch (transactionError) {
+      await connection.rollback();
+      throw transactionError;
+    } finally {
+      connection.release();
+    }
+
+    return successResponse(res, {
+      created_count: createdCount,
+      updated_count: updatedCount,
+      deleted_count: deletedCount,
+    }, 'Checklist questions saved.');
+  } catch (err) {
+    console.error('syncQuestions error:', err);
+    return errorResponse(res, err.message || 'Failed to save checklist questions.', 400);
   }
 };
 
@@ -528,36 +675,37 @@ const updateQuestion = async (req, res) => {
     }
 
     const newType = answer_type || question.answer_type;
-
-    await ChecklistModel.deleteOptions(qid);
-
-    let orgTreeId = undefined;
-    if (org_tree_id !== undefined) {
-      if (org_tree_id === null || org_tree_id === '') {
-        orgTreeId = null;
-      } else {
-        orgTreeId = org_tree_id;
-        const selectedEntityCode = entity_code || question.entity_code;
-        const edge = await OrganizationTreeModel.findById(orgTreeId);
-        if (!edge || edge.root_entity_code !== req.user.entityCode || edge.child_code !== selectedEntityCode) {
-          return errorResponse(res, 'Invalid org_tree_id for selected entity.', 400);
-        }
-      }
-    }
-
-    // Update question with all fields including entity context
-    await ChecklistModel.updateQuestion(qid, {
-      question_text,
-      answer_type: newType,
+    const updatedQuestion = {
       entity_code: entity_code || question.entity_code,
-      org_tree_id: orgTreeId !== undefined ? orgTreeId : (question.org_tree_id ?? null),
+      org_tree_id: org_tree_id !== undefined ? org_tree_id : (question.org_tree_id ?? null),
       entity_type: entity_type || question.entity_type,
-      entity_name: entity_name || question.entity_name || null,
-      total_marks: 10,
-      order_index: question.order_index || 0
-    });
+    };
+    const visibleEdgeMap = await getVisibleQuestionTargetMap(req.user);
+    const targetError = validateQuestionTarget(updatedQuestion, req.user, visibleEdgeMap);
+    if (targetError) return errorResponse(res, targetError, 400);
 
-    await saveOptions(qid, options || [], newType);
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await ChecklistModel.deleteOptions(qid, connection);
+      await ChecklistModel.updateQuestion(qid, {
+        question_text,
+        answer_type: newType,
+        entity_code: updatedQuestion.entity_code,
+        org_tree_id: updatedQuestion.org_tree_id === '' ? null : updatedQuestion.org_tree_id,
+        entity_type: updatedQuestion.entity_type,
+        entity_name: entity_name || question.entity_name || null,
+        total_marks: 10,
+        order_index: question.order_index || 0
+      }, connection);
+      await saveOptions(qid, options || [], newType, connection);
+      await connection.commit();
+    } catch (transactionError) {
+      await connection.rollback();
+      throw transactionError;
+    } finally {
+      connection.release();
+    }
     return successResponse(res, null, 'Question updated.');
   } catch (err) {
     console.error('updateQuestion error:', err);
@@ -737,20 +885,11 @@ function normalizeTemplateAnswer({ answerTypeRaw, answerOptionsRaw, answerPoints
  *   edges         — raw org tree edges
  */
 async function buildOrgEntityMaps(adminCode, entityType) {
-  const { getAccessibleEntityCodes } = require('../utils/accessHelper');
   const accessibleCodes = await getAccessibleEntityCodes(adminCode, entityType);
-
-  // Fetch descendants for ALL accessible root codes to build a complete map
-  let allEdges = [];
-  for (const code of accessibleCodes) {
-    const edges = await OrganizationTreeModel.getAllDescendants(code);
-    allEdges = [...allEdges, ...edges];
-  }
-
-  // Deduplicate edges by ID to avoid redundant processing
-  const edgeMap = new Map();
-  allEdges.forEach(e => edgeMap.set(e.org_tree_id, e));
-  const edges = Array.from(edgeMap.values());
+  // Use the same path-scoped tree as the organization and checklist screens.
+  // Global descendant traversal can pull in unrelated occurrences of reused
+  // entity codes after organizations are linked.
+  const edges = await OrganizationTreeModel.getTreeDescendants(adminCode, accessibleCodes);
 
   const entityTypeMap = {};
   const allCodes = new Set(accessibleCodes);
@@ -1201,7 +1340,8 @@ const uploadQuestionsExcel = async (req, res) => {
     const existing = await ChecklistModel.listQuestions(id);
     const baseEntityOrderMap = {};
     for (const q of existing) {
-      baseEntityOrderMap[q.entity_code] = Math.max(baseEntityOrderMap[q.entity_code] || 0, q.order_index + 1);
+      const key = `${q.entity_code}__${q.org_tree_id ?? 'null'}`;
+      baseEntityOrderMap[key] = Math.max(baseEntityOrderMap[key] || 0, q.order_index + 1);
     }
 
     const errors = [];
@@ -1274,9 +1414,11 @@ const uploadQuestionsExcel = async (req, res) => {
       await connection.beginTransaction();
 
       for (const row of parsedRows) {
-        const k = `${row.entity_code}__null`;
+        const k = `${row.entity_code}__${row.org_tree_id ?? 'null'}`;
         const orderIndex = entityOrderMap[k] || 0;
+        const checklist_question_id = await generateChecklistQuestionId(connection);
         const questionId = await ChecklistModel.createQuestion({
+          checklist_question_id,
           checklist_id: id,
           entity_code: row.entity_code,
           org_tree_id: row.org_tree_id ?? null,
@@ -1685,6 +1827,7 @@ module.exports = {
   updateChecklist,
   deactivateChecklist,
   addQuestions,
+  syncQuestions,
   updateQuestion,
   deleteQuestion,
   downloadExcelTemplate,

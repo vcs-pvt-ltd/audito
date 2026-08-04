@@ -2,7 +2,8 @@
  * Organization Link Rules
  *
  * Shared rules for links between independently registered entities.
- * Allows nearest-parent links, with Company -> Supplier as a special partner link.
+ * Allows nearest-parent links, with Company -> Supplier as a special partner link
+ * and Company -> Company as the existing plan-controlled peer link.
  */
 
 const ORG_LEVELS = {
@@ -23,7 +24,7 @@ const ORG_LEVELS = {
 const LINK_TARGETS = {
   'Buying Office': ['Customer'],
   Supplier: ['Buying Office'],
-  Company: ['Supplier'],
+  Company: ['Supplier', 'Company'],
   Cluster: ['Company'],
   Factory: ['Cluster'],
   Unit: ['Factory'],
@@ -69,6 +70,10 @@ function canCreateLink(requesterType, targetType) {
   return { ok: true };
 }
 
+function getAllowedLinkTargetTypes(requesterType) {
+  return [...(LINK_TARGETS[requesterType] || [])];
+}
+
 function isCompanySupplierLink(typeA, typeB) {
   const pair = new Set([typeA, typeB]);
   return pair.has('Supplier') && pair.has('Company');
@@ -84,6 +89,7 @@ module.exports = {
   ORG_LEVELS,
   LINK_TARGETS,
   getAccountType,
+  getAllowedLinkTargetTypes,
   isValidLinkTargetType,
   canCreateLink,
   isCompanySupplierLink,

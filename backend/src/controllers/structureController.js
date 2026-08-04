@@ -86,8 +86,15 @@ const PARTNER_ACCOUNT_OWNER_FIELD = {
   'Buying Office': 'cust_code',
   Supplier: 'cust_code',
   Company: 'comp_code',
+  Cluster: 'comp_code',
+  Factory: 'comp_code',
+  Unit: 'comp_code',
+  Department: 'comp_code',
+  Section: 'comp_code',
   'Audit Firm': 'afc_code',
   'Audit Firm Company': 'afc_code',
+  Branch: 'afc_code',
+  'Audit Firm Department': 'afc_code',
 };
 
 const COMPANY_STRUCTURE_ENTITY_TYPES = ['cluster', 'factory', 'unit', 'department', 'section'];
@@ -290,7 +297,6 @@ const updateSubEntity = async (req, res) => {
     const { entityType, code } = req.params;
     const accountType = req.user.accountType === 'Audit Firm Company' ? 'Audit Firm' : req.user.accountType;
     const adminCode = req.user.entityCode;
-    const accessibleCodes = await getAccessibleEntityCodes(adminCode, req.user.entityType);
     let updated = false;
 
     // --- Uniqueness check: block renaming to a duplicate name within the same owner ---
@@ -322,11 +328,13 @@ const updateSubEntity = async (req, res) => {
     if (accountType === 'Customer') {
       if (entityType === 'buying-office') {
         const bo = await CustomerModel.findBuyingOfficeByCode(code);
-        if (!bo || (bo.cust_code !== adminCode && !accessibleCodes.includes(code))) return errorResponse(res, 'Buying Office not found.', 404);
+        if (!bo) return errorResponse(res, 'Buying Office not found.', 404);
+        if (bo.cust_code !== adminCode) return errorResponse(res, 'Cannot update a linked entity.', 403);
         updated = await CustomerModel.updateBuyingOffice(code, req.body);
       } else if (entityType === 'supplier') {
         const s = await CustomerModel.findSupplierByCode(code);
-        if (!s || (s.cust_code !== adminCode && !accessibleCodes.includes(code))) return errorResponse(res, 'Supplier not found.', 404);
+        if (!s) return errorResponse(res, 'Supplier not found.', 404);
+        if (s.cust_code !== adminCode) return errorResponse(res, 'Cannot update a linked entity.', 403);
         updated = await CustomerModel.updateSupplier(code, req.body);
       } else {
         return errorResponse(res, 'Invalid entityType for Customer.', 400);
@@ -335,23 +343,28 @@ const updateSubEntity = async (req, res) => {
     } else if (accountType === 'Company') {
       if (entityType === 'cluster') {
         const c = await CompanyModel.findClusterByCode(code);
-        if (!c || (c.comp_code !== adminCode && !accessibleCodes.includes(code))) return errorResponse(res, 'Cluster not found.', 404);
+        if (!c) return errorResponse(res, 'Cluster not found.', 404);
+        if (c.comp_code !== adminCode) return errorResponse(res, 'Cannot update a linked entity.', 403);
         updated = await CompanyModel.updateCluster(code, req.body);
       } else if (entityType === 'factory') {
         const f = await CompanyModel.findFactoryByCode(code);
-        if (!f || (f.comp_code !== adminCode && !accessibleCodes.includes(code))) return errorResponse(res, 'Factory not found.', 404);
+        if (!f) return errorResponse(res, 'Factory not found.', 404);
+        if (f.comp_code !== adminCode) return errorResponse(res, 'Cannot update a linked entity.', 403);
         updated = await CompanyModel.updateFactory(code, req.body);
       } else if (entityType === 'unit') {
         const u = await CompanyModel.findUnitByCode(code);
-        if (!u || (u.comp_code !== adminCode && !accessibleCodes.includes(code))) return errorResponse(res, 'Unit not found.', 404);
+        if (!u) return errorResponse(res, 'Unit not found.', 404);
+        if (u.comp_code !== adminCode) return errorResponse(res, 'Cannot update a linked entity.', 403);
         updated = await CompanyModel.updateUnit(code, req.body);
       } else if (entityType === 'department') {
         const d = await CompanyModel.findDepartmentByCode(code);
-        if (!d || (d.comp_code !== adminCode && !accessibleCodes.includes(code))) return errorResponse(res, 'Department not found.', 404);
+        if (!d) return errorResponse(res, 'Department not found.', 404);
+        if (d.comp_code !== adminCode) return errorResponse(res, 'Cannot update a linked entity.', 403);
         updated = await CompanyModel.updateDepartment(code, req.body);
       } else if (entityType === 'section') {
         const s = await CompanyModel.findSectionByCode(code);
-        if (!s || (s.comp_code !== adminCode && !accessibleCodes.includes(code))) return errorResponse(res, 'Section not found.', 404);
+        if (!s) return errorResponse(res, 'Section not found.', 404);
+        if (s.comp_code !== adminCode) return errorResponse(res, 'Cannot update a linked entity.', 403);
         updated = await CompanyModel.updateSection(code, req.body);
       } else {
         return errorResponse(res, 'Invalid entityType for Company.', 400);
@@ -360,11 +373,13 @@ const updateSubEntity = async (req, res) => {
     } else if (accountType === 'Audit Firm') {
       if (entityType === 'branch') {
         const b = await AuditFirmModel.findBranchByCode(code);
-        if (!b || (b.afc_code !== adminCode && !accessibleCodes.includes(code))) return errorResponse(res, 'Branch not found.', 404);
+        if (!b) return errorResponse(res, 'Branch not found.', 404);
+        if (b.afc_code !== adminCode) return errorResponse(res, 'Cannot update a linked entity.', 403);
         updated = await AuditFirmModel.updateBranch(code, req.body);
       } else if (entityType === 'audit-firm-department') {
         const d = await AuditFirmModel.findDepartmentByCode(code);
-        if (!d || (d.afc_code !== adminCode && !accessibleCodes.includes(code))) return errorResponse(res, 'Department not found.', 404);
+        if (!d) return errorResponse(res, 'Department not found.', 404);
+        if (d.afc_code !== adminCode) return errorResponse(res, 'Cannot update a linked entity.', 403);
         updated = await AuditFirmModel.updateDepartment(code, req.body);
       } else {
         return errorResponse(res, 'Invalid entityType for Audit Firm.', 400);
@@ -390,7 +405,6 @@ const deleteSubEntity = async (req, res) => {
     const { entityType, code } = req.params;
     const accountType = req.user.accountType === 'Audit Firm Company' ? 'Audit Firm' : req.user.accountType;
     const adminCode = req.user.entityCode;
-    const accessibleCodes = await getAccessibleEntityCodes(adminCode, req.user.entityType);
  
     // Prevent deactivation if the entity is mapped in the organization tree
     const [treeUsage] = await db.query(
@@ -498,7 +512,10 @@ const listByType = async (req, res) => {
       }
 
     } else if (accountType === 'Company') {
-      if (entityType === 'cluster') {
+      if (entityType === 'company') {
+        // Company roots from accepted peer links are merged below as read-only rows.
+        items = [];
+      } else if (entityType === 'cluster') {
         items = await CompanyModel.findClustersByCompany(adminCode);
       } else if (entityType === 'factory') {
         items = await CompanyModel.findFactoriesByCompany(adminCode);

@@ -214,8 +214,8 @@ const ChecklistModel = {
     return rows;
   },
 
-  async deleteQuestion(checklist_question_id) {
-    await db.query('DELETE FROM checklist_questions WHERE checklist_question_id = ?', [checklist_question_id]);
+  async deleteQuestion(checklist_question_id, executor = db) {
+    await executor.query('DELETE FROM checklist_questions WHERE checklist_question_id = ?', [checklist_question_id]);
   },
 
   async deleteQuestionsByChecklist(checklist_id) {
@@ -241,12 +241,12 @@ const ChecklistModel = {
     return rows;
   },
 
-  async deleteOptions(checklist_question_id) {
-    await db.query('DELETE FROM checklist_question_options WHERE checklist_question_id = ?', [checklist_question_id]);
+  async deleteOptions(checklist_question_id, executor = db) {
+    await executor.query('DELETE FROM checklist_question_options WHERE checklist_question_id = ?', [checklist_question_id]);
   },
 
-  async updateQuestion(checklist_question_id, { question_text, answer_type, entity_code, org_tree_id, entity_type, entity_name, total_marks, order_index }) {
-    const [res] = await db.query(
+  async updateQuestion(checklist_question_id, { question_text, answer_type, entity_code, org_tree_id, entity_type, entity_name, total_marks, order_index }, executor = db) {
+    const [res] = await executor.query(
       `UPDATE checklist_questions 
        SET question_text = ?, answer_type = ?, entity_code = ?, org_tree_id = ?, entity_type = ?, 
            entity_name = ?, total_marks = ?, order_index = ?

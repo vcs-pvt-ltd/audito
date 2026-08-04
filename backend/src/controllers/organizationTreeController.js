@@ -119,10 +119,11 @@ async function ensureCompanySupplierLinkEdges(entityType, entityCode, createdBy)
 
     const supplierCode = link.requester_type === 'Supplier' ? link.requester_code : link.target_code;
     const companyCode = link.requester_type === 'Company' ? link.requester_code : link.target_code;
+    const targetWorkspaceCode = link.target_workspace_code || supplierCode;
 
     // Only the Supplier (target) tree shows the linked Company (requester).
     const supplierTreeEdge = await OrganizationTreeModel.findEdgeForRoot(
-      supplierCode, companyCode, supplierCode
+      supplierCode, companyCode, targetWorkspaceCode
     );
     if (!supplierTreeEdge) {
       await OrganizationTreeModel.addNode({
@@ -131,7 +132,8 @@ async function ensureCompanySupplierLinkEdges(entityType, entityCode, createdBy)
         child_type: 'Company',
         child_code: companyCode,
         created_by: createdBy,
-        root_entity_code: supplierCode,
+        root_entity_code: targetWorkspaceCode,
+        parent_edge_id: link.target_org_tree_id || null,
       });
     }
 
@@ -360,6 +362,16 @@ const removeNode = async (req, res) => {
 
     // Fetch linked partner codes once — used for both checks below
     const partnerCodes = await getLinkedPartnerCodes(adminType, adminCode);
+
+    const affectedEdgeIds = await OrganizationTreeModel.getDescendantEdgeIds(edge.org_tree_id);
+    const targetLink = await LinkModel.findActiveByTargetTreeIds(affectedEdgeIds);
+    if (targetLink) {
+      return errorResponse(
+        res,
+        'This entity is used by an active organization link. Remove or cancel that link before changing this hierarchy branch.',
+        403
+      );
+    }
 
     // Block removal of the auto-created link edge (child_code IS a linked entity root).
     // That edge was created by the link system and must be removed by removing the link itself.

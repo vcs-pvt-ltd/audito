@@ -23,7 +23,7 @@ import {
   Building2,
   User,
   Users,
-  Crown,
+  KeyRound,
 } from "lucide-react";
 import { Button, IconButton, Modal, Table, THead, Th, TBody, Tr, Td, Input } from "@/components/ui";
 
@@ -47,6 +47,9 @@ interface OrgLink {
   target_code: string;
   target_name: string | null;
   target_level: number;
+  target_workspace_type?: string | null;
+  target_workspace_code?: string | null;
+  target_org_tree_id?: string | null;
   status: "pending" | "accepted" | "rejected";
   requested_at: string;
   responded_at: string | null;
@@ -120,32 +123,63 @@ interface LinkedEntityData {
     factories?: StructureItem[];
     units?: StructureItem[];
     departments?: StructureItem[];
+    sections?: StructureItem[];
+    branches?: StructureItem[];
+    audit_firm_departments?: StructureItem[];
   };
 }
 
-interface TargetOrganizationPreview {
+interface EntitySummary {
+  name: string;
+  registration_number: string | null;
+  email: string | null;
+  phone_number: string | null;
+  address: string | null;
+  country: string | null;
+}
+
+interface LinkTargetOption {
   entity_type: string;
   entity_code: string;
-  entity: {
-    name: string;
-    registration_number: string | null;
-    email: string | null;
-    phone_number: string | null;
-    address: string | null;
-    country: string | null;
-  } | null;
-  admin: {
+  target_org_tree_id: string | null;
+  entity: EntitySummary;
+  path_label: string;
+}
+
+interface TargetOrganizationPreview {
+  workspace: {
+    entity_type: string;
+    entity_code: string;
+    entity: EntitySummary;
+    admin: {
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone_number: string | null;
+    };
+  };
+  required_target_types: string[];
+  eligible_targets: LinkTargetOption[];
+}
+
+interface CreatedLinkTarget extends LinkTargetOption {
+  workspace?: {
+    entity_type: string;
+    entity_code: string;
+    entity: EntitySummary;
+  };
+  admin?: {
     first_name: string;
     last_name: string;
     email: string;
     phone_number: string | null;
-  } | null;
+  };
 }
 
 interface LinkCreateResult {
   link_code: string;
   verification_key: string;
-  target?: TargetOrganizationPreview;
+  target?: CreatedLinkTarget;
 }
 
 // ─── View Data Modal ─────────────────────────────────────────────
@@ -169,15 +203,6 @@ function ViewDataModal({
       <span className="text-white text-xs text-right">{value || "—"}</span>
     </div>
   );
-
-  const structureSections: { key: keyof NonNullable<LinkedEntityData["structure"]>; label: string }[] = [
-    { key: "buying_offices", label: "Buying Offices" },
-    { key: "suppliers", label: "Suppliers" },
-    { key: "clusters", label: "Clusters" },
-    { key: "factories", label: "Factories" },
-    { key: "units", label: "Units" },
-    { key: "departments", label: "Departments" },
-  ];
 
   return (
     <Modal open={open} onClose={onClose} title={data ? `${data.entity_type} Data` : "Entity Data"} size="lg">
@@ -244,7 +269,7 @@ const LINKABLE_ENTITY_TYPES = new Set([
 const LINK_TARGET_HINTS: Record<string, string> = {
   "Buying Office": "Customer",
   Supplier: "Buying Office",
-  Company: "Supplier",
+  Company: "Supplier or Company",
   Cluster: "Company",
   Factory: "Cluster",
   Unit: "Factory",
@@ -275,13 +300,14 @@ function CreateLinkModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (targetEmail: string) => Promise<LinkCreateResult>;
+  onSubmit: (targetEmail: string, target: LinkTargetOption) => Promise<LinkCreateResult>;
   onPreview: (targetEmail: string) => Promise<TargetOrganizationPreview>;
   entityType: string;
 }) {
   const [targetEmail, setTargetEmail] = useState("");
   const [verifiedEmail, setVerifiedEmail] = useState("");
   const [targetPreview, setTargetPreview] = useState<TargetOrganizationPreview | null>(null);
+  const [selectedTargetKey, setSelectedTargetKey] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [createdLink, setCreatedLink] = useState<LinkCreateResult | null>(null);
   const [countries, setCountries] = useState<Country[]>([]);
@@ -296,6 +322,7 @@ function CreateLinkModal({
       setTargetEmail("");
       setVerifiedEmail("");
       setTargetPreview(null);
+      setSelectedTargetKey("");
       setCreatedLink(null);
       setError("");
     }
@@ -323,10 +350,14 @@ function CreateLinkModal({
     if (!targetPreview || verifiedEmail !== targetEmail.trim()) {
       return setError("Verify the target organization before sending the request.");
     }
+    const selectedTarget = targetPreview.eligible_targets.find(
+      (target) => `${target.entity_type}:${target.entity_code}:${target.target_org_tree_id || "root"}` === selectedTargetKey
+    );
+    if (!selectedTarget) return setError("Select the entity you want to link with.");
     setLoading(true);
     setError("");
     try {
-      const created = await onSubmit(targetEmail.trim());
+      const created = await onSubmit(targetEmail.trim(), selectedTarget);
       setCreatedLink(created);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to send request.");
@@ -343,11 +374,16 @@ function CreateLinkModal({
     setError("");
     setTargetPreview(null);
     setVerifiedEmail("");
+    setSelectedTargetKey("");
     setCreatedLink(null);
     try {
       const preview = await onPreview(email);
       setTargetPreview(preview);
       setVerifiedEmail(email);
+      if (preview.eligible_targets.length === 1) {
+        const only = preview.eligible_targets[0];
+        setSelectedTargetKey(`${only.entity_type}:${only.entity_code}:${only.target_org_tree_id || "root"}`);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to verify organization.");
     } finally {
@@ -356,21 +392,21 @@ function CreateLinkModal({
   };
 
   const previewIsCurrent = !!targetPreview && verifiedEmail === targetEmail.trim();
-  const previewCountry = targetPreview?.entity?.country || "";
+  const previewCountry = targetPreview?.workspace.entity?.country || "";
   const previewDialCode = countries.find(
     (country) => country.country.toLowerCase() === previewCountry.toLowerCase()
   )?.international_dialing;
   const organizationPhoneWithDialCode = formatPhoneWithDialCode(
-    targetPreview?.entity?.phone_number,
+    targetPreview?.workspace.entity?.phone_number,
     previewDialCode
   );
   const adminPhoneWithDialCode = formatPhoneWithDialCode(
-    targetPreview?.admin?.phone_number,
+    targetPreview?.workspace.admin?.phone_number,
     previewDialCode
   );
 
   return (
-    <Modal open={open} onClose={onClose} title="Request" size="sm">
+    <Modal open={open} onClose={onClose} title="Request Organization Link" size="md">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
@@ -389,7 +425,7 @@ function CreateLinkModal({
         )}
 
         <p className="text-sm text-gray-400">
-          Send a link request using the organization administrator&apos;s email.
+          Enter the target workspace administrator&apos;s registered email, then select the exact entity you need to link with.
         </p>
 
         {canLink ? (
@@ -402,7 +438,7 @@ function CreateLinkModal({
 
         <div>
           <Input
-            label="Administrator Email"
+            label="Workspace Administrator Email"
             required
             type="email"
             value={targetEmail}
@@ -410,65 +446,93 @@ function CreateLinkModal({
               setTargetEmail(e.target.value);
               setError("");
               setCreatedLink(null);
+              setTargetPreview(null);
+              setVerifiedEmail("");
+              setSelectedTargetKey("");
             }}
             placeholder="e.g. admin@company.com"
             disabled={!!createdLink}
           />
           <p className="text-xs text-gray-500 mt-1">
-            Enter the email address of the organization administrator you want to link with.
+            Only immediate parent entities already placed in that workspace hierarchy will be available.
           </p>
         </div>
 
         {!createdLink && (
           <Button
             type="button"
+            variant="secondary"
             fullWidth
             loading={previewLoading}
             disabled={previewLoading || !targetEmail.trim() || !canLink}
             onClick={handlePreview}
-            className="text-secondary-300 border-secondary-500/20 bg-secondary-500/10 hover:bg-secondary-500/15"
+            className="!text-white border-secondary-500/30 bg-secondary-500/15 hover:bg-secondary-500/25"
           >
-            {previewLoading ? "Verifying..." : "Verify Organization"}
+            {previewLoading ? "Checking Workspace..." : "Check Workspace"}
           </Button>
         )}
 
         {previewIsCurrent && targetPreview && (
-          <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Building2 size={15} className="text-secondary-400" />
-              <p className="text-sm font-semibold text-white">{targetPreview.entity?.name || "Verified Organization"}</p>
+          <div className="space-y-3">
+            <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Building2 size={15} className="text-secondary-400" />
+                <p className="text-sm font-semibold text-white">{targetPreview.workspace.entity.name}</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Workspace Type</span>
+                  <span className="text-gray-300 text-right">{targetPreview.workspace.entity_type}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Country</span>
+                  <span className="text-gray-300 text-right">{targetPreview.workspace.entity.country || "-"}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Organization Phone</span>
+                  <span className="text-gray-300 text-right">{organizationPhoneWithDialCode}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Administrator</span>
+                  <span className="text-gray-300 text-right">
+                    {`${targetPreview.workspace.admin.first_name} ${targetPreview.workspace.admin.last_name}`}
+                  </span>
+                </div>
+                
+              </div>
             </div>
-            <div className="grid grid-cols-1 gap-1 text-xs">
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Type</span>
-                <span className="text-gray-300 text-right">{targetPreview.entity_type}</span>
+
+            <div>
+              <p className="text-xs font-medium text-gray-300 mb-2">
+                {targetPreview.eligible_targets.length === 1 ? "Eligible entity" : "Select an eligible entity"}
+              </p>
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {targetPreview.eligible_targets.map((target) => {
+                  const key = `${target.entity_type}:${target.entity_code}:${target.target_org_tree_id || "root"}`;
+                  const selected = selectedTargetKey === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSelectedTargetKey(key)}
+                      className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                        selected
+                          ? "border-secondary-500/60 bg-secondary-500/15"
+                          : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-medium text-white">{target.entity.name}</span>
+                        <span className="text-[10px] uppercase tracking-wide text-secondary-300">{target.entity_type}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 break-words">{target.path_label}</p>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Country</span>
-                <span className="text-gray-300 text-right">{targetPreview.entity?.country || "-"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Organization Email</span>
-                <span className="text-gray-300 text-right break-all">{targetPreview.entity?.email || "-"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Organization Phone</span>
-                <span className="text-gray-300 text-right">{organizationPhoneWithDialCode}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Address</span>
-                <span className="text-gray-300 text-right">{targetPreview.entity?.address || "-"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Admin</span>
-                <span className="text-gray-300 text-right">
-                  {targetPreview.admin ? `${targetPreview.admin.first_name} ${targetPreview.admin.last_name}` : "-"}
-                </span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Admin Phone</span>
-                <span className="text-gray-300 text-right">{adminPhoneWithDialCode}</span>
-              </div>
+              <p className="text-[11px] text-gray-500 mt-2">
+                The request will attach your {entityType} directly below the selected {targetPreview.required_target_types.join(" or ")}.
+              </p>
             </div>
           </div>
         )}
@@ -478,7 +542,7 @@ function CreateLinkModal({
             {createdLink ? "Close" : "Cancel"}
           </Button>
           {!createdLink && (
-            <Button type="submit" fullWidth disabled={loading || !canLink || !previewIsCurrent} loading={loading}>
+            <Button type="submit" fullWidth disabled={loading || !canLink || !previewIsCurrent || !selectedTargetKey} loading={loading}>
               Send Request
             </Button>
           )}
@@ -599,6 +663,11 @@ function AcceptLinkModal({
             </div>
           </div>
         </div>
+        <div className="rounded-lg border border-secondary-500/20 bg-secondary-500/10 p-3 text-xs">
+          <span className="text-gray-400">Requested link target</span>
+          <p className="mt-1 font-medium text-white">{link.target_name || link.target_type}</p>
+          <p className="text-[10px] uppercase tracking-wide text-secondary-300">{link.target_type}</p>
+        </div>
         <p className="text-sm text-gray-400">
           Enter the 6-digit key shared by the requester to confirm this link.
         </p>
@@ -625,6 +694,60 @@ function AcceptLinkModal({
   );
 }
 
+function VerificationKeyModal({
+  open,
+  link,
+  verificationKey,
+  loading,
+  error,
+  onClose,
+  onCopy,
+}: {
+  open: boolean;
+  link: OrgLink | null;
+  verificationKey: string;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+  onCopy: () => void;
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title="Link Verification Key" size="sm">
+      <div className="space-y-4">
+        <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+          <p className="text-xs text-gray-500">Linking with</p>
+          <p className="mt-1 text-sm font-medium text-white">{link?.target_name || link?.target_type || "Target organization"}</p>
+          {link?.target_type && <p className="text-[10px] uppercase tracking-wide text-secondary-300">{link.target_type}</p>}
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-secondary-400 border-t-transparent" />
+          </div>
+        ) : error ? (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">{error}</div>
+        ) : (
+          <>
+            <div className="rounded-lg border border-secondary-500/30 bg-black/30 px-4 py-4 text-center font-mono text-2xl tracking-[0.35em] text-white">
+              {verificationKey}
+            </div>
+            <p className="text-xs leading-relaxed text-gray-400">
+              Share this key with the target workspace administrator. For security, opening this action creates a new active key and replaces the previous one.
+            </p>
+          </>
+        )}
+
+        <div className="flex gap-3 pt-1">
+          <Button type="button" variant="secondary" fullWidth onClick={onClose}>Close</Button>
+          {!loading && !error && verificationKey && (
+            <Button type="button" fullWidth onClick={onCopy}>Copy Key</Button>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export default function LinksPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const { confirm, toast } = useUiFeedback();
@@ -642,6 +765,10 @@ export default function LinksPage() {
   const [viewDataError, setViewDataError] = useState("");
   const [acceptingLink, setAcceptingLink] = useState<OrgLink | null>(null);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
+  const [keyLink, setKeyLink] = useState<OrgLink | null>(null);
+  const [verificationKey, setVerificationKey] = useState("");
+  const [keyLoading, setKeyLoading] = useState(false);
+  const [keyError, setKeyError] = useState("");
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -682,9 +809,13 @@ export default function LinksPage() {
   const entityCode = admin.entity_code;
   const canRequest = LINKABLE_ENTITY_TYPES.has(entityType);
 
-  const handleCreateLink = async (targetEmail: string) => {
+  const handleCreateLink = async (targetEmail: string, target: LinkTargetOption) => {
     if (!accessToken) throw new Error("You are not authenticated.");
-    const res = await linksApi.createLink(accessToken, targetEmail);
+    if (entityType === "Company" && target.entity_type === "Company" && admin?.plan_limits && !admin.plan_limits.company_to_company) {
+      setLimitModalOpen(true);
+      throw new Error("Your current plan does not allow Company-to-Company links.");
+    }
+    const res = await linksApi.createLink(accessToken, targetEmail, target);
     if (!res.success) throw new Error(res.message || "Failed to create link.");
     toast("Link request sent successfully.", "success");
     await fetchData();
@@ -692,10 +823,6 @@ export default function LinksPage() {
   };
 
   const handleOpenCreateLink = () => {
-    if (admin?.plan_limits && !admin.plan_limits.company_to_company) {
-      setLimitModalOpen(true);
-      return;
-    }
     setModalOpen(true);
   };
 
@@ -714,6 +841,7 @@ export default function LinksPage() {
       if (res.success) {
         toast(`Link ${action}ed successfully.`, "success");
         if (action === "accept") setAcceptingLink(null);
+        window.dispatchEvent(new Event("organization-links-updated"));
         fetchData();
       } else {
         toast(res.message || `Failed to ${action} link.`, "error");
@@ -736,9 +864,41 @@ export default function LinksPage() {
     const res = await linksApi.removeLink(accessToken, linkCode);
     if (res.success) {
       toast("Link removed successfully.", "success");
+      window.dispatchEvent(new Event("organization-links-updated"));
       fetchData();
     } else {
       toast(res.message || "Failed to remove link.", "error");
+    }
+  };
+
+  const handleShowVerificationKey = async (link: OrgLink) => {
+    if (!accessToken) return;
+    setKeyLink(link);
+    setVerificationKey("");
+    setKeyError("");
+    setKeyLoading(true);
+    try {
+      const res = await linksApi.regenerateVerificationKey(accessToken, link.link_code);
+      if (!res.success || !res.data) {
+        setKeyError(res.message || "Failed to generate verification key.");
+        return;
+      }
+      const data = res.data as { verification_key: string };
+      setVerificationKey(data.verification_key);
+    } catch (error: unknown) {
+      setKeyError(error instanceof Error ? error.message : "Failed to generate verification key.");
+    } finally {
+      setKeyLoading(false);
+    }
+  };
+
+  const handleCopyVerificationKey = async () => {
+    if (!verificationKey) return;
+    try {
+      await navigator.clipboard.writeText(verificationKey);
+      toast("Verification key copied.", "success");
+    } catch {
+      toast("Could not copy the key. Please copy it manually.", "error");
     }
   };
 
@@ -796,10 +956,10 @@ export default function LinksPage() {
             </IconButton>
             {canRequest && (
               <Button
-                leftIcon={admin?.plan_limits && !admin.plan_limits.company_to_company ? <Crown size={16} /> : <Plus size={16} />}
+                leftIcon={<Plus size={16} />}
                 onClick={handleOpenCreateLink}
               >
-                {admin?.plan_limits && !admin.plan_limits.company_to_company ? "Upgrade" : "Request"}
+                Request
               </Button>
             )}
           </div>
@@ -886,13 +1046,18 @@ export default function LinksPage() {
                       </Td>
                       <Td className="text-gray-500 text-xs">{new Date(link.requested_at).toLocaleDateString()}</Td>
                       <Td align="right" className="flex items-center justify-end gap-1">
-                        {link.status === "accepted" && link.target_code === entityCode && (
+                        {link.status === "accepted" && (link.target_workspace_code || link.target_code) === entityCode && (
                           <IconButton tone="secondary" title="View entity data" onClick={() => handleViewData(link.link_code)}>
                             <Eye size={15} />
                           </IconButton>
                         )}
+                        {link.status === "pending" && link.requester_code === entityCode && (
+                          <IconButton tone="info" title="Show verification key" onClick={() => handleShowVerificationKey(link)}>
+                            <KeyRound size={15} />
+                          </IconButton>
+                        )}
                         {link.status !== "rejected" &&
-                          (link.target_code === entityCode ||
+                          ((link.target_workspace_code || link.target_code) === entityCode ||
                             (link.requester_code === entityCode && link.status === "pending")) && (
                           <IconButton tone="danger" title={link.status === "pending" ? "Cancel request" : "Remove link"} onClick={() => handleRemove(link.link_code)}>
                             <Trash2 size={15} />
@@ -925,7 +1090,7 @@ export default function LinksPage() {
                       <StatusBadge status={link.status} />
                     </div>
                     <p className="text-sm text-white">
-                      <span className="text-secondary-400 font-bold">{link.requester_name || link.requester_type}</span> wants to link with your organization
+                      <span className="text-secondary-400 font-bold">{link.requester_name || link.requester_type}</span> wants to link with {link.target_name || `your ${link.target_type}`}
                     </p>
                     <p className="text-[10px] text-gray-500 mt-0.5 font-medium">
                       Entity Type: {link.requester_type}
@@ -981,7 +1146,7 @@ export default function LinksPage() {
           isOpen={limitModalOpen}
           onClose={() => setLimitModalOpen(false)}
           title="Company-to-Company Linking Disabled"
-          message="Your current plan does not allow company-to-company links. Upgrade your subscription to enable organization linking."
+          message="Your current plan does not allow Company-to-Company peer links. You can still create normal hierarchy links such as Company to Supplier."
           limit={0}
         />
 
@@ -995,6 +1160,16 @@ export default function LinksPage() {
               ? handleRespond(acceptingLink.link_code, "accept", verificationKey)
               : Promise.resolve()
           }
+        />
+
+        <VerificationKeyModal
+          open={!!keyLink}
+          link={keyLink}
+          verificationKey={verificationKey}
+          loading={keyLoading}
+          error={keyError}
+          onClose={() => setKeyLink(null)}
+          onCopy={handleCopyVerificationKey}
         />
       </main>
     </div>

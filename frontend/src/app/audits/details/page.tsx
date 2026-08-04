@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { auditApi, auditExecutionApi } from "@/lib/api";
+import { auditApi, auditExecutionApi, type AuditorRating } from "@/lib/api";
 import Loading from "@/components/shared/Loading";
 import {
   ArrowLeft,
@@ -26,6 +26,8 @@ import {
   Video,
   Music,
   Paperclip,
+  Star,
+  X,
 } from "lucide-react";
 import { 
   getEvidenceUrl, 
@@ -65,6 +67,7 @@ interface AuditDetail {
   auditor_name?: string | null;
   auditor_email?: string | null;
   auditor_phone?: string | null;
+  assigned_auditor_id?: string | null;
   assigned_company?: {
     name?: string | null;
     email?: string | null;
@@ -228,6 +231,99 @@ function ContactLine({
       <div className="min-w-0">
         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">{label}</p>
         <p className="text-sm text-white font-semibold break-words">{value ?? "Not available"}</p>
+      </div>
+    </div>
+  );
+}
+
+function AuditorRatingModal({
+  open,
+  rating,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  rating: AuditorRating | null;
+  onClose: () => void;
+  onSave: (stars: number, comment: string) => Promise<{ success: boolean; message?: string }>;
+}) {
+  const [stars, setStars] = useState(0);
+  const [comment, setComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setStars(Number(rating?.stars || 0));
+    setComment(rating?.comment || "");
+    setError("");
+  }, [open, rating]);
+
+  if (!open) return null;
+
+  const submit = async () => {
+    if (stars < 1 || stars > 5) {
+      setError("Select a rating between 1 and 5 stars.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    const result = await onSave(stars, comment.trim());
+    setSaving(false);
+    if (!result.success) setError(result.message || "Unable to save the auditor rating.");
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="auditor-rating-title">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#08251a] p-5 shadow-2xl sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-400">Completed audit</p>
+            <h2 id="auditor-rating-title" className="mt-1 text-xl font-bold text-white">Rate Auditor</h2>
+            <p className="mt-1 text-sm text-gray-400">Your rating helps track auditor performance for this workspace.</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={saving} className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 transition hover:bg-white/[0.06] hover:text-white" aria-label="Close rating dialog">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mt-6">
+          <p className="text-xs font-semibold text-gray-300">Rating</p>
+          <div className="mt-2 flex items-center gap-1" role="radiogroup" aria-label="Auditor rating">
+            {[1, 2, 3, 4, 5].map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={stars === value}
+                aria-label={`${value} star${value === 1 ? "" : "s"}`}
+                onClick={() => setStars(value)}
+                className={`rounded-lg p-1.5 transition ${value <= stars ? "text-secondary-400" : "text-gray-600 hover:text-secondary-300"}`}
+              >
+                <Star size={30} fill={value <= stars ? "currentColor" : "none"} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="mt-5 block">
+          <span className="text-xs font-semibold text-gray-300">Feedback <span className="font-normal text-gray-500">(optional)</span></span>
+          <textarea
+            value={comment}
+            onChange={(event) => setComment(event.target.value.slice(0, 2000))}
+            rows={4}
+            placeholder="Add private feedback about the audit work..."
+            className="mt-2 w-full resize-y rounded-xl border border-white/10 bg-black/15 px-3 py-2.5 text-sm text-white outline-none placeholder:text-gray-600 focus:border-secondary-500/50"
+          />
+          <span className="mt-1 block text-right text-[10px] text-gray-600">{comment.length}/2000</span>
+        </label>
+
+        {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button loading={saving} onClick={() => void submit()}>{rating ? "Update Rating" : "Save Rating"}</Button>
+        </div>
       </div>
     </div>
   );
@@ -416,6 +512,8 @@ function AuditDetailsContent() {
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [hasCorrectiveActions, setHasCorrectiveActions] = useState(false);
+  const [auditorRating, setAuditorRating] = useState<AuditorRating | null>(null);
+  const [ratingModalOpen, setRatingModalOpen] = useState(false);
   
   const [stepHistory, setStepHistory] = useState<AuditPreviewStep[]>([
     { mode: "cards", parentCode: null, parentOrgTreeId: null },
@@ -426,12 +524,13 @@ function AuditDetailsContent() {
 
     try {
       setLoading(true);
-      const [detailRes, itemsRes, responsesRes, treeRes, correctiveActionsRes] = await Promise.all([
+      const [detailRes, itemsRes, responsesRes, treeRes, correctiveActionsRes, ratingRes] = await Promise.all([
         auditApi.get(accessToken, auditId),
         auditExecutionApi.getDetail(accessToken, auditId),
         auditExecutionApi.getResponses(accessToken, auditId),
         auditExecutionApi.getEntityTree(accessToken, auditId),
         auditExecutionApi.getCorrectiveActions(accessToken, auditId),
+        admin?.role === "admin" ? auditApi.getAuditorRating(accessToken, auditId) : Promise.resolve(null),
       ]);
       
       if (detailRes.success && detailRes.data) {
@@ -466,13 +565,19 @@ function AuditDetailsContent() {
       if (correctiveActionsRes.success && correctiveActionsRes.data) {
         setHasCorrectiveActions(((correctiveActionsRes.data as any).corrective_actions || []).length > 0);
       }
+
+      if (ratingRes?.success && ratingRes.data) {
+        setAuditorRating((ratingRes.data as { rating: AuditorRating | null }).rating || null);
+      } else {
+        setAuditorRating(null);
+      }
     } catch (err) {
       console.error("Error fetching audit details:", err);
       setError("An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
-  }, [accessToken, auditId]);
+  }, [accessToken, admin?.role, auditId]);
 
   useEffect(() => {
     fetchAuditData();
@@ -514,6 +619,25 @@ function AuditDetailsContent() {
   }
 
   const isFirmAdmin = admin?.role === "admin" && ["Audit Firm", "Audit Firm Company"].includes((admin as any)?.account_type || "");
+  const canRateAuditor = admin?.role === "admin"
+    && !isFirmAdmin
+    && String(audit.status || "").toLowerCase() === "completed"
+    && Boolean(audit.assigned_auditor_id);
+
+  const saveAuditorRating = async (stars: number, comment: string) => {
+    if (!accessToken) return { success: false, message: "Your session has expired. Please sign in again." };
+    try {
+      const result = await auditApi.saveAuditorRating(accessToken, audit.audit_id, { stars, comment });
+      if (result.success && result.data) {
+        setAuditorRating((result.data as { rating: AuditorRating }).rating);
+        setRatingModalOpen(false);
+        return { success: true };
+      }
+      return { success: false, message: result.message };
+    } catch {
+      return { success: false, message: "Unable to save the auditor rating." };
+    }
+  };
 
   const findTreeNode = (code: string, edgeId: string | null) => {
     let codeFallback: TreeNode | null = null;
@@ -596,6 +720,26 @@ function AuditDetailsContent() {
                     <ContactLine icon={Mail} label="Email" value={audit.auditor_email} />
                     <ContactLine icon={Phone} label="Phone" value={audit.auditor_phone} />
                   </div>
+                  {canRateAuditor && (
+                    <div className="mt-4 flex flex-col gap-3 border-t border-white/[0.07] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Auditor rating</p>
+                        {auditorRating ? (
+                          <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-secondary-300">
+                            <span className="flex items-center gap-0.5" aria-label={`${auditorRating.stars} out of 5 stars`}>
+                              {[1, 2, 3, 4, 5].map((value) => <Star key={value} size={14} fill={value <= auditorRating.stars ? "currentColor" : "none"} className={value <= auditorRating.stars ? "text-secondary-400" : "text-gray-600"} />)}
+                            </span>
+                            {auditorRating.stars}/5
+                          </div>
+                        ) : (
+                          <p className="mt-1 text-sm text-gray-400">Not rated yet</p>
+                        )}
+                      </div>
+                      <Button size="sm" variant={auditorRating ? "secondary" : "primary"} leftIcon={<Star size={14} />} onClick={() => setRatingModalOpen(true)}>
+                        {auditorRating ? "Update Rating" : "Rate Auditor"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {isFirmAdmin ? (
@@ -717,17 +861,13 @@ function AuditDetailsContent() {
                     {!isRoot && (
                       <nav className="flex items-center gap-1.5 flex-wrap mb-2 text-xs">
                         <button
-                          onClick={() => setStepHistory([{ mode: "cards", parentCode: null, parentOrgTreeId: null }])}
+                          onClick={() => setStepHistory((history) => history.length > 1 ? history.slice(0, -1) : history)}
                           className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
                         >
-                          <ArrowLeft size={12} /> All Entities
+                          <ArrowLeft size={12} /> Back
                         </button>
-                        {breadcrumbNodes.map((bc, i) => (
-                           <span key={i} className="flex items-center gap-1.5">
-                             <ChevronRight size={12} className="text-gray-600" />
-                             <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">{bc.label}</button>
-                           </span>
-                        ))}
+                        {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />…</span>}
+                        {breadcrumbNodes.slice(-1).map((bc) => <span key={bc.label} className="flex min-w-0 items-center gap-1.5"><ChevronRight size={12} className="shrink-0 text-gray-600" /><span className="truncate text-gray-300" title={bc.label}>{bc.label}</span></span>)}
                       </nav>
                     )}
 
@@ -760,17 +900,13 @@ function AuditDetailsContent() {
                 <div className="space-y-5">
                   <nav className="flex items-center gap-1.5 flex-wrap mb-2 text-xs">
                     <button
-                      onClick={() => setStepHistory([{ mode: "cards", parentCode: null, parentOrgTreeId: null }])}
+                      onClick={() => setStepHistory((history) => history.length > 1 ? history.slice(0, -1) : history)}
                       className="flex items-center gap-1 text-gray-400 hover:text-secondary-400 transition-colors"
                     >
-                      <ArrowLeft size={12} /> All Entities
+                      <ArrowLeft size={12} /> Back
                     </button>
-                    {breadcrumbNodes.map((bc, i) => (
-                      <span key={i} className="flex items-center gap-1.5">
-                        <ChevronRight size={12} className="text-gray-600" />
-                        <button onClick={bc.goTo} className="text-gray-400 hover:text-secondary-400 transition-colors">{bc.label}</button>
-                      </span>
-                    ))}
+                    {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />…</span>}
+                    {breadcrumbNodes.slice(-1).map((bc) => <span key={bc.label} className="flex min-w-0 items-center gap-1.5"><ChevronRight size={12} className="shrink-0 text-gray-600" /><span className="truncate font-medium text-white" title={bc.label}>{bc.label}</span></span>)}
                   </nav>
 
                   <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
@@ -829,6 +965,13 @@ function AuditDetailsContent() {
           </div>
         )}
       </div>
+
+      <AuditorRatingModal
+        open={ratingModalOpen}
+        rating={auditorRating}
+        onClose={() => setRatingModalOpen(false)}
+        onSave={saveAuditorRating}
+      />
 
       <style jsx>{`
         .glass {

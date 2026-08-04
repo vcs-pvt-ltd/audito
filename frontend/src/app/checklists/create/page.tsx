@@ -506,11 +506,11 @@ function AddQuestionModal({ open, entities, onClose, onAdd }: {
   open: boolean;
   entities: TreeNode[];
   onClose: () => void;
-  onAdd: (entityCode: string, entityType: string, entityName: string) => void;
+  onAdd: (entityCode: string, orgTreeId: string | null, entityType: string, entityName: string) => void;
 }) {
   const [selected, setSelected] = useState("");
   useEffect(() => { if (open) setSelected(""); }, [open]);
-  const node = entities.find(e => e.code === selected);
+  const node = entities.find(e => nodeKey(e.code, e.edge_id ?? null) === selected);
   return (
     <Modal
       open={open}
@@ -522,7 +522,7 @@ function AddQuestionModal({ open, entities, onClose, onAdd }: {
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button
             disabled={!selected}
-            onClick={() => { if (node) { onAdd(node.code, node.entity_type, node.name); onClose(); } }}
+            onClick={() => { if (node) { onAdd(node.code, node.edge_id ?? null, node.entity_type, node.name); onClose(); } }}
           >
             Add Questions
           </Button>
@@ -534,7 +534,7 @@ function AddQuestionModal({ open, entities, onClose, onAdd }: {
         <select value={selected} onChange={e => setSelected(e.target.value)} className={inputCls}>
           <option value="" className="bg-[#0c2218] text-white">Select entity...</option>
           {entities.map(n => (
-            <option key={n.code} value={n.code} className="bg-[#0c2218] text-white">[{n.entity_type}] {n.name}</option>
+            <option key={nodeKey(n.code, n.edge_id ?? null)} value={nodeKey(n.code, n.edge_id ?? null)} className="bg-[#0c2218] text-white">[{n.entity_type}] {n.name}</option>
           ))}
         </select>
       </div>
@@ -594,7 +594,7 @@ function ExcelConfirmModal({ open, questions, uploadResult, treeRoot, onConfirm,
         {prunedRoot ? (
           ENTITY_TYPE_COLORS[prunedRoot.entity_type]
             ? <ExcelTreeEntityNode node={prunedRoot} questions={questions} />
-            : (prunedRoot.children ?? []).map(child => <ExcelTreeEntityNode key={child.code} node={child} questions={questions} />)
+            : (prunedRoot.children ?? []).map(child => <ExcelTreeEntityNode key={nodeKey(child.code, child.edge_id ?? null)} node={child} questions={questions} />)
         ) : (
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-10 text-center">
             <p className="text-white font-medium mb-1">No hierarchy available</p>
@@ -1008,32 +1008,36 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
     setSaving(true); setSaveError("");
     try {
       let checklistId = editId;
+      let createdNewChecklist = false;
       const payload = buildChecklistPayload();
       if (isEdit && checklistId) {
         const res = await checklistApi.update(accessToken, checklistId, payload);
         if (!res.success) throw new Error(res.message || "Failed to update.");
-        const newQs = questions.filter(q => q.id.startsWith("local-"));
-        if (newQs.length > 0) {
-          const qPayloads: QuestionPayload[] = newQs.map(q => ({
-            entity_code: q.entity_code, org_tree_id: q.org_tree_id, entity_type: q.entity_type, entity_name: q.entity_name,
-            question_text: q.question_text, answer_type: q.answer_type,
-            options: q.answer_type !== "free_text" ? q.options.map(o => ({ option_text: o.text, marks: parseFloat(o.marks) || 0 })) : undefined,
-          }));
-          await checklistApi.addQuestions(accessToken, checklistId, qPayloads);
-        }
       } else {
         const res = await checklistApi.create(accessToken, payload);
         if (!res.success) throw new Error(res.message || "Failed to create.");
         const created = (res.data as { checklist: { id: number; checklist_id?: string } }).checklist;
         checklistId = String(created.checklist_id ?? created.id);
-        if (questions.length > 0 && checklistId) {
-          const qPayloads: QuestionPayload[] = questions.map(q => ({
-            entity_code: q.entity_code, org_tree_id: q.org_tree_id, entity_type: q.entity_type, entity_name: q.entity_name,
-            question_text: q.question_text, answer_type: q.answer_type,
-            options: q.answer_type !== "free_text" ? q.options.map(o => ({ option_text: o.text, marks: parseFloat(o.marks) || 0 })) : ([] as QuestionOption[]),
-          }));
-          await checklistApi.addQuestions(accessToken, checklistId, qPayloads);
-        }
+        createdNewChecklist = true;
+      }
+
+      if (!checklistId) throw new Error("Checklist identifier is unavailable.");
+      const questionPayloads: QuestionPayload[] = questions.map(q => ({
+        ...(q.id.startsWith("db-") ? { checklist_question_id: q.id.slice(3) } : {}),
+        entity_code: q.entity_code,
+        org_tree_id: q.org_tree_id,
+        entity_type: q.entity_type,
+        entity_name: q.entity_name,
+        question_text: q.question_text,
+        answer_type: q.answer_type,
+        options: q.answer_type !== "free_text"
+          ? q.options.map(o => ({ option_text: o.text, marks: parseFloat(o.marks) || 0 }))
+          : ([] as QuestionOption[]),
+      }));
+      const questionResult = await checklistApi.syncQuestions(accessToken, checklistId, questionPayloads);
+      if (!questionResult.success) {
+        if (createdNewChecklist) await checklistApi.deactivate(accessToken, checklistId).catch(() => undefined);
+        throw new Error(questionResult.message || "Failed to save checklist questions.");
       }
       const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
       toast(isEdit ? "Checklist updated successfully." : "Checklist created successfully.", "success");
@@ -1511,10 +1515,10 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
                     ? ENTITY_TYPE_COLORS[treeRoot.entity_type]
                       ? <TreeEntityNode node={treeRoot} questions={questions} allEntities={treeEntities} onAddQuestion={addQuestion} onChangeQuestion={updateQuestion} onDeleteQuestion={deleteQuestion} excludedEntities={excludedEntities} onExclude={code => setExcludedEntities(p => new Set([...p, code]))} showOnlyWithQuestions={showOnlyWithQuestions} isRoot />
                       : (treeRoot.children ?? []).map(child => (
-                        <TreeEntityNode key={child.code} node={child} questions={questions} allEntities={treeEntities} onAddQuestion={addQuestion} onChangeQuestion={updateQuestion} onDeleteQuestion={deleteQuestion} excludedEntities={excludedEntities} onExclude={code => setExcludedEntities(p => new Set([...p, code]))} showOnlyWithQuestions={showOnlyWithQuestions} />
+                        <TreeEntityNode key={nodeKey(child.code, child.edge_id ?? null)} node={child} questions={questions} allEntities={treeEntities} onAddQuestion={addQuestion} onChangeQuestion={updateQuestion} onDeleteQuestion={deleteQuestion} excludedEntities={excludedEntities} onExclude={code => setExcludedEntities(p => new Set([...p, code]))} showOnlyWithQuestions={showOnlyWithQuestions} />
                       ))
                     : treeEntities.slice(0, 1).map(n => (
-                      <TreeEntityNode key={n.code} node={n} questions={questions} allEntities={treeEntities} onAddQuestion={addQuestion} onChangeQuestion={updateQuestion} onDeleteQuestion={deleteQuestion} excludedEntities={excludedEntities} onExclude={code => setExcludedEntities(p => new Set([...p, code]))} showOnlyWithQuestions={showOnlyWithQuestions} isRoot />
+                      <TreeEntityNode key={nodeKey(n.code, n.edge_id ?? null)} node={n} questions={questions} allEntities={treeEntities} onAddQuestion={addQuestion} onChangeQuestion={updateQuestion} onDeleteQuestion={deleteQuestion} excludedEntities={excludedEntities} onExclude={code => setExcludedEntities(p => new Set([...p, code]))} showOnlyWithQuestions={showOnlyWithQuestions} isRoot />
                     ))
                   }
                 </div>
@@ -1675,10 +1679,7 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
           open={addEntityOpen}
           entities={treeEntities}
           onClose={() => setAddEntityOpen(false)}
-          onAdd={(code, type, name) => {
-            const nd = treeEntities.find(n => n.code === code);
-            addQuestion(code, nd?.edge_id ?? null, type, name);
-          }}
+          onAdd={(code, orgTreeId, type, name) => addQuestion(code, orgTreeId, type, name)}
         />
 
         <Modal

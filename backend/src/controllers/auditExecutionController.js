@@ -27,6 +27,7 @@ const { successResponse, errorResponse, validateRequiredFields } = require('../u
 const { generateCorrectiveActionId, generateAuditResponseId, generateAuditEvidenceId, generateAuditEntityProgressId } = require('../utils/codeGenerator');
 const {
   getOrganizationUserScope,
+  isAuditFirmOrganizationUser,
   auditEntitiesInScope,
   extractOrganizationUserTree,
 } = require('../utils/accessHelper');
@@ -212,19 +213,22 @@ function filterProgressByScope(progress, scopeIds, entityCodeScope = []) {
 const listMyAudits = async (req, res) => {
   try {
     const userCode = req.user.userCode;
+    const isFirmOrganizationUser = await isAuditFirmOrganizationUser(req.user);
     const scopeIds = await getRequestOrganizationTreeScopeIds(req);
     const entityCodeScope = await getOrganizationUserCodeScope(req, scopeIds);
-    const audits = req.user.role === 'organization_user'
-      ? await AuditModel.listForOrganizationUser(await getOrganizationUserScope(req.user))
+    const audits = isFirmOrganizationUser
+      ? await AuditModel.listAssignedToFirm(req.user.createdByEntityCode)
+      : req.user.role === 'organization_user'
+        ? await AuditModel.listForOrganizationUser(await getOrganizationUserScope(req.user))
       : await AuditModel.listForAuditor(userCode);
     for (const a of audits) {
       const ents = await AuditModel.getEntities(a.audit_id);
-      const scopedEnts = req.user.role === 'organization_user'
+      const scopedEnts = req.user.role === 'organization_user' && !isFirmOrganizationUser
         ? ents.filter((e) => auditEntitiesInScope([e], scopeIds, entityCodeScope))
         : ents;
       a.entity_count = scopedEnts.length;
       const progress = await AuditExecutionModel.getProgress(a.audit_id);
-      const scopedProgress = req.user.role === 'organization_user'
+      const scopedProgress = req.user.role === 'organization_user' && !isFirmOrganizationUser
         ? filterProgressByScope(progress, scopeIds, entityCodeScope)
         : progress;
       const totalQ = scopedProgress.reduce((s, p) => s + (p.total_questions || 0), 0);
@@ -240,9 +244,53 @@ const listMyAudits = async (req, res) => {
   }
 };
 
+// ── GET /api/audit-execution/:id/firm-progress ───────────────────
+const getFirmProgressDetail = async (req, res) => {
+  try {
+    if (!await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'This progress view is available to audit firm organization users only.', 403);
+    }
+    const audit = await AuditModel.findById(req.params.id);
+    if (!audit || audit.assigned_firm_code !== req.user.createdByEntityCode) {
+      return errorResponse(res, 'Audit not found.', 404);
+    }
+
+    const [progress, auditor] = await Promise.all([
+      AuditExecutionModel.getProgress(audit.audit_id),
+      audit.assigned_auditor_id ? AuditorModel.findByCode(audit.assigned_auditor_id) : null,
+    ]);
+    const totalQuestions = progress.reduce((sum, row) => sum + Number(row.total_questions || 0), 0);
+    const answeredQuestions = progress.reduce((sum, row) => sum + Number(row.answered_questions || 0), 0);
+    return successResponse(res, {
+      audit: {
+        audit_id: audit.audit_id,
+        title: audit.title,
+        audit_type: audit.audit_type,
+        status: audit.status,
+        start_date: audit.start_date,
+        end_date: audit.end_date,
+        created_at: audit.created_at,
+        completed_at: audit.completed_at,
+        auditor_name: auditor ? `${auditor.first_name || ''} ${auditor.last_name || ''}`.trim() || null : null,
+        progress: {
+          total_questions: totalQuestions,
+          answered_questions: answeredQuestions,
+          progress_pct: totalQuestions ? Math.round((answeredQuestions / totalQuestions) * 100) : 0,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('getFirmProgressDetail error:', err);
+    return errorResponse(res, 'Failed to fetch audit progress.', 500);
+  }
+};
+
 // ── GET /api/audit-execution/:id/corrective-actions ──────────────
 const getCorrectiveActions = async (req, res) => {
   try {
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'Audit firm organization users can view progress only.', 403);
+    }
     const { id } = req.params;
     const audit = await AuditModel.getWithEntities(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
@@ -272,6 +320,14 @@ const getCorrectiveActions = async (req, res) => {
       );
       tree = extractOrganizationUserTree(tree, scopeIds, entityCodeScope);
     }
+
+    const evidenceByResponseId = await AuditExecutionModel.getEvidenceByResponseIds(
+      items.map((item) => item.response_id)
+    );
+    items = items.map((item) => ({
+      ...item,
+      evidence: evidenceByResponseId[String(item.response_id)] || [],
+    }));
 
     const entityToOrgTreeIds = {};
     const walk = (node) => {
@@ -403,6 +459,9 @@ const saveCorrectiveActions = async (req, res) => {
 // ── GET /api/audit-execution/:id ─────────────────────────────────
 const getAuditDetail = async (req, res) => {
   try {
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'Audit firm organization users can view progress only.', 403);
+    }
     const { id } = req.params;
     const audit = await AuditModel.getWithEntities(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
@@ -626,6 +685,9 @@ const submitResponse = async (req, res) => {
 // ── GET /api/audit-execution/:id/responses ───────────────────────
 const getResponses = async (req, res) => {
   try {
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'Audit firm organization users can view progress only.', 403);
+    }
     const { id } = req.params;
     const scopeIds = await getRequestOrganizationTreeScopeIds(req);
     const entityCodeScope = await getOrganizationUserCodeScope(req, scopeIds);
@@ -656,6 +718,9 @@ const getResponses = async (req, res) => {
 // ── GET /api/audit-execution/:id/responses/:entityCode ───────────
 const getEntityResponses = async (req, res) => {
   try {
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'Audit firm organization users can view progress only.', 403);
+    }
     const { id, entityCode } = req.params;
     const orgTreeId = req.query.org_tree_id || null;
     if (!orgTreeId) {
@@ -788,6 +853,10 @@ const deleteEvidence = async (req, res) => {
 const getProgress = async (req, res) => {
   try {
     const { id } = req.params;
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      const audit = await AuditModel.findById(id);
+      if (!audit || audit.assigned_firm_code !== req.user.createdByEntityCode) return errorResponse(res, 'Audit not found.', 404);
+    }
     const progress = await AuditExecutionModel.getProgress(id);
     return successResponse(res, { progress });
   } catch (err) {
@@ -962,6 +1031,9 @@ const getReport = async (req, res) => {
 // ── GET /api/audit-execution/:id/entity-tree ─────────────────────
 const getEntityTree = async (req, res) => {
   try {
+    if (await isAuditFirmOrganizationUser(req.user)) {
+      return errorResponse(res, 'Audit firm organization users can view progress only.', 403);
+    }
     const { id } = req.params;
     const audit = await AuditModel.findById(id);
     if (!audit) return errorResponse(res, 'Audit not found.', 404);
@@ -992,6 +1064,7 @@ const getEntityTree = async (req, res) => {
 
 module.exports = {
   listMyAudits,
+  getFirmProgressDetail,
   getAuditDetail,
   startAudit,
   submitResponse,

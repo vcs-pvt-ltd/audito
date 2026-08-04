@@ -159,6 +159,10 @@ export default function OrganizationUserAuditsPage() {
     );
   }
   if (!admin) return null;
+  const isAuditFirmOrganizationUser = ["Branch", "Audit Firm Department"].includes((admin.assigned_entity_type || admin.entity_type || "") as string);
+  const auditDetailsPath = (auditId: string) => isAuditFirmOrganizationUser
+    ? `/organization-user/audits/details?audit_id=${auditId}`
+    : `/organization-user/audits/preview?audit_id=${auditId}`;
 
   return (
     <div className="h-screen bg-transparent flex">
@@ -174,7 +178,7 @@ export default function OrganizationUserAuditsPage() {
               My Audits
             </h1>
             <p className="text-sm text-gray-400 mt-1 ml-[46px]">
-              Audits assigned to your organization tree
+              {isAuditFirmOrganizationUser ? "Progress for audits assigned to your audit firm" : "Audits assigned to your organization tree"}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -272,7 +276,7 @@ export default function OrganizationUserAuditsPage() {
                         <td className="px-4 py-3 text-gray-400 text-sm text-center">{itemIndex}</td>
                         <td className="px-4 py-3">
                           <button
-                            onClick={() => router.push(`/organization-user/audits/preview?audit_id=${a.audit_id}`)}
+                            onClick={() => router.push(auditDetailsPath(a.audit_id))}
                             className="text-secondary-400 hover:text-secondary-300 font-medium hover:underline underline-offset-2 transition-colors text-left"
                           >
                             {a.title}
@@ -314,7 +318,7 @@ export default function OrganizationUserAuditsPage() {
                 return (
                   <div
                     key={a.audit_id}
-                    onClick={() => router.push(`/organization-user/audits/preview?audit_id=${a.audit_id}`)}
+                    onClick={() => router.push(auditDetailsPath(a.audit_id))}
                     className="glass rounded-xl p-4 space-y-3 cursor-pointer hover:bg-white/[0.04] transition-all"
                   >
                     <div className="flex justify-between items-start">

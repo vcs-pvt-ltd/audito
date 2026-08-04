@@ -118,10 +118,10 @@ function countDescendantQuestions(node: TreeNode, map: Record<string, ChecklistQ
   return own + (node.children ?? []).reduce((s, c) => s + countDescendantQuestions(c, map), 0);
 }
 
-function findInTree(node: TreeNode, code: string): TreeNode | null {
-  if (node.code === code) return node;
+function findInTree(node: TreeNode, code: string, edgeId: string | number | null = null): TreeNode | null {
+  if (edgeId ? String(node.edge_id ?? "") === String(edgeId) : node.code === code) return node;
   for (const child of node.children || []) {
-    const r = findInTree(child, code);
+    const r = findInTree(child, code, edgeId);
     if (r) return r;
   }
   return null;
@@ -227,7 +227,7 @@ function QuestionPreviewItem({
 // ─── Step History Type ────────────────────────────────────────────
 
 type Step =
-  | { mode: "cards"; parentCode: string | null }
+  | { mode: "cards"; parentCode: string | null; parentEdgeId: string | number | null }
   | { mode: "questions"; entityCode: string; entityEdgeId: string | number | null; entityName: string };
 
 // ─── Main Page ────────────────────────────────────────────────────
@@ -244,7 +244,7 @@ export default function MyAuditPreviewPage() {
   const [prunedTree, setPrunedTree] = useState<TreeNode | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [stepHistory, setStepHistory] = useState<Step[]>([{ mode: "cards", parentCode: null }]);
+  const [stepHistory, setStepHistory] = useState<Step[]>([{ mode: "cards", parentCode: null, parentEdgeId: null }]);
   const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -322,7 +322,7 @@ export default function MyAuditPreviewPage() {
     if (parentCode === null) {
       return ENTITY_TYPE_COLORS[prunedTree.entity_type] ? [prunedTree] : (prunedTree.children ?? []);
     }
-    const parent = findInTree(prunedTree, parentCode);
+    const parent = findInTree(prunedTree, parentCode, activeStep.parentEdgeId);
     return parent ? (parent.children ?? []) : [];
   }
 
@@ -331,7 +331,7 @@ export default function MyAuditPreviewPage() {
     const hasQ = (entityQuestionsMap[k] || entityQuestionsMap[`${node.code}__null`] || []).length > 0;
     const hasKids = (node.children ?? []).length > 0;
     if (!hasQ && hasKids) {
-      setStepHistory(h => [...h, { mode: "cards", parentCode: node.code }]);
+      setStepHistory(h => [...h, { mode: "cards", parentCode: node.code, parentEdgeId: node.edge_id ?? null }]);
     } else {
       setStepHistory(h => [...h, {
         mode: "questions",
@@ -347,7 +347,7 @@ export default function MyAuditPreviewPage() {
   for (let i = 1; i < stepHistory.length; i++) {
     const s = stepHistory[i];
     if (s.mode === "cards" && s.parentCode) {
-      const found = prunedTree ? findInTree(prunedTree, s.parentCode) : null;
+      const found = prunedTree ? findInTree(prunedTree, s.parentCode, s.parentEdgeId) : null;
       breadcrumbs.push(found?.name || s.parentCode);
     } else if (s.mode === "questions") {
       breadcrumbs.push(s.entityName);
@@ -372,12 +372,11 @@ export default function MyAuditPreviewPage() {
               {breadcrumbs.length > 0 && (
                 <div className="flex items-center gap-1 mt-0.5 min-w-0 overflow-hidden">
                   <span className="text-[11px] text-gray-600 shrink-0">Scope</span>
-                  {breadcrumbs.map((crumb, i) => (
-                    <span key={i} className="flex items-center gap-1 min-w-0">
-                      <ChevronRight size={10} className="text-gray-600 shrink-0" />
-                      <span className={`text-[11px] truncate ${i === breadcrumbs.length - 1 ? "text-gray-300" : "text-gray-600"}`}>
-                        {crumb}
-                      </span>
+                  {breadcrumbs.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={10} className="shrink-0" />…</span>}
+                  {breadcrumbs.slice(-1).map((crumb) => (
+                    <span key={crumb} className="flex min-w-0 items-center gap-1">
+                      <ChevronRight size={10} className="shrink-0 text-gray-600" />
+                      <span className="truncate text-[11px] text-gray-300" title={crumb}>{crumb}</span>
                     </span>
                   ))}
                 </div>
@@ -546,7 +545,7 @@ export default function MyAuditPreviewPage() {
                             </button>
                             {hasSubEntityQuestions && (
                               <button
-                                onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: step.entityCode }])}
+                                onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: step.entityCode, parentEdgeId: step.entityEdgeId }])}
                                 className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"
                               >
                                 Next <ChevronRight size={14} />

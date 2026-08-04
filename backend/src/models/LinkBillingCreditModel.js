@@ -23,7 +23,9 @@ const LinkBillingCreditModel = {
    */
   async generateCreditOnAccept(link) {
     const requesterCode = link.requester_code;
-    const targetCode = link.target_code;
+    // A link may target a child entity managed by another workspace. Billing
+    // always belongs to the approving workspace subscription, not the child row.
+    const targetCode = link.target_workspace_code || link.target_code;
 
     // Fetch active subscriptions for both parties
     const [reqSubs] = await db.query(
