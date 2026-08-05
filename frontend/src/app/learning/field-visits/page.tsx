@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, Trash2, Users, BookOpen, Clock, CheckCircle2, RefreshCw, MapPin, Calendar, Search, Lock as LockIcon, Building2 } from "lucide-react";
+import { Plus, Trash2, Users, BookOpen, Clock, CheckCircle2, RefreshCw, MapPin, Calendar, Search, Pencil, Lock as LockIcon, Building2 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Modal, Table, THead, Th } from "@/components/ui";
@@ -300,14 +300,14 @@ export default function AuditFirmFieldVisitsPage() {
 
           {/* Desktop Table */}
           <div className="hidden md:block">
-            <Table className="text-left">
+            <Table className="table-fixed">
                 <THead>
-                  <Th align="center" className="w-10">#</Th>
-                  <Th>Title</Th>
-                  <Th>Location</Th>
-                  <Th align="center">Schedule</Th>
-                  <Th align="center">Assigned</Th>
-                  <Th align="right">Actions</Th>
+                  <Th align="center" className="w-12">#</Th>
+                  <Th className="w-[40%]">Title</Th>
+                  <Th className="w-28">Location</Th>
+                  <Th align="center" className="w-24">Schedule</Th>
+                  <Th align="center" className="w-20">Assigned</Th>
+                  <Th align="right" className="w-32">Actions</Th>
                 </THead>
                 <tbody className="divide-y divide-white/5">
                   {paginated.map((v, index) => {
@@ -318,8 +318,10 @@ export default function AuditFirmFieldVisitsPage() {
 
                         {/* Title — no wrapper div */}
                         <td className="px-4 py-4">
-                          <p className="text-white font-medium">{v.title}</p>
-                          {v.notes && <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{v.notes}</p>}
+                          <div className="min-w-[200px]">
+                            <p className="text-white font-medium truncate">{v.title}</p>
+                            {v.notes && <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{v.notes}</p>}
+                          </div>
                         </td>
 
                         {/* Location — no wrapper div with min-w */}
@@ -355,16 +357,16 @@ export default function AuditFirmFieldVisitsPage() {
                             </button>
                             {(v.assigned_count ?? 0) > 0 ? (
                               <button
-                                onClick={() => toast(`This field visit is assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")}
+                                onClick={() => toast(`This field visit is assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"} and cannot be edited or deleted. Remove those assignments first.`, "warning")}
                                 className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
                                 title={`Assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"}. Click for details.`}>
                                 <LockIcon size={15} />
                               </button>
                             ) : (
-                              <button onClick={() => handleDelete(v.field_visit_id)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
-                                <Trash2 size={15} />
-                              </button>
+                              <>
+                                <button onClick={() => router.push(`/learning/field-visits/create?edit=${encodeURIComponent(v.field_visit_id)}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Edit field visit"><Pencil size={15} /></button>
+                                <button onClick={() => handleDelete(v.field_visit_id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete"><Trash2 size={15} /></button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -412,9 +414,12 @@ export default function AuditFirmFieldVisitsPage() {
                     <button onClick={() => { setViewAssignmentsId(v.field_visit_id); setViewAssignmentsOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-blue-400"><Users size={15} /></button>
                     <button onClick={() => { setAssignVisitId(v.field_visit_id); setAssignOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-green-400"><Plus size={15} /></button>
                     {(v.assigned_count ?? 0) > 0 ? (
-                      <button onClick={() => toast(`This field visit is assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")} className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title={`Assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"}. Tap for details.`}><LockIcon size={15} /></button>
+                      <button onClick={() => toast(`This field visit is assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"} and cannot be edited or deleted. Remove those assignments first.`, "warning")} className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title={`Assigned to ${v.assigned_count} auditor${v.assigned_count === 1 ? "" : "s"}. Tap for details.`}><LockIcon size={15} /></button>
                     ) : (
-                      <button onClick={() => handleDelete(v.field_visit_id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                      <>
+                        <button onClick={() => router.push(`/learning/field-visits/create?edit=${encodeURIComponent(v.field_visit_id)}`)} className="p-2 rounded-lg text-gray-400 hover:text-blue-400" title="Edit field visit"><Pencil size={15} /></button>
+                        <button onClick={() => handleDelete(v.field_visit_id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -454,6 +459,7 @@ export default function AuditFirmFieldVisitsPage() {
         title={selectedVisit?.title || ""}
         onDelete={handleAssignmentDelete}
       />
+
     </div>
   );
 }

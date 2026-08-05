@@ -535,20 +535,17 @@ export default function AuditFirmTrainingsPage() {
                             </button>
                             {(t.assigned_count ?? 0) > 0 ? (
                               <button
-                                onClick={() => toast(`This training is assigned to ${t.assigned_count} auditor${t.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")}
+                                onClick={() => toast(`This training is assigned to ${t.assigned_count} auditor${t.assigned_count === 1 ? "" : "s"} and cannot be edited or deleted. Remove those assignments first.`, "warning")}
                                 className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
                                 title={`Assigned to ${t.assigned_count} auditor${t.assigned_count === 1 ? "" : "s"}. Click for details.`}
                               >
                                 <LockIcon size={15} />
                               </button>
                             ) : (
-                              <button
-                                onClick={() => handleDelete(t.training_id)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                                title="Delete"
-                              >
-                                <Trash2 size={15} />
-                              </button>
+                              <>
+                                <button onClick={() => router.push(`/learning/trainings/create?edit=${encodeURIComponent(t.training_id)}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Edit training"><Pencil size={15} /></button>
+                                <button onClick={() => handleDelete(t.training_id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete"><Trash2 size={15} /></button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -613,20 +610,18 @@ export default function AuditFirmTrainingsPage() {
                         <Plus size={15} />
                       </button>
                       {(t.assigned_count ?? 0) > 0 ? (
-                        <button
-                          onClick={() => toast(`This training is assigned to ${t.assigned_count} auditor${t.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")}
+                      <button
+                        onClick={() => toast(`This training is assigned to ${t.assigned_count} auditor${t.assigned_count === 1 ? "" : "s"} and cannot be edited or deleted. Remove those assignments first.`, "warning")}
                           className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
                           title={`Assigned to ${t.assigned_count} auditor${t.assigned_count === 1 ? "" : "s"}. Tap for details.`}
                         >
                           <LockIcon size={15} />
                         </button>
-                      ) : (
-                        <button
-                          onClick={() => handleDelete(t.training_id)}
-                          className="p-2 rounded-lg text-gray-400 hover:text-red-400"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                    ) : (
+                      <>
+                        <button onClick={() => router.push(`/learning/trainings/create?edit=${encodeURIComponent(t.training_id)}`)} className="p-2 rounded-lg text-gray-400 hover:text-blue-400" title="Edit training"><Pencil size={15} /></button>
+                        <button onClick={() => handleDelete(t.training_id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                      </>
                       )}
                   </div>
                 </div>
@@ -671,6 +666,7 @@ export default function AuditFirmTrainingsPage() {
       />
 
       <TrainingPreviewModal training={previewTraining} onClose={() => setPreviewTraining(null)} />
+
     </div>
   );
 }

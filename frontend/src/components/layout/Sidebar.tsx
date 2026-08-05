@@ -698,8 +698,7 @@ export default function Sidebar() {
     <>
       {/* Mobile header */}
       <header
-        className="lg:hidden fixed top-0 left-0 right-0 z-40 h-14 backdrop-blur-md border-b border-white/10 flex items-center px-4"
-        style={{ background: "linear-gradient(90deg, #003F2D 0%, #003F2D 50%, #003F2D 100%)" }}
+        className="lg:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-[#0F1F1A]/95 backdrop-blur-md border-b border-white/10 flex items-center px-4"
       >
         <button onClick={() => { setCollapsed(false); setSidebarOpen(true); }} className="text-gray-400 hover:text-white">
           <Menu size={22} />

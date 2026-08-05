@@ -38,7 +38,7 @@ function AuditAssignContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const auditId = searchParams.get("id");
-  const selectClass = `${fieldClass} pl-12 pr-10 py-4 rounded-2xl hover:border-white/20 appearance-none cursor-pointer`;
+  const selectClass = `${fieldClass} pl-11 pr-10 py-3 rounded-xl bg-white/[0.03] hover:border-white/20 appearance-none cursor-pointer`;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -285,53 +285,60 @@ function AuditAssignContent() {
   }
 
   return (
-    <div className="min-h-screen bg-transparent relative">
-      <main className="max-w-6xl mx-auto px-6 py-12">
-        {/* Header Action */}
-        <div className="mb-10 flex items-center justify-between">
-          <IconButton
-            onClick={() => router.back()}
-            bordered
-            size="md"
-            className="bg-white/5 px-4 py-2 rounded-xl group"
-            title="Back"
-          >
-            <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
-          </IconButton>
+    <div className="min-h-screen bg-transparent">
+      <main className="p-4 sm:p-6 lg:p-8 pt-20 lg:pt-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <IconButton
+                onClick={() => router.back()}
+                bordered
+                size="md"
+                className="bg-white/5 shrink-0"
+                title="Back"
+              >
+                <ArrowLeft size={16} />
+              </IconButton>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+                  <UserPlus size={22} className="text-amber-400" /> Assign Auditor
+                </h1>
+                <p className="text-sm text-gray-400 mt-0.5 truncate">{audit.title || "Select the right auditor for this audit."}</p>
+              </div>
+            </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary-500/10 border border-secondary-500/20">
-            <div className="w-2 h-2 rounded-full bg-secondary-500 animate-pulse" />
-            <span className="text-[10px] font-bold text-secondary-400 uppercase tracking-widest">Internal Assignment</span>
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 shrink-0">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">Audit Firm Assignment</span>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-          {/* LEFT: Assignment Workflow (8 cols) */}
-          <div className="lg:col-span-8 flex flex-col">
-            <div className="glass-card overflow-hidden h-full flex flex-col">
-              <div className="px-8 py-6 border-b border-white/10 bg-white/[0.02]">
-                <h2 className="text-xl font-bold text-white flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-secondary-500/10 flex items-center justify-center border border-secondary-500/20">
-                    <UserPlus className="text-secondary-400" size={20} />
-                  </div>
-                  Assigning Entity
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Assignment workflow */}
+          <div className="lg:col-span-7 flex flex-col">
+            <div className="glass rounded-xl overflow-hidden border border-white/[0.08] flex flex-col">
+              <div className="px-5 sm:px-6 py-5 border-b border-white/[0.08] bg-white/[0.02]">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-white flex items-center gap-2">
+                  <UserPlus className="text-amber-400" size={16} /> Auditor assignment
                 </h2>
-                <p className="text-sm text-gray-400 mt-1 ml-13">Choose the organizational node and auditor for this task.</p>
+                <p className="text-sm text-gray-400 mt-2">Choose the audit-firm location first, then select an available auditor.</p>
               </div>
 
-              <div className="p-8 space-y-8 flex-grow">
+              <div className="p-5 sm:p-6 space-y-6 flex-grow">
                 {assignmentLocked && (
-                  <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 flex items-start gap-3">
+                  <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 flex items-start gap-3">
                     <AlertCircle size={18} className="shrink-0 mt-0.5 text-amber-400" />
                     <p>This audit has already started. Its auditor assignment is now locked.</p>
                   </div>
                 )}
                 {/* Step 1 & 2: Structure */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 ml-1">1. Select Branch</label>
+                    <label className="block text-xs font-medium text-gray-400 mb-2.5">1. Select Branch</label>
                     <div className="relative group">
-                      <Building size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-secondary-400 transition-colors" />
+                      <Building size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-amber-400 transition-colors" />
                       <select
                         value={selBranchId}
                         disabled={assignmentLocked}
@@ -351,9 +358,9 @@ function AuditAssignContent() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 ml-1">2. Select Department</label>
+                    <label className="block text-xs font-medium text-gray-400 mb-2.5">2. Select Department</label>
                     <div className="relative group">
-                      <Briefcase size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-secondary-400 transition-colors" />
+                      <Briefcase size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-amber-400 transition-colors" />
                       <select
                         value={selDeptId}
                         disabled={!selBranchId || assignmentLocked}
@@ -378,41 +385,41 @@ function AuditAssignContent() {
 
                     {/* Step 3: Auditor List */}
                     <div>
-                      <div className="flex items-center justify-between mb-6">
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest ml-1">3. Select Auditor</label>
+                      <div className="flex items-center justify-between mb-4">
+                        <label className="block text-xs font-medium text-gray-400">3. Select Auditor</label>
                         <span className="text-[10px] font-medium px-2 py-1 bg-white/5 border border-white/10 rounded-md text-gray-400">
                           Found {filteredAuditors.length}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {filteredAuditors.length > 0 ? (
                           filteredAuditors.map(u => (
                             <button
                               key={u.user_code}
                               disabled={assignmentLocked}
                               onClick={() => setSelAuditorCode(u.user_code)}
-                              className={`relative p-5 rounded-3xl border transition-all text-left overflow-hidden group disabled:cursor-not-allowed disabled:opacity-60 ${selAuditorCode === u.user_code
-                                  ? "bg-secondary-500/10 border-secondary-500/40 shadow-lg shadow-secondary-500/5"
-                                  : "bg-white/[0.03] border-white/5 hover:border-white/20 hover:bg-white/[0.05]"
+                              className={`relative p-4 rounded-xl border transition-all text-left overflow-hidden group disabled:cursor-not-allowed disabled:opacity-60 ${selAuditorCode === u.user_code
+                                  ? "bg-amber-500/10 border-amber-500/40 shadow-lg shadow-amber-500/5"
+                                  : "bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.05]"
                                 }`}
                             >
                               {/* Active Shine */}
                               {selAuditorCode === u.user_code && (
                                 <div className="absolute top-0 right-0 p-2">
-                                  <div className="w-6 h-6 rounded-full bg-secondary-500 text-primary-950 flex items-center justify-center">
+                                  <div className="w-6 h-6 rounded-full bg-amber-400 text-primary-950 flex items-center justify-center">
                                     <CheckCircle2 size={14} strokeWidth={3} />
                                   </div>
                                 </div>
                               )}
 
                               <div className="flex items-start gap-4">
-                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold shrink-0 transition-colors ${selAuditorCode === u.user_code ? "bg-secondary-500 text-primary-950" : "bg-white/5 text-gray-400 border border-white/10"
+                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 transition-colors ${selAuditorCode === u.user_code ? "bg-amber-400 text-primary-950" : "bg-white/5 text-gray-400 border border-white/10"
                                   }`}>
                                   {u.first_name[0]}{u.last_name[0]}
                                 </div>
                                 <div className="min-w-0">
-                                  <h4 className={`text-sm font-bold truncate ${selAuditorCode === u.user_code ? "text-secondary-400" : "text-white"}`}>
+                                  <h4 className={`text-sm font-bold truncate ${selAuditorCode === u.user_code ? "text-amber-300" : "text-white"}`}>
                                     {u.first_name} {u.last_name}
                                   </h4>
                                   <p className="text-xs text-gray-500 mt-0.5 truncate">{u.email}</p>
@@ -421,7 +428,7 @@ function AuditAssignContent() {
                             </button>
                           ))
                         ) : (
-                          <div className="col-span-full py-16 flex flex-col items-center justify-center text-center bg-white/[0.02] border border-dashed border-white/10 rounded-[32px]">
+                          <div className="col-span-full py-12 flex flex-col items-center justify-center text-center bg-white/[0.02] border border-dashed border-white/10 rounded-2xl">
                             <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
                               <Users size={32} className="text-gray-600" />
                             </div>
@@ -436,11 +443,11 @@ function AuditAssignContent() {
               </div>
 
               {/* Action Bar */}
-              <div className="px-8 py-6 bg-black/20 border-t border-white/10 flex items-center justify-end gap-4 mt-auto">
+              <div className="px-5 sm:px-6 py-4 bg-black/20 border-t border-white/[0.08] flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 mt-auto">
                 <Button
                   onClick={() => router.back()}
                   variant="ghost"
-                  className="px-6 py-3 rounded-2xl font-bold"
+                  className="px-5 py-2.5 rounded-xl font-semibold"
                 >
                   Cancel
                 </Button>
@@ -449,7 +456,7 @@ function AuditAssignContent() {
                   disabled={saving || !selAuditorCode || assignmentLocked}
                   loading={saving}
                   leftIcon={<UserPlus size={18} strokeWidth={2.5} />}
-                  className="px-8 py-3.5 rounded-2xl font-bold disabled:grayscale shadow-lg shadow-secondary-500/20 active:scale-95"
+                  className="px-6 py-3 rounded-xl font-semibold disabled:grayscale shadow-lg shadow-amber-500/20 active:scale-95"
                 >
                   {assignmentLocked ? "Assignment Locked" : audit.assigned_auditor_id ? "Update Assignment" : "Finalize Assignment"}
                 </Button>
@@ -457,15 +464,15 @@ function AuditAssignContent() {
             </div>
           </div>
 
-          {/* RIGHT: Audit Context (4 cols) */}
-          <div className="lg:col-span-4 space-y-6 flex flex-col">
+          {/* Audit context */}
+          <div className="lg:col-span-5 space-y-6 flex flex-col">
             {/* Main Summary Card */}
-            <div className="glass-card p-8 group overflow-hidden relative flex-grow">
-              <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-secondary-500/5 rounded-full blur-3xl group-hover:bg-secondary-500/10 transition-colors" />
+            <div className="glass rounded-xl border border-white/[0.08] p-5 sm:p-6 group overflow-hidden relative flex-grow">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl group-hover:bg-amber-500/10 transition-colors" />
 
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <ClipboardList size={18} className="text-secondary-400" />
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-white flex items-center gap-2">
+                  <ClipboardList size={16} className="text-amber-400" />
                   Audit Summary
                 </h2>
                 <Button
@@ -473,7 +480,7 @@ function AuditAssignContent() {
                   variant="secondary"
                   size="sm"
                   leftIcon={<Eye size={14} />}
-                  className="rounded-xl bg-white/5 text-[10px] font-bold uppercase tracking-widest"
+                  className="rounded-lg bg-white/5 text-[10px] font-bold uppercase tracking-widest"
                   title="View Audit Details"
                 >
                   <span>Preview</span>
@@ -512,7 +519,7 @@ function AuditAssignContent() {
                 {audit.assigned_company && (
                   <div className="pt-6 border-t border-white/5 space-y-5">
                     <div className="flex items-center justify-between mb-1">
-                      <h3 className="text-xs font-bold text-secondary-400 uppercase tracking-widest">Target Client</h3>
+                      <h3 className="text-xs font-bold text-amber-300 uppercase tracking-widest">Target Client</h3>
 
                     </div>
 
@@ -544,34 +551,11 @@ function AuditAssignContent() {
               </div>
             </div>
 
-            {/* Quick Tips */}
-            <div className="p-6 rounded-3xl bg-blue-500/5 border border-blue-500/10 flex gap-4 mt-6">
-              <div className="shrink-0 text-blue-400 mt-1">
-                <AlertCircle size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-blue-200">Assignment Tip</h4>
-                <p className="text-xs text-blue-400/80 mt-1 leading-relaxed">
-                  Auditors will receive a notification immediately upon assignment. If the audit is already in progress, the new auditor will take over from the current point.
-                </p>
-              </div>
-            </div>
+           
           </div>
         </div>
       </main>
 
-      <style jsx>{`
-        .glass-card {
-          background: rgba(255, 255, 255, 0.03);
-          backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 32px;
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-        }
-        .ml-13 {
-          margin-left: 3.25rem;
-        }
-      `}</style>
     </div>
   );
 }

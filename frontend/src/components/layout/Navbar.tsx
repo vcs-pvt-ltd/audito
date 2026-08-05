@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import auditoLogo from "../../assets/logo/audito_logo.png";
 import Link from "next/link";
@@ -9,7 +9,21 @@ import { useLanding } from "@/context/LandingContext";
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileNavRef = useRef<HTMLDivElement>(null);
   const { setActiveSection, activeSection } = useLanding();
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (mobileNavRef.current && !mobileNavRef.current.contains(event.target as Node)) {
+        setMobileOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [mobileOpen]);
 
   const handleNavClick = (index: number) => {
     setActiveSection(index);
@@ -102,7 +116,7 @@ export default function Navbar() {
       </div>
 
       {/* Mobile Navbar */}
-      <div className="fixed top-0 left-0 right-0 z-50 md:hidden bg-[#0F1F1A]/95 backdrop-blur-md shadow-lg shadow-black/30 border-b border-white/[0.06]">
+      <div ref={mobileNavRef} className="fixed top-0 left-0 right-0 z-50 md:hidden bg-[#0F1F1A]/95 backdrop-blur-md shadow-lg shadow-black/30 border-b border-white/[0.06]">
         <nav className="px-4">
           <div className="flex items-center justify-between h-14">
             <button
