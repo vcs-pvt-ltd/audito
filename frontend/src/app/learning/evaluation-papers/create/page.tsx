@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { auditFirmLearningApi } from "@/lib/api";
 import {
@@ -394,6 +395,10 @@ function ExcelConfirmModal({
 export default function CreateEvaluationPaperPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editPaperId = searchParams.get("edit");
+  const isEdit = Boolean(editPaperId);
+  const { toast } = useUiFeedback();
 
   const [step, setStep] = useState<1 | 2>(1);
   const [form, setForm] = useState({
@@ -412,6 +417,12 @@ export default function CreateEvaluationPaperPage() {
   const [excelPreviewQuestions, setExcelPreviewQuestions] = useState<QuestionForm[]>([]);
   const [excelPreviewErrors, setExcelPreviewErrors] = useState<string[]>([]);
   const [excelConfirmOpen, setExcelConfirmOpen] = useState(false);
+  const [loadingPaper, setLoadingPaper] = useState(Boolean(editPaperId));
+  const [editBlocked, setEditBlocked] = useState(false);
+  const showError = useCallback((message: string) => {
+    setSaveError(message);
+    toast(message, "error");
+  }, [toast]);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -423,7 +434,66 @@ export default function CreateEvaluationPaperPage() {
     }
   }, [isLoading, admin]);
 
-  if (isLoading || !admin) return null;
+  useEffect(() => {
+    if (!editPaperId) {
+      setLoadingPaper(false);
+      return;
+    }
+    if (!accessToken) return;
+
+    let cancelled = false;
+    const loadPaper = async () => {
+      setLoadingPaper(true);
+      const result = await auditFirmLearningApi.getEvaluationPaperForEdit(accessToken, editPaperId);
+      if (cancelled) return;
+
+      if (!result.success || !result.data) {
+        showError(result.message || "This evaluation paper cannot be edited.");
+        setEditBlocked(true);
+        setLoadingPaper(false);
+        return;
+      }
+
+      const data = result.data as any;
+      const paper = data.paper ?? {};
+      setForm({
+        title: paper.title ?? "",
+        description: paper.description ?? "",
+        time_limit_minutes: paper.time_limit_minutes != null ? String(paper.time_limit_minutes) : "",
+        pass_marks: paper.pass_marks != null ? String(paper.pass_marks) : "",
+      });
+      setQuestions((data.questions ?? []).map((question: any) => ({
+        id: uid(),
+        question_text: question.question_text ?? "",
+        answer_type: normalizeAnswerType(question.answer_type),
+        options: Array.isArray(question.options)
+          ? question.options.map((option: any) => ({
+              text: option.option_text ?? "",
+              marks: String(option.marks ?? ""),
+            }))
+          : [],
+      })));
+      setLoadingPaper(false);
+    };
+
+    void loadPaper();
+    return () => { cancelled = true; };
+  }, [accessToken, editPaperId, showError]);
+
+  if (isLoading || !admin || loadingPaper) return null;
+
+  if (editBlocked) {
+    return (
+      <main className="min-h-screen bg-transparent flex items-center justify-center p-6">
+        <div className="max-w-md text-center glass rounded-2xl border border-white/10 p-8">
+          <AlertCircle size={28} className="mx-auto mb-3 text-amber-400" />
+          <h1 className="text-lg font-bold text-white">Evaluation paper unavailable</h1>
+          <p className="mt-2 text-sm text-gray-400">{saveError || "This evaluation paper cannot be edited."}</p>
+          <Button className="mt-6" onClick={() => router.push("/learning/evaluation-papers")}>Back to Evaluation Papers</Button>
+        </div>
+      </main>
+    );
+  }
 
   if (admin.plan_limits && !admin.plan_limits.auditor_eval) {
     return (
@@ -473,7 +543,7 @@ export default function CreateEvaluationPaperPage() {
       const res = await auditFirmLearningApi.previewEvaluationQuestionsExcel(accessToken, file);
       if (!res?.success) {
         const errs = Array.isArray((res as any)?.errors) ? (res as any).errors : [];
-        setSaveError(errs.length ? errs.join("\n") : res?.message || "Preview failed.");
+        showError(errs.length ? errs.join("\n") : res?.message || "Preview failed.");
         return;
       }
       const qs = (res.data as any)?.questions || [];
@@ -493,7 +563,7 @@ export default function CreateEvaluationPaperPage() {
       setExcelPreviewErrors(Array.isArray(errs) ? errs : []);
       setExcelConfirmOpen(true);
     } catch (err: any) {
-      setSaveError(err?.message || "Failed to preview questions from Excel.");
+      showError(err?.message || "Failed to preview questions from Excel.");
     } finally {
       setExcelUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -502,29 +572,17 @@ export default function CreateEvaluationPaperPage() {
 
   const handleFinish = async () => {
     if (!accessToken) return;
-    if (!form.title.trim()) { setSaveError("Title is required."); setStep(1); return; }
-    if (!form.description.trim()) { setSaveError("Description is required."); setStep(1); return; }
-    if (!form.time_limit_minutes) { setSaveError("Time limit is required."); setStep(1); return; }
-    if (!form.pass_marks) { setSaveError("Pass marks is required."); setStep(1); return; }
-    if (questions.length === 0) { setSaveError("Add at least one question before creating."); return; }
+    if (!form.title.trim()) { showError("Title is required."); setStep(1); return; }
+    if (!form.description.trim()) { showError("Description is required."); setStep(1); return; }
+    if (!form.time_limit_minutes) { showError("Time limit is required."); setStep(1); return; }
+    if (!form.pass_marks) { showError("Pass marks is required."); setStep(1); return; }
+    if (questions.length === 0) { showError(`Add at least one question before ${isEdit ? "updating" : "creating"}.`); return; }
     const qErr = validateQuestions(questions);
-    if (qErr) { setSaveError(qErr); return; }
+    if (qErr) { showError(qErr); return; }
 
     setFinishing(true);
     setSaveError("");
     try {
-      const createRes = await auditFirmLearningApi.createEvaluationPaper(accessToken, {
-        title: form.title,
-        description: form.description,
-        time_limit_minutes: Number(form.time_limit_minutes),
-        pass_marks: Number(form.pass_marks),
-      });
-      if (!createRes.success) { setSaveError(createRes.message || "Failed to create paper."); return; }
-
-      const created = (createRes.data as any) ?? {};
-      const newId = created.evaluation_paper_id ?? created.id;
-      if (!newId) { setSaveError("Failed to create paper (missing id)."); return; }
-
       const apiQuestions = questions.map((q) => ({
         question_text: q.question_text,
         answer_type: q.answer_type,
@@ -534,13 +592,44 @@ export default function CreateEvaluationPaperPage() {
           marks: parseFloat(o.marks) || 0,
         })),
       }));
+
+      if (isEdit && editPaperId) {
+        const updateRes = await auditFirmLearningApi.updateEvaluationPaper(accessToken, editPaperId, {
+          title: form.title,
+          description: form.description,
+          time_limit_minutes: Number(form.time_limit_minutes),
+          pass_marks: Number(form.pass_marks),
+        });
+        if (!updateRes.success) { showError(updateRes.message || "Failed to update paper."); return; }
+
+        const questionsRes = await auditFirmLearningApi.setEvaluationQuestions(accessToken, editPaperId, apiQuestions);
+        if (!questionsRes.success) { showError(questionsRes.message || "Failed to update questions."); return; }
+
+        toast("Evaluation paper updated successfully.", "success");
+        router.push("/learning/evaluation-papers");
+        return;
+      }
+
+      const createRes = await auditFirmLearningApi.createEvaluationPaper(accessToken, {
+        title: form.title,
+        description: form.description,
+        time_limit_minutes: Number(form.time_limit_minutes),
+        pass_marks: Number(form.pass_marks),
+      });
+      if (!createRes.success) { showError(createRes.message || "Failed to create paper."); return; }
+
+      const created = (createRes.data as any) ?? {};
+      const newId = created.evaluation_paper_id ?? created.id;
+      if (!newId) { showError("Failed to create paper (missing id)."); return; }
+
       const attachRes = await auditFirmLearningApi.setEvaluationQuestions(
         accessToken,
         newId,
         apiQuestions
       );
-      if (!attachRes.success) { setSaveError(attachRes.message || "Failed to attach questions."); return; }
+      if (!attachRes.success) { showError(attachRes.message || "Failed to attach questions."); return; }
 
+      toast("Evaluation paper created successfully.", "success");
       router.push("/learning/evaluation-papers");
     } finally {
       setFinishing(false);
@@ -548,10 +637,10 @@ export default function CreateEvaluationPaperPage() {
   };
 
   const goToStep2 = () => {
-    if (!form.title.trim()) { setSaveError("Title is required to continue."); return; }
-    if (!form.description.trim()) { setSaveError("Description is required to continue."); return; }
-    if (!form.time_limit_minutes) { setSaveError("Time limit is required to continue."); return; }
-    if (!form.pass_marks) { setSaveError("Pass marks is required to continue."); return; }
+    if (!form.title.trim()) { showError("Title is required to continue."); return; }
+    if (!form.description.trim()) { showError("Description is required to continue."); return; }
+    if (!form.time_limit_minutes) { showError("Time limit is required to continue."); return; }
+    if (!form.pass_marks) { showError("Pass marks is required to continue."); return; }
     setSaveError("");
     setStep(2);
   };
@@ -569,10 +658,10 @@ export default function CreateEvaluationPaperPage() {
           <div>
             <h1 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
               <ClipboardList size={20} className="text-secondary-400" />
-              Create Evaluation Paper
+              {isEdit ? "Edit Evaluation Paper" : "Create Evaluation Paper"}
             </h1>
             <p className="hidden sm:block text-xs sm:text-sm text-gray-400 mt-0.5">
-              Design an assessment paper with questions to evaluate auditor knowledge.
+              {isEdit ? "Update the paper details and questions before assigning auditors." : "Design an assessment paper with questions to evaluate auditor knowledge."}
             </p>
           </div>
         </div>
@@ -691,7 +780,7 @@ export default function CreateEvaluationPaperPage() {
                               accessToken
                             );
                           if (!res.success) {
-                            setSaveError(res.message || "Failed to download template.");
+                            showError(res.message || "Failed to download template.");
                             return;
                           }
                           const url = URL.createObjectURL(res.blob);
@@ -838,7 +927,7 @@ export default function CreateEvaluationPaperPage() {
             </Button>
           ) : (
             <Button loading={finishing} leftIcon={finishing ? undefined : <Check size={16} />} onClick={handleFinish}>
-              {finishing ? "Creating…" : "Create Paper"}
+              {finishing ? (isEdit ? "Saving…" : "Creating…") : (isEdit ? "Save Changes" : "Create Paper")}
             </Button>
           )}
         </div>

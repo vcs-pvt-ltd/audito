@@ -235,7 +235,8 @@ function PerformanceChart({ data, isFullScreen }: { data: ChartItem[]; isFullScr
   }
 
   return (
-    <div className={`w-full ${isFullScreen ? 'h-[75vh]' : 'h-[440px]'} transition-all`}>
+    <div className={`w-full ${isFullScreen ? 'h-[75vh]' : 'h-[440px]'} flex flex-col transition-all`}>
+      <div className="min-h-0 flex-1">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} margin={{ left: isFullScreen ? 20 : -20, right: 0, top: 10, bottom: 0 }}>
           <defs>
@@ -274,7 +275,8 @@ function PerformanceChart({ data, isFullScreen }: { data: ChartItem[]; isFullScr
           <Bar dataKey="remaining" stackId="a" fill="url(#scoreRed)" barSize={barSize} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
-      <div className={`flex items-center justify-center ${isFullScreen ? 'gap-16 mt-6' : 'gap-4 mt-2'}`}>
+      </div>
+      <div className={`shrink-0 flex items-center justify-center ${isFullScreen ? 'gap-16 mt-6' : 'gap-4 mt-2'}`}>
         <div className="flex items-center gap-2">
           <div className={`${isFullScreen ? 'h-4 w-4' : 'h-2.5 w-2.5'} rounded-full bg-red-500`} />
           <span className={`${isFullScreen ? 'text-base' : 'text-[10px]'} font-bold text-red-500`}>Remaining</span>

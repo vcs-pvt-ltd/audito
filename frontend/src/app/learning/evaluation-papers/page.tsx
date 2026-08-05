@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import { auditFirmLearningApi, usersApi } from "@/lib/api";
-import { Plus, RefreshCw, Trash2, Trophy, Clock, ClipboardList, Search, Crown, Lock as LockIcon, Building2 } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Trophy, Clock, ClipboardList, Search, Crown, Pencil, Lock as LockIcon, Building2 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
 import { Button, IconButton, Modal, Table, THead, Th, Input } from "@/components/ui";
@@ -336,15 +336,15 @@ export default function AuditFirmEvaluationPapersPage() {
 
           {/* Desktop Table — text-left on table, explicit overrides for centered/right cols */}
           <div className="hidden md:block">
-            <Table className="text-left">
+            <Table className="table-fixed">
                 <THead>
-                  <Th align="center" className="w-10">#</Th>
-                  <Th>Paper Name</Th>
+                  <Th align="center" className="w-12">#</Th>
+                  <Th className="w-[40%]">Paper Name</Th>
                   <Th align="center" className="w-24">Questions</Th>
                   <Th align="center" className="w-24">Pass %</Th>
                   <Th align="center" className="w-24">Time</Th>
                   <Th align="center" className="w-20">Assigned</Th>
-                  <Th align="right" className="w-28">Actions</Th>
+                  <Th align="right" className="w-32">Actions</Th>
                 </THead>
                 <tbody className="divide-y divide-white/5">
                   {paginated.map((p, index) => {
@@ -355,7 +355,10 @@ export default function AuditFirmEvaluationPapersPage() {
 
                         {/* Paper Name — no wrapper div */}
                         <td className="px-4 py-4">
-                          <p className="text-white font-medium">{p.title}</p>
+                          <div className="min-w-[200px]">
+                            <p className="text-white font-medium truncate">{p.title}</p>
+                            {p.description && <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{p.description}</p>}
+                          </div>
                         </td>
 
                        
@@ -387,16 +390,16 @@ export default function AuditFirmEvaluationPapersPage() {
                             </button>
                             {(p.assigned_count ?? 0) > 0 ? (
                               <button
-                                onClick={() => toast(`This evaluation paper is assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")}
+                                onClick={() => toast(`This evaluation paper is assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"} and cannot be edited or deleted. Remove those assignments first.`, "warning")}
                                 className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
                                 title={`Assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"}. Click for details.`}>
                                 <LockIcon size={15} />
                               </button>
                             ) : (
-                              <button onClick={() => handleDelete(p.evaluation_paper_id)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
-                                <Trash2 size={15} />
-                              </button>
+                              <>
+                                <button onClick={() => router.push(`/learning/evaluation-papers/create?edit=${encodeURIComponent(p.evaluation_paper_id)}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Edit paper"><Pencil size={15} /></button>
+                                <button onClick={() => handleDelete(p.evaluation_paper_id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete"><Trash2 size={15} /></button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -438,9 +441,12 @@ export default function AuditFirmEvaluationPapersPage() {
                     <button onClick={() => { setViewAssignmentsId(p.evaluation_paper_id); setViewAssignmentsOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-blue-400"><Trophy size={15} /></button>
                     <button onClick={() => { setAssignPaperId(p.evaluation_paper_id); setAssignOpen(true); }} className="p-2 rounded-lg text-gray-400 hover:text-green-400"><Plus size={15} /></button>
                     {(p.assigned_count ?? 0) > 0 ? (
-                      <button onClick={() => toast(`This evaluation paper is assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"} and cannot be deleted. Remove those assignments first.`, "warning")} className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title={`Assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"}. Tap for details.`}><LockIcon size={15} /></button>
+                      <button onClick={() => toast(`This evaluation paper is assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"} and cannot be edited or deleted. Remove those assignments first.`, "warning")} className="p-2 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title={`Assigned to ${p.assigned_count} auditor${p.assigned_count === 1 ? "" : "s"}. Tap for details.`}><LockIcon size={15} /></button>
                     ) : (
-                      <button onClick={() => handleDelete(p.evaluation_paper_id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                      <>
+                        <button onClick={() => router.push(`/learning/evaluation-papers/create?edit=${encodeURIComponent(p.evaluation_paper_id)}`)} className="p-2 rounded-lg text-gray-400 hover:text-blue-400" title="Edit paper"><Pencil size={15} /></button>
+                        <button onClick={() => handleDelete(p.evaluation_paper_id)} className="p-2 rounded-lg text-gray-400 hover:text-red-400"><Trash2 size={15} /></button>
+                      </>
                     )}
                   </div>
                 </div>

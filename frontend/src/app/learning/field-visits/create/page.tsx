@@ -1,20 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditFirmLearningApi } from "@/lib/api";
 import { Plus, ArrowLeft } from "lucide-react";
 import { Button, IconButton, Input, Textarea } from "@/components/ui";
 
+function asDateTimeLocal(value: unknown) {
+  if (!value) return "";
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 16);
+}
+
 export default function CreateFieldVisitPage() {
   const { admin, accessToken, isLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editVisitId = searchParams.get("edit");
+  const isEdit = Boolean(editVisitId);
   const { toast } = useUiFeedback();
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingItem, setLoadingItem] = useState(Boolean(editVisitId));
+  const [editBlocked, setEditBlocked] = useState(false);
 
   const [form, setForm] = useState({
     title: "",
@@ -31,7 +42,57 @@ export default function CreateFieldVisitPage() {
     if (!isLoading && !admin) router.push("/login");
   }, [isLoading, admin, router]);
 
-  if (isLoading || !admin) return null;
+  useEffect(() => {
+    if (!editVisitId) {
+      setLoadingItem(false);
+      return;
+    }
+    if (!accessToken) return;
+
+    let cancelled = false;
+    const loadVisit = async () => {
+      setLoadingItem(true);
+      const result = await auditFirmLearningApi.getFieldVisitForEdit(accessToken, editVisitId);
+      if (cancelled) return;
+
+      if (!result.success || !result.data) {
+        setError(result.message || "This field visit cannot be edited.");
+        setEditBlocked(true);
+        setLoadingItem(false);
+        return;
+      }
+
+      const visit = (result.data as any).field_visit ?? {};
+      setForm({
+        title: visit.title ?? "",
+        location_name: visit.location_name ?? "",
+        address: visit.address ?? "",
+        latitude: visit.latitude != null ? String(visit.latitude) : "",
+        longitude: visit.longitude != null ? String(visit.longitude) : "",
+        start_date: asDateTimeLocal(visit.start_date),
+        end_date: asDateTimeLocal(visit.end_date),
+        notes: visit.notes ?? "",
+      });
+      setLoadingItem(false);
+    };
+
+    void loadVisit();
+    return () => { cancelled = true; };
+  }, [accessToken, editVisitId]);
+
+  if (isLoading || !admin || loadingItem) return null;
+
+  if (editBlocked) {
+    return (
+      <div className="p-6 lg:p-8 pt-20 lg:pt-8">
+        <div className="max-w-md glass border border-white/10 rounded-2xl p-6 text-center">
+          <h1 className="text-lg font-bold text-white">Field visit unavailable</h1>
+          <p className="mt-2 text-sm text-gray-400">{error || "This field visit cannot be edited."}</p>
+          <Button className="mt-6" onClick={() => router.push("/learning/field-visits")}>Back to Field Visits</Button>
+        </div>
+      </div>
+    );
+  }
 
   if (admin.role !== "admin") {
     return (
@@ -41,7 +102,7 @@ export default function CreateFieldVisitPage() {
     );
   }
 
-  const handleCreate = async () => {
+  const handleSave = async () => {
     if (!accessToken) return;
 
     setError(null);
@@ -52,7 +113,7 @@ export default function CreateFieldVisitPage() {
     if (form.end_date <= form.start_date) { setError("End date must be after start date."); return; }
 
     setSaving(true);
-    const res = await auditFirmLearningApi.createFieldVisit(accessToken, {
+    const payload = {
       title: form.title.trim(),
       location_name: form.location_name.trim() || null,
       address: form.address.trim() || null,
@@ -61,15 +122,18 @@ export default function CreateFieldVisitPage() {
       start_date: form.start_date || null,
       end_date: form.end_date || null,
       notes: form.notes.trim() || null,
-    });
+    };
+    const res = isEdit && editVisitId
+      ? await auditFirmLearningApi.updateFieldVisit(accessToken, editVisitId, payload)
+      : await auditFirmLearningApi.createFieldVisit(accessToken, payload);
     setSaving(false);
 
     if (!res.success) {
-      setError(res.message || "Failed to create field visit.");
+      setError(res.message || `Failed to ${isEdit ? "update" : "create"} field visit.`);
       return;
     }
 
-    toast("Field visit created successfully.", "success");
+    toast(`Field visit ${isEdit ? "updated" : "created"} successfully.`, "success");
     router.push("/learning/field-visits");
   };
 
@@ -80,9 +144,9 @@ export default function CreateFieldVisitPage() {
           <ArrowLeft size={18} />
         </IconButton>
         <div>
-          <h1 className="text-xl font-bold text-white">Create Field Visit</h1>
+          <h1 className="text-xl font-bold text-white">{isEdit ? "Edit Field Visit" : "Create Field Visit"}</h1>
           <p className="hidden sm:block text-sm text-gray-400 mt-0.5">
-            Create a field visit and assign it to auditors later.
+            {isEdit ? "Update this field visit before assigning it to auditors." : "Create a field visit and assign it to auditors later."}
           </p>
         </div>
       </div>
@@ -178,8 +242,8 @@ export default function CreateFieldVisitPage() {
         )}
 
         <div className="flex items-center justify-end gap-3">
-          <Button leftIcon={<Plus size={16}/>} loading={saving} onClick={handleCreate}>
-            {saving ? "Creating..." : "Create"}
+          <Button leftIcon={<Plus size={16}/>} loading={saving} onClick={handleSave}>
+            {saving ? (isEdit ? "Saving..." : "Creating...") : (isEdit ? "Save Changes" : "Create")}
           </Button>
         </div>
       </div>

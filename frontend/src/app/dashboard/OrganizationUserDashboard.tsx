@@ -910,6 +910,8 @@ export default function OrganizationUserDashboard({ overview: initialOverview, a
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffffff0d] rounded-xl border border-[#ffffff1a] text-[11px] font-medium text-white hover:bg-white/10 transition-colors"
                 >
                   {isFullScreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                                  {isFullScreen ? "Exit" : "Full Screen"}
+
                 </button>
               )}
             </div>

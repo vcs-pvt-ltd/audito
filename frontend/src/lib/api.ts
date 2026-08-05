@@ -1,5 +1,36 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081/api";
 
+const NETWORK_ERROR_MESSAGE = "Unable to connect right now. Please check your connection and try again.";
+
+function getFriendlyNetworkErrorMessage(error: unknown, fallback = NETWORK_ERROR_MESSAGE): string {
+  if (error instanceof Error && /failed to fetch|networkerror|load failed/i.test(error.message)) {
+    return NETWORK_ERROR_MESSAGE;
+  }
+
+  return fallback;
+}
+
+async function formDataRequest(
+  endpoint: string,
+  token: string,
+  formData: FormData,
+  method = "POST"
+) {
+  try {
+    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const json = await res.json().catch(() => null);
+
+    if (json) return json;
+    return { success: false, message: `Request failed (${res.status}).` };
+  } catch (error) {
+    return { success: false, message: getFriendlyNetworkErrorMessage(error) };
+  }
+}
+
 interface ApiOptions {
   method?: string;
   body?: Record<string, unknown>;
@@ -62,10 +93,10 @@ async function apiRequest<T = unknown>(
       success: true,
       data: (json as T) ?? (undefined as unknown as T),
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       success: false,
-      message: err?.message || 'Network error',
+      message: getFriendlyNetworkErrorMessage(err),
     };
   }
 }
@@ -569,56 +600,45 @@ export const checklistApi = {
   uploadMedia: async (token: string, file: File) => {
     const formData = new FormData();
     formData.append("media_file", file);
-    const res = await fetch(`${API_BASE_URL}/checklists/upload-media`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest("/checklists/upload-media", token, formData);
   },
 
   // Excel template download (with auth token)
   downloadExcelTemplate: async (token: string) => {
-    const res = await fetch(`${API_BASE_URL}/checklists/excel-template`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => null);
-      throw new Error(json?.message || "Failed to download template.");
+    try {
+      const res = await fetch(`${API_BASE_URL}/checklists/excel-template`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.message || "Failed to download template.");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "checklist_questions_template.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      throw new Error(getFriendlyNetworkErrorMessage(error, "Unable to download the template. Please try again."));
     }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "checklist_questions_template.xlsx";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   },
 
   // Excel upload
   uploadQuestionsExcel: async (token: string, checklistId: string, file: File) => {
     const formData = new FormData();
     formData.append("questions_file", file);
-    const res = await fetch(`${API_BASE_URL}/checklists/${checklistId}/questions/upload`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest(`/checklists/${checklistId}/questions/upload`, token, formData);
   },
 
   // Excel preview (no DB writes)
   previewQuestionsExcel: async (token: string, file: File) => {
     const formData = new FormData();
     formData.append("questions_file", file);
-    const res = await fetch(`${API_BASE_URL}/checklists/questions/preview-upload`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest("/checklists/questions/preview-upload", token, formData);
   },
 
   // AI document analysis. Suggestions are returned as drafts and are not saved to a checklist.
@@ -636,12 +656,7 @@ export const checklistApi = {
     if (payload.checklistType) formData.append("checklist_type", payload.checklistType);
     if (payload.scopeEntityCode) formData.append("scope_entity_code", payload.scopeEntityCode);
     if (payload.existingQuestions?.length) formData.append("existing_questions", JSON.stringify(payload.existingQuestions));
-    const res = await fetch(`${API_BASE_URL}/checklists/ai/generate-questions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest("/checklists/ai/generate-questions", token, formData);
   },
 };
 
@@ -873,12 +888,7 @@ export const auditExecutionApi = {
     formData.append("evidence_file", file);
     formData.append("response_id", responseId);
     formData.append("file_type", fileType);
-    const res = await fetch(`${API_BASE_URL}/audit-execution/${id}/evidence`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest(`/audit-execution/${id}/evidence`, token, formData);
   },
 
   deleteEvidence: (token: string, evidenceId: string) =>
@@ -998,12 +1008,7 @@ export const capApi = {
     formData.append("evidence_file", file);
     formData.append("response_id", responseId);
     formData.append("file_type", fileType);
-    const res = await fetch(`${API_BASE_URL}/caps/${capId}/evidence`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest(`/caps/${capId}/evidence`, token, formData);
   },
 
   deleteEvidence: (token: string, evidenceId: string) =>
@@ -1063,13 +1068,17 @@ export const countriesApi = {
     const limit = 100;
     let total = Infinity;
 
-    while (offset < total) {
-      const res = await fetch(`${COUNTRIES_API}?limit=${limit}&offset=${offset}`);
-      const json = await res.json();
-      if (!json.success || !json.data) break;
-      all.push(...json.data);
-      total = json.pagination?.total ?? json.data.length;
-      offset += limit;
+    try {
+      while (offset < total) {
+        const res = await fetch(`${COUNTRIES_API}?limit=${limit}&offset=${offset}`);
+        const json = await res.json();
+        if (!json.success || !json.data) break;
+        all.push(...json.data);
+        total = json.pagination?.total ?? json.data.length;
+        offset += limit;
+      }
+    } catch {
+      return [];
     }
 
     // Sort alphabetically by country name
@@ -1097,18 +1106,22 @@ export const timezonesApi = {
     const limit = 100;
     let total = Infinity;
 
-    while (offset < total) {
-      const res = await fetch(`${TIMEZONES_API}?limit=${limit}&offset=${offset}`);
-      const json = await res.json();
-      const data = Array.isArray(json) ? json : json?.data;
+    try {
+      while (offset < total) {
+        const res = await fetch(`${TIMEZONES_API}?limit=${limit}&offset=${offset}`);
+        const json = await res.json();
+        const data = Array.isArray(json) ? json : json?.data;
 
-      if (!Array.isArray(data)) break;
+        if (!Array.isArray(data)) break;
 
-      all.push(...data);
-      total = json?.pagination?.total ?? data.length;
+        all.push(...data);
+        total = json?.pagination?.total ?? data.length;
 
-      if (Array.isArray(json) || data.length < limit) break;
-      offset += limit;
+        if (Array.isArray(json) || data.length < limit) break;
+        offset += limit;
+      }
+    } catch {
+      return [];
     }
 
     const seen = new Set<string>();
@@ -1184,12 +1197,7 @@ export const auditorProfileApi = {
     if (files?.signature_path) formData.append("signature_path", files.signature_path);
     if (files?.cv_path) formData.append("cv_path", files.cv_path);
 
-    const res = await fetch(`${API_BASE_URL}/auditor-profile`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest("/auditor-profile", token, formData, "PUT");
   },
 
   addExperience: (token: string, data: Record<string, any>) =>
@@ -1208,12 +1216,7 @@ export const auditorProfileApi = {
     });
     if (file) formData.append("certificate_file", file);
 
-    const res = await fetch(`${API_BASE_URL}/auditor-profile/qualifications`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest("/auditor-profile/qualifications", token, formData);
   },
 
   updateQualification: async (token: string, id: string, data: Record<string, any>, file?: File) => {
@@ -1223,12 +1226,7 @@ export const auditorProfileApi = {
     });
     if (file) formData.append("certificate_file", file);
 
-    const res = await fetch(`${API_BASE_URL}/auditor-profile/qualifications/${id}`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest(`/auditor-profile/qualifications/${id}`, token, formData, "PUT");
   },
 
   deleteQualification: (token: string, id: string) =>
@@ -1241,12 +1239,7 @@ export const auditorProfileApi = {
     });
     if (file) formData.append("certificate_file", file);
 
-    const res = await fetch(`${API_BASE_URL}/auditor-profile/trainings`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest("/auditor-profile/trainings", token, formData);
   },
 
   updateTraining: async (token: string, id: string, data: Record<string, any>, file?: File) => {
@@ -1256,12 +1249,7 @@ export const auditorProfileApi = {
     });
     if (file) formData.append("certificate_file", file);
 
-    const res = await fetch(`${API_BASE_URL}/auditor-profile/trainings/${id}`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    return formDataRequest(`/auditor-profile/trainings/${id}`, token, formData, "PUT");
   },
 
   deleteTraining: (token: string, id: string) =>
@@ -1272,6 +1260,7 @@ export const learningApi = {
   // Trainings
   listTrainings: (token: string) => apiRequest('/learning/trainings', { token }),
   createTraining: (token: string, body: Record<string, any>) => apiRequest('/learning/trainings', { method: 'POST', body, token }),
+  getTrainingForEdit: (token: string, id: string) => apiRequest(`/learning/trainings/${id}`, { token }),
   updateTraining: (token: string, id: string, body: Record<string, any>) => apiRequest(`/learning/trainings/${id}`, { method: 'PUT', body, token }),
   deleteTraining: (token: string, id: string) => apiRequest(`/learning/trainings/${id}`, { method: 'DELETE', token }),
   assignTraining: (token: string, id: string, auditor_codes: string[], send_assignment_email = true) => apiRequest(`/learning/trainings/${id}/assign`, { method: 'POST', body: { auditor_codes, send_assignment_email }, token }),
@@ -1280,6 +1269,7 @@ export const learningApi = {
   // Field visits
   listFieldVisits: (token: string) => apiRequest('/learning/field-visits', { token }),
   createFieldVisit: (token: string, body: Record<string, any>) => apiRequest('/learning/field-visits', { method: 'POST', body, token }),
+  getFieldVisitForEdit: (token: string, id: string) => apiRequest(`/learning/field-visits/${id}`, { token }),
   updateFieldVisit: (token: string, id: string, body: Record<string, any>) => apiRequest(`/learning/field-visits/${id}`, { method: 'PUT', body, token }),
   deleteFieldVisit: (token: string, id: string) => apiRequest(`/learning/field-visits/${id}`, { method: 'DELETE', token }),
   assignFieldVisit: (token: string, id: string, auditor_codes: string[], send_assignment_email = true) => apiRequest(`/learning/field-visits/${id}/assign`, { method: 'POST', body: { auditor_codes, send_assignment_email }, token }),
@@ -1288,50 +1278,63 @@ export const learningApi = {
   // Evaluation papers
   listEvaluationPapers: (token: string) => apiRequest('/learning/evaluation-papers', { token }),
   createEvaluationPaper: (token: string, body: Record<string, any>) => apiRequest('/learning/evaluation-papers', { method: 'POST', body, token }),
+  getEvaluationPaperForEdit: (token: string, id: string) => apiRequest(`/learning/evaluation-papers/${id}/questions`, { token }),
   updateEvaluationPaper: (token: string, id: string, body: Record<string, any>) => apiRequest(`/learning/evaluation-papers/${id}`, { method: 'PUT', body, token }),
   deleteEvaluationPaper: (token: string, id: string) => apiRequest(`/learning/evaluation-papers/${id}`, { method: 'DELETE', token }),
   setEvaluationQuestions: (token: string, id: string, questions: any[]) => apiRequest(`/learning/evaluation-papers/${id}/questions`, { method: 'POST', body: { questions }, token }),
   evaluationExcelTemplateUrl: () => `${API_BASE_URL}/learning/evaluation-papers/excel-template`,
 
   downloadEvaluationExcelTemplate: async (token: string) => {
-    const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/excel-template`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      let msg = `Request failed (${res.status})`;
-      try {
-        const j = await res.json();
-        if (j?.message) msg = j.message;
-      } catch {
-        // ignore
+    try {
+      const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/excel-template`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        let msg = `Request failed (${res.status})`;
+        try {
+          const j = await res.json();
+          if (j?.message) msg = j.message;
+        } catch {
+          // ignore
+        }
+        return { success: false as const, message: msg };
       }
-      return { success: false as const, message: msg };
+      const blob = await res.blob();
+      return { success: true as const, blob };
+    } catch (error) {
+      return { success: false as const, message: getFriendlyNetworkErrorMessage(error) };
     }
-    const blob = await res.blob();
-    return { success: true as const, blob };
   },
 
   previewEvaluationQuestionsExcel: async (token: string, file: File) => {
     const formData = new FormData();
     formData.append('questions_file', file);
-    const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/questions/preview-upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/questions/preview-upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      return res.json();
+    } catch (error) {
+      return { success: false, message: getFriendlyNetworkErrorMessage(error) };
+    }
   },
 
   uploadEvaluationQuestionsExcel: async (token: string, paperId: string, file: File) => {
     const formData = new FormData();
     formData.append('questions_file', file);
-    const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/${paperId}/questions/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/${paperId}/questions/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      return res.json();
+    } catch (error) {
+      return { success: false, message: getFriendlyNetworkErrorMessage(error) };
+    }
   },
   assignEvaluationPaper: (token: string, id: string, auditor_codes: string[], due_date?: string, send_assignment_email = true) => apiRequest(`/learning/evaluation-papers/${id}/assign`, { method: 'POST', body: { auditor_codes, due_date, send_assignment_email }, token }),
   deleteEvaluationAssignment: (token: string, id: string, assignmentId: string) => apiRequest(`/learning/evaluation-papers/${id}/assignments/${assignmentId}`, { method: 'DELETE', token }),
@@ -1688,7 +1691,7 @@ export const adminApi = {
       if (payload && typeof payload.success === "boolean") return payload;
       return { success: false, message: payload?.message || `Document upload failed (${res.status}).` };
     } catch (error) {
-      return { success: false, message: error instanceof Error ? error.message : "Document upload failed." };
+      return { success: false, message: getFriendlyNetworkErrorMessage(error, "Document upload failed.") };
     }
   },
   updateAiKnowledgeSource: (token: string, sourceId: string, data: { title: string; category?: string; tags?: string[]; body_content?: string }) =>

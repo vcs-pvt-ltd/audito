@@ -25,6 +25,7 @@ router.use(authenticate);
 
 router.get('/trainings', ctrl.listTrainings);
 router.post('/trainings', ctrl.createTraining);
+router.get('/trainings/:id', ctrl.getTrainingForEdit);
 router.put('/trainings/:id', ctrl.updateTraining);
 router.delete('/trainings/:id', ctrl.deleteTraining);
 router.post('/trainings/:id/assign', ctrl.assignTraining);
@@ -32,6 +33,7 @@ router.delete('/trainings/:id/assignments/:assignmentId', ctrl.deleteTrainingAss
 
 router.get('/field-visits', ctrl.listFieldVisits);
 router.post('/field-visits', ctrl.createFieldVisit);
+router.get('/field-visits/:id', ctrl.getFieldVisitForEdit);
 router.put('/field-visits/:id', ctrl.updateFieldVisit);
 router.delete('/field-visits/:id', ctrl.deleteFieldVisit);
 router.post('/field-visits/:id/assign', ctrl.assignFieldVisit);
@@ -39,6 +41,7 @@ router.delete('/field-visits/:id/assignments/:assignmentId', ctrl.deleteFieldVis
 
 router.get('/evaluation-papers', ctrl.listEvaluationPapers);
 router.post('/evaluation-papers', ctrl.createEvaluationPaper);
+router.get('/evaluation-papers/:id/questions', ctrl.getEvaluationPaperForEdit);
 router.put('/evaluation-papers/:id', ctrl.updateEvaluationPaper);
 router.delete('/evaluation-papers/:id', ctrl.deleteEvaluationPaper);
 router.post('/evaluation-papers/:id/questions', ctrl.setEvaluationQuestions);

@@ -105,12 +105,43 @@ const createTraining = async (req, res) => {
   }
 };
 
+const getTrainingForEdit = async (req, res) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+
+    const { id } = req.params;
+    const [rows] = await db.query(
+      'SELECT * FROM trainings WHERE training_id = ? AND entity_code = ? LIMIT 1',
+      [id, req.user.entityCode]
+    );
+    if (rows.length === 0) return errorResponse(res, 'Training not found.', 404);
+
+    const [assigned] = await db.query('SELECT 1 FROM training_assignments WHERE training_id = ? LIMIT 1', [id]);
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This training is assigned to one or more auditors and cannot be edited. Remove those assignments first.', 409);
+    }
+
+    return successResponse(res, { training: rows[0] });
+  } catch (err) {
+    console.error('getTrainingForEdit error:', err);
+    return errorResponse(res, 'Failed to load training.', 500);
+  }
+};
+
 const updateTraining = async (req, res) => {
   try {
     if (!ensureAdmin(req, res)) return;
 
     const { id } = req.params;
     const { title, platform, video_url, description, duration_minutes } = req.body;
+
+    const [assigned] = await db.query(
+      'SELECT 1 FROM training_assignments WHERE training_id = ? LIMIT 1',
+      [id]
+    );
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This training is assigned to one or more auditors and cannot be edited. Remove those assignments first.', 409);
+    }
 
     // Ensure new title is unique within this organization
     // (case/space/leading-zero insensitive — same rule as create)
@@ -123,6 +154,7 @@ const updateTraining = async (req, res) => {
           name: title,
           whereClauses: ['entity_code = ?'],
           whereParams: [req.user.entityCode],
+          idColumn: 'training_id',
           excludeId: id
         });
         if (dup) return errorResponse(res, `A training titled "${dup.name}" already exists for your organization.`, 409);
@@ -365,6 +397,29 @@ const createFieldVisit = async (req, res) => {
   }
 };
 
+const getFieldVisitForEdit = async (req, res) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+
+    const { id } = req.params;
+    const [rows] = await db.query(
+      'SELECT * FROM field_visits WHERE field_visit_id = ? AND entity_code = ? LIMIT 1',
+      [id, req.user.entityCode]
+    );
+    if (rows.length === 0) return errorResponse(res, 'Field visit not found.', 404);
+
+    const [assigned] = await db.query('SELECT 1 FROM field_visit_assignments WHERE field_visit_id = ? LIMIT 1', [id]);
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This field visit is assigned to one or more auditors and cannot be edited. Remove those assignments first.', 409);
+    }
+
+    return successResponse(res, { field_visit: rows[0] });
+  } catch (err) {
+    console.error('getFieldVisitForEdit error:', err);
+    return errorResponse(res, 'Failed to load field visit.', 500);
+  }
+};
+
 const updateFieldVisit = async (req, res) => {
   try {
     if (!ensureAdmin(req, res)) return;
@@ -381,6 +436,14 @@ const updateFieldVisit = async (req, res) => {
       notes,
     } = req.body;
 
+    const [assigned] = await db.query(
+      'SELECT 1 FROM field_visit_assignments WHERE field_visit_id = ? LIMIT 1',
+      [id]
+    );
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This field visit is assigned to one or more auditors and cannot be edited. Remove those assignments first.', 409);
+    }
+
     // Ensure new title is unique within this organization
     // (case/space/leading-zero insensitive — same rule as create)
     if (title) {
@@ -392,6 +455,7 @@ const updateFieldVisit = async (req, res) => {
           name: title,
           whereClauses: ['entity_code = ?'],
           whereParams: [req.user.entityCode],
+          idColumn: 'field_visit_id',
           excludeId: id
         });
         if (dup) return errorResponse(res, `A field visit titled "${dup.name}" already exists for your organization.`, 409);
@@ -653,12 +717,68 @@ const createEvaluationPaper = async (req, res) => {
   }
 };
 
+const getEvaluationPaperForEdit = async (req, res) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+
+    const { id } = req.params;
+    const [paperRows] = await db.query(
+      'SELECT * FROM evaluation_papers WHERE evaluation_paper_id = ? AND entity_code = ? LIMIT 1',
+      [id, req.user.entityCode]
+    );
+    if (paperRows.length === 0) return errorResponse(res, 'Evaluation paper not found.', 404);
+
+    const [assigned] = await db.query('SELECT 1 FROM evaluation_assignments WHERE paper_id = ? LIMIT 1', [id]);
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This evaluation paper is assigned to one or more auditors and cannot be edited. Remove those assignments first.', 409);
+    }
+
+    const [questions] = await db.query(
+      `SELECT evaluation_question_id, question_text, answer_type, marks, sort_order
+       FROM evaluation_questions
+       WHERE paper_id = ?
+       ORDER BY sort_order ASC, id ASC`,
+      [id]
+    );
+    const [options] = await db.query(
+      `SELECT o.evaluation_question_option_id, o.question_id, o.option_text, o.marks, o.order_index
+       FROM evaluation_question_options o
+       JOIN evaluation_questions q ON q.evaluation_question_id = o.question_id
+       WHERE q.paper_id = ?
+       ORDER BY o.order_index ASC, o.id ASC`,
+      [id]
+    );
+
+    const optionsByQuestion = new Map();
+    options.forEach((option) => {
+      if (!optionsByQuestion.has(option.question_id)) optionsByQuestion.set(option.question_id, []);
+      optionsByQuestion.get(option.question_id).push(option);
+    });
+
+    return successResponse(res, {
+      paper: paperRows[0],
+      questions: questions.map((question) => ({ ...question, options: optionsByQuestion.get(question.evaluation_question_id) || [] })),
+    });
+  } catch (err) {
+    console.error('getEvaluationPaperForEdit error:', err);
+    return errorResponse(res, 'Failed to load evaluation paper.', 500);
+  }
+};
+
 const updateEvaluationPaper = async (req, res) => {
   try {
     if (!ensureAdmin(req, res)) return;
 
     const { id } = req.params;
     let { title, description, time_limit_minutes, pass_marks, available_from, available_to, is_active } = req.body;
+
+    const [assigned] = await db.query(
+      'SELECT 1 FROM evaluation_assignments WHERE paper_id = ? LIMIT 1',
+      [id]
+    );
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This evaluation paper is assigned to one or more auditors and cannot be edited. Remove those assignments first.', 409);
+    }
     if (pass_marks !== undefined && pass_marks !== null) {
       const pm = Number(pass_marks);
       pass_marks = Number.isFinite(pm) ? pm : null;
@@ -679,6 +799,7 @@ const updateEvaluationPaper = async (req, res) => {
           name: title,
           whereClauses: ['entity_code = ?'],
           whereParams: [req.user.entityCode],
+          idColumn: 'evaluation_paper_id',
           excludeId: id
         });
         if (dup) return errorResponse(res, `An evaluation paper titled "${dup.name}" already exists for your organization.`, 409);
@@ -765,13 +886,9 @@ const setEvaluationQuestions = async (req, res) => {
     const [pRows] = await db.query('SELECT evaluation_paper_id FROM evaluation_papers WHERE evaluation_paper_id = ? AND entity_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (pRows.length === 0) return errorResponse(res, 'Evaluation paper not found.', 404);
 
-    const [existingCountRows] = await db.query(
-      'SELECT COUNT(*) AS cnt FROM evaluation_questions WHERE paper_id = ?',
-      [id]
-    );
-    const existingCount = existingCountRows?.[0]?.cnt ? Number(existingCountRows[0].cnt) : 0;
-    if (existingCount > 0) {
-      return errorResponse(res, 'Questions can only be uploaded once for a paper. Create a new paper to upload a new set of questions.', 400);
+    const [assigned] = await db.query('SELECT 1 FROM evaluation_assignments WHERE paper_id = ? LIMIT 1', [id]);
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This evaluation paper is assigned to one or more auditors and its questions cannot be edited. Remove those assignments first.', 409);
     }
 
     // Replace all questions/options for simplicity
@@ -880,10 +997,39 @@ const downloadEvaluationExcelTemplate = async (req, res) => {
       { header: 'answer_points', key: 'answer_points', width: 25 },
     ];
 
-    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    ws.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    ws.getRow(1).eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2980B9' } };
+    });
     ws.addRow(['Is this compliant?', 'SingleOption', 'Yes,No', '10,0']);
     ws.addRow(['Select compliance level', 'Dropdown', 'Full,Partial,None', '10,0,0']);
     ws.addRow(['Select all applicable items', 'MultipleOptions', 'A,B,C', '4,3,3']);
+
+    const instructions = wb.addWorksheet('Instructions');
+    instructions.columns = [
+      { width: 28 },
+      { width: 95 },
+    ];
+    instructions.mergeCells('A1:B1');
+    instructions.getCell('A1').value = 'Evaluation Paper Excel Upload Guide';
+    instructions.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF2C3E50' } };
+    instructions.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F4FD' } };
+    instructions.getCell('A1').alignment = { vertical: 'middle' };
+    instructions.getRow(1).height = 26;
+    instructions.addRow(['Required rule', 'For every question, the comma-separated values in answer_points must add up to exactly 10. Example: 10,0 or 5,3,2.']);
+    instructions.addRow(['Question', 'Enter the question text.']);
+    instructions.addRow(['answer_type', 'Use SingleOption, Dropdown, or MultipleOptions.']);
+    instructions.addRow(['answer_options', 'Enter one comma-separated option for each available answer.']);
+    instructions.addRow(['answer_points', 'Enter one comma-separated mark for each option. The number of marks must match the number of options and the total must equal 10.']);
+    instructions.getColumn(1).font = { bold: true, size: 10, color: { argb: 'FF7F8C8D' } };
+    instructions.getColumn(2).font = { size: 11, color: { argb: 'FF34495E' } };
+    instructions.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
+    instructions.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        row.getCell(1).alignment = { vertical: 'top' };
+      }
+    });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="evaluation_paper_questions_template.xlsx"');
@@ -989,6 +1135,11 @@ const uploadEvaluationQuestionsExcel = async (req, res) => {
 
     const [pRows] = await db.query('SELECT evaluation_paper_id FROM evaluation_papers WHERE evaluation_paper_id = ? AND entity_code = ? LIMIT 1', [id, req.user.entityCode]);
     if (pRows.length === 0) return errorResponse(res, 'Evaluation paper not found.', 404);
+
+    const [assigned] = await db.query('SELECT 1 FROM evaluation_assignments WHERE paper_id = ? LIMIT 1', [id]);
+    if (assigned.length > 0) {
+      return errorResponse(res, 'This evaluation paper is assigned to one or more auditors and its questions cannot be edited. Remove those assignments first.', 409);
+    }
 
     const [existingCountRows] = await db.query(
       'SELECT COUNT(*) AS cnt FROM evaluation_questions WHERE paper_id = ?',
@@ -1217,18 +1368,21 @@ const deleteEvaluationAssignment = async (req, res) => {
 module.exports = {
   listTrainings,
   createTraining,
+  getTrainingForEdit,
   updateTraining,
   deleteTraining,
   assignTraining,
   deleteTrainingAssignment,
   listFieldVisits,
   createFieldVisit,
+  getFieldVisitForEdit,
   updateFieldVisit,
   deleteFieldVisit,
   assignFieldVisit,
   deleteFieldVisitAssignment,
   listEvaluationPapers,
   createEvaluationPaper,
+  getEvaluationPaperForEdit,
   updateEvaluationPaper,
   deleteEvaluationPaper,
   setEvaluationQuestions,
