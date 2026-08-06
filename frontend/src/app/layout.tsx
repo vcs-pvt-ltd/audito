@@ -3,7 +3,6 @@ import { Inter } from "next/font/google";
 import { AuthProvider } from "@/context/AuthContext";
 import { UiFeedbackProvider } from "@/context/UiFeedbackContext";
 import AppLayout from "@/components/layout/AppLayout";
-import appBg from "@/assets/landing/background.png";
 import "./globals.css";
 
 const inter = Inter({
@@ -31,10 +30,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body
-        className="font-sans bg-fixed bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url(${appBg.src})` }}
-      >
+      <body className="app-background font-sans">
         <AuthProvider>
           <UiFeedbackProvider>
             <AppLayout>{children}</AppLayout>
