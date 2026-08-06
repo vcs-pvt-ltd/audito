@@ -741,9 +741,12 @@ const CapModel = {
       const corrective_action_id = existing[0]?.corrective_action_id || await generateCorrectiveActionId();
       await db.query(
          `INSERT INTO corrective_actions 
-           (corrective_action_id, audit_id, audit_response_id, cap_response_id, entity_code, checklist_question_id, org_tree_id, due_date, created_by)
-          VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)
+           (corrective_action_id, audit_id, audit_response_id, cap_response_id, entity_code, checklist_question_id, org_tree_id,
+            responsible_organization_user_id, responsible_person_name, due_date, created_by)
+          VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE 
+          responsible_organization_user_id = VALUES(responsible_organization_user_id),
+          responsible_person_name = VALUES(responsible_person_name),
           due_date = VALUES(due_date),
           updated_at = NOW()`,
         [
@@ -753,6 +756,8 @@ const CapModel = {
           a.entity_code, 
           a.checklist_question_id || a.question_id, 
           a.assigned_org_tree_id ?? null, 
+          a.responsible_organization_user_id || null,
+          a.responsible_person_name || null,
           a.due_date || null, 
           created_by
         ]

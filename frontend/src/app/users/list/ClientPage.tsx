@@ -157,11 +157,13 @@ function OrganizationScopeSelector({
   value,
   onChange,
   loading,
+  disabled = false,
 }: {
   nodes: FlatNode[];
   value: OrganizationUserScope[];
   onChange: (scopes: OrganizationUserScope[]) => void;
   loading: boolean;
+  disabled?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const scopeByKey = useMemo(() => {
@@ -198,6 +200,7 @@ function OrganizationScopeSelector({
   };
 
   const toggle = (node: FlatNode) => {
+    if (disabled) return;
     if (coveringSubtree(node)) return;
     const key = keyForNode(node);
     if (scopeByKey.has(key)) {
@@ -215,6 +218,7 @@ function OrganizationScopeSelector({
   };
 
   const setMode = (node: FlatNode, mode: "EXACT" | "SUBTREE") => {
+    if (disabled) return;
     const key = keyForNode(node);
     const next = value.map((scope) =>
       (scope.org_tree_id ? `tree:${scope.org_tree_id}` : `root:${scope.entity_code}`) === key
@@ -245,7 +249,9 @@ function OrganizationScopeSelector({
       <div>
         <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Organization access</p>
         <p className="mt-1 text-xs text-gray-500">
-          Select individual entities or grant access to an entity and all of its subentities.
+          {disabled
+            ? "Organization access is locked because this user is already used in audit activity."
+            : "Select individual entities or grant access to an entity and all of its subentities."}
         </p>
       </div>
       <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
@@ -254,10 +260,11 @@ function OrganizationScopeSelector({
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search organization..."
+          disabled={disabled}
           className="w-full bg-transparent text-sm text-white outline-none placeholder:text-gray-600"
         />
       </div>
-      <div className="max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-black/10 p-2">
+      <div className={`max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-black/10 p-2 ${disabled ? "opacity-60" : ""}`}>
         {loading ? (
           <Loading className="h-64" />
         ) : visibleNodes.map((node) => {
@@ -273,7 +280,7 @@ function OrganizationScopeSelector({
               <input
                 type="checkbox"
                 checked={!!selected || !!inheritedFrom}
-                disabled={!!inheritedFrom}
+                disabled={disabled || !!inheritedFrom}
                 onChange={() => toggle(node)}
                 className="h-4 w-4 shrink-0 accent-emerald-500"
               />
@@ -287,6 +294,7 @@ function OrganizationScopeSelector({
                 <select
                   value={selected.scope_mode}
                   onChange={(event) => setMode(node, event.target.value as "EXACT" | "SUBTREE")}
+                  disabled={disabled}
                   className="max-w-36 rounded-md border border-white/10 bg-primary-900 px-2 py-1 text-[11px] text-gray-300 outline-none"
                 >
                   <option value="EXACT">This entity only</option>
@@ -370,6 +378,7 @@ function UserModal({
   const [stepSelections, setStepSelections] = useState<Record<number, string>>({});
 
   const isEdit = !!editData;
+  const organizationAccessLocked = Boolean(isEdit && customScopes && editData?.in_use);
 
   // Fetch countries on first open
   useEffect(() => {
@@ -730,6 +739,7 @@ function UserModal({
               value={form.scopes}
               onChange={(nextScopes) => setForm((current) => ({ ...current, scopes: nextScopes }))}
               loading={treeLoading}
+              disabled={organizationAccessLocked}
             />
           )}
 
@@ -1264,16 +1274,20 @@ export default function UsersClientPage() {
     if (editUser) {
       const userCode = editUser.user_code;
       if (!userCode) throw new Error("User code is missing — cannot update.");
-      const res = await usersApi.update(accessToken, userCode, {
+      const lockOrganizationAccess = config.customScopes && editUser.in_use;
+      const updateData: Record<string, unknown> = {
         first_name: formData.first_name,
         last_name: formData.last_name,
         phone_number: formData.phone_number,
         country: formData.country,
-        assigned_entity_code: formData.assigned_entity_code || undefined,
-        assigned_entity_type: formData.assigned_entity_type || undefined,
-        assigned_org_tree_id: formData.assigned_org_tree_id || undefined,
-        scopes: config.customScopes ? formData.scopes : undefined,
-      });
+      };
+      if (!lockOrganizationAccess) {
+        updateData.assigned_entity_code = formData.assigned_entity_code || undefined;
+        updateData.assigned_entity_type = formData.assigned_entity_type || undefined;
+        updateData.assigned_org_tree_id = formData.assigned_org_tree_id || undefined;
+        updateData.scopes = config.customScopes ? formData.scopes : undefined;
+      }
+      const res = await usersApi.update(accessToken, userCode, updateData);
       if (!res.success) throw new Error(res.message || "Failed to update.");
       toast("User updated successfully.", "success");
     } else {

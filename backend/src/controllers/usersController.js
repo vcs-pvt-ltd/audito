@@ -441,6 +441,18 @@ async function attachOrganizationUserScopes(users) {
   });
 }
 
+async function isOrganizationUserAccessLocked(organizationUserId) {
+  const [rows] = await db.query(
+    `SELECT 1 FROM corrective_actions WHERE responsible_organization_user_id = ?
+     UNION ALL SELECT 1 FROM corrective_actions WHERE verified_by = ?
+     UNION ALL SELECT 1 FROM audit_responses WHERE answered_by = ?
+     UNION ALL SELECT 1 FROM cap_responses WHERE responded_by = ?
+     LIMIT 1`,
+    [organizationUserId, organizationUserId, organizationUserId, organizationUserId]
+  );
+  return rows.length > 0;
+}
+
 const listUsers = async (req, res) => {
   try {
     const userType = req.query.user_type || null;
@@ -529,6 +541,9 @@ const updateUser = async (req, res) => {
       if (!v.ok) return errorResponse(res, v.message, 400);
     }
     if (user._table === 'organization_user' && Array.isArray(req.body.scopes)) {
+      if (await isOrganizationUserAccessLocked(user.organization_user_id)) {
+        return errorResponse(res, 'Organization access cannot be changed after this user is assigned to audit activity.', 409);
+      }
       const validation = await OrganizationUserScopeModel.validateForWorkspace(req.body.scopes, {
         rootEntityCode: req.user.entityCode,
         accessibleEntityCodes: accessibleCodes,

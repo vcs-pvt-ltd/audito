@@ -21,6 +21,8 @@ import {
   Search,
 } from "lucide-react";
 import { Button, IconButton, Modal, Input } from "@/components/ui";
+import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
+import { CorrectiveActionAccordion } from "@/components/corrective-actions/CorrectiveActionsViewer";
 
 interface TreeNode {
   entity_type: string;
@@ -59,6 +61,49 @@ interface SubCapRequiredItem {
   answer_type: string;
   order_index: number;
   entity_type: string;
+  answer_text?: string | null;
+  selected_option_ids?: string | null;
+  evidence?: EvidenceAttachment[];
+}
+
+interface EvidenceAttachment {
+  id?: string | number;
+  evidence_id?: string | number;
+  file_type?: string;
+  file_path: string;
+  file_name?: string;
+}
+
+function QuestionEvidence({ evidence }: { evidence?: EvidenceAttachment[] }) {
+  if (!evidence?.length) return null;
+
+  return (
+    <div className="border-t border-white/[0.06] pt-3">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-600">Evidence ({evidence.length})</p>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {evidence.map((file, index) => {
+          const url = getEvidenceUrl(file.file_path);
+          const kind = inferEvidenceKind(file.file_type, file.file_name, file.file_path);
+          return (
+            <a
+              key={`${file.id || file.evidence_id || file.file_path || file.file_name || "evidence"}-${index}`}
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-2 transition-colors hover:border-white/[0.16]"
+            >
+              {kind === "image" ? (
+                <img src={url} alt={file.file_name || "CAP evidence"} className="h-20 w-full rounded-md object-cover" />
+              ) : (
+                <div className="flex h-20 items-center justify-center rounded-md bg-white/[0.04] text-xs text-gray-400">Open evidence</div>
+              )}
+              <span className="mt-1 block truncate text-[11px] text-gray-400">{file.file_name || "Evidence"}</span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 interface SubCorrectiveActionRow {
@@ -199,19 +244,23 @@ function EntityNode({
                 const organizationUser = it.responsible_organization_user;
                 const dueDateMissing = showDueDateErrors && !a.due_date;
                 return (
-                  <div key={it.response_id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
-                    <div className="flex items-center gap-2 px-3 py-2.5 bg-orange-500/[0.04] border-b border-orange-500/[0.08]">
-                      <span className="shrink-0 w-5 h-5 rounded-md bg-orange-500/15 border border-orange-500/20 flex items-center justify-center text-orange-400 text-[10px] font-bold">
-                        {idx + 1}
-                      </span>
-                                           <p className="text-sm text-gray-200 leading-relaxed">{it.question_text}</p>
+                  <CorrectiveActionAccordion
+                    key={it.response_id}
+                    name="cap-corrective-action"
+                    questionNumber={idx + 1}
+                    questionText={it.question_text}
+                    accent="orange"
+                    headerBadges={<span className="rounded border border-orange-500/10 bg-orange-500/5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-orange-500/50">Sub-CAP Required</span>}
+                  >
 
-                      <span className="ml-auto text-[9px] font-bold text-orange-500/50 uppercase tracking-widest px-1.5 py-0.5 rounded bg-orange-500/5 border border-orange-500/10">
-                        Sub-CAP Required
-                      </span>
-                    </div>
+                    <div className="space-y-3 p-3 sm:p-4">
 
-                    <div className="p-3 sm:p-4 space-y-3">
+                      {(it.answer_text || it.selected_option_ids) && (
+                        <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+                          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-600">Auditor Response</p>
+                          <p className="text-xs text-gray-400">{it.answer_text || "Response recorded"}</p>
+                        </div>
+                      )}
 
                       {it.ca_description && (
                         <div className="flex gap-2 px-3 py-2.5 rounded-lg bg-orange-500/[0.05] border border-orange-500/[0.12]">
@@ -221,11 +270,13 @@ function EntityNode({
                       )}
 
                       {it.remarks && (
-                        <div className="px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-                          <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1">Remarks</p>
+                        <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+                          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-600">Remarks</p>
                           <p className="text-xs text-gray-400">{it.remarks}</p>
                         </div>
                       )}
+
+                      <QuestionEvidence evidence={it.evidence} />
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div className="px-3 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
@@ -264,7 +315,7 @@ function EntityNode({
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </CorrectiveActionAccordion>
                 );
               })}
             </div>

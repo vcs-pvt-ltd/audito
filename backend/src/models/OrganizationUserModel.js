@@ -168,6 +168,126 @@ const OrganizationUserModel = {
     return rows;
   },
 
+  /**
+   * Resolve one responsible Organization User per entity instance.
+   *
+   * A direct assignment to the entity instance always wins. If there is no
+   * direct assignment, the closest ancestor with a SUBTREE scope is used.
+   * This prevents a broad company-level user from taking responsibility away
+   * from a user assigned specifically to a department, section, or unit.
+   */
+  async resolveResponsibleForEntities(entities = [], createdByEntityCode = null) {
+    const targets = (entities || [])
+      .filter((entity) => entity?.entity_code)
+      .map((entity) => ({
+        entity_code: String(entity.entity_code),
+        org_tree_id: entity.org_tree_id ?? entity.assigned_org_tree_id ?? null,
+      }));
+    if (!targets.length) return {};
+
+    const targetTreeIds = [...new Set(targets
+      .map((target) => target.org_tree_id)
+      .filter((id) => id !== null && id !== undefined && id !== '')
+      .map(String))];
+
+    const pathByTargetTreeId = new Map();
+    const rootByTargetTreeId = new Map();
+    if (targetTreeIds.length) {
+      const placeholders = targetTreeIds.map(() => '?').join(',');
+      const [rows] = await db.query(
+        `WITH RECURSIVE ancestor_paths AS (
+           SELECT org_tree_id AS target_tree_id, org_tree_id, parent_edge_id,
+                  child_code, root_entity_code, 0 AS depth
+             FROM organization_tree
+            WHERE org_tree_id IN (${placeholders}) AND is_active = TRUE
+           UNION ALL
+           SELECT path.target_tree_id, parent.org_tree_id, parent.parent_edge_id,
+                  parent.child_code, parent.root_entity_code, path.depth + 1
+             FROM organization_tree parent
+             INNER JOIN ancestor_paths path ON parent.org_tree_id = path.parent_edge_id
+            WHERE parent.is_active = TRUE AND path.depth < 25
+         )
+         SELECT target_tree_id, org_tree_id, child_code, root_entity_code, depth
+           FROM ancestor_paths`,
+        targetTreeIds
+      );
+      for (const row of rows) {
+        const targetId = String(row.target_tree_id);
+        if (!pathByTargetTreeId.has(targetId)) pathByTargetTreeId.set(targetId, new Map());
+        pathByTargetTreeId.get(targetId).set(String(row.org_tree_id), Number(row.depth));
+        if (row.root_entity_code) rootByTargetTreeId.set(targetId, String(row.root_entity_code));
+      }
+    }
+
+    const creatorCodes = new Set([
+      createdByEntityCode,
+      ...targets.map((target) => target.entity_code),
+      ...rootByTargetTreeId.values(),
+    ].filter(Boolean));
+    if (!creatorCodes.size) return {};
+
+    const candidates = await this.listByCreators([...creatorCodes]);
+    if (!candidates.length) return {};
+
+    const OrganizationUserScopeModel = require('./OrganizationUserScopeModel');
+    const scopesByUser = await OrganizationUserScopeModel.listByUsers(
+      candidates.map((candidate) => candidate.organization_user_id)
+    );
+    const orderedCandidates = [...candidates].sort((a, b) => {
+      const aCreated = new Date(a.created_at || 0).getTime();
+      const bCreated = new Date(b.created_at || 0).getTime();
+      if (aCreated !== bCreated) return aCreated - bCreated;
+      return String(a.organization_user_id).localeCompare(String(b.organization_user_id));
+    });
+
+    const resolved = {};
+    for (const target of targets) {
+      const targetTreeId = target.org_tree_id === null || target.org_tree_id === undefined || target.org_tree_id === ''
+        ? null
+        : String(target.org_tree_id);
+      const ancestorDepths = targetTreeId ? pathByTargetTreeId.get(targetTreeId) : null;
+      const rootEntityCode = targetTreeId ? rootByTargetTreeId.get(targetTreeId) : null;
+      let best = null;
+      let bestRank = Number.POSITIVE_INFINITY;
+
+      for (const candidate of orderedCandidates) {
+        const candidateScopes = scopesByUser.get(candidate.organization_user_id) || [];
+        const effectiveScopes = candidateScopes.length
+          ? candidateScopes
+          : (candidate.assigned_entity_code ? [{
+              org_tree_id: candidate.assigned_org_tree_id || null,
+              entity_code: candidate.assigned_entity_code,
+              scope_mode: 'SUBTREE',
+            }] : []);
+
+        let candidateRank = Number.POSITIVE_INFINITY;
+        for (const scope of effectiveScopes) {
+          const scopeTreeId = scope.org_tree_id === null || scope.org_tree_id === undefined || scope.org_tree_id === ''
+            ? null
+            : String(scope.org_tree_id);
+          const scopeMode = String(scope.scope_mode || 'EXACT').toUpperCase();
+
+          if (targetTreeId && scopeTreeId && ancestorDepths?.has(scopeTreeId)) {
+            const depth = ancestorDepths.get(scopeTreeId);
+            if (depth === 0 || scopeMode === 'SUBTREE') candidateRank = Math.min(candidateRank, depth);
+          } else if (!scopeTreeId && String(scope.entity_code || '') === target.entity_code) {
+            candidateRank = Math.min(candidateRank, 0);
+          } else if (!scopeTreeId && scopeMode === 'SUBTREE' && rootEntityCode && String(scope.entity_code || '') === rootEntityCode) {
+            candidateRank = Math.min(candidateRank, (ancestorDepths?.size || 0) + 1);
+          }
+        }
+
+        if (candidateRank < bestRank) {
+          best = candidate;
+          bestRank = candidateRank;
+        }
+      }
+
+      if (best) resolved[`${target.entity_code}__${targetTreeId ?? 'null'}`] = best;
+    }
+    return resolved;
+  },
+
   async findOneByOrgTreeId(orgTreeId) {
     if (!orgTreeId) return null;
     const [rows] = await db.query(

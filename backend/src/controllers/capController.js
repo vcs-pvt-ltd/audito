@@ -24,6 +24,7 @@ const OrganizationUserModel = require('../models/OrganizationUserModel');
 const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
 const NotificationModel = require('../models/NotificationModel');
+const { notifyOrganizationUsersForEntities } = require('../utils/organizationUserNotifications');
 const { db } = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const {
@@ -108,6 +109,16 @@ async function notifyCapCreated({ capId, capTitle, audit, entities, parentCapId,
   for (const organizationUser of organizationUsers) {
     if (organizationUser?.organization_user_id) recipients.set(`organization_user:${organizationUser.organization_user_id}`, { userCode: organizationUser.organization_user_id, role: 'organization_user' });
   }
+
+  await notifyOrganizationUsersForEntities({
+    entities,
+    createdByEntityCode,
+    type,
+    title: `${label} Created`,
+    message,
+    auditId: audit.audit_id,
+    notificationKeyPrefix: `${type}:${capId}`,
+  });
 
   for (const recipient of recipients.values()) {
     await NotificationModel.createIfNotExists({
@@ -490,6 +501,28 @@ const getCorrectiveActions = async (req, res) => {
       ...item,
       evidence: evidenceByResponseId[String(item.response_id)] || [],
     }));
+    const responsibleUsersByEntity = await OrganizationUserModel.resolveResponsibleForEntities(
+      items.map((item) => ({
+        entity_code: item.entity_code,
+        org_tree_id: item.assigned_org_tree_id ?? item.org_tree_id ?? null,
+      })),
+      audit?.created_by || cap.created_by || null
+    );
+    items = items.map((item) => {
+      const orgTreeId = item.assigned_org_tree_id ?? item.org_tree_id ?? null;
+      const organizationUser = responsibleUsersByEntity[`${item.entity_code}__${orgTreeId ?? 'null'}`] || null;
+      return {
+        ...item,
+        responsible_organization_user: organizationUser
+          ? {
+            user_code: organizationUser.organization_user_id,
+            first_name: organizationUser.first_name,
+            last_name: organizationUser.last_name,
+            email: organizationUser.email,
+          }
+          : null,
+      };
+    });
     return successResponse(res, {
       cap: { cap_id: cap.cap_id, title: cap.title, status: cap.status },
       items,
@@ -506,8 +539,29 @@ const getCorrectiveActions = async (req, res) => {
 const saveCorrectiveActions = async (req, res) => {
   try {
     const { id } = req.params;
-    const { actions } = req.body;
-    await CapModel.saveCapCorrectiveActions(id, actions, req.user.userCode);
+    const actions = Array.isArray(req.body.actions) ? req.body.actions : [];
+    const cap = await CapModel.getCapById(id);
+    if (!cap) return errorResponse(res, 'CAP not found.', 404);
+    const audit = await AuditModel.findById(cap.audit_id);
+    const responsibleUsersByEntity = await OrganizationUserModel.resolveResponsibleForEntities(
+      actions.map((action) => ({
+        entity_code: action.entity_code,
+        org_tree_id: action.assigned_org_tree_id ?? action.org_tree_id ?? null,
+      })),
+      audit?.created_by || cap.created_by || null
+    );
+    const resolvedActions = actions.map((action) => {
+      const orgTreeId = action.assigned_org_tree_id ?? action.org_tree_id ?? null;
+      const organizationUser = responsibleUsersByEntity[`${action.entity_code}__${orgTreeId ?? 'null'}`] || null;
+      return {
+        ...action,
+        responsible_organization_user_id: organizationUser?.organization_user_id || null,
+        responsible_person_name: organizationUser
+          ? `${organizationUser.first_name} ${organizationUser.last_name}`.trim()
+          : null,
+      };
+    });
+    await CapModel.saveCapCorrectiveActions(id, resolvedActions, req.user.userCode);
     return successResponse(res, null, 'Corrective actions saved.');
   } catch (err) {
     console.error('saveCorrectiveActions error:', err);
