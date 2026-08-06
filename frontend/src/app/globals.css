@@ -87,6 +87,18 @@
     text-rendering: optimizeLegibility;
   }
 
+  .app-background {
+    background-color: #00140f;
+    background-image:
+      radial-gradient(ellipse 76% 60% at 65% 14%, rgba(7, 76, 57, 0.42) 0%, rgba(3, 52, 39, 0.27) 31%, rgba(0, 26, 19, 0.06) 66%, transparent 78%),
+      radial-gradient(ellipse 88% 82% at 2% 98%, rgba(0, 10, 8, 0.88) 0%, rgba(0, 20, 15, 0.5) 50%, transparent 82%),
+      linear-gradient(116deg, #00170f 0%, #002b20 48%, #001811 100%);
+    background-attachment: fixed;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+  }
+
   img, video, canvas, svg {
     max-width: 100%;
   }
