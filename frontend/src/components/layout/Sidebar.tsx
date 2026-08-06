@@ -490,9 +490,15 @@ export default function Sidebar() {
   );
   const getNotificationId = (notice: any) => String(notice?.notification_id || notice?.auditor_notification_id || notice?.id || "");
   const getNotificationTarget = (notice: any) => {
-    if (notice?.type === "audit_assigned" || notice?.type === "audit_start" || notice?.type === "audit_completed") {
+    if (notice?.type === "audit_assigned" || notice?.type === "audit_start" || notice?.type === "audit_completed" || notice?.type === "organization_audit_assigned") {
       if (admin?.role === "admin" || admin?.role === "audito_admin") return "/audits";
+      if (admin?.role === "organization_user") return notice.audit_id ? `/organization-user/audits/details?id=${encodeURIComponent(String(notice.audit_id))}` : "/organization-user/audits";
       return notice.audit_id ? `/my-audits/details?id=${encodeURIComponent(String(notice.audit_id))}` : "/my-audits";
+    }
+    if (notice?.type === "corrective_action_saved") {
+      return admin?.role === "organization_user" && notice.audit_id
+        ? `/organization-user/audits/corrective-actions?id=${encodeURIComponent(String(notice.audit_id))}`
+        : "/audits";
     }
     if (notice?.type === "training_assigned") return "/my-learning/trainings";
     if (notice?.type === "field_visit_assigned") return "/my-learning/field-visits";
@@ -500,7 +506,9 @@ export default function Sidebar() {
     if (notice?.type === "subscription_expiry") return "/settings/billing";
     if (notice?.type === "manual_payment_approval_requested") return "/admin-panel/payments";
     if (notice?.type === "cap_created" || notice?.type === "sub_cap_created") {
-      return admin?.role === "admin" || admin?.role === "audito_admin" ? "/caps" : "/my-caps";
+      if (admin?.role === "admin" || admin?.role === "audito_admin") return "/caps";
+      if (admin?.role === "organization_user") return "/organization-user/caps";
+      return "/my-caps";
     }
     return admin?.role === "audito_admin" ? "/admin-panel/dashboard" : "/dashboard";
   };

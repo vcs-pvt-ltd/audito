@@ -342,45 +342,72 @@ export default function MyAuditPreviewPage() {
     }
   };
 
-  // Breadcrumb trail
-  const breadcrumbs: string[] = [];
-  for (let i = 1; i < stepHistory.length; i++) {
-    const s = stepHistory[i];
-    if (s.mode === "cards" && s.parentCode) {
-      const found = prunedTree ? findInTree(prunedTree, s.parentCode, s.parentEdgeId) : null;
-      breadcrumbs.push(found?.name || s.parentCode);
-    } else if (s.mode === "questions") {
-      breadcrumbs.push(s.entityName);
-    }
+  const breadcrumbNodes: Array<{ label: string; goTo: () => void }> = [];
+  const seenBreadcrumbs = new Set<string>();
+  for (let i = 0; i < stepHistory.length; i++) {
+    const step = stepHistory[i];
+    const code = step.mode === "questions" ? step.entityCode : step.parentCode;
+    const edgeId = step.mode === "questions" ? step.entityEdgeId : step.parentEdgeId;
+    const key = code ? `${code}__${edgeId ?? "null"}` : null;
+    if (!code || !key || seenBreadcrumbs.has(key)) continue;
+    seenBreadcrumbs.add(key);
+    const node = prunedTree ? findInTree(prunedTree, code, edgeId) : null;
+    const index = i;
+    breadcrumbNodes.push({
+      label: node?.name || (step.mode === "questions" ? step.entityName : code),
+      goTo: () => setStepHistory(history => history.slice(0, index + 1)),
+    });
   }
+
+  const cardsEntityPath = !isRoot ? (
+    <nav className="flex flex-wrap items-center gap-1.5 text-xs">
+      <button onClick={goBack} className="flex items-center gap-1 text-gray-400 transition-colors hover:text-secondary-400">
+        <ArrowLeft size={12} /> Back
+      </button>
+      {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />...</span>}
+      {breadcrumbNodes.slice(-1).map((breadcrumb) => (
+        <button key={breadcrumb.label} onClick={breadcrumb.goTo} className="flex min-w-0 items-center gap-1.5 text-gray-300 transition-colors hover:text-secondary-400">
+          <ChevronRight size={12} className="shrink-0 text-gray-600" />
+          <span className="max-w-56 truncate" title={breadcrumb.label}>{breadcrumb.label}</span>
+        </button>
+      ))}
+      <span className="flex items-center gap-1.5">
+        <ChevronRight size={12} className="text-gray-600" />
+        <span className="font-medium text-white">Sub-Entities</span>
+      </span>
+    </nav>
+  ) : null;
+
+  const questionEntityPath = (
+    <nav className="flex flex-wrap items-center gap-1.5 text-xs">
+      <button onClick={goBack} className="flex items-center gap-1 text-gray-400 transition-colors hover:text-secondary-400">
+        <ArrowLeft size={12} /> Back
+      </button>
+      {breadcrumbNodes.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={12} />...</span>}
+      {breadcrumbNodes.slice(-1).map((breadcrumb) => (
+        <button key={breadcrumb.label} onClick={breadcrumb.goTo} className="flex min-w-0 items-center gap-1.5 font-medium text-white transition-colors hover:text-secondary-400">
+          <ChevronRight size={12} className="shrink-0 text-gray-600" />
+          <span className="max-w-56 truncate" title={breadcrumb.label}>{breadcrumb.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
 
   return (
     <div className="h-full min-h-full bg-transparent flex">
       <div className="flex-1 flex flex-col overflow-hidden pt-16 lg:pt-0">
 
         {/* Top bar */}
-        <div className="shrink-0 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 bg-transparent/80 backdrop-blur-sm border-b border-white/[0.05]">
+        <div className="shrink-0 px-6 py-3 flex items-center justify-between gap-4 bg-transparent/80 backdrop-blur-sm">
           <div className="flex items-center gap-3 min-w-0">
-            <IconButton bordered onClick={isRoot ? () => router.push(`/my-audits/details?id=${auditId}`) : goBack}>
+            <IconButton bordered onClick={() => router.push(`/my-audits/details?id=${auditId}`)}>
               <ArrowLeft size={14} />
             </IconButton>
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-white truncate flex items-center gap-2">
-                <ClipboardCheck size={16} className="text-secondary-400 shrink-0" />
+                <ClipboardCheck size={16} className="text-amber-400 shrink-0" />
                 {audit?.title || "Preview Audit"}
               </h1>
-              {breadcrumbs.length > 0 && (
-                <div className="flex items-center gap-1 mt-0.5 min-w-0 overflow-hidden">
-                  <span className="text-[11px] text-gray-600 shrink-0">Scope</span>
-                  {breadcrumbs.length > 1 && <span className="flex items-center gap-1 text-gray-600"><ChevronRight size={10} className="shrink-0" />…</span>}
-                  {breadcrumbs.slice(-1).map((crumb) => (
-                    <span key={crumb} className="flex min-w-0 items-center gap-1">
-                      <ChevronRight size={10} className="shrink-0 text-gray-600" />
-                      <span className="truncate text-[11px] text-gray-300" title={crumb}>{crumb}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
           {audit && isRoot && (
@@ -420,7 +447,9 @@ export default function MyAuditPreviewPage() {
                       );
                     }
                     return (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="space-y-5">
+                        {cardsEntityPath}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {audit.entities.map((e, i) => {
                           const k = `${e.entity_code}__${(e as any).org_tree_id ?? (e as any).assigned_org_tree_id ?? 'null'}`;
                           const qs = entityQuestionsMap[k] || [];
@@ -451,6 +480,7 @@ export default function MyAuditPreviewPage() {
                             </div>
                           );
                         })}
+                        </div>
                       </div>
                     );
                   }
@@ -465,7 +495,9 @@ export default function MyAuditPreviewPage() {
                     );
                   }
                   return (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="space-y-5">
+                      {cardsEntityPath}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       {cards.map((node, i) => (
                         <EntityPreviewCard
                           key={`${node.code}__${node.edge_id ?? "null"}`}
@@ -475,6 +507,7 @@ export default function MyAuditPreviewPage() {
                           onClick={() => navigateCard(node)}
                         />
                       ))}
+                      </div>
                     </div>
                   );
                 })()
@@ -490,28 +523,11 @@ export default function MyAuditPreviewPage() {
                   const k = `${step.entityCode}__${step.entityEdgeId ?? 'null'}`;
                   const qs = entityQuestionsMap[k] || entityQuestionsMap[`${step.entityCode}__null`] || [];
                   const entityNode = prunedTree ? findInTree(prunedTree, step.entityCode) : null;
-                  const typeCls = entityNode
-                    ? (ENTITY_TYPE_COLORS[entityNode.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30")
-                    : "bg-gray-500/20 text-gray-300 border-gray-500/30";
                   const subEntities = entityNode ? (entityNode.children ?? []) : [];
 
                   return (
                     <div className="space-y-4">
-                      {/* Entity header */}
-                      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-secondary-500/10 border border-secondary-500/20 flex items-center justify-center shrink-0">
-                          <Building2 size={15} className="text-secondary-400" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-white truncate">{step.entityName}</p>
-                          {entityNode && (
-                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border inline-block mt-0.5 ${typeCls}`}>
-                              {entityNode.entity_type}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-gray-500 font-mono shrink-0">{qs.length} Questions</span>
-                      </div>
+                      <div className="mb-5">{questionEntityPath}</div>
 
                       {/* Questions */}
                       {qs.length === 0 ? (

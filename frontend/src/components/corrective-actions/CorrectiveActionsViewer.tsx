@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi, capApi } from "@/lib/api";
@@ -170,6 +170,42 @@ function EvidenceAttachments({ evidence }: { evidence?: EvidenceAttachment[] }) 
   );
 }
 
+export function CorrectiveActionAccordion({
+  name,
+  questionNumber,
+  questionText,
+  headerBadges,
+  accent = "secondary",
+  children,
+}: {
+  name: string;
+  questionNumber: number;
+  questionText: string;
+  headerBadges?: ReactNode;
+  accent?: "secondary" | "amber" | "orange";
+  children: ReactNode;
+}) {
+  const accentClasses = {
+    secondary: "border-secondary-500/20 bg-secondary-500/15 text-secondary-400",
+    amber: "border-amber-500/20 bg-amber-500/15 text-amber-400",
+    orange: "border-orange-500/20 bg-orange-500/15 text-orange-400",
+  }[accent];
+  return (
+    <details name={name} className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
+      <summary className="flex cursor-pointer list-none items-center gap-2 border-b border-white/[0.06] bg-white/[0.02] px-3 py-2.5 transition-colors hover:bg-white/[0.04] [&::-webkit-details-marker]:hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[10px] font-bold ${accentClasses}`}>
+            {questionNumber}
+          </span>
+          <h2 className="truncate text-sm leading-relaxed text-gray-200">{questionText}</h2>
+        </div>
+        {headerBadges && <div className="flex shrink-0 items-center gap-1.5">{headerBadges}</div>}
+      </summary>
+      {children}
+    </details>
+  );
+}
+
 function CorrectiveActionCard({ row, index, showStatus, viewerRole }: { row: ActionViewRow; index: number; showStatus: boolean; viewerRole: RequiredRole }) {
   const { action, item, entityName, status, overdue, responsible } = row;
   const questionNumber = index + 1;
@@ -179,15 +215,12 @@ function CorrectiveActionCard({ row, index, showStatus, viewerRole }: { row: Act
   const showEntity = viewerRole !== "admin" && viewerRole !== "organization_user";
   const showResponsible = viewerRole !== "organization_user";
   return (
-    <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <h2 className="text-sm font-bold leading-relaxed text-white sm:text-base">
-            <span className="mr-2 text-secondary-400">{questionNumber}.</span>
-            {item?.question_text || "Corrective action"}
-          </h2>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+    <CorrectiveActionAccordion
+      name="corrective-action-viewer"
+      questionNumber={questionNumber}
+      questionText={item?.question_text || "Corrective action"}
+      headerBadges={(
+        <>
           {hasMarks && (
             <span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-bold text-secondary-300">
               {obtainedMarks}{totalMarks > 0 ? ` / ${totalMarks}` : ""} marks
@@ -198,10 +231,12 @@ function CorrectiveActionCard({ row, index, showStatus, viewerRole }: { row: Act
               {label(status)}
             </span>
           )}
-        </div>
-      </div>
+        </>
+      )}
+    >
 
-      <div className="mt-4 rounded-xl border border-white/[0.07] bg-black/10 p-4">
+      <div className="border-t border-white/[0.06] p-4 sm:p-5">
+      <div className="rounded-xl border border-white/[0.07] bg-black/10 p-4">
         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Action details</p>
         <p className="mt-2 text-sm leading-relaxed text-gray-300">
           {action.description || "No additional action description was provided."}
@@ -245,7 +280,8 @@ function CorrectiveActionCard({ row, index, showStatus, viewerRole }: { row: Act
           <div><p className={`text-[9px] font-bold uppercase tracking-wider ${overdue ? "text-red-400/70" : "text-gray-600"}`}>Due date</p><p className={`mt-1 text-xs font-semibold ${overdue ? "text-red-300" : "text-gray-300"}`}>{fmtDate(action.due_date)}{overdue ? " · Past due" : ""}</p></div>
         </div>
       </div>
-    </article>
+      </div>
+    </CorrectiveActionAccordion>
   );
 }
 

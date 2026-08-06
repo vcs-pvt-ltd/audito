@@ -1170,7 +1170,7 @@ const downloadExcelTemplate = async (req, res) => {
       const entities = entityByType[colType] || [];
       const samples = entities.slice(0, 4).map(e => e.name).join(', ');
       if (i === 0) {
-        addGuideLine(`Col ${i + 1}`, `"${colType}" — Required. Must match a ${colType} name from your Company Structure section below.${samples ? '  Examples: ' + samples : ''}`);
+        addGuideLine(`Col ${i + 1}`, `"${colType}" — Required. Must match a ${colType} name from your Organization Structure section below.${samples ? '  Examples: ' + samples : ''}`);
       } else if (i < typeColumns.length - 1) {
         addGuideLine(`Col ${i + 1}`, `"${colType}" — Optional. Must match a ${colType} name that is a child of the ${typeColumns[i - 1]} above it.`);
       } else {
@@ -1193,8 +1193,8 @@ const downloadExcelTemplate = async (req, res) => {
     addGuideBlank();
     addGuideBlank();
 
-    // SECTION B: COMPANY STRUCTURE
-    addGuideTitle('YOUR COMPANY STRUCTURE — Entity hierarchy reference:');
+    // SECTION B: ORGANIZATION STRUCTURE
+    addGuideTitle('YOUR ORGANIZATION STRUCTURE — Entity hierarchy reference:');
     addGuideBlank();
 
     // Structure header row

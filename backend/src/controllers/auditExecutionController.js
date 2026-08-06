@@ -22,6 +22,7 @@ const OrganizationUserModel = require('../models/OrganizationUserModel');
 const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
 const NotificationModel = require('../models/NotificationModel');
+const { notifyOrganizationUsersForEntities } = require('../utils/organizationUserNotifications');
 const { db } = require('../config/db');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
 const { generateCorrectiveActionId, generateAuditResponseId, generateAuditEvidenceId, generateAuditEntityProgressId } = require('../utils/codeGenerator');
@@ -342,20 +343,28 @@ const getCorrectiveActions = async (req, res) => {
 
     // Prefer response org_tree_id (edge instance) so repeated entity codes under different parents don't collide.
     // Only fall back to tree-derived edge_id when the mapping is unambiguous.
-    const orgTreeIds = [...new Set((items || []).map((it) => it.org_tree_id).filter(Boolean))];
-    const organizationUsers = await OrganizationUserModel.findByOrgTreeIds(orgTreeIds);
-    const organizationUserByOrgTreeId = {};
-    for (const h of organizationUsers) organizationUserByOrgTreeId[h.assigned_org_tree_id] = h;
-
-    const enrichedItems = (items || []).map((it) => {
+    const itemTargets = (items || []).map((it) => {
       const orgTreeIdFromResponse = it.org_tree_id ?? null;
       const fallbackSet = entityToOrgTreeIds[it.entity_code];
       const unambiguousFallback = fallbackSet && fallbackSet.size === 1
         ? Array.from(fallbackSet)[0]
         : null;
 
-      const assignedOrgTreeId = (orgTreeIdFromResponse ?? unambiguousFallback) || null;
-      const organizationUser = assignedOrgTreeId ? organizationUserByOrgTreeId[assignedOrgTreeId] : null;
+      return {
+        item: it,
+        assignedOrgTreeId: (orgTreeIdFromResponse ?? unambiguousFallback) || null,
+      };
+    });
+    const responsibleUsersByEntity = await OrganizationUserModel.resolveResponsibleForEntities(
+      itemTargets.map(({ item, assignedOrgTreeId }) => ({
+        entity_code: item.entity_code,
+        org_tree_id: assignedOrgTreeId,
+      })),
+      audit.created_by || null
+    );
+
+    const enrichedItems = itemTargets.map(({ item: it, assignedOrgTreeId }) => {
+      const organizationUser = responsibleUsersByEntity[`${it.entity_code}__${assignedOrgTreeId ?? 'null'}`] || null;
       return {
         ...it,
         assigned_org_tree_id: assignedOrgTreeId,
@@ -411,26 +420,30 @@ const saveCorrectiveActions = async (req, res) => {
     };
     walk(tree);
 
-    const orgTreeIds = [...new Set(actions.map((a) => {
-      if (a.org_tree_id) return a.org_tree_id;
-      if (a.assigned_org_tree_id) return a.assigned_org_tree_id; // fallback for older clients
-      const s = entityToOrgTreeIds[String(a.entity_code)];
-      return s && s.size === 1 ? Array.from(s)[0] : null;
-    }).filter(Boolean))];
-    const organizationUsers = await OrganizationUserModel.findByOrgTreeIds(orgTreeIds);
-    const organizationUserByOrgTreeId = {};
-    for (const h of organizationUsers) organizationUserByOrgTreeId[h.assigned_org_tree_id] = h;
+    const actionTargets = actions
+      .filter((action) => action && action.response_id && action.entity_code && action.question_id)
+      .map((action) => {
+        const fallbackSet = entityToOrgTreeIds[String(action.entity_code)];
+        const unambiguousFallback = fallbackSet && fallbackSet.size === 1
+          ? Array.from(fallbackSet)[0]
+          : null;
+        return {
+          action,
+          orgTreeId: action.org_tree_id ?? action.assigned_org_tree_id ?? unambiguousFallback ?? null,
+        };
+      });
+    const responsibleUsersByEntity = await OrganizationUserModel.resolveResponsibleForEntities(
+      actionTargets.map(({ action, orgTreeId }) => ({
+        entity_code: String(action.entity_code),
+        org_tree_id: orgTreeId,
+      })),
+      audit.created_by || null
+    );
 
     const results = [];
-    for (const a of actions) {
-      if (!a || !a.response_id || !a.entity_code || !a.question_id) continue;
-
-      const fallbackSet = entityToOrgTreeIds[String(a.entity_code)];
-      const unambiguousFallback = fallbackSet && fallbackSet.size === 1
-        ? Array.from(fallbackSet)[0]
-        : null;
-      const orgTreeId = a.org_tree_id ?? a.assigned_org_tree_id ?? unambiguousFallback ?? null;
-      const organizationUser = orgTreeId ? organizationUserByOrgTreeId[orgTreeId] : null;
+    const notificationEntities = [];
+    for (const { action: a, orgTreeId } of actionTargets) {
+      const organizationUser = responsibleUsersByEntity[`${a.entity_code}__${orgTreeId ?? 'null'}`] || null;
       const responsiblePersonCode = organizationUser?.organization_user_id || null;
       const responsiblePersonName = organizationUser ? `${organizationUser.first_name} ${organizationUser.last_name}`.trim() : null;
 
@@ -447,6 +460,27 @@ const saveCorrectiveActions = async (req, res) => {
         created_by: req.user.userCode,
       });
       results.push({ id: caId, response_id: a.response_id });
+      notificationEntities.push({
+        entity_code: String(a.entity_code),
+        org_tree_id: orgTreeId,
+        response_id: a.response_id,
+      });
+    }
+
+    try {
+      for (const entity of notificationEntities) {
+        await notifyOrganizationUsersForEntities({
+          entities: [entity],
+          createdByEntityCode: audit.created_by || null,
+          type: 'corrective_action_saved',
+          title: 'Corrective Action Added',
+          message: `A corrective action was added to audit "${audit.title || audit.audit_code || id}" for an organization area you can access.`,
+          auditId: id,
+          notificationKeyPrefix: `corrective_action_saved:${id}:${entity.response_id}`,
+        });
+      }
+    } catch (notificationError) {
+      console.error('notifyOrganizationUsersForCorrectiveActions error:', notificationError);
     }
 
     return successResponse(res, { saved: results }, 'Corrective actions saved.');

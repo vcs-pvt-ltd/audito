@@ -29,6 +29,7 @@ const AuditExecutionModel = require('../models/AuditExecutionModel');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
 const { sendAuditAssignedEmail, sendAuditFirmAssignmentEmail } = require('../services/emailService');
 const NotificationModel = require('../models/NotificationModel');
+const { notifyOrganizationUsersForEntities } = require('../utils/organizationUserNotifications');
 const { getCountryDialingCode } = require('../utils/orgLookup');
 const { generateAuditorRatingId } = require('../utils/codeGenerator');
 
@@ -535,6 +536,20 @@ const createAudit = async (req, res) => {
       } catch (nameError) {
         console.error('createAudit entity-name enrichment error:', nameError);
       }
+    }
+
+    try {
+      await notifyOrganizationUsersForEntities({
+        entities: created?.entities || entities,
+        createdByEntityCode: req.user.entityCode,
+        type: 'organization_audit_assigned',
+        title: 'Audit Assigned',
+        message: `An audit${title ? `, ${title},` : ''} has been assigned for an organization area you can access.`,
+        auditId: id,
+        notificationKeyPrefix: `organization_audit_assigned:${id}`,
+      });
+    } catch (notificationError) {
+      console.error('notifyOrganizationUsersForAudit error:', notificationError);
     }
 
     if (assigned_auditor_id) {

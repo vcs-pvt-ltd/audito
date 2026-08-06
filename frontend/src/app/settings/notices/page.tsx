@@ -363,7 +363,6 @@ export default function SettingsNoticesPage() {
                 <THead>
                   <Th align="center" className="w-12">#</Th>
                   <Th>Title</Th>
-                  <Th>Organization</Th>
                   <Th align="center">Scope</Th>
                   <Th align="center">Released</Th>
                   <Th align="right">Actions</Th>
@@ -378,16 +377,7 @@ export default function SettingsNoticesPage() {
                           <p className="text-xs text-gray-400 line-clamp-1 mt-0.5 leading-relaxed">{n.message}</p>
                         </div>
                       </Td>
-                      <Td>
-                        {n.entity_name ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
-                            <Building2 size={12} className="text-gray-500 shrink-0" />
-                            <span className="truncate max-w-[120px]">{n.entity_name}</span>
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-600">—</span>
-                        )}
-                      </Td>
+                     
                       <Td align="center">
                         {n.assign_to_all ? (
                           <span className="text-xs font-medium text-indigo-300 px-2.5 py-1 rounded bg-indigo-500/10 border border-indigo-500/20">All Auditors</span>
