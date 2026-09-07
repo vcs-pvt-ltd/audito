@@ -337,7 +337,7 @@ function PlanSelectionStep({
     {
       key: "Basic",
       name: "Basic",
-      price: "$99",
+      price: "$0",
       period: "/month",
       subtitle: "First month free, then $99/month",
       desc: "Perfect for trying out Audito",
@@ -410,12 +410,12 @@ function PlanSelectionStep({
     const finalAmount = listAmount - campaignDiscount;
     return {
       ...plan,
-      price: `$${finalAmount.toLocaleString()}`,
+      price: isBasic ? "$0" : `$${finalAmount.toLocaleString()}`,
       period: isBasic || !isYearly ? "/month" : "/year",
       originalPrice: campaign ? `$${listAmount.toLocaleString()}` : undefined,
       campaignLabel: campaign ? `${campaign.discount_type === "percentage" ? `${campaign.discount_value}% off` : `$${campaign.discount_value} off`} · ${campaign.name}` : undefined,
       campaignEndsAt: campaign?.ends_at,
-      subtitle: isBasic ? `First month free, then $${displayMonthly.toLocaleString()}/month` : isYearly && Number(config.yearly_discount_percent) > 0 ? `Save ${config.yearly_discount_percent}% yearly` : null,
+      subtitle: isBasic ? `$${displayMonthly.toLocaleString()}/mo from 2nd month` : isYearly && Number(config.yearly_discount_percent) > 0 ? `Save ${config.yearly_discount_percent}% yearly` : null,
       isActive: config.is_active,
     };
   });
@@ -1141,7 +1141,7 @@ function RegisterForm() {
       return `$${Number(plan?.monthly_price ?? fallback).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     };
     // Company hierarchy cards follow their plan prices, not independent entry prices.
-    labels.Factory = formatPlanPrice("Basic", 99);
+    labels.Factory = "1st month free";
     labels.Cluster = formatPlanPrice("Pro", 199);
     labels.Company = formatPlanPrice("Elite", 299);
     return labels;
