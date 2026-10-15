@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the folders the app shares files from: photos taken for evidence and generated reports. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path name="camera_captures" path="Pictures/" />
+    <cache-path name="reports" path="reports/" />
+</paths>

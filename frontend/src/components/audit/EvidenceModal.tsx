@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Camera, Mic, Play, Square, Upload, Video, X } from "lucide-react";
+import { MAX_EVIDENCE_MEDIA_BYTES, evidenceSizeProblem, optimizeEvidenceImage } from "@/utils/imageOptimizer";
+import { isNativeApp } from "@/lib/native/platform";
+import { useNativeBackHandler } from "@/lib/native/backButton";
 
-const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
-
-const MEDIA_ORIGIN = process.env.NEXT_PUBLIC_MEDIA_URL || (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/api\/?$/, "");
-const EVIDENCE_UPLOAD_URL = `${MEDIA_ORIGIN}/uploads`;
 
 function fmtFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -43,6 +42,7 @@ export default function EvidenceModal({
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [previewType, setPreviewType] = useState<"image" | "video" | "audio" | "">("");
   const [localErr, setLocalErr] = useState("");
+  const [processingImage, setProcessingImage] = useState(false);
 
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -81,6 +81,23 @@ export default function EvidenceModal({
     };
   }, [open, previewUrl, stopStream]);
 
+  // Android app: release the camera and microphone while the app is in the
+  // background (a recording in progress is stopped and kept), and start the
+  // chosen capture again when the auditor returns.
+  const [resumeKey, setResumeKey] = useState(0);
+  useEffect(() => {
+    if (!open || !isNativeApp()) return;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") stopStream();
+      else setResumeKey((key) => key + 1);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [open, stopStream]);
+
+  // Android app: back closes this dialog, except while an upload is running.
+  useNativeBackHandler(() => { if (!uploading) onClose(); return true; }, open);
+
   useEffect(() => {
     if (!open) return;
     setLocalErr("");
@@ -117,82 +134,7 @@ export default function EvidenceModal({
     };
 
     start();
-  }, [tab, open, stopStream, allowRichMedia]);
-
-  const processImage = async (file: File): Promise<File> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const targetRatio = 16 / 9;
-        let w = img.width;
-        let h = img.height;
-        let sx = 0;
-        let sy = 0;
-
-        if (w / h > targetRatio) {
-          // Wider than 16:9
-          const newW = h * targetRatio;
-          sx = (w - newW) / 2;
-          w = newW;
-        } else {
-          // Taller than 16:9
-          const newH = w / targetRatio;
-          sy = (h - newH) / 2;
-          h = newH;
-        }
-
-        const canvas = document.createElement("canvas");
-        // Don't make it TOO big if original was huge
-        const maxWidth = 1920;
-        let finalW = w;
-        let finalH = h;
-        if (finalW > maxWidth) {
-          finalW = maxWidth;
-          finalH = finalW / targetRatio;
-        }
-
-        canvas.width = finalW;
-        canvas.height = finalH;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = "high";
-          ctx.drawImage(img, sx, sy, w, h, 0, 0, finalW, finalH);
-        }
-
-        const attemptCompression = (quality: number) => {
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                if (blob.size > MAX_EVIDENCE_BYTES && quality > 0.1) {
-                  // If still too big, try lower quality
-                  attemptCompression(quality - 0.1);
-                } else if (blob.size > MAX_EVIDENCE_BYTES && finalW > 1024) {
-                   // If still too big after quality drop, scale down
-                   finalW = finalW * 0.8;
-                   finalH = finalW / targetRatio;
-                   canvas.width = finalW;
-                   canvas.height = finalH;
-                   ctx?.drawImage(img, sx, sy, w, h, 0, 0, finalW, finalH);
-                   attemptCompression(0.85);
-                } else {
-                  resolve(new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: "image/jpeg" }));
-                }
-              } else {
-                resolve(file); // Fallback
-              }
-            },
-            "image/jpeg",
-            quality
-          );
-        };
-
-        attemptCompression(0.85);
-      };
-      img.onerror = () => resolve(file);
-      img.src = URL.createObjectURL(file);
-    });
-  };
+  }, [tab, open, stopStream, allowRichMedia, resumeKey]);
 
   const pickFile = async (f?: File) => {
     setLocalErr("");
@@ -208,13 +150,20 @@ export default function EvidenceModal({
     
     let fileToUpload = f;
     if (f.type.startsWith("image/")) {
-      setLocalErr("Processing image...");
-      fileToUpload = await processImage(f);
-      setLocalErr("");
+      setProcessingImage(true);
+      try {
+        fileToUpload = (await optimizeEvidenceImage(f)).file;
+      } catch (imageError) {
+        setLocalErr(imageError instanceof Error ? imageError.message : "The image could not be processed.");
+        return;
+      } finally {
+        setProcessingImage(false);
+      }
     }
 
-    if (fileToUpload.size > MAX_EVIDENCE_BYTES) {
-      setLocalErr(`File size too large: ${fmtFileSize(fileToUpload.size)}. Max 2MB.`);
+    const sizeProblem = evidenceSizeProblem(fileToUpload);
+    if (sizeProblem) {
+      setLocalErr(sizeProblem);
       return;
     }
 
@@ -248,7 +197,16 @@ export default function EvidenceModal({
         return;
       }
       const rawFile = new File([blob], `capture-${Date.now()}.jpg`, { type: "image/jpeg" });
-      const processed = await processImage(rawFile);
+      setProcessingImage(true);
+      let processed: File;
+      try {
+        processed = (await optimizeEvidenceImage(rawFile)).file;
+      } catch (imageError) {
+        setLocalErr(imageError instanceof Error ? imageError.message : "The captured image could not be processed.");
+        return;
+      } finally {
+        setProcessingImage(false);
+      }
       
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(URL.createObjectURL(processed));
@@ -276,7 +234,7 @@ export default function EvidenceModal({
       rec.onstop = async () => {
         const mime = rec.mimeType || (tab === "audio" ? "audio/webm" : "video/webm");
         const blob = new Blob(chunksRef.current, { type: mime });
-        if (blob.size > MAX_EVIDENCE_BYTES) {
+        if (blob.size > MAX_EVIDENCE_MEDIA_BYTES) {
           setLocalErr(`Recording exceeds 2MB (${fmtFileSize(blob.size)}). Record a shorter clip.`);
           return;
         }
@@ -328,7 +286,7 @@ export default function EvidenceModal({
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
           <div>
             <h3 className="text-sm font-semibold text-white">{view ? "Evidence Preview" : "Add Evidence"}</h3>
-            <p className="text-[11px] text-gray-500">{view ? (view.title || "") : "Max file size 2MB"}</p>
+            <p className="text-[11px] text-gray-500">{view ? (view.title || "") : "Photos up to 5MB · video and audio up to 2MB"}</p>
           </div>
           <button
             type="button"
@@ -395,7 +353,7 @@ export default function EvidenceModal({
                   <button
                     type="button"
                     onClick={() => fileRef.current?.click()}
-                    disabled={uploading}
+                    disabled={uploading || processingImage}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white/[0.03] border border-white/10 text-gray-200 hover:bg-white/[0.05] hover:border-white/20 transition-all disabled:opacity-50"
                   >
                     <Upload size={16} />
@@ -419,7 +377,7 @@ export default function EvidenceModal({
                   <button
                     type="button"
                     onClick={capturePhoto}
-                    disabled={uploading}
+                    disabled={uploading || processingImage}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-secondary-500 text-primary-950 font-semibold hover:bg-secondary-400 transition-all disabled:opacity-50"
                   >
                     <Camera size={16} />
@@ -523,10 +481,10 @@ export default function EvidenceModal({
             </div>
           )}
 
-          {uploading && (
+          {(processingImage || uploading) && (
             <div className="flex items-center gap-2 text-xs text-secondary-400">
               <div className="w-3.5 h-3.5 border border-secondary-400 border-t-transparent rounded-full animate-spin" />
-              Uploading...
+              {processingImage ? "Optimizing image while preserving detail..." : "Uploading..."}
             </div>
           )}
 

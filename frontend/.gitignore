@@ -32,6 +32,25 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Audito Auditor Android app
+/android-web/
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/capacitor-cordova-android-plugins/build/
+/android/local.properties
+/android/.idea/
+/android/app/src/main/assets/public/
+/android/app/src/main/assets/capacitor.config.json
+/android/app/src/main/assets/capacitor.plugins.json
+/android/app/release/
+# release signing: keystores and passwords never go in the repository
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+/android/release-signing.properties
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

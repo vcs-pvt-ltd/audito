@@ -12,6 +12,7 @@
  */
 
 const OrganizationTreeModel = require('../models/OrganizationTreeModel');
+const SubscriptionModel = require('../models/SubscriptionModel');
 const LinkModel = require('../models/LinkModel');
 const { db } = require('../config/db');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
@@ -21,6 +22,11 @@ const {
   extractOrganizationUserTree,
 } = require('../utils/accessHelper');
 const { isCompanySupplierLink } = require('../utils/linkRules');
+const {
+  getAllowedChildrenMap,
+  getHierarchyPaths,
+  getReachableEntityTypes,
+} = require('../config/organizationHierarchy');
 
 
 // ─── Entity table config (type → table + code field) ─────────────
@@ -40,15 +46,24 @@ const ENTITY_TABLE_MAP = {
   'Audit Firm Department': { table: 'audit_firm_company_departments', codeField: 'afc_dept_code' }
 };
 
-const DEFAULT_HIERARCHIES = {
-  'Customer': ["Buying Office", "Supplier"],
-  'Company': ["Cluster", "Factory", "Unit", "Department", "Section"],
-  'Audit Firm': ["Branch", "Audit Firm Department"],
-};
-
 function normalizeAccountType(entityType, accountType) {
   if (entityType === 'Audit Firm Company' || entityType === 'Audit Firm') return 'Audit Firm';
   return accountType;
+}
+
+const COMPANY_LEVEL_TYPES = new Set(['Company', 'Cluster', 'Factory', 'Unit']);
+function companyLevelAfterAdd(descendants, parentEdgeId, childType) {
+  const byId = new Map(descendants.map((edge) => [String(edge.org_tree_id), edge]));
+  const parent = parentEdgeId == null ? null : byId.get(String(parentEdgeId));
+  const ancestorIds = parent ? String(parent.edge_path || '').split(',') : [];
+  const ancestors = ancestorIds.filter((id) => COMPANY_LEVEL_TYPES.has(byId.get(id)?.child_type)).length;
+  return 1 + ancestors + (COMPANY_LEVEL_TYPES.has(childType) ? 1 : 0);
+}
+
+async function packageLevelLimit(rootCode) {
+  if (await SubscriptionModel.getActivePlan(rootCode) !== 'Package') return null;
+  const limits = await SubscriptionModel.getActiveLimits(rootCode);
+  return Number(limits?.company_level || 1);
 }
 
 // ─── Entity table config (type → table + code field) ─────────────
@@ -148,18 +163,6 @@ async function ensureCompanySupplierLinkEdges(entityType, entityCode, createdBy)
   }
 }
 
-function getAllowedChildrenMap(accountType) {
-  const chain = DEFAULT_HIERARCHIES[accountType] || [];
-  const allowed = {};
-  if (accountType === 'Customer') allowed['Customer'] = chain.length > 0 ? [chain[0]] : [];
-  else if (accountType === 'Company') allowed['Company'] = chain.length > 0 ? [chain[0]] : [];
-  else if (accountType === 'Audit Firm') allowed['Audit Firm Company'] = chain.length > 0 ? [chain[0]] : [];
-  for (let i = 0; i < chain.length; i++) {
-    allowed[chain[i]] = i < chain.length - 1 ? [chain[i + 1]] : [];
-  }
-  return allowed;
-}
-
 // ─── GET TREE ─────────────────────────────────────────────────────
 
 const getTree = async (req, res) => {
@@ -180,7 +183,8 @@ const getTree = async (req, res) => {
     const allowedRootCodes = await getAccessibleEntityCodes(entityCode, entityType);
 
     const accType = normalizeAccountType(entityType, req.user.accountType);
-    const hierarchyChain = DEFAULT_HIERARCHIES[accType] || [];
+    const hierarchyChain = getReachableEntityTypes(accType, entityType);
+    const hierarchyPaths = getHierarchyPaths(accType, entityType);
     const allowedChildren = getAllowedChildrenMap(accType);
 
     // Get descendant edges visible in the context of our entity
@@ -254,7 +258,7 @@ const getTree = async (req, res) => {
       tree = extractOrganizationUserTree(tree, scope.orgTreeIds, scope.entityCodes);
     }
 
-    return successResponse(res, { tree, hierarchyChain, allowedChildren });
+    return successResponse(res, { tree, hierarchyChain, hierarchyPaths, allowedChildren });
 
   } catch (error) {
     console.error('Get tree error:', error);
@@ -312,6 +316,12 @@ const addNode = async (req, res) => {
     if (adminCode !== parent_code) {
       const parentEdge = descendants.find(d => d.child_code === parent_code);
       parent_edge_id = parentEdge ? parentEdge.org_tree_id : null;
+    }
+    if (accType === 'Company') {
+      const limit = await packageLevelLimit(adminCode);
+      if (limit && companyLevelAfterAdd(descendants, parent_edge_id, child_type) > limit) {
+        return errorResponse(res, `This package includes ${limit} company hierarchy level${limit === 1 ? '' : 's'}.`, 403);
+      }
     }
     // ─────────────────────────────────────────────────────────────────
 
@@ -522,6 +532,7 @@ const syncTree = async (req, res) => {
     const partnerCodes = await getLinkedPartnerCodes(adminType, adminCode);
     const allowedRootCodes = [adminCode, ...partnerCodes];
     const allowedChildrenMap = getAllowedChildrenMap(accType);
+    const levelLimit = accType === 'Company' ? await packageLevelLimit(adminCode) : null;
 
     // Process Removes first. Track any that are blocked by dependencies so the
     // client can be told instead of silently leaving the node in place.
@@ -546,6 +557,7 @@ const syncTree = async (req, res) => {
 
     // Process Adds — re-fetch descendants after each insert so chained
     // adds (parent added earlier in same batch) can resolve their parent_edge_id
+    let blockedLevelAdds = 0;
     for (const add of adds) {
       const { parent_code, child_type, child_code } = add;
       let { parent_edge_id = null } = add;
@@ -582,6 +594,11 @@ const syncTree = async (req, res) => {
         }
       }
 
+      if (levelLimit && companyLevelAfterAdd(descendants, parent_edge_id, child_type) > levelLimit) {
+        blockedLevelAdds += 1;
+        continue;
+      }
+
       const existing = await OrganizationTreeModel.findEdgeByParentEdgeAndChild(
         parent_edge_id,
         parent_code,
@@ -604,11 +621,11 @@ const syncTree = async (req, res) => {
       descendants = await OrganizationTreeModel.getTreeDescendants(adminCode, allowedRootCodes);
     }
 
-    if (blockedRemovals.length > 0) {
+    if (blockedRemovals.length > 0 || blockedLevelAdds > 0) {
       return successResponse(
         res,
-        { blockedRemovals },
-        `Saved, but ${blockedRemovals.length} entit${blockedRemovals.length === 1 ? 'y was' : 'ies were'} kept because they are in use by users, checklists or audits. Remove those dependencies first.`
+        { blockedRemovals, blockedLevelAdds },
+        `Saved with ${blockedRemovals.length} blocked removal(s) and ${blockedLevelAdds} addition(s) above the purchased company level limit.`
       );
     }
 

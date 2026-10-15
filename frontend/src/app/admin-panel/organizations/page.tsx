@@ -22,16 +22,27 @@ import {
   Td,
 } from "@/components/ui";
 
-function PlanBadge({ plan }: { plan: string }) {
-  const config: Record<string, string> = {
-    Basic: "bg-gray-500/10 border-gray-500/30 text-gray-400",
-    Pro: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400",
-    Elite: "bg-purple-500/10 border-purple-500/30 text-purple-400",
-    Custom: "bg-amber-500/10 border-amber-500/30 text-amber-400",
-  };
+const PACKAGE_LABEL: Record<string, string> = { Package: "Company package", Custom: "Quoted account" };
+
+function PackageBadge({ plan }: { plan: string }) {
+  const tone = plan === "Custom"
+    ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+    : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400";
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-semibold ${config[plan] || config.Basic}`}>
-      {plan}
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-semibold ${tone}`}>
+      {PACKAGE_LABEL[plan] || plan}
+    </span>
+  );
+}
+
+function StatusBadge({ active }: { active: boolean }) {
+  return active ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+      <CheckCircle2 size={10} /> Active
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold">
+      <Clock size={10} /> Payment pending
     </span>
   );
 }
@@ -44,7 +55,7 @@ export default function OrganizationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "inactive" | "paid">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "pending">("all");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -84,15 +95,15 @@ export default function OrganizationsPage() {
   }, [filter, search]);
 
   const filtered = orgs.filter((o) => {
-    if (filter === "active") return o.is_active;
-    if (filter === "inactive") return !o.is_active;
-    if (filter === "paid") return o.plan_name !== "Basic";
+    if (filter === "active" && !o.is_active) return false;
+    if (filter === "pending" && o.is_active) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       return (
         o.root_entity_code.toLowerCase().includes(q) ||
         (o.email && o.email.toLowerCase().includes(q)) ||
-        (o.first_name && `${o.first_name} ${o.last_name}`.toLowerCase().includes(q))
+        (o.first_name && `${o.first_name} ${o.last_name}`.toLowerCase().includes(q)) ||
+        (o.org_name && o.org_name.toLowerCase().includes(q))
       );
     }
     return true;
@@ -102,7 +113,6 @@ export default function OrganizationsPage() {
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const activeCount = orgs.filter((o) => o.is_active).length;
-  const paidCount = orgs.filter((o) => o.plan_name !== "Basic").length;
 
   if (isLoading || (!admin || admin.role !== "audito_admin")) return <Loading />;
 
@@ -140,7 +150,7 @@ export default function OrganizationsPage() {
           {([
             { key: "all" as const, label: "All", count: orgs.length },
             { key: "active" as const, label: "Active", count: activeCount },
-            { key: "paid" as const, label: "Paid Plans", count: paidCount },
+            { key: "pending" as const, label: "Payment pending", count: orgs.length - activeCount },
           ]).map((f) => (
             <button
               key={f.key}
@@ -183,8 +193,7 @@ export default function OrganizationsPage() {
               <Th>Admin</Th>
               <Th>Phone</Th>
               <Th>Country</Th>
-              <Th>Plan</Th>
-              <Th>Billing</Th>
+              <Th>Package</Th>
               <Th>Status</Th>
               <Th>Registered</Th>
             </THead>
@@ -202,7 +211,7 @@ export default function OrganizationsPage() {
                       )}
                     </div>
                   </Td>
-                                    <Td><span className="text-xs text-gray-400">{org.account_type || "-"}</span></Td>
+                                    <Td><span className="text-xs text-gray-400">{org.entity_type || "-"}</span></Td>
 
                   <Td>
                     <div>
@@ -216,21 +225,8 @@ export default function OrganizationsPage() {
                   </Td>
                   <Td><PhoneNumber phone={org.phone_number} country={org.country} className="text-xs text-gray-400" /></Td>
                   <Td><span className="text-xs text-gray-400">{org.country || "-"}</span></Td>
-                  <Td><PlanBadge plan={org.plan_name} /></Td>
-                  <Td>
-                    <span className="text-xs text-gray-400">{org.billing_cycle}</span>
-                  </Td>
-                  <Td>
-                    {org.is_active ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
-                        <CheckCircle2 size={10} /> Active
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
-                        <XCircle size={10} /> Inactive
-                      </span>
-                    )}
-                  </Td>
+                  <Td><PackageBadge plan={org.plan_name} /></Td>
+                  <Td><StatusBadge active={Boolean(org.is_active)} /></Td>
                   <Td>
                     <span className="text-xs text-gray-500">{new Date(org.created_at).toLocaleDateString()}</span>
                   </Td>
@@ -244,14 +240,14 @@ export default function OrganizationsPage() {
               <article key={org.root_entity_code} className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] shadow-lg shadow-black/10">
                 <div className="flex items-start justify-between gap-3 p-4">
                   <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary-400">{org.account_type || "Organization"}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary-400">{org.entity_type || "Organization"}</p>
                     <h2 className="mt-1 truncate text-sm font-semibold text-white">{org.org_name || org.entity_type || "Unnamed organization"}</h2>
                     <p className="mt-1 truncate text-xs text-gray-400">{org.first_name ? `${org.first_name} ${org.last_name || ""}` : "No admin assigned"}</p>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-2"><PlanBadge plan={org.plan_name} />{org.is_active ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400"><CheckCircle2 size={10} /> Active</span> : <span className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400"><XCircle size={10} /> Inactive</span>}</div>
+                  <div className="flex shrink-0 flex-col items-end gap-2"><PackageBadge plan={org.plan_name} /><StatusBadge active={Boolean(org.is_active)} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-px border-y border-white/[0.08] bg-white/[0.08] text-xs">
-                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Billing</p><p className="mt-1 truncate text-gray-200">{org.billing_cycle || "—"}</p></div>
+                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Activated</p><p className="mt-1 truncate text-gray-200">{org.activated_at ? new Date(org.activated_at).toLocaleDateString() : "—"}</p></div>
                   <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Registered</p><p className="mt-1 truncate text-gray-200">{new Date(org.created_at).toLocaleDateString()}</p></div>
                   <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Phone</p><p className="mt-1 truncate text-gray-200"><PhoneNumber phone={org.phone_number} country={org.country} emptyValue="-" /></p></div>
                   <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Country</p><p className="mt-1 truncate text-gray-200">{org.country || "-"}</p></div>

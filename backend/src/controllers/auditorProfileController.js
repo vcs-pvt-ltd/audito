@@ -24,7 +24,7 @@ const getProfile = async (req, res) => {
     const userCode = req.user.userCode;
 
     const [profiles] = await db.query(
-      `SELECT auditor_profiles.*, DATE_FORMAT(date_of_birth, '%Y-%m-%d') AS date_of_birth
+      `SELECT auditor_profiles.*, TO_CHAR(date_of_birth, 'YYYY-MM-DD') AS date_of_birth
        FROM auditor_profiles WHERE auditor_id = ? LIMIT 1`,
       [userCode]
     );
@@ -61,9 +61,11 @@ const updateProfile = async (req, res) => {
       'join_as'
     ];
 
+    // PostgreSQL rejects '' for date and numeric columns; an empty form field means "not set".
+    const nullableTyped = new Set(['date_of_birth', 'latitude', 'longitude']);
     const allowedUpdates = {};
     for (const f of fields) {
-      if (data[f] !== undefined) allowedUpdates[f] = data[f];
+      if (data[f] !== undefined) allowedUpdates[f] = nullableTyped.has(f) && String(data[f]).trim() === '' ? null : data[f];
     }
     if (data.profile_picture) allowedUpdates.profile_picture = data.profile_picture;
     if (data.signature_path) allowedUpdates.signature_path = data.signature_path;
@@ -88,7 +90,7 @@ allowedUpdates.auditor_id = userCode;
 
     // Refresh and send updated profile
     const [updated] = await db.query(
-      `SELECT auditor_profiles.*, DATE_FORMAT(date_of_birth, '%Y-%m-%d') AS date_of_birth
+      `SELECT auditor_profiles.*, TO_CHAR(date_of_birth, 'YYYY-MM-DD') AS date_of_birth
        FROM auditor_profiles WHERE auditor_id = ? LIMIT 1`,
       [userCode]
     );

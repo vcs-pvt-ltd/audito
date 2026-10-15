@@ -43,14 +43,10 @@ const {
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
 const { getAccessibleEntityCodes } = require('../utils/accessHelper');
 const LimitsEnforcer = require('../utils/limitsEnforcer');
+const SubscriptionModel = require('../models/SubscriptionModel');
 const { findDuplicateName } = require('../utils/nameNormalizer');
-
-// Sub-entity types allowed per account type
-const ALLOWED_TYPES = {
-  'Customer': ['Buying Office', 'Supplier'],
-  'Company': ['Cluster', 'Factory', 'Unit', 'Department', 'Section'],
-  'Audit Firm': ['Branch', 'Audit Firm Department']
-};
+const { getReachableEntityTypes } = require('../config/organizationHierarchy');
+const { minimumLevelsForChild } = require('../config/packageHierarchy');
 
 // URL entity-type param → { table, codeField } for merge queries
 const ENTITY_TYPE_TABLE_MAP = {
@@ -156,7 +152,7 @@ const createSubEntity = async (req, res) => {
     const accountType = req.user.accountType === 'Audit Firm Company' ? 'Audit Firm' : req.user.accountType;
     const adminCode = req.user.entityCode;
 
-    const allowed = ALLOWED_TYPES[accountType] || [];
+    const allowed = getReachableEntityTypes(accountType, req.user.entityType);
 
     if (!allowed.includes(entity_type)) {
       return errorResponse(
@@ -164,6 +160,14 @@ const createSubEntity = async (req, res) => {
         `"${entity_type}" is not valid for account type "${accountType}".`,
         400
       );
+    }
+
+    if (accountType === 'Company' && await SubscriptionModel.getActivePlan(adminCode) === 'Package') {
+      const limits = await SubscriptionModel.getActiveLimits(adminCode);
+      const minimumLevel = minimumLevelsForChild(req.user.entityType, entity_type);
+      if (minimumLevel && Number(limits?.company_level || 1) < minimumLevel) {
+        return errorResponse(res, `This package includes ${limits?.company_level || 1} company hierarchy level(s).`, 403);
+      }
     }
 
     // --- Subscription Plan Limits Verification ---

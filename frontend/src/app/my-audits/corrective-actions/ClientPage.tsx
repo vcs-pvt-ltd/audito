@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditExecutionApi, capApi } from "@/lib/api";
+import { responseText } from "@/lib/responseText";
 import { Button, IconButton, Modal, Input } from "@/components/ui";
 import {
   AlertCircle,
@@ -63,6 +64,8 @@ interface CapRequiredItem {
   question_id: string;
   answer_text: string | null;
   selected_option_ids: string | null;
+  /** Labels of the chosen answers, for choice questions. */
+  selected_option_texts?: string[];
   marks_obtained: string | number | null;
   remarks: string | null;
   cap_required: number;
@@ -269,7 +272,7 @@ function EntityNode({
                       {(it.answer_text || it.selected_option_ids) && (
                         <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
                           <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-600">Auditor Response</p>
-                          <p className="text-xs text-gray-400">{it.answer_text || "Response recorded"}</p>
+                          <p className="text-xs text-gray-300">{responseText(it) || "Response recorded"}</p>
                         </div>
                       )}
 

@@ -111,7 +111,7 @@ function flattenTree(
 ): { code: string; name: string; entity_type: string; edge_id: string; depth: number; uniqueKey: string }[] {
   if (!node) return list;
   const code = node.code || node.comp_code || node.cust_code || node.afc_code || "";
-  const name = node.name || code;
+  const name = node.name || "Unnamed entity";
   const entityType = node.entity_type || "";
   const edgeId = String(node.edge_id ?? node.id ?? "");
   const uniqueKey = parentPath ? `${parentPath}/${code}-${edgeId}` : `${code}-${edgeId}`;
@@ -197,7 +197,7 @@ function PerformanceChart({ data, isFullScreen, isLoading }: { data: ChartItem[]
   }
 
   const chartData = data.map(item => ({
-    name: item.entity_name || item.entity_code,
+    name: item.entity_name || "Unnamed entity",
     completed: item.score_pct || 0,
     remaining: 100 - (item.score_pct || 0),
   }));

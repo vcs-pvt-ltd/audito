@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   UserCircle2,
   Puzzle,
+  ScanSearch,
 } from "lucide-react";
 
 type NavItem = {
@@ -25,6 +26,7 @@ function getNavItems(role: string): NavItem[] {
       { label: "Home", path: "/dashboard", icon: LayoutDashboard },
       { label: "Audits", path: "/my-audits", icon: FileCheck, matchPrefix: true },
       { label: "CAPs", path: "/my-caps", icon: ClipboardCheck, matchPrefix: true },
+      { label: "Scan", path: "/ai-site-scan", icon: ScanSearch, matchPrefix: true },
       { label: "Profile", path: "/profile", icon: UserCircle2 },
     ];
   }
@@ -51,8 +53,8 @@ function getNavItems(role: string): NavItem[] {
     return [
       { label: "Dashboard", path: "/admin-panel/dashboard", icon: LayoutDashboard },
       { label: "Messages", path: "/admin-panel/messages", icon: Mail, matchPrefix: true },
-      { label: "Promos", path: "/admin-panel/promo-codes", icon: ClipboardCheck, matchPrefix: true },
-      { label: "Custom", path: "/admin-panel/custom-solutions", icon: Puzzle, matchPrefix: true },
+      { label: "Pricing", path: "/admin-panel/plans", icon: ClipboardCheck, matchPrefix: true },
+      { label: "Reviews", path: "/admin-panel/contact-reviews", icon: Puzzle, matchPrefix: true },
       { label: "Profile", path: "/profile", icon: UserCircle2 },
     ];
   }

@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
-import { auditApi, checklistApi, orgTreeApi, usersApi } from "@/lib/api";
-import { ArrowLeft, ClipboardCheck, Building2, Users, DollarSign, Calendar, ChevronDown, ChevronRight, CheckSquare, Square, AlertCircle, FileText } from "lucide-react";
+import { auditApi, checklistApi, orgTreeApi, tokenApi, usersApi, type TokenReloadPackage, type TokenWallet } from "@/lib/api";
+import { ArrowLeft, ClipboardCheck, Building2, Users, DollarSign, Calendar, ChevronDown, ChevronRight, CheckSquare, Square, AlertCircle, FileText, Coins } from "lucide-react";
 import { Button, IconButton, Input, Textarea, fieldClass } from "@/components/ui";
 
 const ENTITY_TYPE_COLORS: Record<string, string> = {
@@ -80,6 +80,13 @@ export default function AssignAuditPage() {
   const [sendAssignmentEmail, setSendAssignmentEmail] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [tokenQuote, setTokenQuote] = useState<{ required_tokens: number; available_tokens: number; shortage_tokens: number; can_assign: boolean } | null>(null);
+  const [tokenWallet, setTokenWallet] = useState<TokenWallet | null>(null);
+  const [quotingTokens, setQuotingTokens] = useState(false);
+  const [showReloadPackages, setShowReloadPackages] = useState(false);
+  const [reloadPackages, setReloadPackages] = useState<TokenReloadPackage[]>([]);
+  const [loadingPackages, setLoadingPackages] = useState(false);
+  const [checkoutPackageId, setCheckoutPackageId] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { if (!isLoading && !admin) router.push("/login"); }, [isLoading, admin, router]);
@@ -100,12 +107,14 @@ export default function AssignAuditPage() {
         setDataError(treeRes.message || "Failed to load organization tree.");
       }
 
-      const [clRes, entRes, auditorRes, firmRes] = await Promise.all([
+      const [clRes, entRes, auditorRes, firmRes, walletRes] = await Promise.all([
         checklistApi.get(accessToken, checklistId),
         auditApi.getChecklistEntities(accessToken, checklistId),
         usersApi.list(accessToken, "Auditor"),
         orgTreeApi.listEntities(accessToken, "Audit Firm Company"),
+        tokenApi.wallet(accessToken),
       ]);
+      if (walletRes.success && walletRes.data) setTokenWallet(walletRes.data.wallet);
       if (auditorRes.success && auditorRes.data) {
         const verifiedAuditors = ((auditorRes.data as any).users || [])
           .filter((auditor: AuditorUser) => auditor.email_verified === true || auditor.email_verified === 1);
@@ -152,6 +161,27 @@ export default function AssignAuditPage() {
     const n = new Set(prev); keys.forEach(k => select ? n.add(k) : n.delete(k)); return n;
   });
 
+  useEffect(() => {
+    if (!accessToken || !checklist || !startDate || selectedKeys.size === 0) {
+      setTokenQuote(null);
+      return;
+    }
+    const selectedEntities = entities.filter(e => selectedKeys.has(getEntKey(e))).map(e => ({
+      entity_code: e.entity_code, entity_type: e.entity_type, entity_name: e.entity_name, org_tree_id: e.org_tree_id,
+    }));
+    const timer = window.setTimeout(async () => {
+      setQuotingTokens(true);
+      const result = await auditApi.quote(accessToken, {
+        checklist_id: checklist.checklist_id,
+        start_date: startDate,
+        entities: selectedEntities,
+      });
+      setTokenQuote(result.success && result.data ? result.data.quote : null);
+      setQuotingTokens(false);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [accessToken, checklist, entities, selectedKeys, startDate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!accessToken || !checklist) return;
@@ -162,6 +192,10 @@ export default function AssignAuditPage() {
     if (!startDate || !endDate) { setSubmitError("Start date and end date are required."); return; }
     if (!budget || parseFloat(budget) <= 0) { setSubmitError("Budget must be greater than 0."); return; }
     if (!numWorkers || parseInt(numWorkers) <= 0) { setSubmitError("Number of workers must be greater than 0."); return; }
+    if (tokenQuote && !tokenQuote.can_assign) {
+      setSubmitError(`You need ${tokenQuote.shortage_tokens} more tokens before assigning this audit.`);
+      return;
+    }
 
     setSubmitting(true); setSubmitError("");
     const res = await auditApi.create(accessToken, {
@@ -177,6 +211,30 @@ export default function AssignAuditPage() {
     });
     if (res.success) { toast("Audit assignment created successfully.", "success"); router.push("/audits"); }
     else { const msg = res.message || "Failed to create audit assignment."; setSubmitError(msg); toast(msg, "error"); setSubmitting(false); }
+  };
+
+  const revealReloadPackages = async () => {
+    if (!accessToken) return;
+    if (showReloadPackages) { setShowReloadPackages(false); return; }
+    setShowReloadPackages(true);
+    if (reloadPackages.length > 0) return;
+    setLoadingPackages(true);
+    const result = await tokenApi.packages(accessToken);
+    if (result.success && result.data) setReloadPackages(result.data.packages);
+    else toast(result.message || "Unable to load token packages.", "error");
+    setLoadingPackages(false);
+  };
+
+  const checkoutTokens = async (reloadPackage: TokenReloadPackage) => {
+    if (!accessToken) return;
+    setCheckoutPackageId(reloadPackage.token_reload_package_id);
+    const result = await tokenApi.checkout(accessToken, reloadPackage.token_reload_package_id);
+    if (result.success && result.data?.payment.payment_code) {
+      router.push(`/payment?code=${encodeURIComponent(result.data.payment.payment_code)}`);
+      return;
+    }
+    toast(result.message || "Unable to create token reload checkout.", "error");
+    setCheckoutPackageId(null);
   };
 
   if (!mounted || isLoading) return (
@@ -399,12 +457,18 @@ export default function AssignAuditPage() {
                             const key = getEntKey(e); const checked = selectedKeys.has(key);
                             const cc = ENTITY_TYPE_COLORS[e.entity_type] || "bg-gray-500/20 text-gray-300 border-gray-500/30";
                             return (
-                              <label key={key} className={`flex items-center gap-3 px-3.5 py-3 rounded-xl cursor-pointer transition-all border ${checked ? "bg-amber-500/5 border-amber-500/20" : "border-transparent bg-white/[0.01] hover:bg-white/[0.03]"}`}>
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => toggleEntity(key)}
+                                aria-pressed={checked}
+                                className={`flex w-full items-center gap-3 px-3.5 py-3 rounded-xl cursor-pointer text-left transition-all border ${checked ? "bg-amber-500/5 border-amber-500/20" : "border-transparent bg-white/[0.01] hover:bg-white/[0.03]"}`}
+                              >
                                 {checked ? <CheckSquare size={15} className="text-amber-400 shrink-0" /> : <Square size={15} className="text-gray-600 shrink-0" />}
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${cc}`}>{e.entity_type}</span>
                                 <span className="flex-1 text-sm text-white truncate">{e.entity_name}</span>
                                 <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">{e.question_count}Q</span>
-                              </label>
+                              </button>
                             );
                           })}
                         </div>
@@ -417,6 +481,30 @@ export default function AssignAuditPage() {
 
             {/* ── Buttons OUTSIDE the grid — always last on mobile AND desktop ── */}
             <div className="space-y-3 pb-8">
+              <div className={`flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between ${tokenQuote && !tokenQuote.can_assign ? "border-red-500/25 bg-red-500/[.06]" : "border-amber-500/20 bg-amber-500/[.05]"}`}>
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-amber-500/10 p-2 text-amber-400"><Coins size={18} /></div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Audit token reservation</p>
+                    <p className="mt-0.5 text-xs text-gray-400">
+                      {quotingTokens ? "Calculating exact question instances…" : tokenQuote
+                        ? `${tokenQuote.required_tokens} required · ${tokenQuote.available_tokens} available · tokens are on hold until the audit starts`
+                        : tokenWallet ? `${Number(tokenWallet.available_tokens || 0).toLocaleString()} tokens available${(tokenWallet.wallet_members?.length || 0) > 1 ? " in your linked token pool" : ""}. Select entities and a start date for the exact requirement.` : "Select entities and a start date to calculate the token requirement."}
+                    </p>
+                  </div>
+                </div>
+                {tokenQuote && !tokenQuote.can_assign && (
+                  <Button type="button" variant="secondary" onClick={() => void revealReloadPackages()}>{showReloadPackages ? "Hide packages" : "Reload tokens"}</Button>
+                )}
+              </div>
+              {tokenQuote && !tokenQuote.can_assign && showReloadPackages && (
+                <div className="rounded-xl border border-white/10 bg-white/[.025] p-4">
+                  <div className="mb-3"><p className="text-sm font-semibold text-white">Available token packages</p><p className="mt-0.5 text-xs text-gray-500">Select a package to continue to payment. Return here after payment to refresh the reservation quote.</p></div>
+                  {loadingPackages ? <div className="py-6 text-center text-xs text-gray-400">Loading token packages…</div> : reloadPackages.length ? (
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{reloadPackages.map((item) => <div key={item.token_reload_package_id} className="rounded-xl border border-white/[.08] bg-black/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold text-gray-300">{item.display_name}</p><p className="mt-1 text-lg font-bold text-white">{Number(item.token_quantity).toLocaleString()} tokens</p>{Number(item.bonus_token_quantity) > 0 && <p className="text-[11px] text-emerald-300">+ {Number(item.bonus_token_quantity).toLocaleString()} bonus</p>}</div><p className="text-sm font-bold text-amber-300">{new Intl.NumberFormat("en-US", { style: "currency", currency: item.currency || "USD" }).format(Number(item.amount || 0))}</p></div><Button type="button" fullWidth size="sm" className="mt-3" loading={checkoutPackageId === item.token_reload_package_id} onClick={() => void checkoutTokens(item)}>Select package</Button></div>)}</div>
+                  ) : <div className="rounded-lg border border-dashed border-white/10 py-6 text-center text-xs text-gray-500">No reload packages are available for your plan.</div>}
+                </div>
+              )}
               {submitError && (
                 <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
                   <AlertCircle size={16} className="shrink-0" />
@@ -427,6 +515,7 @@ export default function AssignAuditPage() {
                 <Button
                   type="submit"
                   loading={submitting}
+                  disabled={quotingTokens || Boolean(tokenQuote && !tokenQuote.can_assign)}
                   leftIcon={<ClipboardCheck size={16} />}
                   className="px-6 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black shadow-[0_4px_20px_rgba(251,191,36,0.2)]"
                 >

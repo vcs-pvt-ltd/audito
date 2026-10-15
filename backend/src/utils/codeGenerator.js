@@ -59,11 +59,19 @@ const generateAdminUserCode = async () => {
 /**
  * Generic [table]_id generator: prefix + zero-padded digits (e.g. ADM0001).
  */
+const canonicalTableIdPattern = (prefix, padLen) => {
+  if (!/^[A-Za-z0-9]+$/.test(prefix)) throw new Error('Table ID prefix must be alphanumeric.');
+  return `^${prefix}[0-9]{${padLen},${padLen + 6}}$`;
+};
+
 const generateTableId = async (table, idField, prefix, padLen = 4, executor = db) => {
   const [rows] = await executor.query(
-    `SELECT MAX(CAST(SUBSTRING(\`${idField}\`, ${prefix.length + 1}) AS UNSIGNED)) AS max_num FROM \`${table}\``
+    `SELECT MAX(CAST(SUBSTRING(\`${idField}\`, ${prefix.length + 1}) AS UNSIGNED)) AS max_num
+       FROM \`${table}\`
+      WHERE \`${idField}\` REGEXP ?`,
+    [canonicalTableIdPattern(prefix, padLen)]
   );
-  const next = (rows[0].max_num || 0) + 1;
+  const next = BigInt(String(rows[0].max_num || 0)) + 1n;
   return `${prefix}${String(next).padStart(padLen, '0')}`;
 };
 
@@ -72,10 +80,18 @@ const generateTableId = async (table, idField, prefix, padLen = 4, executor = db
 const generateAdminId = () => generateTableId('admins', 'admin_id', 'ADM', 4);
 const generateAuditorId = () => generateTableId('auditors', 'auditor_id', 'AUD', 4);
 const generateOrganizationUserId = () => generateTableId('organization_users', 'organization_user_id', 'EHD', 4);
-const generateAuditId = () => generateTableId('audit_assignments', 'audit_id', 'AUDT', 4);
+// A deleted audit keeps its token reservation (token history), so the next ID
+// must also be past every ID a reservation still refers to.
+const generateAuditId = async () => {
+  const ids = await Promise.all([
+    generateTableId('audit_assignments', 'audit_id', 'AUDT', 4),
+    generateTableId('token_reservations', 'audit_id', 'AUDT', 4),
+  ]);
+  return ids.reduce((max, id) => (BigInt(id.slice(4)) > BigInt(max.slice(4)) ? id : max));
+};
 const generateCapId = () => generateTableId('caps', 'cap_id', 'CAP', 4);
 const generateChecklistTypeId = () => generateTableId('checklist_types', 'checklist_type_id', 'CHKLT', 4);
-const generateChecklistId = () => generateTableId('checklists', 'checklist_id', 'CHKL', 4);
+const generateChecklistId = (executor = db) => generateTableId('checklists', 'checklist_id', 'CHKL', 4, executor);
 const generateChecklistQuestionId = (executor = db) => generateTableId('checklist_questions', 'checklist_question_id', 'CHKQ', 4, executor);
 const generateChecklistQuestionOptionId = (executor = db) => generateTableId('checklist_question_options', 'checklist_question_option_id', 'CHKQO', 5, executor);
 const generateCorrectiveActionId = () => generateTableId('corrective_actions', 'corrective_action_id', 'CA', 4);
@@ -107,15 +123,20 @@ const generateCapResponseEvidenceId = () => generateTableId('cap_response_eviden
  * in a loop before the insert returns the SAME id every time, since the
  * table hasn't actually been updated yet.
  */
-const generateBatchIds = async (table, idField, prefix, count, padLen = 4) => {
-  const [rows] = await db.query(
-    `SELECT MAX(CAST(SUBSTRING(\`${idField}\`, ${prefix.length + 1}) AS UNSIGNED)) AS max_num FROM \`${table}\``
+const generateBatchIds = async (table, idField, prefix, count, padLen = 4, executor = db) => {
+  if (!Number.isInteger(count) || count < 0) throw new Error('Batch ID count must be a non-negative integer.');
+  if (count === 0) return [];
+  const [rows] = await executor.query(
+    `SELECT MAX(CAST(SUBSTRING(\`${idField}\`, ${prefix.length + 1}) AS UNSIGNED)) AS max_num
+       FROM \`${table}\`
+      WHERE \`${idField}\` REGEXP ?`,
+    [canonicalTableIdPattern(prefix, padLen)]
   );
-  let next = (rows[0].max_num || 0) + 1;
+  let next = BigInt(String(rows[0].max_num || 0)) + 1n;
   const ids = [];
   for (let i = 0; i < count; i++) {
     ids.push(`${prefix}${String(next).padStart(padLen, '0')}`);
-    next++;
+    next += 1n;
   }
   return ids;
 };
@@ -131,9 +152,6 @@ const generateCapEntityProgressIds = (count) => generateBatchIds('cap_entity_pro
 const generateAiChecklistSuggestionIds = (count) => generateBatchIds('ai_checklist_question_suggestions', 'ai_checklist_suggestion_id', 'AICS', count, 5);
 const generateCapResponseId = () => generateTableId('cap_responses', 'cap_response_id', 'CRES', 4);
 const generateOrganizationLinkId = () => generateTableId('organization_links', 'organization_link_id', 'OLNK', 5);
-const generateLinkBillingCreditId = () => generateTableId('link_billing_credits', 'link_billing_credit_id', 'LBC', 5);
-const generateLinkCreditApplicationId = () => generateTableId('link_credit_applications', 'link_credit_application_id', 'LCA', 5);
-const generateCustomSolutionRequestId = () => generateTableId('custom_solution_requests', 'request_id', 'CSR', 6);
 const generatePaymentGatewayEventId = () => generateTableId('payment_gateway_events', 'payment_gateway_event_id', 'PGE', 6);
 const generatePaymentMethodId = () => generateTableId('payment_methods', 'payment_method_id', 'PM', 6);
 const generateNotificationId = () => generateTableId('user_notifications', 'notification_id', 'NOTI', 5);
@@ -141,11 +159,23 @@ const generateAiChecklistJobId = () => generateTableId('ai_checklist_generation_
 const generateAiChecklistSuggestionId = () => generateTableId('ai_checklist_question_suggestions', 'ai_checklist_suggestion_id', 'AICS', 5);
 const generatePrivacyPolicyId = () => generateTableId('privacy_policies', 'privacy_policy_id', 'PPOL', 5);
 const generatePrivacyPolicyAgreementId = () => generateTableId('privacy_policy_agreements', 'privacy_policy_agreement_id', 'PPAG', 6);
-const generateAiKnowledgeSettingId = () => generateTableId('ai_knowledge_settings', 'ai_knowledge_setting_id', 'AIKS', 5);
 const generateAuditorRatingId = () => generateTableId('auditor_audit_ratings', 'auditor_rating_id', 'ARAT', 5);
+const generateTokenWalletId = (executor = db) => generateTableId('token_wallets', 'token_wallet_id', 'TWAL', 6, executor);
+const generateTokenLotId = (executor = db) => generateTableId('token_lots', 'token_lot_id', 'TLOT', 6, executor);
+const generateTokenReservationId = (executor = db) => generateTableId('token_reservations', 'token_reservation_id', 'TRES', 6, executor);
+const generateTokenLedgerEntryId = (executor = db) => generateTableId('token_ledger_entries', 'token_ledger_entry_id', 'TLED', 7, executor);
+const generatePaymentFulfillmentId = (executor = db) => generateTableId('payment_fulfillments', 'payment_fulfillment_id', 'PFUL', 6, executor);
+const generateTokenReloadPackageId = (executor = db) => generateTableId('token_reload_packages', 'token_reload_package_id', 'TRPK', 6, executor);
+const generateTokenReservationAllocationIds = (count, executor = db) => generateBatchIds(
+  'token_reservation_allocations', 'token_reservation_allocation_id', 'TRAL', count, 6, executor
+);
+const generateAuditQuestionInstanceIds = (count, executor = db) => generateBatchIds(
+  'audit_question_instances', 'audit_question_instance_id', 'AQI', count, 7, executor
+);
 
 module.exports = {
   generateTableId,
+  generateBatchIds,
   generateCustCode,
   generateCboCode,
   generateSupplierCode,
@@ -201,9 +231,6 @@ module.exports = {
   generatePasswordResetOtpId,
   generateCapResponseEvidenceId,
   generateOrganizationLinkId,
-  generateLinkBillingCreditId,
-  generateLinkCreditApplicationId,
-  generateCustomSolutionRequestId,
   generatePaymentGatewayEventId,
   generatePaymentMethodId,
   generateNotificationId,
@@ -212,6 +239,13 @@ module.exports = {
   generateAiChecklistSuggestionIds,
   generatePrivacyPolicyId,
   generatePrivacyPolicyAgreementId,
-  generateAiKnowledgeSettingId,
   generateAuditorRatingId,
+  generateTokenWalletId,
+  generateTokenLotId,
+  generateTokenReservationId,
+  generateTokenLedgerEntryId,
+  generatePaymentFulfillmentId,
+  generateTokenReloadPackageId,
+  generateTokenReservationAllocationIds,
+  generateAuditQuestionInstanceIds,
 };

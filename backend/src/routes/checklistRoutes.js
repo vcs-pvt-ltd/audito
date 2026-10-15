@@ -8,6 +8,7 @@ const express  = require('express');
 const router   = express.Router();
 const multer   = require('multer');
 const { authenticate } = require('../middleware/auth');
+const { isSupportedAiDocument } = require('../utils/aiDocumentFiles');
 const {
   createChecklistType,
   listChecklistTypes,
@@ -27,6 +28,7 @@ const {
   uploadQuestionsExcel,
   previewQuestionsExcel,
   generateAiChecklistQuestions,
+  finalizeAiChecklistSuggestions,
 } = require('../controllers/checklistController');
 
 // Multer: store uploads in memory
@@ -76,16 +78,20 @@ const aiDocumentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 }, // 2 MB
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      'application/pdf', 'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain', 'text/markdown',
-    ];
-    const allowedExtension = /\.(pdf|doc|docx|txt|md)$/i.test(file.originalname || '');
-    if (allowedTypes.includes(file.mimetype) || allowedExtension) cb(null, true);
-    else cb(new Error('Only PDF, Word, text, and Markdown files are allowed for AI question generation.'));
+    if (isSupportedAiDocument(file)) cb(null, true);
+    else cb(new Error('Upload a PDF, Word, text, CSV, or supported Excel file.'));
   },
 });
+
+const receiveAiDocument = (req, res, next) => {
+  aiDocumentUpload.single('source_document')(req, res, (error) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ success: false, message: 'The reference document must be 2 MB or smaller.' });
+    }
+    return res.status(400).json({ success: false, message: error.message || 'The reference document could not be uploaded.' });
+  });
+};
 
 router.use(authenticate);
 
@@ -103,7 +109,8 @@ router.get('/excel-template', downloadExcelTemplate);
 
 // ── Excel preview (no DB writes) ──────────────────────────────────
 router.post('/questions/preview-upload', upload.single('questions_file'), previewQuestionsExcel);
-router.post('/ai/generate-questions', aiDocumentUpload.single('source_document'), generateAiChecklistQuestions);
+router.post('/ai/generate-questions', receiveAiDocument, generateAiChecklistQuestions);
+router.put('/ai/jobs/:jobId/suggestions', finalizeAiChecklistSuggestions);
 
 // ── Questions (standalone routes — must come before /:id) ────────
 router.put   ('/questions/:qid', updateQuestion);

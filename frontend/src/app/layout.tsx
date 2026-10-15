@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { AuthProvider } from "@/context/AuthContext";
 import { UiFeedbackProvider } from "@/context/UiFeedbackContext";
 import AppLayout from "@/components/layout/AppLayout";
+import NativeAppShell from "@/components/native/NativeAppShell";
 import "./globals.css";
 
 const inter = Inter({
@@ -33,7 +34,10 @@ export default function RootLayout({
       <body className="app-background font-sans">
         <AuthProvider>
           <UiFeedbackProvider>
-            <AppLayout>{children}</AppLayout>
+            {/* Android app rules (auditor screens only, back button); unchanged on the website. */}
+            <NativeAppShell>
+              <AppLayout>{children}</AppLayout>
+            </NativeAppShell>
           </UiFeedbackProvider>
         </AuthProvider>
       </body>

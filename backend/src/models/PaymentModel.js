@@ -1,9 +1,8 @@
 /**
  * PaymentModel
  *
- * Persists billing transactions for registration, plan upgrades and renewals.
- * Each row is the legal/professional record of a payment: payer, plan, period,
- * amount, currency, status and (once paid) an invoice number.
+ * Persists permanent plan activation, upgrade, and token-reload transactions.
+ * Historical recurring-purpose rows remain readable after migration.
  */
 
 const { db } = require('../config/db');
@@ -32,6 +31,26 @@ async function genPaymentTransactionId() {
   return id;
 }
 
+async function generateInvoiceNumber(executor = db) {
+  const [dateRows] = await executor.query("SELECT TO_CHAR(CURRENT_DATE, 'YYYYMMDD') AS date_code");
+  const dateCode = dateRows[0]?.date_code;
+  if (!dateCode) throw new Error('Unable to determine the invoice date.');
+
+  const prefix = `INV-${dateCode}-`;
+  const [rows] = await executor.query(
+    `SELECT invoice_number
+       FROM payment_transactions
+      WHERE invoice_number >= ?
+        AND invoice_number < ?
+      ORDER BY invoice_number DESC
+      LIMIT 1
+      FOR UPDATE`,
+    [prefix, `${prefix}\uffff`]
+  );
+  const previousSequence = Number(rows[0]?.invoice_number?.slice(prefix.length) || 0);
+  return `${prefix}${String(previousSequence + 1).padStart(4, '0')}`;
+}
+
 const PaymentModel = {
   async create({
     rootEntityCode,
@@ -46,16 +65,30 @@ const PaymentModel = {
     promotionCampaignId = null,
     listAmount = null,
     promotionDiscountAmount = 0,
-  }) {
+    tokenQuantity = 0,
+    bonusTokenQuantity = 0,
+    tokenUnitPrice = null,
+    pricingSnapshot = null,
+  }, executor = db) {
     const code = genPaymentCode();
     const payment_transaction_id = await genPaymentTransactionId();
-    await db.query(
+    await executor.query(
       `INSERT INTO payment_transactions
-        (payment_transaction_id, payment_code, root_entity_code, purpose, plan_name, billing_cycle, amount, currency, status, payer_name, payer_email, org_name, promotion_campaign_id, list_amount, promotion_discount_amount)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
-      [payment_transaction_id, code, rootEntityCode, purpose, planName, billingCycle, amount, currency, payerName, payerEmail, orgName,
-        promotionCampaignId, listAmount ?? amount, promotionDiscountAmount]
+        (payment_transaction_id, payment_code, root_entity_code, purpose, plan_name, billing_cycle,
+         amount, token_quantity, bonus_token_quantity, token_unit_price, pricing_snapshot,
+         currency, status, payer_name, payer_email, org_name, promotion_campaign_id,
+         list_amount, promotion_discount_amount)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+      [payment_transaction_id, code, rootEntityCode, purpose, planName, billingCycle,
+        amount, tokenQuantity, bonusTokenQuantity, tokenUnitPrice,
+        pricingSnapshot ? JSON.stringify(pricingSnapshot) : null, currency,
+        payerName, payerEmail, orgName, promotionCampaignId,
+        listAmount ?? amount, promotionDiscountAmount]
     );
+    if (executor !== db) {
+      const [rows] = await executor.query('SELECT * FROM payment_transactions WHERE payment_code = ? LIMIT 1', [code]);
+      return rows[0] || null;
+    }
     return this.findByCode(code);
   },
 
@@ -93,15 +126,14 @@ const PaymentModel = {
     gateway = 'manual',
     gatewayReference = null,
     manualApprovalReviewedBy = null,
-  }) {
-    const year = new Date().getFullYear();
-    const invoiceNumber = `INV-${year}-${String(payment_transaction_id).padStart(6, '0')}`;
-    await db.query(
+  }, executor = db) {
+    const invoiceNumber = await generateInvoiceNumber(executor);
+    await executor.query(
       `UPDATE payment_transactions
        SET status = 'paid', invoice_number = ?, gateway = ?, gateway_reference = ?, gateway_status = 'paid',
            period_start = ?, period_end = ?, paid_at = NOW(),
-           manual_approval_status = CASE WHEN ? IS NOT NULL THEN 'approved' ELSE manual_approval_status END,
-           manual_approval_reviewed_at = CASE WHEN ? IS NOT NULL THEN NOW() ELSE manual_approval_reviewed_at END,
+           manual_approval_status = CASE WHEN ?::text IS NOT NULL THEN 'approved' ELSE manual_approval_status END,
+           manual_approval_reviewed_at = CASE WHEN ?::text IS NOT NULL THEN NOW() ELSE manual_approval_reviewed_at END,
            manual_approval_reviewed_by = COALESCE(?, manual_approval_reviewed_by)
        WHERE payment_transaction_id = ? AND status = 'processing'`,
       [
@@ -180,10 +212,27 @@ const PaymentModel = {
     );
   },
 
+  /**
+   * Sets (or, with promoCodeId null, removes) the promo code and the amount due.
+   * Only an unpaid payment that is not waiting for approval can change.
+   */
+  async setPromoCode(paymentTransactionId, { promoCodeId = null, code = null, amount, discount = 0 }) {
+    const [result] = await db.query(
+      `UPDATE payment_transactions
+       SET promo_code_id = ?, promo_code = ?, promo_discount_amount = ?, amount = ?
+       WHERE payment_transaction_id = ? AND status IN ('pending', 'failed')
+         AND manual_approval_status = 'not_requested'`,
+      [promoCodeId, code, discount, amount, paymentTransactionId]
+    );
+    return result.affectedRows === 1;
+  },
+
   async listByOrg(rootEntityCode) {
     const [rows] = await db.query(
-      `SELECT payment_code, purpose, plan_name, billing_cycle, amount, currency, status,
+      `SELECT payment_code, purpose, plan_name, billing_cycle, amount, token_quantity,
+              bonus_token_quantity, token_unit_price, currency, status,
               payer_name, payer_email, org_name, promotion_campaign_id, list_amount, promotion_discount_amount,
+              promo_code, promo_discount_amount,
               invoice_number, period_start, period_end, paid_at, created_at,
               manual_approval_status, manual_approval_requested_at, manual_approval_reviewed_at
        FROM payment_transactions

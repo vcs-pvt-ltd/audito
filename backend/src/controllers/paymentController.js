@@ -1,23 +1,19 @@
 /**
  * Payment Controller
  *
- * Handles checkout creation, payment lookup, confirmation and billing history.
+ * Handles payment lookup, confirmation and billing history.
  *
  * Subscription activation is performed only after a verified gateway callback
  * or an authenticated Audito Admin manual approval.
  */
 
 const PaymentModel = require('../models/PaymentModel');
-const SubscriptionModel = require('../models/SubscriptionModel');
-const PlanSettingsModel = require('../models/PlanSettingsModel');
-const PromotionCampaignModel = require('../models/PromotionCampaignModel');
-const CustomSolutionModel = require('../models/CustomSolutionModel');
+const PromoCodeModel = require('../models/PromoCodeModel');
+const { quoteCode, priceWithoutCode, changeBlockedReason } = require('../services/promoCheckoutService');
 const AdminModel = require('../models/AdminModel');
-const LinkBillingCreditModel = require('../models/LinkBillingCreditModel');
 const PaymentMethodModel = require('../models/PaymentMethodModel');
 const NotificationModel = require('../models/NotificationModel');
 const { db } = require('../config/db');
-const { getOrgName } = require('../utils/orgLookup');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const { settleVerifiedPayment } = require('../services/paymentSettlementService');
 const {
@@ -31,7 +27,6 @@ const {
 } = require('../services/sampathGatewayService');
 const crypto = require('crypto');
 
-const VALID_CYCLES = ['Monthly', 'Yearly'];
 const PAYMENT_CONTACT_EMAIL = process.env.PAYMENT_CONTACT_EMAIL || 'hi@audito.cloud';
 
 function getPaymentMode() {
@@ -45,12 +40,6 @@ function paymentConfiguration() {
   };
 }
 
-async function hasCompletedCustomAdminSetup(payment) {
-  if (payment.plan_name !== 'Custom' || payment.purpose !== 'registration') return true;
-  const request = await CustomSolutionModel.findByPaymentCode(payment.payment_code);
-  return Boolean(request?.email_verified && request?.admin_setup_completed && request?.admin_id);
-}
-
 // Client-safe projection — never exposes internal ids.
 function publicPayment(p) {
   if (!p) return null;
@@ -60,6 +49,10 @@ function publicPayment(p) {
     plan_name: p.plan_name,
     billing_cycle: p.billing_cycle,
     amount: Number(p.amount),
+    token_quantity: Number(p.token_quantity || 0),
+    bonus_token_quantity: Number(p.bonus_token_quantity || 0),
+    token_unit_price: p.token_unit_price == null ? null : Number(p.token_unit_price),
+    pricing_snapshot: typeof p.pricing_snapshot === 'string' ? JSON.parse(p.pricing_snapshot) : p.pricing_snapshot,
     currency: p.currency,
     status: p.status,
     org_name: p.org_name,
@@ -71,65 +64,13 @@ function publicPayment(p) {
     list_amount: p.list_amount == null ? Number(p.amount) : Number(p.list_amount),
     promotion_discount_amount: Number(p.promotion_discount_amount || 0),
     promotion_campaign_id: p.promotion_campaign_id || null,
+    promo_code: p.promo_code || null,
+    promo_discount_amount: Number(p.promo_discount_amount || 0),
     manual_approval_status: p.manual_approval_status || 'not_requested',
     manual_approval_requested_at: p.manual_approval_requested_at || null,
     manual_approval_reviewed_at: p.manual_approval_reviewed_at || null,
   };
 }
-
-/**
- * POST /api/payments/checkout   (admin)
- * Body: { plan_name, billing_cycle, purpose: 'upgrade' | 'renewal' }
- * Creates a pending payment for the admin's organization and returns it.
- */
-const createCheckout = async (req, res) => {
-  try {
-    const { plan_name, billing_cycle, purpose } = req.body;
-
-    if (!VALID_CYCLES.includes(billing_cycle)) {
-      return errorResponse(res, `Invalid billing cycle. Allowed: ${VALID_CYCLES.join(', ')}.`, 400);
-    }
-    if (plan_name === 'Custom') return errorResponse(res, 'Custom plans are quoted individually.', 400);
-    const selectedPlan = await PlanSettingsModel.find(plan_name);
-    if (!selectedPlan?.is_active) return errorResponse(res, 'The selected plan is not currently available.', 409);
-    const effectivePurpose = purpose === 'renewal' ? 'renewal' : 'upgrade';
-
-    const rootCode = req.user.entityCode;
-    if (!rootCode) return errorResponse(res, 'No organization found for this account.', 400);
-
-    const listAmount = await SubscriptionModel.computeAmount(plan_name, billing_cycle, req.user.entityType);
-    const offer = await PromotionCampaignModel.resolveBestOffer({
-      planName: plan_name, billingCycle: billing_cycle, purpose: effectivePurpose, listAmount,
-    });
-    const amount = offer?.final_amount ?? listAmount;
-    if (amount <= 0) {
-      return errorResponse(res, 'The selected plan does not require a payment.', 400);
-    }
-
-    const admin = await AdminModel.findById(req.user.userCode);
-    const payerName = admin ? `${admin.first_name} ${admin.last_name}` : null;
-    const orgName = await getOrgName(req.user.entityType, rootCode);
-
-    const payment = await PaymentModel.create({
-      rootEntityCode: rootCode,
-      purpose: effectivePurpose,
-      planName: plan_name,
-      billingCycle: billing_cycle,
-      amount,
-      payerName,
-      payerEmail: req.user.email,
-      orgName,
-      promotionCampaignId: offer?.campaign_id || null,
-      listAmount,
-      promotionDiscountAmount: offer?.discount_amount || 0,
-    });
-
-    return successResponse(res, { payment: publicPayment(payment) }, 'Checkout created.');
-  } catch (error) {
-    console.error('createCheckout error:', error);
-    return errorResponse(res, 'Failed to create checkout.', 500);
-  }
-};
 
 /**
  * GET /api/payments/:code   (public)
@@ -146,94 +87,6 @@ const getPayment = async (req, res) => {
   }
 };
 
-/**
- * POST /api/payments/:code/confirm   (public — temporary)
- * Marks the payment paid and activates the organization's subscription.
- * Replace the call site with a gateway webhook once integrated.
- */
-const confirmPayment = async (req, res) => {
-  try {
-    const payment = await PaymentModel.findByCode(req.params.code);
-    if (!payment) return errorResponse(res, 'Payment not found.', 404);
-
-    if (payment.status === 'paid') {
-      return successResponse(res, { payment: publicPayment(payment) }, 'Payment already completed.');
-    }
-    if (payment.status !== 'pending') {
-      return errorResponse(res, 'This payment can no longer be processed.', 400);
-    }
-
-    // registration / upgrade / renewal all resolve to: activate the paid plan.
-    // For Custom plans, fetch the limits from the custom solution request.
-    let customLimits = null;
-    if (payment.plan_name === 'Custom') {
-      const csr = await CustomSolutionModel.findByOrgCode(payment.root_entity_code);
-      if (csr) {
-        customLimits = await SubscriptionModel.normalizeCustomLimits({
-          company_level: csr.max_company_levels,
-          department: csr.max_departments,
-          audits: csr.max_audits,
-          checklists: csr.max_checklists,
-          auditors: csr.max_auditors,
-          auditor_eval: csr.allow_auditor_eval,
-          company_to_company: csr.allow_company_to_company,
-        });
-      }
-    }
-
-    const { start, end } = await SubscriptionModel.activatePaidSubscription(
-      payment.root_entity_code,
-      payment.plan_name,
-      payment.billing_cycle,
-      customLimits
-    );
-
-    // Apply any available link billing credits
-    let creditApplied = 0;
-    let creditApplications = [];
-    try {
-      const available = await LinkBillingCreditModel.getAvailableCreditAmount(payment.root_entity_code);
-      if (available > 0 && payment.amount > 0) {
-        const applyAmount = Math.min(available, payment.amount);
-        const result = await LinkBillingCreditModel.applyCredits(
-          payment.root_entity_code,
-          payment.payment_transaction_id,
-          applyAmount
-        );
-        creditApplied = result.total_applied;
-        creditApplications = result.applications;
-      }
-    } catch (creditErr) {
-      console.error('Failed to apply link billing credits:', creditErr.message);
-    }
-
-    await PaymentModel.markPaid(payment.payment_transaction_id, {
-      periodStart: start,
-      periodEnd: end,
-      gateway: (req.body && req.body.gateway) || 'manual',
-      gatewayReference: (req.body && req.body.gateway_reference) || null,
-    });
-    if (payment.plan_name === 'Custom') {
-      const request = await CustomSolutionModel.findByPaymentCode(payment.payment_code);
-      if (request) {
-        await CustomSolutionModel.updateStatus(request.request_id, 'accepted');
-        if (request.admin_id) await AdminModel.activate(request.admin_id);
-      }
-    }
-
-    const updated = await PaymentModel.findByCode(req.params.code);
-    return successResponse(res, {
-      payment: publicPayment(updated),
-      credit_applied: creditApplied,
-      credit_applications: creditApplications,
-      net_amount: Math.round((payment.amount - creditApplied) * 100) / 100,
-    }, 'Payment successful. Subscription activated.');
-  } catch (error) {
-    console.error('confirmPayment error:', error);
-    return errorResponse(res, 'Failed to confirm payment.', 500);
-  }
-};
-
 const initiatePayment = async (req, res) => {
   try {
     if (getPaymentMode() !== 'gateway') {
@@ -243,9 +96,12 @@ const initiatePayment = async (req, res) => {
     if (!payment) return errorResponse(res, 'Payment not found.', 404);
     if (payment.status === 'paid') return successResponse(res, { payment: publicPayment(payment), ...paymentConfiguration() }, 'Payment already completed.');
     if (!['pending', 'failed'].includes(payment.status)) return errorResponse(res, 'This payment is already being processed.', 409);
-    if (!await hasCompletedCustomAdminSetup(payment)) {
-      return errorResponse(res, 'Set up the workspace administrator before proceeding to payment.', 409);
+    if (payment.plan_name === 'Package') {
+      const owner = await AdminModel.findPaymentOwnerByEntityCode(payment.root_entity_code);
+      if (!owner?.is_verified) return errorResponse(res, 'Verify the workspace administrator email before payment.', 409);
     }
+    const promoProblem = await promoCheckoutProblem(payment);
+    if (promoProblem) return errorResponse(res, promoProblem, 409);
 
     const savePaymentMethodRequested = req.body?.save_payment_method === true;
     if (savePaymentMethodRequested && (!isSavedPaymentMethodConfigured() || !PaymentMethodModel.isEncryptionConfigured())) {
@@ -269,6 +125,111 @@ const initiatePayment = async (req, res) => {
   }
 };
 
+// ─── Promo codes on the payment page ────────────────────────────────────────
+// The payment link is the secret that allows these public actions, the same as
+// starting a checkout. Wrong codes are limited per payment so codes cannot be
+// guessed by trying many of them.
+const PROMO_ATTEMPTS = new Map();
+const PROMO_ATTEMPT_LIMIT = 10;
+const PROMO_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+function promoAttemptsLeft(paymentCode, failed = false) {
+  const now = Date.now();
+  for (const [key, entry] of PROMO_ATTEMPTS) if (entry.resetAt <= now) PROMO_ATTEMPTS.delete(key);
+  const entry = PROMO_ATTEMPTS.get(paymentCode) || { count: 0, resetAt: now + PROMO_ATTEMPT_WINDOW_MS };
+  if (failed) { entry.count++; PROMO_ATTEMPTS.set(paymentCode, entry); }
+  return PROMO_ATTEMPT_LIMIT - entry.count;
+}
+const money = (amount, currency) => `${currency || 'USD'} ${Number(amount).toFixed(2)}`;
+
+// Checks before a payment goes to the bank or the approval queue.
+async function promoCheckoutProblem(payment) {
+  if (payment.promo_code_id && Number(payment.amount) === 0) return 'Your promo code covers the full amount. Complete the purchase without payment.';
+  if (payment.promo_code_id && !await PromoCodeModel.findByCode(payment.promo_code)) return 'This promo code is no longer available. Remove it to continue.';
+  return '';
+}
+
+/** POST /api/payments/:code/promo-code  Body: { code } */
+const applyPromoCode = async (req, res) => {
+  try {
+    const payment = await PaymentModel.findByCode(req.params.code);
+    if (!payment) return errorResponse(res, 'Payment not found.', 404);
+    const blocked = changeBlockedReason(payment);
+    if (blocked) return errorResponse(res, blocked, 409);
+    // Promo codes apply to new packages and token reloads, not to adding departments.
+    if (payment.purpose === 'plan_upgrade') return errorResponse(res, 'Promo codes cannot be used when adding departments.', 400);
+    if (!PromoCodeModel.normalizeCode(req.body?.code)) return errorResponse(res, 'Enter a promo code.', 400);
+    if (promoAttemptsLeft(payment.payment_code) <= 0) return errorResponse(res, 'Too many promo code attempts. Try again in 15 minutes.', 429);
+
+    const promo = await PromoCodeModel.findByCode(req.body.code);
+    if (!promo) {
+      promoAttemptsLeft(payment.payment_code, true);
+      return errorResponse(res, 'This promo code is not valid, has expired, or has been fully used.', 400);
+    }
+    if (payment.promo_code_id === promo.promo_code_id) {
+      return successResponse(res, { payment: publicPayment(payment), ...paymentConfiguration() }, 'This promo code is already applied.');
+    }
+    const quote = quoteCode(payment, promo.discount_percentage);
+    if (!quote.better) {
+      return errorResponse(res, `Your current price of ${money(quote.withoutCode, payment.currency)} is already lower than this code gives. Promo codes do not combine with other offers.`, 409);
+    }
+    const changed = await PaymentModel.setPromoCode(payment.payment_transaction_id, {
+      promoCodeId: promo.promo_code_id, code: promo.code, amount: quote.amount, discount: quote.discount,
+    });
+    if (!changed) return errorResponse(res, 'This payment can no longer be changed.', 409);
+    const updated = await PaymentModel.findByCode(payment.payment_code);
+    return successResponse(res, { payment: publicPayment(updated), ...paymentConfiguration() },
+      `Promo code ${promo.code} applied. You save ${money(quote.discount, payment.currency)}.`);
+  } catch (error) {
+    console.error('applyPromoCode error:', error);
+    return errorResponse(res, 'Could not apply the promo code.', 500);
+  }
+};
+
+/** DELETE /api/payments/:code/promo-code */
+const removePromoCode = async (req, res) => {
+  try {
+    const payment = await PaymentModel.findByCode(req.params.code);
+    if (!payment) return errorResponse(res, 'Payment not found.', 404);
+    if (!payment.promo_code_id) return successResponse(res, { payment: publicPayment(payment), ...paymentConfiguration() }, 'No promo code is applied.');
+    const blocked = changeBlockedReason(payment);
+    if (blocked) return errorResponse(res, blocked, 409);
+    const changed = await PaymentModel.setPromoCode(payment.payment_transaction_id, { amount: priceWithoutCode(payment) });
+    if (!changed) return errorResponse(res, 'This payment can no longer be changed.', 409);
+    const updated = await PaymentModel.findByCode(payment.payment_code);
+    return successResponse(res, { payment: publicPayment(updated), ...paymentConfiguration() }, 'Promo code removed.');
+  } catch (error) {
+    console.error('removePromoCode error:', error);
+    return errorResponse(res, 'Could not remove the promo code.', 500);
+  }
+};
+
+/**
+ * POST /api/payments/:code/complete-free
+ * A promo code that covers the whole amount completes the purchase without
+ * the bank. The same account checks as a paid checkout apply.
+ */
+const completeFreePayment = async (req, res) => {
+  try {
+    const payment = await PaymentModel.findByCode(req.params.code);
+    if (!payment) return errorResponse(res, 'Payment not found.', 404);
+    if (payment.status === 'paid') return successResponse(res, { payment: publicPayment(payment), ...paymentConfiguration() }, 'Payment already completed.');
+    if (!['pending', 'failed'].includes(payment.status)) return errorResponse(res, 'This payment is already being processed.', 409);
+    if (!payment.promo_code_id || Number(payment.amount) !== 0) return errorResponse(res, 'This payment has an amount due.', 409);
+    const owner = await AdminModel.findPaymentOwnerByEntityCode(payment.root_entity_code);
+    if (!owner?.is_verified) return errorResponse(res, 'Verify the workspace administrator email before completing this purchase.', 409);
+    // The code must still be usable at the moment the purchase completes.
+    if (!await PromoCodeModel.findByCode(payment.promo_code)) {
+      return errorResponse(res, 'This promo code is no longer available. Remove it to continue.', 409);
+    }
+    const result = await settleVerifiedPayment(payment, { gateway: 'promo_code', gatewayReference: `PROMO-${payment.promo_code}` });
+    if (result.processing) return errorResponse(res, 'This payment is already being processed.', 409);
+    return successResponse(res, { payment: publicPayment(result.payment), ...paymentConfiguration() }, 'Purchase completed with your promo code.');
+  } catch (error) {
+    console.error('completeFreePayment error:', error);
+    return errorResponse(res, 'Could not complete the purchase.', 500);
+  }
+};
+
 /**
  * Public payment-link action. It can only request review; payment settlement
  * remains restricted to an authenticated Audito Admin.
@@ -283,19 +244,20 @@ const requestManualApproval = async (req, res) => {
     if (!payment) return errorResponse(res, 'Payment not found.', 404);
     if (payment.status === 'paid') return successResponse(res, { payment: publicPayment(payment), ...paymentConfiguration() }, 'Payment already completed.');
     if (!['pending', 'failed'].includes(payment.status)) return errorResponse(res, 'This payment is already being processed.', 409);
-    if (!await hasCompletedCustomAdminSetup(payment)) {
-      return errorResponse(res, 'Set up the workspace administrator before proceeding to payment.', 409);
-    }
 
     const owner = await AdminModel.findPaymentOwnerByEntityCode(payment.root_entity_code);
     if (!owner?.is_verified) {
       return errorResponse(res, 'Verify the workspace administrator email before requesting payment approval.', 409);
     }
+    const promoProblem = await promoCheckoutProblem(payment);
+    if (promoProblem) return errorResponse(res, promoProblem, 409);
 
     const newlyRequested = await PaymentModel.requestManualApproval(payment.payment_transaction_id);
     const updated = await PaymentModel.findByCode(payment.payment_code);
 
-    if (newlyRequested) {
+    // A previous request may have been saved while its notification failed.
+    // Repeated requests safely fill that gap using the stable notification key.
+    if (updated?.manual_approval_status === 'requested') {
       try {
         const [auditoAdmins] = await db.query(
           `SELECT admin_id FROM admins
@@ -339,6 +301,16 @@ const handleSampathWebhook = async (req, res) => {
     if (!result.successful) {
       await PaymentModel.markGatewayFailed(payment.payment_transaction_id, {
         gateway: 'sampath', gatewayReference: result.gatewayReference, status: result.status, reason: 'Gateway declined or cancelled the payment.',
+      });
+      return res.status(200).send('ACK');
+    }
+    // The amount due can change before checkout (for example a promo code), so
+    // a payment settles only when the bank confirms exactly the amount due.
+    if (result.amount !== null && Math.abs(Number(result.amount) - Number(payment.amount)) > 0.005) {
+      console.error('Sampath callback amount does not match the amount due:', { payment: payment.payment_transaction_id, paid: result.amount, due: Number(payment.amount) });
+      await PaymentModel.markGatewayFailed(payment.payment_transaction_id, {
+        gateway: 'sampath', gatewayReference: result.gatewayReference, status: 'amount_mismatch',
+        reason: `The bank confirmed ${result.amount}, but ${Number(payment.amount).toFixed(2)} is due. Review this payment manually.`,
       });
       return res.status(200).send('ACK');
     }
@@ -434,11 +406,12 @@ const listPayments = async (req, res) => {
 };
 
 module.exports = {
-  createCheckout,
   getPayment,
-  confirmPayment,
   initiatePayment,
   requestManualApproval,
+  applyPromoCode,
+  removePromoCode,
+  completeFreePayment,
   handleSampathWebhook,
   handleSampathReturn,
   listPaymentMethods,

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { dashboardApi, orgTreeApi, DashboardFilters } from "@/lib/api";
+import { dashboardApi, orgTreeApi, tokenApi, DashboardFilters, type TokenWallet } from "@/lib/api";
 
 import AdminDashboard from "./AdminDashboard";
 import AuditorDashboard from "./AuditorDashboard";
@@ -44,6 +44,7 @@ export default function DashboardPage() {
   const [filters, setFilters] = useState<DashboardFilters>(defaultFilters);
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
   const [orgTree, setOrgTree] = useState<any>(null);
+  const [tokenWallet, setTokenWallet] = useState<TokenWallet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +58,21 @@ export default function DashboardPage() {
     orgTreeApi.getTree(accessToken).then((res) => {
       if (res.success && res.data) setOrgTree(res.data);
     });
+  }, [accessToken, admin]);
+
+  useEffect(() => {
+    if (!accessToken || admin?.role !== "admin") return;
+    let alive = true;
+    const loadWallet = () => tokenApi.wallet(accessToken).then((res) => {
+      if (alive && res.success && res.data) setTokenWallet(res.data.wallet);
+    });
+    void loadWallet();
+    const refreshOnReturn = () => { if (document.visibilityState === "visible") void loadWallet(); };
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", refreshOnReturn);
+    };
   }, [accessToken, admin]);
 
   useEffect(() => {
@@ -98,6 +114,7 @@ export default function DashboardPage() {
             orgTree={orgTree}
             filters={filters}
             onFiltersChange={setFilters}
+            tokenWallet={tokenWallet}
           />
         );
       case "auditor":

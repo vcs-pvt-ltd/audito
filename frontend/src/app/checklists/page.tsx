@@ -152,15 +152,11 @@ export default function ChecklistsPage() {
   };
 
   const isLimitExceeded = admin?.plan_limits && checklists.length >= admin.plan_limits.checklists;
-  const isAuditLimitExceeded = admin?.plan_limits && auditCount >= admin.plan_limits.audits;
+  const isAuditLimitExceeded = false;
 
   const handleAssignAuditClick = (id: string) => {
-    if (isAuditLimitExceeded) {
-      setAuditLimitModalOpen(true);
-    } else {
-      const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
-      router.push(`/audits/assign/create?checklistId=${id}${isOnboarding ? "&onboarding=1" : ""}`);
-    }
+    const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
+    router.push(`/audits/assign/create?checklistId=${id}${isOnboarding ? "&onboarding=1" : ""}`);
   };
 
   const detailsPath = (id: string) =>

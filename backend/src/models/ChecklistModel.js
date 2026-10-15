@@ -66,8 +66,8 @@ const ChecklistModel = {
   async create({ checklist_id, name, description, media_path, checklist_type_id,
                  time_period_value, time_period_unit,
                  repeat_duration_value, repeat_duration_unit,
-                 budget, currency, num_workers, created_by }) {
-    await db.query(
+                 budget, currency, num_workers, created_by }, executor = db) {
+    await executor.query(
       `INSERT INTO checklists
          (checklist_id, name, description, media_path, checklist_type_id,
           time_period_value, time_period_unit,
@@ -78,7 +78,7 @@ const ChecklistModel = {
        checklist_type_id || null,
        time_period_value || null, time_period_unit || null,
        repeat_duration_value || null, repeat_duration_unit || null,
-       budget || null, currency || '$', num_workers || null, created_by]
+       budget ?? null, currency || '$', num_workers || null, created_by]
     );
     return checklist_id;
   },
@@ -129,7 +129,7 @@ const ChecklistModel = {
       [name, description || null, media_path || null, checklist_type_id || null,
        time_period_value || null, time_period_unit || null,
        repeat_duration_value || null, repeat_duration_unit || null,
-       budget || null, currency || '$', num_workers || null,
+       budget ?? null, currency || '$', num_workers || null,
        checklist_id]
     );
     return res.affectedRows > 0;
@@ -145,10 +145,10 @@ const ChecklistModel = {
       await conn.beginTransaction();
 
       await conn.query(
-        `DELETE qo
-         FROM checklist_question_options qo
-         INNER JOIN checklist_questions qq ON qq.checklist_question_id = qo.checklist_question_id
-         WHERE qq.checklist_id = ?`,
+        `DELETE FROM checklist_question_options qo
+         USING checklist_questions qq
+         WHERE qq.checklist_question_id = qo.checklist_question_id
+           AND qq.checklist_id = ?`,
         [checklist_id]
       );
 

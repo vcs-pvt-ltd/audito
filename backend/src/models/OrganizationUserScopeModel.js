@@ -14,7 +14,9 @@ function normalizeScope(scope = {}) {
     org_tree_id: normalizeId(scope.org_tree_id),
     entity_code: String(scope.entity_code || '').trim(),
     entity_type: scope.entity_type ? String(scope.entity_type).trim() : null,
-    scope_mode: String(scope.scope_mode || 'EXACT').trim().toUpperCase(),
+    // Organization access is always branch-based. Normalize legacy EXACT
+    // values so every selected entity includes all of its descendants.
+    scope_mode: 'SUBTREE',
   };
 }
 
@@ -98,7 +100,7 @@ const OrganizationUserScopeModel = {
         ORDER BY scope_id`,
       [organizationUserId]
     );
-    return rows;
+    return rows.map((row) => ({ ...row, scope_mode: 'SUBTREE' }));
   },
 
   async listByUsers(organizationUserIds, executor = db) {
@@ -116,7 +118,7 @@ const OrganizationUserScopeModel = {
     const map = new Map(ids.map((id) => [id, []]));
     for (const row of rows) {
       if (!map.has(row.organization_user_id)) map.set(row.organization_user_id, []);
-      map.get(row.organization_user_id).push(row);
+      map.get(row.organization_user_id).push({ ...row, scope_mode: 'SUBTREE' });
     }
     return map;
   },

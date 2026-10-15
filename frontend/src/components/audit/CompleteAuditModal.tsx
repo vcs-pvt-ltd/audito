@@ -6,6 +6,8 @@ import { progressKey } from "@/utils/executionService";
 import { Button, IconButton } from "@/components/ui";
 
 import { auditExecutionApi } from "@/lib/api";
+import { mediaUrl } from "@/lib/apiConfig";
+import { useNativeBackHandler } from "@/lib/native/backButton";
 
 export interface EntityProgress {
   audit_entity_progress_id?: string;
@@ -264,9 +266,7 @@ export default function CompleteAuditModal({
           {r.evidence.map((ev) => {
             const isImage = ev.file_type?.toLowerCase().includes('image') || 
                             ev.file_path?.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i);
-            const url = ev.file_path.startsWith('http') 
-              ? ev.file_path 
-              : `${process.env.NEXT_PUBLIC_MEDIA_URL || ''}${ev.file_path}`;
+            const url = mediaUrl(ev.file_path);
 
             return (
               <div 
@@ -420,6 +420,9 @@ export default function CompleteAuditModal({
       </div>
     );
   };
+
+  // Android app: back closes this dialog.
+  useNativeBackHandler(() => { onClose(); return true; }, open);
 
   if (!open) return null;
 

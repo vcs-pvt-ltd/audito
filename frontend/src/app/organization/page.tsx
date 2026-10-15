@@ -1,17 +1,21 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { authApi, orgTreeApi, structureApi } from "@/lib/api";
 import AddEditEntityModal, { type EntityFormData } from "@/components/structure/AddEditEntityModal";
+import { ENTITY_TYPE_COLORS } from "@/utils/executionFormatters";
 
 import {
   FolderTree,
   ChevronRight,
   ChevronDown,
   Building2,
+  ListTree,
+  Network,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -19,8 +23,9 @@ import {
   Trash2,
   X,
   TreePine,
+  Sparkles,
 } from "lucide-react";
-import { Button, IconButton } from "@/components/ui";
+import { Button, IconButton, Modal } from "@/components/ui";
 
 // ─── Config ──────────────────────────────────────────────────────
 
@@ -36,7 +41,7 @@ function pluralize(type: string): string {
   return PLURALS[type] ?? `${type}s`;
 }
 
-/** Stable color per entity type for the avatar circle */
+/** Stable color per entity type for the chart cards */
 const TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   "Buying Office": { bg: "bg-violet-500/20", text: "text-violet-300", border: "border-violet-500/30" },
   "Audit Firm":   { bg: "bg-amber-500/20",  text: "text-amber-300",  border: "border-amber-500/30"  },
@@ -50,12 +55,11 @@ function getTypeColor(type: string) {
   return TYPE_COLORS[type] ?? DEFAULT_COLOR;
 }
 
-/** Two-letter initials from a name */
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
+/** Entity type badge colours for the list, the same as on the checklist and audit pages. */
+const typeBadge = (type: string) => ENTITY_TYPE_COLORS[type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
+
+type OrganizationView = "chart" | "list";
+const VIEW_KEY = "audito_organization_view";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -87,6 +91,10 @@ const ENTITY_CODE_FIELDS: Record<string, string> = {
   Section: "comp_section_code",
   Branch: "afc_branch_code",
   "Audit Firm Department": "afc_dept_code",
+};
+const ENTITY_TYPE_SLUGS: Record<string, string> = {
+  "Buying Office": "buying-office", Supplier: "supplier", Cluster: "cluster", Factory: "factory",
+  Unit: "unit", Department: "department", Section: "section", Branch: "branch", "Audit Firm Department": "audit-firm-department",
 };
 
 function nodeKey(node: Pick<TreeNode, "code" | "edge_id">): string {
@@ -365,8 +373,8 @@ function AddEntityPanel({
   );
 }
 
-// ─── Visual Org Card ─────────────────────────────────────────────
-// The card shown for each entity node, matching the screenshot style.
+// ─── Chart view: visual org card ─────────────────────────────────
+// The card shown for each entity node in the chart.
 
 function OrgCard({
   node,
@@ -380,7 +388,6 @@ function OrgCard({
   onRemove?: () => void;
 }) {
   const color = getTypeColor(node.entity_type);
-  const abbr = initials(node.name);
 
   return (
     <div className={`relative group/card flex flex-col items-center`}>
@@ -407,8 +414,6 @@ function OrgCard({
           </button>
         )}
 
-
-
         {/* Name */}
         <div className="w-full">
           <p className={`text-xs font-semibold leading-tight truncate px-1 ${isRoot ? "text-white" : "text-gray-200"}`}>
@@ -431,7 +436,7 @@ function OrgCard({
   );
 }
 
-// ─── Tree Node Builder ───────────────────────────────────────────
+// ─── Chart view: tree node builder ───────────────────────────────
 // Renders a node as a visual card with its children laid out horizontally below.
 
 function TreeNodeBuilder({
@@ -499,7 +504,7 @@ function TreeNodeBuilder({
   }
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex w-max min-w-full flex-col items-center">
       {/* The card for this node */}
       <OrgCard
         node={node}
@@ -589,7 +594,7 @@ function TreeNodeBuilder({
 
                 {/* Children cards in a horizontal row with connecting lines */}
                 {allChildren.length > 0 && (
-                  <div className="relative w-full overflow-x-auto pb-2">
+                  <div className="relative w-max min-w-full pb-2">
                     {/* Horizontal connector bar — desktop only */}
                     {allChildren.length > 1 && typeof window !== "undefined" && window.innerWidth >= 640 && (
                       <div
@@ -602,12 +607,9 @@ function TreeNodeBuilder({
                     )}
 
                     {/* Children cards row */}
-                    <div
-                      className="flex flex-col sm:flex-row items-center sm:items-start justify-center gap-4 pt-0"
-                      style={{ minWidth: "0", maxWidth: "100%" }}
-                    >
+                    <div className="flex min-w-max flex-col items-center justify-center gap-4 pt-0 sm:flex-row sm:items-start">
                       {allChildren.map((child) => (
-                        <div key={child.edge_id ?? child.code} className="flex flex-col items-center w-full sm:w-auto">
+                        <div key={child.edge_id ?? child.code} className="flex w-auto flex-col items-center">
                           {/* Vertical drop line to each child */}
                           <div className="w-px h-6 bg-white/[0.12]" />
                           <TreeNodeBuilder
@@ -649,6 +651,54 @@ function TreeNodeBuilder({
   );
 }
 
+// ─── List view ───────────────────────────────────────────────────
+// Indented list: type and name per row; the arrow shows or hides the entities below.
+
+function ListBranch({ node, depth = 0, expandedCodes, visibleKeys, selectedKey, onSelect, onToggle, onRemove }: {
+  node: TreeNode;
+  depth?: number;
+  expandedCodes: Set<string>;
+  visibleKeys: Set<string> | null;
+  selectedKey: string | null;
+  onSelect: (node: TreeNode) => void;
+  onToggle: (key: string) => void;
+  /** Removes an entity from the organization (asks first). */
+  onRemove: (edgeId: string | number, name: string) => void;
+}) {
+  const removable = depth > 0 && node.edge_id !== undefined && !node.is_partner_root;
+  const key = nodeKey(node);
+  if (visibleKeys && !visibleKeys.has(key)) return null;
+  const kids = (node.children || []).filter((child) => !visibleKeys || visibleKeys.has(nodeKey(child)));
+  const open = expandedCodes.has(key);
+  return (
+    <li>
+      <div className={`flex items-center gap-1.5 rounded-xl border px-1.5 py-1.5 ${selectedKey === key ? "border-secondary-400/40 bg-secondary-500/10" : depth === 0 ? "border-secondary-400/15 bg-secondary-500/[.06]" : "border-transparent hover:bg-white/[.03]"}`}>
+        <button type="button" disabled={!kids.length} onClick={() => onToggle(key)} aria-expanded={kids.length ? open : undefined}
+          aria-label={kids.length ? `${open ? "Hide" : "Show"} ${kids.length} entities under ${node.name}` : undefined}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-gray-400 enabled:hover:bg-white/[.05] enabled:hover:text-white">
+          {kids.length ? (open ? <ChevronDown size={15} /> : <ChevronRight size={15} />) : <span className="h-1.5 w-1.5 rounded-full bg-gray-600" aria-hidden />}
+        </button>
+        <button type="button" onClick={() => onSelect(node)} className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-lg text-left">
+          <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none ${typeBadge(node.entity_type)}`}>{node.entity_type}</span>
+          <span className={`min-w-0 flex-1 truncate text-sm ${depth === 0 ? "font-bold text-secondary-100" : "font-medium text-gray-100"}`}>{node.name}</span>
+          {kids.length > 0 && <span className="shrink-0 rounded-full bg-white/[.06] px-2 py-0.5 text-[10px] text-gray-400">{kids.length}</span>}
+        </button>
+        {removable && (
+          <button type="button" onClick={() => onRemove(node.edge_id!, node.name)} title="Remove" aria-label={`Remove ${node.name}`}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-400 transition-all hover:border-red-400/45 hover:bg-red-500/20 hover:text-red-300">
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
+      {kids.length > 0 && open && (
+        <ul className="ml-4 border-l border-white/10 pl-2 sm:ml-5 sm:pl-3">
+          {kids.map((child) => <ListBranch key={nodeKey(child)} node={child} depth={depth + 1} expandedCodes={expandedCodes} visibleKeys={visibleKeys} selectedKey={selectedKey} onSelect={onSelect} onToggle={onToggle} onRemove={onRemove} />)}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────
 
 export default function OrganizationPage() {
@@ -664,7 +714,28 @@ export default function OrganizationPage() {
   const [savingNodes, setSavingNodes] = useState<Set<string>>(new Set());
 
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedNode, setSelectedNode] = useState<TreeNode | null>(null);
+  const [focusNode, setFocusNode] = useState<TreeNode | null>(null);
+  const [addChildType, setAddChildType] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editData, setEditData] = useState<Partial<EntityFormData> | null>(null);
+  const [view, setView] = useState<OrganizationView>("chart");
+  // The entity whose actions dialog is open (by tree key, so it follows refreshes).
+  const [actionKey, setActionKey] = useState<string | null>(null);
   const treeLoaded = useRef(false);
+
+  // The last chosen view; phones start with the list.
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = window.localStorage.getItem(VIEW_KEY); } catch { /* use the default */ }
+    if (saved === "chart" || saved === "list") setView(saved);
+    else if (window.matchMedia("(max-width: 767px)").matches) setView("list");
+  }, []);
+  const chooseView = (next: OrganizationView) => {
+    setView(next);
+    try { window.localStorage.setItem(VIEW_KEY, next); } catch { /* kept for this visit */ }
+  };
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -682,6 +753,7 @@ export default function OrganizationPage() {
       };
       const newTree = payload.tree;
       setTree(newTree);
+      setSelectedNode((current) => current ? current : newTree);
       if (payload.hierarchyChain) setHierarchyChain(payload.hierarchyChain);
       if (payload.allowedChildren) setAllowedChildrenMap(payload.allowedChildren);
 
@@ -722,6 +794,28 @@ export default function OrganizationPage() {
     walk(tree);
     setExpandedCodes(keys);
   }, [tree]);
+
+  const visibleKeys = useMemo(() => {
+    if (!tree || !searchQuery.trim()) return null;
+    const visible = new Set<string>();
+    const term = searchQuery.trim().toLowerCase();
+    const walk = (node: TreeNode, ancestors: string[]): boolean => {
+      const key = nodeKey(node);
+      const match = node.name.toLowerCase().includes(term) || node.entity_type.toLowerCase().includes(term) || node.code.toLowerCase().includes(term);
+      const descendantMatch = node.children.some((child) => walk(child, [...ancestors, key]));
+      if (match || descendantMatch) {
+        visible.add(key);
+        ancestors.forEach((ancestor) => visible.add(ancestor));
+      }
+      return match || descendantMatch;
+    };
+    walk(focusNode || tree, []);
+    return visible;
+  }, [tree, focusNode, searchQuery]);
+
+  useEffect(() => {
+    if (visibleKeys) setExpandedCodes((current) => new Set([...current, ...visibleKeys]));
+  }, [visibleKeys]);
 
   const findChildCodes = useCallback(
     (parentCode: string, parentEdgeId: string | number | null): Set<string> => {
@@ -814,6 +908,27 @@ export default function OrganizationPage() {
     [accessToken]
   );
 
+  const openEdit = useCallback(async () => {
+    if (!accessToken || !selectedNode) return;
+    const slug = ENTITY_TYPE_SLUGS[selectedNode.entity_type];
+    if (!slug) return toast("This root entity cannot be edited from organization mapping.", "warning");
+    const response = await structureApi.listByType(accessToken, slug);
+    const items = (response.data as { items?: Record<string, unknown>[] } | undefined)?.items || [];
+    const source = items.find((item) => Object.values(ENTITY_CODE_FIELDS).some((field) => String(item[field] || "") === selectedNode.code));
+    setEditData({ name: String(source?.name || selectedNode.name), registration_number: String(source?.registration_number || ""), email: String(source?.email || ""), phone_number: String(source?.phone_number || ""), country: String(source?.country || ""), address_line_1: String(source?.address_line_1 || ""), address_line_2: String(source?.address_line_2 || ""), address_line_3: String(source?.address_line_3 || "") });
+    setEditOpen(true);
+  }, [accessToken, selectedNode, toast]);
+
+  const submitEdit = useCallback(async (formData: EntityFormData) => {
+    if (!accessToken || !selectedNode) return;
+    const slug = ENTITY_TYPE_SLUGS[selectedNode.entity_type];
+    if (!slug) throw new Error("This entity cannot be edited here.");
+    const response = await structureApi.updateSubEntity(accessToken, slug, selectedNode.code, { ...formData, parent_code: undefined });
+    if (!response.success) throw new Error(response.message || "Unable to update entity.");
+    await fetchTree(true);
+    toast("Entity updated.", "success");
+  }, [accessToken, selectedNode, fetchTree, toast]);
+
   const handleRemoveLocal = useCallback(
     async (edgeId: string | number, name: string) => {
       if (!accessToken) return;
@@ -846,6 +961,23 @@ export default function OrganizationPage() {
     fetchTree(true);
   }, [fetchTree]);
 
+  // The entity whose actions are open, looked up in the latest tree.
+  const actionNode = useMemo(() => {
+    if (!tree || !actionKey) return null;
+    const find = (node: TreeNode): TreeNode | null => {
+      if (nodeKey(node) === actionKey) return node;
+      for (const child of node.children || []) { const found = find(child); if (found) return found; }
+      return null;
+    };
+    return find(tree);
+  }, [tree, actionKey]);
+  const selectNode = useCallback((node: TreeNode) => {
+    setSelectedNode(node);
+    setAddChildType(null);
+    setActionKey(nodeKey(node));
+  }, []);
+  const closeActions = () => { setActionKey(null); setAddChildType(null); };
+
   if (isLoading) {
     return (
       <div className="h-screen bg-transparent flex items-center justify-center pt-14 lg:pt-0">
@@ -869,51 +1001,67 @@ export default function OrganizationPage() {
               Connect your entities to define your organization's reporting hierarchy.
             </p>
           </div>
-         
           
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={expandAll} disabled={!tree}>
-              Expand
-            </Button>
-            <Button variant="secondary" size="sm" onClick={collapseAll}>
-              Collapse
-            </Button>
-            <div className="w-px h-6 bg-white/10 mx-2" />
+          
+          <div className="flex flex-wrap items-center gap-2">
+            {admin.role === "admin" && (
+              <Button size="sm" leftIcon={<Sparkles size={15} />} onClick={() => router.push("/organization/ai-setup")}>
+                Update with AI
+              </Button>
+            )}
+            <div className="flex rounded-xl border border-white/10 bg-black/[.15] p-1" role="group" aria-label="View">
+              <button type="button" aria-pressed={view === "chart"} onClick={() => chooseView("chart")}
+                className={`flex min-h-8 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${view === "chart" ? "bg-secondary-400 text-primary-950" : "text-gray-300 hover:text-white"}`}>
+                <Network size={14} aria-hidden />Chart
+              </button>
+              <button type="button" aria-pressed={view === "list"} onClick={() => chooseView("list")}
+                className={`flex min-h-8 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${view === "list" ? "bg-secondary-400 text-primary-950" : "text-gray-300 hover:text-white"}`}>
+                <ListTree size={14} aria-hidden />List
+              </button>
+            </div>
+            <Button variant="secondary" size="sm" onClick={expandAll} disabled={!tree}>Expand all</Button>
+            <Button variant="secondary" size="sm" onClick={collapseAll}>Collapse all</Button>
             <IconButton bordered onClick={handleRefresh} title="Refresh Tree">
               <RefreshCw size={16} />
             </IconButton>
           </div>
         </div>
 
-        {/* Hierarchy Guide */}
-        <HierarchyGuide paths={hierarchyChain} />
+        {allowedChildrenMap.Company?.includes("Factory") && (
+          <div className="mb-5 rounded-2xl border border-secondary-400/15 bg-secondary-500/[.06] px-4 py-3 text-xs leading-5 text-gray-300">
+            Build the structure your organization actually uses. Clusters and Units are optional: a Factory can sit directly under the Company, and a Department can sit directly under a Factory or under a Unit.
+          </div>
+        )}
 
-       
-        {/* Tree Builder — centered card tree */}
+        {/* Organization — chart (card tree) or list */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : tree ? (
+        ) : tree && view === "chart" ? (
           <div className="glass rounded-2xl p-3 sm:p-6 border border-white/10 shadow-2xl relative overflow-hidden min-h-[300px]">
             <div className="absolute top-10 left-10 w-96 h-96 bg-secondary-900/10 blur-[100px] rounded-full pointer-events-none" />
-            <div className="relative z-10 flex flex-col items-center overflow-x-auto">
-              <TreeNodeBuilder
-                node={tree}
-                depth={0}
-                isRoot={true}
-                accessToken={accessToken!}
-                expandedCodes={expandedCodes}
-                onToggleExpand={toggleExpand}
-                onExpandNode={expandNode}
-                onAddLocal={handleAddLocal}
-                onCreateEntity={handleCreateEntity}
-                onRemoveLocal={handleRemoveLocal}
-                findChildren={findChildCodes}
-                allowedChildrenMap={allowedChildrenMap}
-                savingNodes={savingNodes}
-              />
+            <div className="relative z-10 w-full overflow-x-auto overscroll-x-contain pb-5 [scrollbar-color:rgba(45,212,191,.55)_rgba(255,255,255,.05)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-secondary-400/45 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-white/[.05]">
+              <div className="flex min-w-max justify-center px-2">
+                <TreeNodeBuilder node={tree} depth={0} isRoot={true} accessToken={accessToken!} expandedCodes={expandedCodes} onToggleExpand={toggleExpand} onExpandNode={expandNode} onAddLocal={handleAddLocal} onCreateEntity={handleCreateEntity} onRemoveLocal={handleRemoveLocal} findChildren={findChildCodes} allowedChildrenMap={allowedChildrenMap} savingNodes={savingNodes} />
+              </div>
             </div>
+          </div>
+        ) : tree ? (
+          <div className="glass rounded-2xl border border-white/10 p-3 shadow-2xl sm:p-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <label className="relative w-full max-w-xs">
+                <span className="sr-only">Search entities</span>
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search entities"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-white placeholder:text-gray-500 focus:border-secondary-500/50 focus:outline-none" />
+              </label>
+              <span className="text-xs text-gray-500">Select an entity to add or edit it.</span>
+            </div>
+            {visibleKeys && visibleKeys.size === 0 && <p className="py-10 text-center text-sm text-gray-400">No entities match “{searchQuery}”.</p>}
+            <ul className="space-y-0.5">
+              <ListBranch node={tree} expandedCodes={expandedCodes} visibleKeys={visibleKeys} selectedKey={actionKey} onSelect={selectNode} onToggle={toggleExpand} onRemove={(edgeId, name) => void handleRemoveLocal(edgeId, name)} />
+            </ul>
           </div>
         ) : (
           <div className="glass rounded-xl p-10 text-center border border-white/10">
@@ -923,6 +1071,51 @@ export default function OrganizationPage() {
             </p>
           </div>
         )}
+        <Modal open={Boolean(actionNode)} onClose={closeActions} size="md"
+          title={actionNode?.name || ""}
+          description={actionNode ? (actionNode === tree ? `${actionNode.entity_type} · your organization` : actionNode.entity_type) : ""}
+          footer={actionNode && <>
+            {actionNode !== tree && actionNode.edge_id !== undefined && !actionNode.is_partner_root && (
+              <Button variant="ghost" leftIcon={<Trash2 size={14} />} className="sm:mr-auto"
+                onClick={() => { const { edge_id: edgeId, name } = actionNode; closeActions(); void handleRemoveLocal(edgeId!, name); }}>Remove</Button>
+            )}
+            {ENTITY_TYPE_SLUGS[actionNode.entity_type] && !actionNode.is_partner_root && (
+              <Button variant="secondary" leftIcon={<Pencil size={14} />} onClick={() => { closeActions(); void openEdit(); }}>Edit details</Button>
+            )}
+            <Button onClick={closeActions}>Done</Button>
+          </>}>
+          {actionNode && (() => {
+            const childTypes = allowedChildrenMap[actionNode.entity_type] || [];
+            const edgeId = actionNode.edge_id ?? null;
+            const saving = savingNodes.has(actionNode.code);
+            return <div className="space-y-3">
+              {(actionNode.children || []).length > 0 && <p className="text-sm text-gray-400">{actionNode.children.length} entit{actionNode.children.length === 1 ? "y" : "ies"} below.</p>}
+              {childTypes.length > 0 ? <>
+                <p className="text-sm font-semibold text-white">Add below {actionNode.name}</p>
+                <div className="flex flex-wrap gap-2">
+                  {childTypes.map((type) => <Button key={type} size="sm" variant={addChildType === type ? "primary" : "secondary"} leftIcon={<Plus size={13} />} disabled={saving}
+                    onClick={() => setAddChildType(addChildType === type ? null : type)}>{type}</Button>)}
+                </div>
+                {addChildType && childTypes.includes(addChildType) && accessToken && (
+                  <AddEntityPanel
+                    key={addChildType}
+                    childType={addChildType}
+                    existingChildCodes={findChildCodes(actionNode.code, edgeId)}
+                    accessToken={accessToken}
+                    onAdded={async (entities) => {
+                      await handleAddLocal(actionNode.code, addChildType, entities, edgeId);
+                      expandNode(nodeKey(actionNode));
+                      setAddChildType(null);
+                    }}
+                    onCreateEntity={handleCreateEntity}
+                    onClose={() => setAddChildType(null)}
+                  />
+                )}
+              </> : <p className="text-sm text-gray-400">Nothing can be added below a {actionNode.entity_type.toLowerCase()}.</p>}
+            </div>;
+          })()}
+        </Modal>
+        {selectedNode && <AddEditEntityModal open={editOpen} onClose={() => setEditOpen(false)} onSubmit={submitEdit} entityLabel={selectedNode.entity_type} editData={editData} />}
       </div>
     </div>
   );

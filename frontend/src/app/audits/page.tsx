@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { auditApi } from "@/lib/api";
+import { auditApi, tokenApi, type TokenWallet } from "@/lib/api";
 import { isPastAuditEndDate } from "@/lib/auditSchedule";
 import {
   ClipboardCheck,
@@ -27,8 +27,13 @@ import {
   Crown,
   BarChart3,
   AlertTriangle,
+  Coins,
+  ShieldCheck,
+  Star,
 } from "lucide-react";
+import AuditorRatingModal from "@/components/audit/AuditorRatingModal";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
+import CriticalDeleteModal from "@/components/modals/CriticalDeleteModal";
 import { structureApi, usersApi } from "@/lib/api";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
@@ -62,6 +67,11 @@ interface AuditAssignment {
   } | null;
   assigned_auditor_id: string | null;
   assigned_firm_code: string | null;
+  auditor_name?: string | null;
+  assigned_firm_name?: string | null;
+  created_by: string;
+  /** The workspace's rating of the auditor; only on completed audits it created. */
+  auditor_rating?: { stars: number; comment: string | null } | null;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -88,6 +98,46 @@ const AUDIT_TYPE_LABEL: Record<string, string> = {
   external: "External",
 };
 
+/** Assigned auditor, with the audit firm underneath for external audits. */
+function AuditorCell({ audit, showFirm, align = "left" }: { audit: AuditAssignment; showFirm: boolean; align?: "left" | "right" }) {
+  const firm = showFirm ? audit.assigned_firm_name : null;
+  const alignClass = align === "right" ? "text-right" : "text-left";
+  if (!audit.auditor_name) {
+    return (
+      <div className={`min-w-0 ${alignClass}`}>
+        {firm && <p className="truncate text-sm text-gray-300" title={firm}>{firm}</p>}
+        <p className={`text-xs italic ${firm ? "text-gray-500" : "text-amber-400/80"}`}>
+          {firm ? "Auditor not assigned yet" : "Not assigned"}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className={`min-w-0 ${alignClass}`}>
+      <p className="truncate text-sm text-gray-200" title={audit.auditor_name}>{audit.auditor_name}</p>
+      {firm && <p className="truncate text-[11px] text-gray-500" title={firm}>{firm}</p>}
+    </div>
+  );
+}
+
+/** Opens the auditor rating dialog; shows the stars once rated. */
+function RateAuditorButton({ rating, onClick }: { rating?: { stars: number } | null; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title={rating ? `Rated ${rating.stars} of 5. Update the auditor rating` : "Rate the auditor"}
+      aria-label={rating ? `Auditor rated ${rating.stars} of 5. Update rating` : "Rate auditor"}
+      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-semibold transition-all ${rating
+        ? "border-secondary-500/25 bg-secondary-500/10 text-secondary-300 hover:bg-secondary-500/20"
+        : "border-white/10 text-gray-400 hover:border-secondary-500/30 hover:bg-secondary-500/10 hover:text-secondary-300"}`}
+    >
+      <Star size={14} fill={rating ? "currentColor" : "none"} aria-hidden />
+      {rating ? `${rating.stars}/5` : "Rate"}
+    </button>
+  );
+}
+
 function fmtDate(d: string | null) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -103,11 +153,15 @@ export default function AuditsPage() {
   const isFirmAdmin = admin?.role === "admin" && ["Audit Firm", "Audit Firm Company"].includes(admin?.account_type || "");
 
   const [audits, setAudits] = useState<AuditAssignment[]>([]);
+  const [tokenWallet, setTokenWallet] = useState<TokenWallet | null>(null);
+  const usesLinkedTokenPool = (tokenWallet?.wallet_members?.length || 0) > 1;
   const [auditCount, setAuditCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
+  const [ratingTarget, setRatingTarget] = useState<AuditAssignment | null>(null);
   const [filter, setFilter] = useState<string>("all");
 
   const [q, setQ] = useState("");
@@ -138,6 +192,10 @@ export default function AuditsPage() {
     const countRes = await auditApi.count(accessToken);
     if (countRes.success && countRes.data) {
       setAuditCount(countRes.data.count);
+    }
+    const walletRes = await tokenApi.wallet(accessToken);
+    if (walletRes.success && walletRes.data) {
+      setTokenWallet(walletRes.data.wallet);
     }
     setLoading(false);
   }, [accessToken]);
@@ -202,14 +260,10 @@ export default function AuditsPage() {
 
   const handleNewAuditClick = () => {
     const isOnboarding = new URLSearchParams(window.location.search).get("onboarding") === "1";
-    if (admin?.plan_limits && auditCount >= admin.plan_limits.audits) {
-      setLimitModalOpen(true);
-    } else {
-      router.push(`/checklists${isOnboarding ? "?onboarding=1" : ""}`);
-    }
+    router.push(`/checklists${isOnboarding ? "?onboarding=1" : ""}`);
   };
 
-  const isLimitExceeded = admin?.plan_limits && auditCount >= admin.plan_limits.audits;
+  const isLimitExceeded = false;
 
   const handleCancel = async (id: string, title: string) => {
     if (!accessToken) return;
@@ -237,26 +291,44 @@ export default function AuditsPage() {
     setDeleting(null);
   };
 
-  const handlePermanentDelete = async (id: string, title: string) => {
-    if (!accessToken) return;
-    const currentAudit = audits.find(a => a.audit_id === id);
-    if (currentAudit?.status !== "plan") {
-      toast(`Audits in "${STATUS_LABEL[currentAudit?.status || '']}" status cannot be deleted. You can only cancel them.`, "warning");
-      return;
-    }
+  // Same rule as the backend: the creating workspace rates the auditor of a completed audit.
+  const canRate = (a: AuditAssignment) => !isFirmAdmin && a.created_by === admin?.entity_code
+    && a.status === "completed" && Boolean(a.assigned_auditor_id);
 
-    const ok = await confirm({
-      title: "Delete Audit",
-      message: `Are you sure you want to PERMANENTLY delete "${title}"? This action cannot be undone.`,
-      confirmText: "Delete Permanently",
-      variant: "error",
-    });
-    if (!ok) return;
-    setDeleting(id);
-    const res = await auditApi.delete(accessToken, id);
+  const saveRating = async (stars: number, comment: string) => {
+    if (!accessToken || !ratingTarget) return { success: false, message: "Your session has expired. Please sign in again." };
+    try {
+      const result = await auditApi.saveAuditorRating(accessToken, ratingTarget.audit_id, { stars, comment });
+      if (!result.success) return { success: false, message: result.message };
+      const saved = (result.data as { rating?: { stars: number; comment: string | null } } | undefined)?.rating;
+      const auditId = ratingTarget.audit_id;
+      setAudits((current) => current.map((a) => a.audit_id === auditId
+        ? { ...a, auditor_rating: { stars: Number(saved?.stars ?? stars), comment: saved?.comment ?? (comment || null) } } : a));
+      toast(result.message || "Auditor rated successfully.", "success");
+      setRatingTarget(null);
+      return { success: true };
+    } catch {
+      return { success: false, message: "Unable to save the auditor rating." };
+    }
+  };
+
+  const handlePermanentDelete = (id: string, title: string) => {
+    setDeleteTarget({ id, title });
+  };
+
+  const confirmPermanentDelete = async (password: string) => {
+    const target = deleteTarget;
+    if (!target || !accessToken) return;
+
+    setDeleting(target.id);
+    const res = await auditApi.delete(accessToken, target.id, password);
     if (res.success) {
-      toast("Audit deleted successfully.", "success");
-      fetchAudits();
+      setDeleteTarget(null);
+      toast(
+        res.message || "Audit and all related records were deleted.",
+        res.data?.media_cleanup_failed ? "warning" : "success"
+      );
+      await fetchAudits();
     } else {
       toast(res.message || "Failed to delete audit.", "error");
     }
@@ -274,15 +346,9 @@ export default function AuditsPage() {
       return;
     }
 
-    const progress = currentAudit?.progress_pct || 0;
-    const restoredStatus: "plan" | "in_progress" | "completed" = progress === 0
-      ? "plan"
-      : progress === 100
-        ? "completed"
-        : "in_progress";
     const ok = await confirm({
       title: "Re-enable Audit",
-      message: `Re-enable the audit "${currentAudit?.title || "Audit"}"? It will be restored as ${STATUS_LABEL[restoredStatus]}.`,
+      message: `Re-enable the audit "${currentAudit?.title || "Audit"}"? A planned audit will reserve its tokens again.`,
       confirmText: "Re-enable Audit",
       variant: "warning",
     });
@@ -290,7 +356,7 @@ export default function AuditsPage() {
 
     try {
       setToggling(id);
-      const res = await auditApi.update(accessToken, id, { status: restoredStatus });
+      const res = await auditApi.restore(accessToken, id);
       if (res.success) {
         toast("Audit re-enabled successfully.", "success");
         await fetchAudits();
@@ -325,9 +391,24 @@ export default function AuditsPage() {
           message="Your current plan has reached the maximum number of audits allowed."
           limit={admin?.plan_limits?.audits || 0}
         />
+        <CriticalDeleteModal
+          isOpen={Boolean(deleteTarget)}
+          title="Permanently delete audit?"
+          itemName={deleteTarget?.title || "Audit"}
+          description="This action cannot be undone. Audito will verify your current admin password before deleting anything."
+          consequences={[
+            "The audit assignment, responses, progress, corrective actions, ratings, and notifications",
+            "Every corrective action plan created from this audit, including sub-CAPs",
+            "All audit and CAP evidence files stored on this server",
+          ]}
+          confirmLabel="Delete audit"
+          busy={Boolean(deleteTarget && deleting === deleteTarget.id)}
+          onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+          onConfirm={confirmPermanentDelete}
+        />
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <ClipboardCheck size={24} className="text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.3)]" />
@@ -337,26 +418,26 @@ export default function AuditsPage() {
               {isFirmAdmin ? "Manage audits assigned to your firm by your clients." : "Manage and track your audit assignments."}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <IconButton bordered size="lg" onClick={fetchAudits} title="Refresh">
-              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            </IconButton>
-            {!isFirmAdmin && (
-              <Button
-                variant="secondary"
-                onClick={() => router.push("/audits/comparison")}
-                leftIcon={<BarChart3 size={16} />}
-              >
-                <span className="sm:hidden">Compare</span>
-                <span className="hidden sm:inline">Compare audits</span>
-              </Button>
-            )}
-            {!isFirmAdmin && (
-              <Button onClick={handleNewAuditClick} leftIcon={isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}>
-                <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Create"}</span>
-                <span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : "Create New Audit"}</span>
-              </Button>
-            )}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            {!isFirmAdmin && <button type="button" onClick={() => router.push('/settings/billing')} className="grid grid-cols-2 overflow-hidden rounded-2xl border border-white/[0.09] bg-white/[0.025] text-left transition hover:border-amber-400/20">
+              <span className="flex min-w-[132px] items-center gap-2.5 border-r border-white/[0.07] px-3 py-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/10 text-amber-300"><Coins size={16} /></span><span><span className="block text-[9px] font-bold uppercase tracking-widest text-gray-500">{usesLinkedTokenPool ? "Pool available" : "Available"}</span><span className="block text-lg font-black leading-tight text-white">{Number(tokenWallet?.available_tokens || 0).toLocaleString()}</span></span></span>
+              <span className="flex min-w-[132px] items-center gap-2.5 px-3 py-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-400/10 text-blue-300"><ShieldCheck size={16} /></span><span><span className="block text-[9px] font-bold uppercase tracking-widest text-gray-500">{usesLinkedTokenPool ? "Pool on hold" : "On hold"}</span><span className="block text-lg font-black leading-tight text-white">{Number(tokenWallet?.held_tokens || 0).toLocaleString()}</span></span></span>
+            </button>}
+            <div className="flex items-center gap-2">
+              <IconButton bordered size="lg" onClick={fetchAudits} title="Refresh">
+                <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+              </IconButton>
+              {!isFirmAdmin && (
+                <Button variant="secondary" onClick={() => router.push("/audits/comparison")} leftIcon={<BarChart3 size={16} />}>
+                  <span className="sm:hidden">Compare</span><span className="hidden sm:inline">Compare audits</span>
+                </Button>
+              )}
+              {!isFirmAdmin && (
+                <Button onClick={handleNewAuditClick} leftIcon={isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}>
+                  <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Create"}</span><span className="hidden sm:block">{isLimitExceeded ? "Upgrade" : "Create New Audit"}</span>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -410,11 +491,11 @@ export default function AuditsPage() {
                   <Th className="w-12">#</Th>
                   <Th>Audit</Th>
                   {!isFirmAdmin && <Th>Type</Th>}
+                  <Th>Auditor</Th>
                   <Th>Created At</Th>
                   <Th>Start Date</Th>
                   <Th>End Date</Th>
-                  {!isFirmAdmin && <Th>Budget</Th>}
-                  {!isFirmAdmin && <Th>Workers</Th>}
+                  
                   <Th>Status</Th>
                   <Th>Progress</Th>
                   <Th align="right">Actions</Th>
@@ -446,6 +527,9 @@ export default function AuditsPage() {
                           </span>
                         </td>
                         )}
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <AuditorCell audit={a} showFirm={!isFirmAdmin} />
+                        </td>
                         <td className="px-4 py-3 text-xs text-gray-400">{fmtDate(a.created_at)}</td>
                         <td className="px-4 py-3 text-gray-300">
                           {fmtDate(a.start_date)}
@@ -453,16 +537,7 @@ export default function AuditsPage() {
                         <td className="px-4 py-3 text-gray-300">
                           {fmtDate(a.end_date)}
                         </td>
-                        {!isFirmAdmin && (
-                        <>
-                        <td className="px-4 py-3 text-gray-300">
-                          {a.budget ? `${a.currency || "$"}${a.budget}` : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-gray-300">
-                          {a.num_workers !== null ? a.num_workers : "—"}
-                        </td>
-                        </>
-                        )}
+                       
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-medium ${isOverdue ? "bg-red-500/15 text-red-400 border-red-500/20" : STATUS_BADGE[a.status] || ""}`}>
                             {isOverdue && <AlertTriangle size={11} />}
@@ -491,7 +566,8 @@ export default function AuditsPage() {
 
                             {!isFirmAdmin && (
                               <div className="flex items-center gap-3">
-                                {a.status === 'plan' && (
+                                {canRate(a) && <RateAuditorButton rating={a.auditor_rating} onClick={() => setRatingTarget(a)} />}
+                                {a.created_by === admin.entity_code && (
                                   <button
                                     onClick={() => handlePermanentDelete(a.audit_id, a.title)}
                                     disabled={deleting === a.audit_id}
@@ -505,27 +581,29 @@ export default function AuditsPage() {
                                     )}
                                   </button>
                                 )}
-                                <label className="inline-flex items-center cursor-pointer" title={a.status === 'cancelled' ? "Re-enable audit" : "Cancel audit"}>
-                                  <input
-                                    type="checkbox"
-                                    disabled={toggling === a.audit_id || deleting === a.audit_id}
-                                    className="sr-only peer"
-                                    checked={a.status !== 'cancelled'}
-                                    onChange={(e) => {
-                                      if (!e.target.checked) {
-                                        handleCancel(a.audit_id, a.title);
-                                      } else {
-                                        handleToggleAudit(a.audit_id, true);
-                                      }
-                                    }}
-                                  />
-                                  <div className={`relative w-11 h-6 rounded-full transition-colors ${toggling === a.audit_id
-                                    ? "bg-gray-600 opacity-50"
-                                    : a.status === 'cancelled' ? "bg-gray-700" : "bg-secondary-500"
-                                    } peer-checked:bg-secondary-500 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed`}>
-                                    <div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-all ${a.status !== 'cancelled' ? 'translate-x-5' : ''}`} />
-                                  </div>
-                                </label>
+                                {a.created_by === admin.entity_code && (
+                                  <label className="inline-flex items-center cursor-pointer" title={a.status === 'cancelled' ? "Re-enable audit" : "Cancel audit"}>
+                                    <input
+                                      type="checkbox"
+                                      disabled={toggling === a.audit_id || deleting === a.audit_id}
+                                      className="sr-only peer"
+                                      checked={a.status !== 'cancelled'}
+                                      onChange={(e) => {
+                                        if (!e.target.checked) {
+                                          handleCancel(a.audit_id, a.title);
+                                        } else {
+                                          handleToggleAudit(a.audit_id, true);
+                                        }
+                                      }}
+                                    />
+                                    <div className={`relative w-11 h-6 rounded-full transition-colors ${toggling === a.audit_id
+                                      ? "bg-gray-600 opacity-50"
+                                      : a.status === 'cancelled' ? "bg-gray-700" : "bg-secondary-500"
+                                      } peer-checked:bg-secondary-500 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed`}>
+                                      <div className={`absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 transition-all ${a.status !== 'cancelled' ? 'translate-x-5' : ''}`} />
+                                    </div>
+                                  </label>
+                                )}
 
 
                               </div>
@@ -582,7 +660,12 @@ export default function AuditsPage() {
                       </div>
                     </div>}
 
-                    <div className="mt-3 flex items-center justify-between text-xs">
+                    <div className="mt-3 flex items-start justify-between gap-3 text-xs">
+                      <span className="text-gray-500">Auditor</span>
+                      <AuditorCell audit={a} showFirm={!isFirmAdmin} align="right" />
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between text-xs">
                       <span className="text-gray-500">Progress</span>
                       <span className="font-semibold text-gray-300">{pct}%</span>
                     </div>
@@ -610,7 +693,8 @@ export default function AuditsPage() {
 
                       {!isFirmAdmin && (
                         <>
-                          {a.status === 'plan' ? (
+                          {canRate(a) && <RateAuditorButton rating={a.auditor_rating} onClick={() => setRatingTarget(a)} />}
+                          {a.created_by === admin.entity_code && (
                             <button
                               onClick={(e) => { e.stopPropagation(); handlePermanentDelete(a.audit_id, a.title); }}
                               disabled={deleting === a.audit_id}
@@ -623,7 +707,8 @@ export default function AuditsPage() {
                                 <Trash2 size={14} />
                               )}
                             </button>
-                          ) : (
+                          )}
+                          {a.created_by === admin.entity_code && a.status !== 'plan' && (
                             <button
                               onClick={(e) => { e.stopPropagation(); handleCancel(a.audit_id, a.title); }}
                               disabled={deleting === a.audit_id || a.status === 'cancelled'}
@@ -654,6 +739,13 @@ export default function AuditsPage() {
             />
           </>
         )}
+        <AuditorRatingModal
+          open={Boolean(ratingTarget)}
+          rating={ratingTarget?.auditor_rating ?? null}
+          auditTitle={ratingTarget?.title}
+          onClose={() => setRatingTarget(null)}
+          onSave={saveRating}
+        />
       </main>
     </div>
   );

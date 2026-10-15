@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { X, CheckCircle2, ChevronDown, ChevronRight, Paperclip } from "lucide-react";
 import { capApi } from "@/lib/api";
 import { progressKey } from "@/utils/executionService";
+import { mediaUrl } from "@/lib/apiConfig";
 import { Button, IconButton } from "@/components/ui";
+import { useNativeBackHandler } from "@/lib/native/backButton";
 
 export interface CapProgress {
   id: string;
@@ -250,9 +252,7 @@ export default function CompleteCapModal({
           {r.evidence.map((ev) => {
             const isImage = ev.file_type?.toLowerCase().includes('image') ||
               ev.file_path?.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i);
-            const url = ev.file_path.startsWith('http')
-              ? ev.file_path
-              : `${process.env.NEXT_PUBLIC_MEDIA_URL || ''}${ev.file_path}`;
+            const url = mediaUrl(ev.file_path);
 
             return (
               <div
@@ -351,7 +351,7 @@ export default function CompleteCapModal({
             <span className="w-[14px]" />
           )}
           <div className="min-w-0 flex-1">
-            <p className="text-sm text-white font-medium truncate">{node.name || node.code}</p>
+            <p className="text-sm text-white font-medium truncate">{node.name || "Unnamed entity"}</p>
             <p className="text-[11px] text-gray-600 truncate">{node.entity_type}</p>
           </div>
           {p && (
@@ -415,6 +415,9 @@ export default function CompleteCapModal({
       </div>
     );
   };
+
+  // Android app: back closes this dialog.
+  useNativeBackHandler(() => { onClose(); return true; }, open);
 
   if (!open) return null;
 

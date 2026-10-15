@@ -4,6 +4,7 @@
  */
 
 import { TreeNode } from "./treeHelpers";
+import { mediaOrigin, mediaUrl } from "@/lib/apiConfig";
 
 /**
  * Format file size for display
@@ -26,18 +27,14 @@ export function fmtTime(d: string | null): string {
  * Get media origin URL
  */
 export function getMediaOrigin(): string {
-  return process.env.NEXT_PUBLIC_MEDIA_URL || 
-    (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/api\/?$/, "");
+  return mediaOrigin();
 }
 
 /**
  * Get evidence file URL
  */
 export function getEvidenceUrl(filePath: string): string {
-  if (!filePath) return "";
-  if (filePath.startsWith("http://") || filePath.startsWith("https://")) return filePath;
-  const p = filePath.startsWith("/") ? filePath : `/${filePath}`;
-  return `${getMediaOrigin()}${p}`;
+  return mediaUrl(filePath);
 }
 
 /**
@@ -96,44 +93,6 @@ export function normalizeSelectedOptionIds(selected_option_ids: unknown): string
   }
 
   return [raw.trim()];
-}
-
-/**
- * Compress image file
- */
-export async function compressImage(
-  file: File,
-  maxWidth = 1280,
-  quality = 0.7
-): Promise<File> {
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let w = img.width,
-        h = img.height;
-      if (w > maxWidth) {
-        h = Math.round((h * maxWidth) / w);
-        w = maxWidth;
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx?.drawImage(img, 0, 0, w, h);
-      canvas.toBlob(
-        (blob) => {
-          if (blob) resolve(new File([blob], file.name, { type: "image/jpeg" }));
-          else resolve(file);
-        },
-        "image/jpeg",
-        quality
-      );
-    };
-    img.onerror = () => resolve(file);
-    img.src = url;
-  });
 }
 
 /**

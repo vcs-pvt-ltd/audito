@@ -1,111 +1,89 @@
 const ContactMessageModel = require('../models/ContactMessageModel');
 const PromoCodeModel = require('../models/PromoCodeModel');
 const AdminModel = require('../models/AdminModel');
-const CustomSolutionModel = require('../models/CustomSolutionModel');
 const PaymentModel = require('../models/PaymentModel');
-const PlanSettingsModel = require('../models/PlanSettingsModel');
+const PackagePricingModel = require('../models/PackagePricingModel');
+const ContactReviewModel = require('../models/ContactReviewModel');
 const PromotionCampaignModel = require('../models/PromotionCampaignModel');
 const PrivacyPolicyModel = require('../models/PrivacyPolicyModel');
+const TokenReloadPackageModel = require('../models/TokenReloadPackageModel');
 const { db } = require('../config/db');
-const { sendContactReplyEmail, sendVerificationEmail, sendCustomSolutionPriceEmail, sendManualPaymentApprovedEmail } = require('../services/emailService');
+const { sendContactReplyEmail, sendVerificationEmail, sendManualPaymentApprovedEmail } = require('../services/emailService');
+// Review emails are called through the module so tests can stub outgoing email.
+const emailService = require('../services/emailService');
+const { auditoContact } = require('../utils/auditoContact');
+const registrationLink = token => `${process.env.FRONTEND_URL || 'http://localhost:3000'}/register/quote?token=${encodeURIComponent(token)}`;
 const { settleVerifiedPayment } = require('../services/paymentSettlementService');
 const { successResponse, errorResponse } = require('../utils/helpers');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { generateAdminUserCode } = require('../utils/codeGenerator');
 
-const PLAN_FIELDS = ['monthly_price', 'max_company_levels', 'max_departments', 'max_audits', 'max_checklists', 'max_auditors'];
+function normalizeTokenPackage(body) {
+  const data = {
+    display_name: String(body?.display_name || '').trim(),
+    token_quantity: Number(body?.token_quantity),
+    bonus_token_quantity: Number(body?.bonus_token_quantity || 0),
+    is_active: body?.is_active !== false && body?.is_active !== 0 && body?.is_active !== 'false',
+  };
+  if (!data.display_name) throw new Error('Package name is required.');
+  if (!Number.isInteger(data.token_quantity) || data.token_quantity < 1) throw new Error('Token quantity must be a positive whole number.');
+  if (!Number.isInteger(data.bonus_token_quantity) || data.bonus_token_quantity < 0) throw new Error('Bonus tokens must be zero or a positive whole number.');
+  return data;
+}
 
-const listPlanSettings = async (_req, res) => {
+const listTokenReloadPackages = async (_req, res) => {
   try {
-    return successResponse(res, await PlanSettingsModel.list(), 'Plan settings retrieved.');
+    return successResponse(res, { packages: await TokenReloadPackageModel.listAll() }, 'Token packages retrieved.');
   } catch (error) {
-    console.error('listPlanSettings error:', error);
-    return errorResponse(res, 'Failed to retrieve plan settings.', 500);
+    console.error('listTokenReloadPackages error:', error);
+    return errorResponse(res, 'Failed to retrieve token packages.', 500);
   }
 };
 
-const updatePlanSettings = async (req, res) => {
+const createTokenReloadPackage = async (req, res) => {
   try {
-    const { planName } = req.params;
-    if (!await PlanSettingsModel.find(planName)) return errorResponse(res, 'Plan not found.', 404);
-    const data = { ...req.body };
-    for (const field of PLAN_FIELDS) {
-      data[field] = Number(data[field]);
-      if (!Number.isFinite(data[field]) || data[field] < 0 || (field !== 'monthly_price' && !Number.isInteger(data[field]))) return errorResponse(res, `Invalid ${field.replaceAll('_', ' ')}.`, 400);
-    }
-    if ([data.max_company_levels, data.max_departments, data.max_audits, data.max_checklists, data.max_auditors].some((value) => value < 1)) return errorResponse(res, 'All plan limits must be at least 1.', 400);
-    data.allow_auditor_eval = data.allow_auditor_eval === true || data.allow_auditor_eval === 1 || data.allow_auditor_eval === 'true';
-    data.allow_company_to_company = data.allow_company_to_company === true || data.allow_company_to_company === 1 || data.allow_company_to_company === 'true';
-    data.is_active = data.is_active !== false && data.is_active !== 0 && data.is_active !== 'false';
-    const plan = await PlanSettingsModel.updatePlan(planName, data);
-    return successResponse(res, { plan }, 'Plan settings updated. New values apply to future registrations, renewals, and upgrades.');
+    let data;
+    try { data = normalizeTokenPackage(req.body); }
+    catch (validationError) { return errorResponse(res, validationError.message, 400); }
+    const reloadPackage = await TokenReloadPackageModel.create(data);
+    return successResponse(res, { package: reloadPackage }, 'Token package created.', 201);
   } catch (error) {
-    console.error('updatePlanSettings error:', error);
-    return errorResponse(res, 'Failed to update plan settings.', 500);
+    if (error.code === '23505') return errorResponse(res, 'A package with the same token quantity and bonus already exists.', 409);
+    console.error('createTokenReloadPackage error:', error);
+    return errorResponse(res, 'Failed to create token package.', 500);
   }
 };
 
-const createPlanSettings = async (req, res) => {
+const updateTokenReloadPackage = async (req, res) => {
   try {
-    const plan_name = String(req.body?.plan_name || '').trim().replace(/\s+/g, ' ');
-    const display_name = String(req.body?.display_name || plan_name).trim();
-    if (!/^[A-Za-z][A-Za-z0-9 -]{1,38}$/.test(plan_name) || !display_name) {
-      return errorResponse(res, 'Enter a plan name using letters, numbers, spaces, or hyphens.', 400);
-    }
-    if (await PlanSettingsModel.find(plan_name)) return errorResponse(res, 'A plan with this name already exists.', 409);
-    const data = { ...req.body, plan_name, display_name };
-    for (const field of PLAN_FIELDS) {
-      data[field] = Number(data[field]);
-      if (!Number.isFinite(data[field]) || data[field] < 0 || (field !== 'monthly_price' && !Number.isInteger(data[field]))) {
-        return errorResponse(res, `Invalid ${field.replaceAll('_', ' ')}.`, 400);
-      }
-    }
-    if ([data.max_company_levels, data.max_departments, data.max_audits, data.max_checklists, data.max_auditors].some((value) => value < 1)) {
-      return errorResponse(res, 'All plan limits must be at least 1.', 400);
-    }
-    data.allow_auditor_eval = Boolean(data.allow_auditor_eval);
-    data.allow_company_to_company = Boolean(data.allow_company_to_company);
-    data.is_active = data.is_active !== false;
-    const plan = await PlanSettingsModel.createPlan(data);
-    return successResponse(res, { plan }, 'Plan created successfully.');
+    const packageId = String(req.params.packageId || '').trim();
+    if (!await TokenReloadPackageModel.find(packageId)) return errorResponse(res, 'Token package not found.', 404);
+    let data;
+    try { data = normalizeTokenPackage(req.body); }
+    catch (validationError) { return errorResponse(res, validationError.message, 400); }
+    const reloadPackage = await TokenReloadPackageModel.update(packageId, data);
+    return successResponse(res, { package: reloadPackage }, 'Token package updated.');
   } catch (error) {
-    console.error('createPlanSettings error:', error);
-    return errorResponse(res, 'Failed to create plan.', 500);
+    if (error.code === '23505') return errorResponse(res, 'A package with the same token quantity and bonus already exists.', 409);
+    console.error('updateTokenReloadPackage error:', error);
+    return errorResponse(res, 'Failed to update token package.', 500);
   }
 };
 
-const updateYearlyDiscount = async (req, res) => {
+const deleteTokenReloadPackage = async (req, res) => {
   try {
-    const yearlyDiscountPercent = Number(req.body?.yearly_discount_percent);
-    if (!Number.isFinite(yearlyDiscountPercent) || yearlyDiscountPercent < 0 || yearlyDiscountPercent > 100) {
-      return errorResponse(res, 'Yearly discount must be between 0 and 100%.', 400);
-    }
-    const catalog = await PlanSettingsModel.updateYearlyDiscount(yearlyDiscountPercent);
-    return successResponse(res, catalog, 'Yearly discount updated for all plans.');
+    const packageId = String(req.params.packageId || '').trim();
+    if (!packageId) return errorResponse(res, 'Token package not found.', 404);
+    if (!await TokenReloadPackageModel.remove(packageId)) return errorResponse(res, 'Token package not found.', 404);
+    return successResponse(res, null, 'Token package deleted.');
   } catch (error) {
-    console.error('updateYearlyDiscount error:', error);
-    return errorResponse(res, 'Failed to update yearly discount.', 500);
-  }
-};
-
-const updateEntryPrice = async (req, res) => {
-  try {
-    const allowed = ['Customer', 'Buying Office', 'Supplier', 'Audit Firm Company', 'Branch', 'Audit Firm Department'];
-    const { entityType } = req.params;
-    const monthlyPrice = Number(req.body?.monthly_price);
-    if (!allowed.includes(entityType) || !Number.isFinite(monthlyPrice) || monthlyPrice < 0) return errorResponse(res, 'Invalid entry price.', 400);
-    const entryPrice = await PlanSettingsModel.updateEntryPrice(entityType, monthlyPrice);
-    return successResponse(res, { entry_price: entryPrice }, 'Entry price updated.');
-  } catch (error) {
-    console.error('updateEntryPrice error:', error);
-    return errorResponse(res, 'Failed to update entry price.', 500);
+    console.error('deleteTokenReloadPackage error:', error);
+    return errorResponse(res, 'Failed to delete token package.', 500);
   }
 };
 
 // --- Promotion campaigns (automatic, no promo code required) ---
-const PROMOTION_CYCLES = new Set(['Monthly', 'Yearly', 'Any']);
-
 async function validatePromotionCampaign(body) {
   const name = String(body?.name || '').trim();
   const description = String(body?.description || '').trim();
@@ -114,10 +92,9 @@ async function validatePromotionCampaign(body) {
   const priority = Number(body?.priority ?? 0);
   const startsAt = new Date(body?.starts_at);
   const endsAt = new Date(body?.ends_at);
-  const plans = Array.isArray(body?.plans) ? body.plans : [];
-  const applies_to_registration = body?.applies_to_registration !== false;
-  const applies_to_upgrade = body?.applies_to_upgrade === true;
-  const applies_to_renewal = body?.applies_to_renewal === true;
+  const applies_to_registration = false;
+  const applies_to_upgrade = false;
+  const applies_to_token_reload = true;
 
   if (!name || name.length > 100) throw new Error('Campaign name is required and must be 100 characters or fewer.');
   if (description.length > 300) throw new Error('Campaign description must be 300 characters or fewer.');
@@ -129,26 +106,11 @@ async function validatePromotionCampaign(body) {
   if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || startsAt >= endsAt) {
     throw new Error('Enter a valid start date and a later end date.');
   }
-  if (!applies_to_registration && !applies_to_upgrade && !applies_to_renewal) throw new Error('Choose at least one purchase type.');
-  if (!plans.length) throw new Error('Select at least one eligible plan.');
-
-  const catalog = await PlanSettingsModel.list();
-  const availablePlans = new Set(catalog.plans.filter((plan) => plan.plan_name !== 'Custom').map((plan) => plan.plan_name));
-  const seen = new Set();
-  const normalizedPlans = plans.map((plan) => {
-    const plan_name = String(plan?.plan_name || '').trim();
-    const billing_cycle = String(plan?.billing_cycle || '').trim();
-    const key = `${plan_name}:${billing_cycle}`;
-    if (!availablePlans.has(plan_name) || !PROMOTION_CYCLES.has(billing_cycle)) throw new Error('Campaign includes an invalid plan or billing cycle.');
-    if (seen.has(key)) throw new Error('Each plan and billing cycle can only be selected once.');
-    seen.add(key);
-    return { plan_name, billing_cycle };
-  });
-
   return {
     name, description, discount_type, discount_value, priority,
     starts_at: startsAt, ends_at: endsAt, applies_to_registration, applies_to_upgrade,
-    applies_to_renewal, is_active: body?.is_active !== false, plans: normalizedPlans,
+    applies_to_renewal: false, applies_to_token_reload,
+    is_active: body?.is_active !== false,
   };
 }
 
@@ -290,28 +252,37 @@ const listPromoCodes = async (req, res) => {
   }
 };
 
+// Promo codes are entered on the payment page and take a percentage off the
+// list price of a Company package, plan activation or token reload.
 const createPromoCode = async (req, res) => {
   try {
-    const { code, discount_percentage, expires_at } = req.body;
+    const code = PromoCodeModel.normalizeCode(req.body?.code);
+    const { discount_percentage, expires_at, max_redemptions } = req.body || {};
 
-    if (!code || !discount_percentage) {
-      return errorResponse(res, 'Promo code and discount percentage are required.', 400);
+    if (!/^[A-Z0-9][A-Z0-9_-]{2,29}$/.test(code)) {
+      return errorResponse(res, 'Use 3–30 letters, numbers, dashes or underscores for the code.', 400);
+    }
+    const numericDiscount = Number(discount_percentage);
+    if (!Number.isFinite(numericDiscount) || numericDiscount <= 0 || numericDiscount > 100 || Math.round(numericDiscount * 100) !== numericDiscount * 100) {
+      return errorResponse(res, 'Discount must be more than 0 and at most 100 percent, with up to 2 decimals.', 400);
+    }
+    let expiresAt = null;
+    if (expires_at) {
+      expiresAt = new Date(expires_at);
+      if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) return errorResponse(res, 'Choose an expiry date in the future, or leave it empty.', 400);
+    }
+    let maxRedemptions = null;
+    if (max_redemptions !== undefined && max_redemptions !== null && max_redemptions !== '') {
+      maxRedemptions = Number(max_redemptions);
+      if (!Number.isSafeInteger(maxRedemptions) || maxRedemptions < 1) return errorResponse(res, 'Usage limit must be a whole number of 1 or more, or empty for no limit.', 400);
+    }
+    if (await PromoCodeModel.exists(code)) {
+      return errorResponse(res, 'A promo code with this text already exists. Choose another code.', 409);
     }
 
-    const numericDiscount = parseFloat(discount_percentage);
-    if (isNaN(numericDiscount) || numericDiscount <= 0 || numericDiscount > 100) {
-      return errorResponse(res, 'Discount percentage must be a number between 0 and 100.', 400);
-    }
+    await PromoCodeModel.create({ code, discount_percentage: numericDiscount, expires_at: expiresAt, max_redemptions: maxRedemptions });
 
-    // Check if code already exists and is active
-    const existing = await PromoCodeModel.findByCode(code);
-    if (existing) {
-      return errorResponse(res, 'Promo code already exists and is currently active.', 400);
-    }
-
-    await PromoCodeModel.create({ code, discount_percentage: numericDiscount, expires_at });
-
-    return successResponse(res, null, 'Promo code generated successfully.', 201);
+    return successResponse(res, null, `Promo code ${code} created.`, 201);
   } catch (error) {
     console.error('Create promo code error:', error);
     return errorResponse(res, 'Failed to create promo code.', 500);
@@ -329,10 +300,22 @@ const deactivatePromoCode = async (req, res) => {
   }
 };
 
+const activatePromoCode = async (req, res) => {
+  try {
+    await PromoCodeModel.activate(req.params.id);
+    return successResponse(res, null, 'Promo code activated.');
+  } catch (error) {
+    console.error('Activate promo code error:', error);
+    return errorResponse(res, 'Failed to activate promo code.', 500);
+  }
+};
+
 const deletePromoCode = async (req, res) => {
   try {
     const { id } = req.params;
-    await PromoCodeModel.delete(id);
+    if (!await PromoCodeModel.delete(id)) {
+      return errorResponse(res, 'This code was used on a payment, so it is kept for invoices. Deactivate it instead.', 409);
+    }
     return successResponse(res, null, 'Promo code deleted successfully.');
   } catch (error) {
     console.error('Delete promo code error:', error);
@@ -445,116 +428,19 @@ const deleteAdmin = async (req, res) => {
   }
 };
 
-// --- Custom Solution Requests ---
-
-const listCustomSolutions = async (req, res) => {
-  try {
-    const { status } = req.query;
-    let requests;
-    if (status && ['pending', 'priced', 'accepted', 'rejected'].includes(status)) {
-      requests = await CustomSolutionModel.listByStatus(status);
-    } else {
-      requests = await CustomSolutionModel.list();
-    }
-    return successResponse(res, requests, 'Custom solution requests retrieved.');
-  } catch (error) {
-    console.error('List custom solutions error:', error);
-    return errorResponse(res, 'Failed to retrieve custom solutions.', 500);
-  }
-};
-
-const getCustomSolution = async (req, res) => {
-  try {
-    const { requestId } = req.params;
-    const request = await CustomSolutionModel.findByRequestId(requestId);
-    if (!request) return errorResponse(res, 'Custom solution request not found.', 404);
-    if (!request.email_verified) {
-      return errorResponse(res, 'The organization must verify its email before this request can be priced.', 409);
-    }
-    return successResponse(res, request);
-  } catch (error) {
-    console.error('Get custom solution error:', error);
-    return errorResponse(res, 'Failed to retrieve custom solution.', 500);
-  }
-};
-
-const assignCustomSolutionPrice = async (req, res) => {
-  try {
-    const { requestId } = req.params;
-    const { assigned_price, assigned_billing_cycle, admin_notes } = req.body;
-
-    if (!assigned_price || assigned_price <= 0) {
-      return errorResponse(res, 'A valid price is required.', 400);
-    }
-    if (!assigned_billing_cycle || !['Monthly', 'Yearly'].includes(assigned_billing_cycle)) {
-      return errorResponse(res, 'Billing cycle must be Monthly or Yearly.', 400);
-    }
-
-    const request = await CustomSolutionModel.findByRequestId(requestId);
-    if (!request) return errorResponse(res, 'Custom solution request not found.', 404);
-    if (request.status !== 'pending') {
-      return errorResponse(res, 'This request has already been processed.', 400);
-    }
-
-    // Create payment transaction
-    const payment = await PaymentModel.create({
-      rootEntityCode: request.root_entity_code,
-      purpose: 'registration',
-      planName: 'Custom',
-      billingCycle: assigned_billing_cycle,
-      amount: parseFloat(assigned_price),
-      payerName: request.org_name,
-      payerEmail: request.org_email,
-      orgName: request.org_name,
-    });
-
-    // Update custom solution request with price and payment code
-    await CustomSolutionModel.assignPrice(requestId, {
-      assigned_price: parseFloat(assigned_price),
-      assigned_billing_cycle,
-      admin_notes: admin_notes || null,
-    });
-    await CustomSolutionModel.updatePaymentCode(requestId, payment.payment_code);
-
-    // Send email notification to user
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    // The administrator account is configured before checkout. The setup page
-    // redirects the verified organization directly to the payment screen.
-    const paymentUrl = `${baseUrl}/custom-solution/setup-admin?code=${payment.payment_code}`;
-    const userName = request.org_name;
-
-    sendCustomSolutionPriceEmail(request.org_email, userName, {
-      orgName: request.org_name,
-      price: parseFloat(assigned_price),
-      billingCycle: assigned_billing_cycle,
-      paymentUrl,
-      limits: {
-        max_company_levels: request.max_company_levels,
-        max_departments: request.max_departments,
-        max_audits: request.max_audits,
-        max_checklists: request.max_checklists,
-        max_auditors: request.max_auditors,
-      },
-    }).catch(err => console.error('Failed to send custom solution price email:', err));
-
-    return successResponse(res, { payment_code: payment.payment_code }, 'Price assigned and notification sent.');
-  } catch (error) {
-    console.error('Assign custom solution price error:', error);
-    return errorResponse(res, 'Failed to assign price.', 500);
-  }
-};
-
 // --- Registered Organizations ---
 const listOrganizations = async (req, res) => {
   try {
+    // Every workspace registration (Company package or quoted account) creates a
+    // registration payment; its latest row tells whether the package is paid.
     const [rows] = await db.query(`
-      SELECT
+      SELECT * FROM (
+      SELECT DISTINCT ON (s.root_entity_code)
         s.root_entity_code,
         s.plan_name,
-        s.billing_cycle,
-        s.is_active,
-        s.start_date,
-        s.end_date,
+        s.status AS payment_status,
+        (s.status = 'paid') AS is_active,
+        s.paid_at AS activated_at,
         s.created_at,
         a.first_name,
         a.last_name,
@@ -577,8 +463,8 @@ const listOrganizations = async (req, res) => {
           comp.name, cus.name, csup.name, clus.name, fact.name,
           unit.name, dept.name, sec.name, afc.name, afcb.name, afcd.name
         ) AS org_name
-      FROM subscriptions s
-      LEFT JOIN admins a ON a.entity_code = s.root_entity_code
+      FROM payment_transactions s
+      LEFT JOIN admins a ON a.entity_code = s.root_entity_code AND a.role = 'admin'
       LEFT JOIN companies comp ON comp.comp_code = s.root_entity_code
       LEFT JOIN customers cus ON cus.cust_code = s.root_entity_code
       LEFT JOIN customer_suppliers csup ON csup.csup_code = s.root_entity_code
@@ -590,7 +476,10 @@ const listOrganizations = async (req, res) => {
       LEFT JOIN audit_firm_companies afc ON afc.afc_code = s.root_entity_code
       LEFT JOIN audit_firm_company_branches afcb ON afcb.afc_branch_code = s.root_entity_code
       LEFT JOIN audit_firm_company_departments afcd ON afcd.afc_dept_code = s.root_entity_code
-      ORDER BY s.created_at DESC
+      WHERE s.purpose = 'registration'
+      ORDER BY s.root_entity_code, (s.status = 'paid') DESC, s.created_at DESC, a.id
+      ) workspaces
+      ORDER BY created_at DESC
     `);
     return successResponse(res, rows, 'Organizations retrieved.');
   } catch (error) {
@@ -603,10 +492,10 @@ const listOrganizations = async (req, res) => {
 const getDashboardStats = async (req, res) => {
   try {
     const getPeriodConfig = (value) => {
-      if (value === 'daily') return { dateFormat: '%Y-%m-%d', interval: '30 DAY' };
-      if (value === 'weekly') return { dateFormat: '%x-W%v', interval: '12 WEEK' };
-      if (value === 'yearly') return { dateFormat: '%Y', interval: '5 YEAR' };
-      return { dateFormat: '%Y-%m', interval: '12 MONTH' };
+      if (value === 'daily') return { dateFormat: 'YYYY-MM-DD', interval: '30 DAY' };
+      if (value === 'weekly') return { dateFormat: 'IYYY-"W"IW', interval: '12 WEEK' };
+      if (value === 'yearly') return { dateFormat: 'YYYY', interval: '5 YEAR' };
+      return { dateFormat: 'YYYY-MM', interval: '12 MONTH' };
     };
     const registrationPeriod = req.query.period || 'monthly';
     const incomePeriod = req.query.income_period || registrationPeriod;
@@ -617,29 +506,36 @@ const getDashboardStats = async (req, res) => {
     const [[msgUnread]] = await db.query("SELECT COUNT(*) AS cnt FROM contact_messages WHERE status = 'unread'");
     const [[promoCount]] = await db.query('SELECT COUNT(*) AS cnt FROM promo_codes');
     const [[promoActive]] = await db.query('SELECT COUNT(*) AS cnt FROM promo_codes WHERE is_active = 1');
-    const [[csrCount]] = await db.query('SELECT COUNT(*) AS cnt FROM custom_solution_requests');
-    const [[csrPending]] = await db.query("SELECT COUNT(*) AS cnt FROM custom_solution_requests WHERE status = 'pending' AND email_verified = TRUE");
-    const [[orgCount]] = await db.query('SELECT COUNT(DISTINCT root_entity_code) AS cnt FROM subscriptions');
-    const [[paidCount]] = await db.query("SELECT COUNT(DISTINCT root_entity_code) AS cnt FROM payment_transactions WHERE status = 'paid'");
+    const [[reviewCount]] = await db.query('SELECT COUNT(*) AS cnt FROM contact_review_requests');
+    const [[reviewPending]] = await db.query("SELECT COUNT(*) AS cnt FROM contact_review_requests WHERE status = 'pending' AND email_verified = 1");
+    const [[orgCount]] = await db.query("SELECT COUNT(DISTINCT root_entity_code) AS cnt FROM payment_transactions WHERE purpose = 'registration'");
+    const [[paidCount]] = await db.query("SELECT COUNT(DISTINCT root_entity_code) AS cnt FROM payment_transactions WHERE purpose = 'registration' AND status = 'paid'");
     const [[adminCount]] = await db.query("SELECT COUNT(*) AS cnt FROM admins WHERE role = 'audito_admin'");
 
+    // A workspace registers once: count it at its first registration payment.
     const [monthlyRegs] = await db.query(`
-      SELECT DATE_FORMAT(created_at, '${registrationConfig.dateFormat}') AS period_label, COUNT(*) AS count
-      FROM subscriptions
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${registrationConfig.interval})
+      SELECT TO_CHAR(registered_at, '${registrationConfig.dateFormat}') AS period_label, COUNT(*) AS count
+      FROM (
+        SELECT root_entity_code, MIN(created_at) AS registered_at
+        FROM payment_transactions
+        WHERE purpose = 'registration'
+        GROUP BY root_entity_code
+      ) registrations
+      WHERE registered_at >= DATE_SUB(NOW(), INTERVAL ${registrationConfig.interval})
       GROUP BY period_label
       ORDER BY period_label ASC
     `);
 
-    // Plan distribution
+    // Paid workspaces by package type ('Package' = Company package, 'Custom' = quoted account)
     const [planDist] = await db.query(`
-      SELECT plan_name, COUNT(*) AS count
-      FROM subscriptions
+      SELECT plan_name, COUNT(DISTINCT root_entity_code) AS count
+      FROM payment_transactions
+      WHERE purpose = 'registration' AND status = 'paid'
       GROUP BY plan_name
     `);
 
     const [incomeDistribution] = await db.query(`
-      SELECT DATE_FORMAT(COALESCE(paid_at, created_at), '${incomeConfig.dateFormat}') AS period_label,
+      SELECT TO_CHAR(COALESCE(paid_at, created_at), '${incomeConfig.dateFormat}') AS period_label,
              COALESCE(SUM(amount), 0) AS amount
       FROM payment_transactions
       WHERE status = 'paid'
@@ -654,8 +550,8 @@ const getDashboardStats = async (req, res) => {
         messages_unread: msgUnread.cnt,
         promo_codes: promoCount.cnt,
         promo_codes_active: promoActive.cnt,
-        custom_solutions: csrCount.cnt,
-        custom_solutions_pending: csrPending.cnt,
+        contact_reviews: reviewCount.cnt,
+        contact_reviews_pending: reviewPending.cnt,
         organizations: orgCount.cnt,
         organizations_paid: paidCount.cnt,
         audito_admins: adminCount.cnt,
@@ -686,7 +582,12 @@ const listPayments = async (req, res) => {
         pt.purpose,
         pt.org_name,
         pt.plan_name,
-        pt.billing_cycle,
+        pt.token_quantity,
+        pt.bonus_token_quantity,
+        pt.token_unit_price,
+        pt.pricing_snapshot,
+        fulfillment.fulfillment_type,
+        fulfillment.token_quantity AS fulfilled_token_quantity,
         pt.invoice_number,
         pt.paid_at,
         pt.created_at,
@@ -705,6 +606,7 @@ const listPayments = async (req, res) => {
           unit.name, dept.name, sec.name, afc.name, afcb.name, afcd.name
         ) AS org_name_resolved
       FROM payment_transactions pt
+      LEFT JOIN payment_fulfillments fulfillment ON fulfillment.payment_transaction_id = pt.payment_transaction_id
       LEFT JOIN admins a ON a.entity_code = pt.root_entity_code
       LEFT JOIN admins reviewer ON reviewer.admin_id = pt.manual_approval_reviewed_by
       LEFT JOIN companies comp ON comp.comp_code = pt.root_entity_code
@@ -769,28 +671,113 @@ const approveManualPayment = async (req, res) => {
 };
 
 module.exports = {
+  listContactReviews: async (_req, res) => {
+    try { return successResponse(res, await ContactReviewModel.list()); }
+    catch (error) { console.error('listContactReviews error:', error); return errorResponse(res, 'Failed to load requests.', 500); }
+  },
+  quoteContactReview: async (req, res) => {
+    const price = Number(req.body?.assigned_price);
+    if (!Number.isFinite(price) || price <= 0 || Math.round(price * 100) !== price * 100) return errorResponse(res, 'Enter a valid USD quote.', 400);
+    try {
+      const current = await ContactReviewModel.find(req.params.requestId);
+      if (!current || current.status !== 'pending') return errorResponse(res, 'Pending request not found.', 404);
+      if (!current.email_verified) return errorResponse(res, 'The requester must verify their email before a quote is sent.', 409);
+      const adminNotes = String(req.body?.admin_notes || '').trim().slice(0, 2000);
+      // Everything paid becomes tokens, as with the Company package (1 token = 1 audit line).
+      const unitPrice = Number((await PackagePricingModel.get()).token_unit_price);
+      const tokens = Math.round(price / unitPrice);
+      if (!Number.isSafeInteger(tokens) || tokens < 1) return errorResponse(res, `The quote must include at least one token ($${unitPrice.toFixed(2)}).`, 400);
+      const registrationToken = await ContactReviewModel.quote(current.request_id, { price, notes: adminNotes, tokens, unitPrice });
+      if (!registrationToken) return errorResponse(res, 'This request was already quoted.', 409);
+      const request = await ContactReviewModel.find(current.request_id);
+      // The quote is saved first so the link in the email always works. If the
+      // email fails, "Resend quote email" sends it again with a new link.
+      try {
+        await emailService.sendContactReviewQuoteEmail(request, auditoContact(), registrationLink(registrationToken));
+      } catch (error) {
+        console.error('Contact review quote email failed:', error);
+        return successResponse(res, request, 'Quote saved, but the email could not be sent. Use "Resend quote email".');
+      }
+      return successResponse(res, request, 'Quote sent with a registration link.');
+    } catch (error) { console.error('quoteContactReview error:', error); return errorResponse(res, 'Failed to send quote.', 500); }
+  },
+  // A lost or expired quote email: a new registration link replaces the old one.
+  resendContactReviewQuote: async (req, res) => {
+    try {
+      const current = await ContactReviewModel.find(req.params.requestId);
+      if (!current) return errorResponse(res, 'Request not found.', 404);
+      if (current.status !== 'quoted') return errorResponse(res, 'Only quoted requests have a registration link.', 409);
+      if (current.registered_at) return errorResponse(res, 'This organization has already registered.', 409);
+      const token = await ContactReviewModel.renewRegistration(current.request_id);
+      if (!token) return errorResponse(res, 'Could not create a new registration link.', 409);
+      const request = await ContactReviewModel.find(current.request_id);
+      await emailService.sendContactReviewQuoteEmail(request, auditoContact(), registrationLink(token));
+      return successResponse(res, request, `Quote email sent again to ${current.email} with a new registration link.`);
+    } catch (error) { console.error('resendContactReviewQuote error:', error); return errorResponse(res, 'Failed to send the quote email.', 500); }
+  },
+  closeContactReview: async (req, res) => {
+    try {
+      const current = await ContactReviewModel.find(req.params.requestId);
+      if (!current) return errorResponse(res, 'Request not found.', 404);
+      if (current.status === 'closed') return successResponse(res, current, 'Request is already closed.');
+      return successResponse(res, await ContactReviewModel.close(current.request_id), 'Request closed.');
+    } catch (error) { console.error('closeContactReview error:', error); return errorResponse(res, 'Failed to close the request.', 500); }
+  },
+  reopenContactReview: async (req, res) => {
+    try {
+      const current = await ContactReviewModel.find(req.params.requestId);
+      if (!current) return errorResponse(res, 'Request not found.', 404);
+      if (current.status !== 'closed') return successResponse(res, current, 'Request is already open.');
+      return successResponse(res, await ContactReviewModel.reopen(current.request_id), 'Request reopened.');
+    } catch (error) { console.error('reopenContactReview error:', error); return errorResponse(res, 'Failed to reopen the request.', 500); }
+  },
+  // Notes for the Audito team only; never sent to the requester.
+  updateContactReviewNotes: async (req, res) => {
+    try {
+      const current = await ContactReviewModel.find(req.params.requestId);
+      if (!current) return errorResponse(res, 'Request not found.', 404);
+      const notes = String(req.body?.internal_notes || '').trim().slice(0, 4000);
+      return successResponse(res, await ContactReviewModel.setInternalNotes(current.request_id, notes), 'Notes saved.');
+    } catch (error) { console.error('updateContactReviewNotes error:', error); return errorResponse(res, 'Failed to save notes.', 500); }
+  },
+  resendContactReviewVerification: async (req, res) => {
+    try {
+      const current = await ContactReviewModel.find(req.params.requestId);
+      if (!current) return errorResponse(res, 'Request not found.', 404);
+      if (current.email_verified) return errorResponse(res, 'This email is already verified.', 409);
+      const token = await ContactReviewModel.renewVerification(current.request_id);
+      if (!token) return errorResponse(res, 'Closed requests cannot be verified. Reopen the request first.', 409);
+      await emailService.sendContactReviewVerificationEmail(current, token, auditoContact());
+      return successResponse(res, await ContactReviewModel.find(current.request_id), `Verification email sent to ${current.email}.`);
+    } catch (error) { console.error('resendContactReviewVerification error:', error); return errorResponse(res, 'Failed to send the verification email.', 500); }
+  },
+  getPackagePricing: async (_req, res) => {
+    try { return successResponse(res, await PackagePricingModel.get()); }
+    catch (error) { console.error('getPackagePricing error:', error); return errorResponse(res, 'Pricing is unavailable.', 503); }
+  },
+  updatePackagePricing: async (req, res) => {
+    try { return successResponse(res, await PackagePricingModel.update(req.body?.token_unit_price), 'Token price updated for future purchases.'); }
+    catch (error) { return errorResponse(res, error.message, 400); }
+  },
   listMessages,
   replyMessage,
   listPromoCodes,
   createPromoCode,
   deactivatePromoCode,
+  activatePromoCode,
   deletePromoCode,
   listAdmins,
   createAdmin,
   toggleAdminStatus,
   deleteAdmin,
-  listCustomSolutions,
-  getCustomSolution,
-  assignCustomSolutionPrice,
   getDashboardStats,
   listOrganizations,
   listPayments,
   approveManualPayment,
-  listPlanSettings,
-  updatePlanSettings,
-  createPlanSettings,
-  updateYearlyDiscount,
-  updateEntryPrice,
+  listTokenReloadPackages,
+  createTokenReloadPackage,
+  updateTokenReloadPackage,
+  deleteTokenReloadPackage,
   listPromotionCampaigns,
   createPromotionCampaign,
   updatePromotionCampaign,

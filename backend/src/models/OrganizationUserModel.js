@@ -293,7 +293,8 @@ const OrganizationUserModel = {
     const [rows] = await db.query(
       `SELECT DISTINCT eh.organization_user_id, eh.first_name, eh.last_name, eh.email, eh.role,
               eh.user_type, eh.assigned_entity_type, eh.assigned_entity_code,
-              COALESCE(ous.org_tree_id, eh.assigned_org_tree_id) AS assigned_org_tree_id
+              COALESCE(ous.org_tree_id, eh.assigned_org_tree_id) AS assigned_org_tree_id,
+              eh.created_at
          FROM organization_users eh
          LEFT JOIN organization_user_scopes ous
            ON ous.organization_user_id = eh.organization_user_id AND ous.is_active = TRUE

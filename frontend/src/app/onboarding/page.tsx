@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useOnboarding } from "@/context/OnboardingContext";
-import OnboardingWelcomeModal from "@/components/onboarding/OnboardingWelcomeModal";
+import OnboardingWelcome from "@/components/onboarding/OnboardingWelcomeModal";
+import { journeyPreview, type JourneyItem } from "@/components/onboarding/journey";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
+
+const tips = (items: { title: string; description: string }[]): JourneyItem[] =>
+  items.map(item => ({ key: item.title, ...item, state: "upcoming" }));
 
 function OnboardingContent() {
   const router = useRouter();
@@ -14,78 +18,87 @@ function OnboardingContent() {
   const {
     started,
     busy,
-    doneCount,
+    hydrated,
     steps,
+    organizationSetupMethod,
+    refreshProgress,
     startOnboarding,
     skipOnboarding,
   } = useOnboarding();
+  const isAdmin = admin?.role === "admin";
+  // Saved progress decides where Start or Continue leads, so read it first.
+  const [checked, setChecked] = useState(false);
 
-  const onboardingText = useMemo(() => {
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    // If the check fails, Start still works and opens the first unfinished step it knows of.
+    refreshProgress().catch(() => undefined).finally(() => { if (!cancelled) setChecked(true); });
+    return () => { cancelled = true; };
+  }, [isAdmin, refreshProgress]);
+
+  const content = useMemo(() => {
     if (!admin) return null;
 
     if (admin.role === "auditor") {
       return {
-        heading: "Auditor Onboarding",
-        description:
-          "Welcome to Audito. As an auditor, your main workflow is to receive audit assignments, review evidence, complete inspections, and submit reports with corrective action recommendations.",
-        notes: [
-          "Review your assigned audits from the dashboard.",
-          "Record evidence and findings with clarity.",
-          "Submit reports and track resolution status.",
-        ],
-        primaryLabel: "Continue to Dashboard",
-        showSkip: false,
+        heading: "Ready for your next audit?",
+        description: "Your assignments, evidence and reports in one workspace.",
+        items: tips([
+          { title: "Find your audits", description: "Open your assignments from the dashboard." },
+          { title: "Record your findings", description: "Add answers, evidence and inspection notes." },
+          { title: "Share your report", description: "Submit results and follow up on actions." },
+        ]),
+        variant: "tips" as const,
+        primaryLabel: "Continue to dashboard",
       };
     }
 
     if (admin.role === "organization_user") {
       return {
-        heading: "Organization User Onboarding",
-        description:
-          "Welcome to Audito. As an organization user, your main responsibility is to review audit findings and analyze performance for the organization areas assigned to you.",
-        notes: [
-          "View audit findings and evidence in your assigned scope.",
-          "Analyze performance and identify trends.",
-          "Stay informed without making approvals or changes.",
-        ],
-        primaryLabel: "Continue to Dashboard",
-        showSkip: false,
+        heading: "See how your team is doing.",
+        description: "Find audit results and follow progress across the areas assigned to you.",
+        items: tips([
+          { title: "Explore your areas", description: "See the organization areas you can access." },
+          { title: "Review audit findings", description: "Read results and supporting evidence." },
+          { title: "Follow progress", description: "Track performance and spot areas to improve." },
+        ]),
+        variant: "tips" as const,
+        primaryLabel: "Continue to dashboard",
       };
     }
 
+    const combinedAvailable = admin.account_type !== "Audit Firm";
     return {
       heading: "Welcome to Audito",
-      description:
-        "We’ve designed a step-by-step onboarding experience to help you configure entities, users, and audit workflows for your organization.",
-      notes: [
-        "Create your first entities or teams.",
-        "Add auditors and assign roles.",
-        "Launch your first audit assignment.",
-      ],
-      primaryLabel: "Begin Setup Flow",
-      secondaryLabel: "Explore Dashboard",
-      showSkip: true,
+      description: combinedAvailable
+        ? "Set up your organization, checklist and team, then assign your first audit. We guide you through each step."
+        : "Set up your organization and team. We guide you through each step.",
+      items: journeyPreview(steps, { method: organizationSetupMethod, combinedAvailable }),
+      variant: "journey" as const,
+      primaryLabel: "Start setup",
+      secondaryLabel: "Explore the dashboard first",
     };
-  }, [admin]);
+  }, [admin, steps, organizationSetupMethod]);
 
   useEffect(() => {
     if (!isLoading && !admin) router.replace("/login");
+    if (!isLoading && admin && (admin.onboarding_completed || admin.onboarding_skipped)) router.replace("/dashboard");
   }, [isLoading, admin, router]);
 
-  if (isLoading || !admin || !onboardingText) {
+  if (isLoading || !admin || !content || admin.onboarding_completed || admin.onboarding_skipped) {
     return (
-      <div className="min-h-dvh flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
+      <div className="flex min-h-dvh items-center justify-center" role="status" aria-label="Loading">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-secondary-400 border-t-transparent" />
       </div>
     );
   }
 
-  const progressText = steps.length > 0 ? `${doneCount}/${steps.length} steps already completed` : undefined;
-  const handleStart = admin?.role === "admin" ? startOnboarding : skipOnboarding;
+  const doneCount = content.items.filter(item => item.state === "done").length;
   const handleSkip = async () => {
     const approved = await confirm({
       title: "Explore the dashboard instead?",
-      message: "Your setup guide will close for now. You can resume onboarding later from your workspace.",
+      message: "Your setup guide closes for now. Your progress is kept, and you can return to setup from your workspace.",
       confirmText: "Explore dashboard",
       cancelText: "Continue setup",
       variant: "warning",
@@ -94,20 +107,20 @@ function OnboardingContent() {
   };
 
   return (
-    <div className="min-h-dvh overflow-y-auto">
-      <div className="mx-auto w-full max-w-6xl px-4 pb-28 pt-20 sm:px-6 lg:px-8 lg:pt-10">
-        <OnboardingWelcomeModal
-          open={!started}
+    <div className="flex min-h-dvh items-center overflow-x-clip">
+      <div className="mx-auto w-full px-4 py-10 sm:px-8 sm:py-14 lg:px-12 lg:py-16">
+        <OnboardingWelcome
           busy={busy}
-          heading={onboardingText.heading}
-          description={onboardingText.description}
-          notes={onboardingText.notes}
-          progressText={progressText}
-          primaryLabel={onboardingText.primaryLabel}
-          secondaryLabel={onboardingText.secondaryLabel}
-          showSkip={onboardingText.showSkip}
-          onStart={handleStart}
-          onSkip={() => void handleSkip()}
+          checking={isAdmin && (!checked || !hydrated)}
+          heading={content.heading}
+          description={content.description}
+          items={content.items}
+          variant={content.variant}
+          progress={isAdmin ? { done: doneCount, total: content.items.length } : undefined}
+          primaryLabel={isAdmin && (started || doneCount > 0) ? "Continue setup" : content.primaryLabel}
+          secondaryLabel={content.secondaryLabel}
+          onStart={isAdmin ? startOnboarding : () => void skipOnboarding()}
+          onSkip={isAdmin ? () => void handleSkip() : undefined}
         />
       </div>
     </div>

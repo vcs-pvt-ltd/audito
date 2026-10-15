@@ -146,29 +146,6 @@ const sendOrganizationRegistrationVerificationEmail = async (toEmail, contactNam
   });
 };
 
-/** Verify the organization contact before its custom plan is sent for review. */
-const sendCustomSolutionVerificationEmail = async (toEmail, orgName, token) => {
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;
-  const { html, attachments } = getEmailTemplate({
-    title: 'Verify Your Custom Plan Request',
-    subtitle: 'Confirm your organization email to begin pricing review',
-    content: `
-      <p style="color: #333; font-size: 16px;">Hello ${orgName},</p>
-      <p style="color: #555; font-size: 14px; line-height: 1.6;">Please confirm this organization email address. Once verified, your custom plan request will be sent to the Audito team for pricing review.</p>
-      <div style="text-align: center; margin: 26px 0;"><a href="${verifyUrl}" style="background-color: #12B572; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block;">Verify Organization Email</a></div>
-      <p style="color: #888; font-size: 12px; line-height: 1.5;">This link expires in 48 hours. Administrator details are collected only after your tailored plan is paid.</p>
-    `,
-  });
-  await transporter.sendMail({
-    from: `"Audito" <${process.env.EMAIL_USER}>`,
-    to: toEmail,
-    subject: 'Audito - Verify Your Custom Plan Request',
-    html,
-    attachments,
-  });
-};
-
 /**
  * Send password reset email (for resend verification)
  */
@@ -492,92 +469,6 @@ const sendContactReplyEmail = async (toEmail, userName, originalMessage, replyCo
   await transporter.sendMail(mailOptions);
 };
 
-/**
- * Send custom solution price notification to user
- */
-const sendCustomSolutionPriceEmail = async (toEmail, userName, { orgName, price, billingCycle, paymentUrl, limits = null }) => {
-  const capacityRows = limits ? `
-    <tr><td style="color: #999; padding: 5px 0;">Company levels:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${limits.max_company_levels}</td></tr>
-    <tr><td style="color: #999; padding: 5px 0;">Departments:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${limits.max_departments}</td></tr>
-    <tr><td style="color: #999; padding: 5px 0;">Audits / Checklists / Auditors:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${limits.max_audits} / ${limits.max_checklists} / ${limits.max_auditors}</td></tr>` : '';
-  const { html, attachments } = getEmailTemplate({
-    title: 'Your Custom Plan is Ready',
-    subtitle: 'Set up your administrator, then complete payment',
-    content: `
-      <p style="color: #333; font-size: 16px;">Hi ${userName},</p>
-      <p style="color: #555; font-size: 14px; line-height: 1.6;">
-        Great news! We've reviewed your custom solution request for <strong>${orgName}</strong> and have prepared a tailored plan for your organization.
-      </p>
-      <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin-top: 20px;">
-        <h3 style="color: #00374B; margin-top: 0;">Plan Summary</h3>
-        <table style="width: 100%; font-size: 14px;">
-          <tr>
-            <td style="color: #999; padding: 5px 0;">Plan Type:</td>
-            <td style="color: #00374B; font-weight: 700; text-align: right;">Custom</td>
-          </tr>
-          <tr>
-            <td style="color: #999; padding: 5px 0;">Billing Cycle:</td>
-            <td style="color: #00374B; font-weight: 700; text-align: right;">${billingCycle}</td>
-          </tr>
-          <tr>
-            <td style="color: #999; padding: 5px 0;">Amount:</td>
-            <td style="color: #00374B; font-weight: 700; text-align: right; font-size: 16px;">$${price}${billingCycle === 'Monthly' ? '/month' : '/year'}</td>
-          </tr>
-          ${capacityRows}
-        </table>
-      </div>
-      <p style="color: #555; font-size: 14px; line-height: 1.6; margin-top: 20px;">
-        Your tailored plan is ready. Before proceeding to secure payment, create the administrator account for your workspace.
-      </p>
-      <div style="text-align: center; margin: 26px 0;">
-        <a href="${paymentUrl}"
-           style="background-color: #12B572; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block;">
-          Set Up Administrator
-        </a>
-      </div>
-      <p style="color: #888; font-size: 12px; line-height: 1.5;">
-        If you have any questions about your plan, please don't hesitate to contact us.
-      </p>
-    `,
-  });
-
-  const mailOptions = {
-    from: `"Audito" <${process.env.EMAIL_USER}>`,
-    to: toEmail,
-    subject: 'Audito - Your Custom Plan is Ready',
-    html,
-    attachments,
-  };
-
-  await transporter.sendMail(mailOptions);
-};
-
-/** Notify Audito administrators only after a custom requester verifies their organization email. */
-const sendCustomSolutionRequestEmail = async (toEmail, { orgName, orgEmail, entityType }) => {
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  const reviewUrl = `${baseUrl}/admin-panel/custom-solutions`;
-  const { html, attachments } = getEmailTemplate({
-    title: 'New Verified Custom Solution Request',
-    subtitle: 'A custom workspace is ready for pricing review',
-    content: `
-      <p style="color: #555; font-size: 14px; line-height: 1.6;">A verified custom solution request is ready to review.</p>
-      <table style="width: 100%; font-size: 14px; background-color: #f8f8f8; padding: 14px; border-radius: 8px;">
-        <tr><td style="color: #999; padding: 5px 0;">Organization:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${orgName}</td></tr>
-        <tr><td style="color: #999; padding: 5px 0;">Email:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${orgEmail}</td></tr>
-        <tr><td style="color: #999; padding: 5px 0;">Account type:</td><td style="color: #00374B; font-weight: 700; text-align: right;">${entityType}</td></tr>
-      </table>
-      <div style="text-align: center; margin: 26px 0;"><a href="${reviewUrl}" style="background-color: #12B572; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block;">Review Request</a></div>
-    `,
-  });
-  await transporter.sendMail({
-    from: `"Audito" <${process.env.EMAIL_USER}>`,
-    to: toEmail,
-    subject: 'Audito - New Verified Custom Solution Request',
-    html,
-    attachments,
-  });
-};
-
 const sendSubscriptionExpiryReminderEmail = async (toEmail, adminName, { planName, endDate, daysLeft }) => {
   const billingUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings/billing`;
   const endDateLabel = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(endDate));
@@ -614,11 +505,97 @@ const sendManualPaymentApprovedEmail = async (toEmail, customerName, payment) =>
   });
 };
 
+// ─── Customer and Audit Firm account reviews ────────────────────────────────
+
+const reviewRow = (label, value) => `<tr><td style="color:#888;padding:6px 0;font-size:14px;">${label}</td><td style="color:#00374B;font-weight:700;text-align:right;padding:6px 0;font-size:14px;">${value}</td></tr>`;
+const reviewCount = value => (value ? Number(value).toLocaleString('en') : 'Not given');
+
+// Request summary shared by the review emails.
+function reviewSummary(request) {
+  return `<table style="width:100%;background-color:#f8f8f8;padding:14px 16px;border-radius:8px;border-collapse:collapse;margin:18px 0;">
+    ${reviewRow('Organization', escapeHtml(request.organization_name))}
+    ${reviewRow('Account type', `${escapeHtml(request.account_type)} · ${escapeHtml(request.entity_type)}`)}
+    ${request.country ? reviewRow('Country', escapeHtml(request.country)) : ''}
+    ${reviewRow('Departments', reviewCount(request.departments))}
+    ${reviewRow('Audit lines per audit', reviewCount(request.lines_per_audit))}
+  </table>`;
+}
+
+// How to reach the Audito team: WhatsApp and email.
+function reviewContactBlock(contact) {
+  const whatsapp = contact.whatsapp_url
+    ? `<a href="${escapeHtml(contact.whatsapp_url)}" style="color:#12B572;font-weight:700;text-decoration:none;">${escapeHtml(contact.whatsapp)}</a>`
+    : escapeHtml(contact.whatsapp);
+  return `<div style="border:1px solid #e3efe9;background-color:#f3faf6;border-radius:8px;padding:14px 16px;margin:18px 0;">
+    <p style="margin:0 0 8px;color:#00374B;font-weight:700;font-size:14px;">Talk to the Audito team</p>
+    <p style="margin:0 0 4px;color:#555;font-size:14px;">WhatsApp: ${whatsapp}</p>
+    <p style="margin:0;color:#555;font-size:14px;">Email: <a href="mailto:${escapeHtml(contact.email)}" style="color:#12B572;font-weight:700;text-decoration:none;">${escapeHtml(contact.email)}</a></p>
+  </div>`;
+}
+
+const button = (url, label) => `<div style="text-align:center;margin:26px 0;"><a href="${url}" style="background-color:#12B572;color:white;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;display:inline-block;">${label}</a></div>`;
+
 module.exports = {
+  /** To the requester: request received, verify the email, and how to reach the team. */
+  sendContactReviewVerificationEmail: async (request, token, contact) => {
+    const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${encodeURIComponent(token)}`;
+    const { html, attachments } = getEmailTemplate({
+      title: 'We received your account request',
+      subtitle: 'Verify your email so our team can review it',
+      content: `<p style="color:#333;font-size:16px;">Hello ${escapeHtml(request.contact_name)},</p>
+        <p style="color:#555;font-size:14px;line-height:1.6;">Thank you for your interest in Audito. Our team reviews ${escapeHtml(request.account_type)} account requests and prepares a quote for your organization.</p>
+        ${reviewSummary(request)}
+        <p style="color:#555;font-size:14px;line-height:1.6;"><strong>Next step:</strong> verify your email address. We start the review after you verify.</p>
+        ${button(verifyUrl, 'Verify Email')}
+        <p style="color:#888;font-size:12px;line-height:1.5;">This link expires in 48 hours.</p>
+        ${reviewContactBlock(contact)}`,
+    });
+    await transporter.sendMail({ from: `"Audito" <${process.env.EMAIL_USER}>`, to: request.email,
+      subject: 'Audito - We received your account request', html, attachments });
+  },
+  /** To the Audito team: a new request to review. */
+  sendContactReviewRequestEmail: async (request, contact) => {
+    const reviewUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/admin-panel/contact-reviews`;
+    const { html, attachments } = getEmailTemplate({
+      title: 'New account review request',
+      subtitle: escapeHtml(request.account_type),
+      content: `${reviewSummary(request)}
+        <table style="width:100%;border-collapse:collapse;">
+          ${reviewRow('Contact', escapeHtml(request.contact_name))}
+          ${reviewRow('Email', escapeHtml(request.email))}
+          ${reviewRow('Phone', escapeHtml(request.phone))}
+        </table>
+        ${request.notes ? `<p style="color:#555;font-size:14px;line-height:1.6;margin-top:16px;"><strong>Notes:</strong><br>${escapeHtml(request.notes).replace(/\n/g, '<br>')}</p>` : ''}
+        <p style="color:#888;font-size:12px;">The requester must verify their email before a quote can be sent.</p>
+        ${button(reviewUrl, 'Open Account Reviews')}`,
+    });
+    await transporter.sendMail({ from: `"Audito" <${process.env.EMAIL_USER}>`, to: contact.email || process.env.EMAIL_USER,
+      subject: `[Audito] ${request.account_type} account review: ${request.organization_name}`, html, attachments });
+  },
+  /** To the requester: the quote, a button to register, and how to reach the team. */
+  sendContactReviewQuoteEmail: async (request, contact, registerUrl) => {
+    const expires = request.registration_expires_at
+      ? new Intl.DateTimeFormat('en', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(request.registration_expires_at))
+      : null;
+    const { html, attachments } = getEmailTemplate({
+      title: 'Your Audito quote is ready',
+      subtitle: escapeHtml(request.organization_name),
+      content: `<p style="color:#333;font-size:16px;">Hello ${escapeHtml(request.contact_name)},</p>
+        <p style="color:#555;font-size:14px;line-height:1.6;">Our team reviewed your ${escapeHtml(request.account_type)} request and prepared a quote of <strong>$${Number(request.assigned_price).toFixed(2)} USD</strong>.</p>
+        ${reviewSummary(request)}
+        ${request.quoted_tokens ? `<p style="color:#555;font-size:14px;line-height:1.6;">This one-time payment includes <strong>${Number(request.quoted_tokens).toLocaleString('en')} audit tokens</strong> (1 token = 1 audit line).</p>` : ''}
+        ${request.admin_notes ? `<p style="color:#555;font-size:14px;line-height:1.6;">${escapeHtml(request.admin_notes).replace(/\n/g, '<br>')}</p>` : ''}
+        <p style="color:#555;font-size:14px;line-height:1.6;"><strong>Next step:</strong> register your organization and create your administrator account. You then pay on the secure payment page to activate the workspace.</p>
+        ${registerUrl ? button(escapeHtml(registerUrl), 'Register Your Organization') : ''}
+        ${registerUrl && expires ? `<p style="color:#888;font-size:12px;line-height:1.5;text-align:center;">This link can be used once and works until ${expires}. If it expires, contact us for a new one.</p>` : ''}
+        ${reviewContactBlock(contact)}`,
+    });
+    await transporter.sendMail({ from: `"Audito" <${process.env.EMAIL_USER}>`, to: request.email, replyTo: contact.email,
+      subject: 'Audito - Your account quote is ready', html, attachments });
+  },
   sendVerificationEmail,
   sendUserInvitationEmail,
   sendOrganizationRegistrationVerificationEmail,
-  sendCustomSolutionVerificationEmail,
   sendPasswordResetEmail,
   sendLinkRequestEmail,
   sendOtpEmail,
@@ -627,8 +604,6 @@ module.exports = {
   sendLearningAssignmentEmail,
   sendContactEmail,
   sendContactReplyEmail,
-  sendCustomSolutionPriceEmail,
-  sendCustomSolutionRequestEmail,
   sendSubscriptionExpiryReminderEmail,
   sendManualPaymentApprovedEmail,
 };

@@ -1,31 +1,5 @@
 const { db } = require('../config/db');
 
-let securityColumnsReady = false;
-
-async function ensureSecurityColumns() {
-  if (securityColumnsReady) return;
-
-  const [keyHashCols] = await db.query(
-    `SHOW COLUMNS FROM organization_links LIKE 'verification_key_hash'`
-  );
-  if (keyHashCols.length === 0) {
-    await db.query(
-      `ALTER TABLE organization_links ADD COLUMN verification_key_hash varchar(64) NULL AFTER target_level`
-    );
-  }
-
-  const [verifiedAtCols] = await db.query(
-    `SHOW COLUMNS FROM organization_links LIKE 'verification_key_verified_at'`
-  );
-  if (verifiedAtCols.length === 0) {
-    await db.query(
-      `ALTER TABLE organization_links ADD COLUMN verification_key_verified_at timestamp NULL DEFAULT NULL AFTER verification_key_hash`
-    );
-  }
-
-  securityColumnsReady = true;
-}
-
 const LinkModel = {
   async create({
     organization_link_id,
@@ -41,7 +15,6 @@ const LinkModel = {
     target_org_tree_id = null,
     verification_key_hash,
   }) {
-    await ensureSecurityColumns();
     const [result] = await db.query(
       `INSERT INTO organization_links
         (organization_link_id, link_code, requester_type, requester_code, requester_level,
@@ -67,7 +40,6 @@ const LinkModel = {
   },
 
   async findByCode(link_code) {
-    await ensureSecurityColumns();
     const [rows] = await db.query(
       `SELECT * FROM organization_links WHERE link_code = ?`,
       [link_code]
@@ -86,14 +58,13 @@ const LinkModel = {
   },
 
   async updateStatus(link_code, status, { markKeyVerified = false } = {}) {
-    await ensureSecurityColumns();
     const [result] = await db.query(
       `UPDATE organization_links
        SET status = ?,
            responded_at = NOW(),
            verification_key_verified_at = CASE WHEN ? THEN NOW() ELSE verification_key_verified_at END
        WHERE link_code = ?`,
-      [status, markKeyVerified ? 1 : 0, link_code]
+      [status, Boolean(markKeyVerified), link_code]
     );
     return result;
   },
@@ -122,7 +93,6 @@ const LinkModel = {
   },
 
   async updateVerificationKey(link_code, verification_key_hash) {
-    await ensureSecurityColumns();
     const [result] = await db.query(
       `UPDATE organization_links
        SET verification_key_hash = ?, verification_key_verified_at = NULL
@@ -133,7 +103,6 @@ const LinkModel = {
   },
 
   async getLinksForEntity(entity_type, entity_code) {
-    await ensureSecurityColumns();
     const [rows] = await db.query(
       `SELECT * FROM organization_links
        WHERE ((requester_type = ? AND requester_code = ?)
@@ -148,7 +117,6 @@ const LinkModel = {
   },
 
   async getAcceptedLinks(entity_type, entity_code) {
-    await ensureSecurityColumns();
     const [rows] = await db.query(
       `SELECT * FROM organization_links
        WHERE ((requester_type = ? AND requester_code = ?)
@@ -161,8 +129,27 @@ const LinkModel = {
     return rows;
   },
 
+  /**
+   * Every accepted organization link is directional for token pooling: the
+   * requester's wallet joins the workspace that approved the target entity.
+   * For child targets, target_workspace_code identifies that approving root.
+   */
+  async getAcceptedTokenSponsors(target_workspace_code) {
+    const [rows] = await db.query(
+      `SELECT org_link.link_code, org_link.requester_type, org_link.requester_code,
+              org_link.target_type, org_link.target_code,
+              COALESCE(org_link.target_workspace_code, org_link.target_code) AS target_workspace_code
+         FROM organization_links org_link
+        WHERE COALESCE(org_link.target_workspace_code, org_link.target_code) = ?
+          AND org_link.status = 'accepted'
+          AND org_link.is_active = TRUE
+        ORDER BY org_link.created_at ASC`,
+      [target_workspace_code]
+    );
+    return rows;
+  },
+
   async getPendingRequests(entity_type, entity_code) {
-    await ensureSecurityColumns();
     const [rows] = await db.query(
       `SELECT * FROM organization_links
        WHERE COALESCE(target_workspace_type, target_type) = ?

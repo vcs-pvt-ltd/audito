@@ -3,7 +3,9 @@
 import React, { useState, useEffect, useCallback, Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { getPreviewCards } from "@/lib/previewHierarchy";
 import { auditApi, auditExecutionApi, type AuditorRating } from "@/lib/api";
+import AuditorRatingModal from "@/components/audit/AuditorRatingModal";
 import Loading from "@/components/shared/Loading";
 import {
   ArrowLeft,
@@ -28,6 +30,7 @@ import {
   Paperclip,
   Star,
   X,
+  Coins,
 } from "lucide-react";
 import { 
   getEvidenceUrl, 
@@ -68,6 +71,9 @@ interface AuditDetail {
   auditor_email?: string | null;
   auditor_phone?: string | null;
   assigned_auditor_id?: string | null;
+  token_required?: number | null;
+  token_status?: "held" | "burned" | "released" | "legacy_exempt" | null;
+  burned_tokens?: number | null;
   assigned_company?: {
     name?: string | null;
     email?: string | null;
@@ -236,99 +242,6 @@ function ContactLine({
   );
 }
 
-function AuditorRatingModal({
-  open,
-  rating,
-  onClose,
-  onSave,
-}: {
-  open: boolean;
-  rating: AuditorRating | null;
-  onClose: () => void;
-  onSave: (stars: number, comment: string) => Promise<{ success: boolean; message?: string }>;
-}) {
-  const [stars, setStars] = useState(0);
-  const [comment, setComment] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    setStars(Number(rating?.stars || 0));
-    setComment(rating?.comment || "");
-    setError("");
-  }, [open, rating]);
-
-  if (!open) return null;
-
-  const submit = async () => {
-    if (stars < 1 || stars > 5) {
-      setError("Select a rating between 1 and 5 stars.");
-      return;
-    }
-    setSaving(true);
-    setError("");
-    const result = await onSave(stars, comment.trim());
-    setSaving(false);
-    if (!result.success) setError(result.message || "Unable to save the auditor rating.");
-  };
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="auditor-rating-title">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#08251a] p-5 shadow-2xl sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-400">Completed audit</p>
-            <h2 id="auditor-rating-title" className="mt-1 text-xl font-bold text-white">Rate Auditor</h2>
-            <p className="mt-1 text-sm text-gray-400">Your rating helps track auditor performance for this workspace.</p>
-          </div>
-          <button type="button" onClick={onClose} disabled={saving} className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 transition hover:bg-white/[0.06] hover:text-white" aria-label="Close rating dialog">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="mt-6">
-          <p className="text-xs font-semibold text-gray-300">Rating</p>
-          <div className="mt-2 flex items-center gap-1" role="radiogroup" aria-label="Auditor rating">
-            {[1, 2, 3, 4, 5].map((value) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={stars === value}
-                aria-label={`${value} star${value === 1 ? "" : "s"}`}
-                onClick={() => setStars(value)}
-                className={`rounded-lg p-1.5 transition ${value <= stars ? "text-secondary-400" : "text-gray-600 hover:text-secondary-300"}`}
-              >
-                <Star size={30} fill={value <= stars ? "currentColor" : "none"} />
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <label className="mt-5 block">
-          <span className="text-xs font-semibold text-gray-300">Feedback <span className="font-normal text-gray-500">(optional)</span></span>
-          <textarea
-            value={comment}
-            onChange={(event) => setComment(event.target.value.slice(0, 2000))}
-            rows={4}
-            placeholder="Add private feedback about the audit work..."
-            className="mt-2 w-full resize-y rounded-xl border border-white/10 bg-black/15 px-3 py-2.5 text-sm text-white outline-none placeholder:text-gray-600 focus:border-secondary-500/50"
-          />
-          <span className="mt-1 block text-right text-[10px] text-gray-600">{comment.length}/2000</span>
-        </label>
-
-        {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button loading={saving} onClick={() => void submit()}>{rating ? "Update Rating" : "Save Rating"}</Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // --- Components ---
 
 function EntityCard({
@@ -378,7 +291,7 @@ function EntityCard({
           {index}
         </span>
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-white truncate block">{node.name || node.code}</span>
+          <span className="text-sm font-semibold text-white truncate block">{node.name || "Unnamed entity"}</span>
           <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded inline-block mt-0.5 ${ENTITY_TYPE_COLORS[node.entity_type] || "bg-white/10 text-gray-300"}`}>
             {node.entity_type}
           </span>
@@ -705,6 +618,25 @@ function AuditDetailsContent() {
                 </div>
               </div>
 
+              {!isFirmAdmin && (
+                <div className="mt-6 max-w-md">
+                  <DetailStat
+                    icon={Coins}
+                    label="Audit Token Allocation"
+                    value={audit.token_status === "legacy_exempt" ? "Legacy exempt" : Number(audit.token_required || 0).toLocaleString()}
+                    detail={audit.token_status === "burned"
+                      ? `${Number(audit.burned_tokens || audit.token_required || 0).toLocaleString()} tokens burned when the audit started`
+                      : audit.token_status === "held"
+                        ? "Tokens are on hold until the audit starts"
+                        : audit.token_status === "released"
+                          ? "Tokens were restored to the workspace"
+                          : audit.token_status === "legacy_exempt"
+                            ? "Created before token enforcement"
+                            : "Token allocation unavailable"}
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
                   <div className="flex items-center gap-3 mb-4">
@@ -828,7 +760,7 @@ function AuditDetailsContent() {
                     seen.add(instanceKey);
                     const nd = findTreeNode(code, edgeId);
                     const idx = i;
-                    breadcrumbNodes.push({ label: nd?.name || code, goTo: () => setStepHistory((h) => h.slice(0, idx + 1)) });
+                    breadcrumbNodes.push({ label: nd?.name || "Unnamed entity", goTo: () => setStepHistory((h) => h.slice(0, idx + 1)) });
                   }
                 }
               }
@@ -850,11 +782,10 @@ function AuditDetailsContent() {
                 const parent = step.parentCode
                   ? findTreeNode(step.parentCode, step.parentOrgTreeId)
                   : tree;
-                const cards = parent
-                  ? (step.parentCode === null
-                    ? ([parent].filter(subtreeHasQuestions).length ? [parent] : (parent.children || []).filter(subtreeHasQuestions))
-                    : (parent.children || []).filter(subtreeHasQuestions))
-                  : [];
+                const cards = parent ? getPreviewCards(
+                  parent,
+                  isRoot && parent.code !== '__root__' && getQuestionsForNode(parent, questionsByKey).length > 0,
+                ) : [];
 
                 return (
                   <div className="space-y-5">
@@ -894,7 +825,7 @@ function AuditDetailsContent() {
                 .slice()
                 .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
               const nodeChildren = node ? (node.children || []) : [];
-              const hasChildrenWithQuestions = nodeChildren.some(c => subtreeHasQuestions(c));
+              const hasChildren = nodeChildren.length > 0;
 
               return (
                 <div className="space-y-5">
@@ -942,7 +873,7 @@ function AuditDetailsContent() {
                     >
                       <ArrowLeft size={14} /> Back
                     </button>
-                    {hasChildrenWithQuestions && (
+                    {hasChildren && (
                       <button
                         onClick={() => setStepHistory(h => [...h, {
                           mode: "cards",

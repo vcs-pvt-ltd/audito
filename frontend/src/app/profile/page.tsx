@@ -16,6 +16,7 @@ import {
 import { AuditorProfileTabs } from "./AuditorProfileTabs";
 import { Button, IconButton } from "@/components/ui";
 import { formatPhoneWithCountryCode } from "@/components/shared/PhoneNumber";
+import { mediaUrl } from "@/lib/apiConfig";
 
 interface Organization {
   name: string;
@@ -52,15 +53,9 @@ const ACCOUNT_LABELS: Record<string, string> = {
   "Audit Firm": "Audit Firm",
 };
 
-const MEDIA_ORIGIN =
-  process.env.NEXT_PUBLIC_MEDIA_URL ||
-  (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/api\/?$/, "");
-
 const getAvatarUrl = (path: string | null) => {
   if (!path) return null;
-  if (path.startsWith("data:")) return path;
-  if (path.startsWith("http")) return path;
-  return `${MEDIA_ORIGIN}${path}`;
+  return mediaUrl(path) || null;
 };
 
 const COUNTRY_CODES: Record<string, string> = {

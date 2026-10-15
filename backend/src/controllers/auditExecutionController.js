@@ -22,6 +22,7 @@ const OrganizationUserModel = require('../models/OrganizationUserModel');
 const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
 const NotificationModel = require('../models/NotificationModel');
+const TokenWalletModel = require('../models/TokenWalletModel');
 const { notifyOrganizationUsersForEntities } = require('../utils/organizationUserNotifications');
 const { db } = require('../config/db');
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
@@ -35,7 +36,7 @@ const {
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { MAX_EVIDENCE_BYTES, getEvidenceMediaType, getEvidencePolicy } = require('../utils/evidencePolicy');
+const { MAX_EVIDENCE_BYTES, evidenceSizeProblem, getEvidenceMediaType, getEvidencePolicy } = require('../utils/evidencePolicy');
 const { getCountryDialingCode } = require('../utils/orgLookup');
 
 const ENTITY_TABLE_MAP = {
@@ -98,7 +99,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB max
+  limits: { fileSize: MAX_EVIDENCE_BYTES },
 });
 
 async function recomputeAndUpsertProgressForAudit(auditId, entityQuestions) {
@@ -325,10 +326,10 @@ const getCorrectiveActions = async (req, res) => {
     const evidenceByResponseId = await AuditExecutionModel.getEvidenceByResponseIds(
       items.map((item) => item.response_id)
     );
-    items = items.map((item) => ({
+    items = await AuditExecutionModel.attachSelectedOptionTexts(items.map((item) => ({
       ...item,
       evidence: evidenceByResponseId[String(item.response_id)] || [],
-    }));
+    })));
 
     const entityToOrgTreeIds = {};
     const walk = (node) => {
@@ -623,12 +624,26 @@ const startAudit = async (req, res) => {
       return errorResponse(res, `Audit is already ${audit.status}.`, 400);
     }
 
-    await AuditExecutionModel.startAudit(id);
-
-    // Initialize entity progress records
     const entities = await AuditModel.getEntities(id);
-    if (audit.checklist_id) {
-      const questions = await ChecklistModel.listQuestions(audit.checklist_id);
+    const questions = audit.checklist_id ? await ChecklistModel.listQuestions(audit.checklist_id) : [];
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [locked] = await connection.query(
+        'SELECT status FROM audit_assignments WHERE audit_id = ? FOR UPDATE',
+        [id]
+      );
+      if (locked[0]?.status !== 'plan') {
+        await connection.rollback();
+        return errorResponse(res, `Audit is already ${locked[0]?.status || 'unavailable'}.`, 409);
+      }
+      await TokenWalletModel.burnReservation(connection, id);
+      await connection.query(
+        "UPDATE audit_assignments SET status = 'in_progress' WHERE audit_id = ? AND status = 'plan'",
+        [id]
+      );
+
+      // Initialize entity progress in the same transaction as token burn.
       for (const ent of entities) {
         const entQs = buildQuestionsForEntityInstance(questions, ent.entity_code, ent.org_tree_id ?? null);
         const totalMarks = entQs.reduce((s, q) => s + parseFloat(q.total_marks || 0), 0);
@@ -638,8 +653,17 @@ const startAudit = async (req, res) => {
           total_questions: entQs.length, answered_questions: 0,
           total_marks: totalMarks, obtained_marks: 0,
           status: 'not_started',
-        });
+        }, connection);
       }
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      if (['TOKEN_RESERVATION_MISSING', 'TOKEN_RESERVATION_RELEASED', 'DAILY_TOKEN_RESERVATION_EXPIRED'].includes(error.code)) {
+        return errorResponse(res, error.message, 409, error.details);
+      }
+      throw error;
+    } finally {
+      connection.release();
     }
 
     return successResponse(res, null, 'Audit started.');
@@ -678,6 +702,24 @@ const submitResponse = async (req, res) => {
     }
 
     const safeOrgTreeId = org_tree_id || null;
+    const assignedEntities = await AuditModel.getEntities(id);
+    const isAssignedEntityInstance = assignedEntities.some((entity) => {
+      const assignedTreeId = entity.org_tree_id || null;
+      return String(entity.entity_code) === String(entity_code)
+        && String(assignedTreeId ?? '') === String(safeOrgTreeId ?? '');
+    });
+    if (!isAssignedEntityInstance) {
+      return errorResponse(res, 'This organization entity is not selected for this audit.', 400);
+    }
+
+    const questions = await ChecklistModel.listQuestions(audit.checklist_id);
+    const entQs = buildQuestionsForEntityInstance(questions, entity_code, safeOrgTreeId);
+    const isAssignedQuestion = entQs.some(
+      (question) => String(question.checklist_question_id) === String(question_id)
+    );
+    if (!isAssignedQuestion) {
+      return errorResponse(res, 'This question is not assigned to the selected organization entity.', 400);
+    }
 
     const responseId = await AuditExecutionModel.upsertResponse({
       audit_response_id: await generateAuditResponseId(),
@@ -694,8 +736,6 @@ const submitResponse = async (req, res) => {
 
     // Update entity progress
     const allResponses = await AuditExecutionModel.getResponsesByEntity(id, safeOrgTreeId, entity_code);
-    const questions = await ChecklistModel.listQuestions(audit.checklist_id);
-    const entQs = buildQuestionsForEntityInstance(questions, entity_code, safeOrgTreeId);
     const totalMarks = entQs.reduce((s, q) => s + parseFloat(q.total_marks || 0), 0);
     const answeredCount = allResponses.filter(r => r.status === 'answered').length;
     const obtainedMarks = allResponses.reduce((s, r) => s + parseFloat(r.marks_obtained || 0), 0);
@@ -814,9 +854,10 @@ const uploadEvidence = async (req, res) => {
       discardUploadedFile();
       return errorResponse(res, `${evidencePolicy.plan_name} plan allows image evidence only.`, 403);
     }
-    if (req.file.size > MAX_EVIDENCE_BYTES) {
+    const sizeProblem = evidenceSizeProblem(mediaType, req.file.size);
+    if (sizeProblem) {
       discardUploadedFile();
-      return errorResponse(res, 'Evidence file must be 2MB or less.', 400);
+      return errorResponse(res, sizeProblem, 400);
     }
     if ((await AuditExecutionModel.getEvidence(response_id)).length > 0) {
       discardUploadedFile();

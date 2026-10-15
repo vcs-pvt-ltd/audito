@@ -1,17 +1,7 @@
 const { db } = require('../config/db');
 const { generatePromotionCampaignId } = require('../utils/codeGenerator');
 
-const PURPOSE_COLUMNS = {
-  registration: 'applies_to_registration',
-  upgrade: 'applies_to_upgrade',
-  renewal: 'applies_to_renewal',
-};
-
-function mapCampaigns(campaigns, planRows) {
-  const plansByCampaign = planRows.reduce((result, row) => {
-    (result[row.campaign_id] ||= []).push({ plan_name: row.plan_name, billing_cycle: row.billing_cycle });
-    return result;
-  }, {});
+function mapCampaigns(campaigns) {
   return campaigns.map((campaign) => ({
     ...campaign,
     discount_value: Number(campaign.discount_value),
@@ -20,7 +10,7 @@ function mapCampaigns(campaigns, planRows) {
     applies_to_registration: Boolean(campaign.applies_to_registration),
     applies_to_upgrade: Boolean(campaign.applies_to_upgrade),
     applies_to_renewal: Boolean(campaign.applies_to_renewal),
-    plans: plansByCampaign[campaign.campaign_id] || [],
+    applies_to_token_reload: Boolean(campaign.applies_to_token_reload),
   }));
 }
 
@@ -32,35 +22,23 @@ const PromotionCampaignModel = {
     const [campaigns] = await db.query(
       `SELECT campaign_id, name, description, discount_type, discount_value, priority,
               starts_at, ends_at, applies_to_registration, applies_to_upgrade,
-              applies_to_renewal, is_active, created_at, updated_at
+              applies_to_renewal, applies_to_token_reload, is_active, created_at, updated_at
        FROM promotion_campaigns ${where}
        ORDER BY is_active DESC, starts_at DESC, campaign_id DESC`
     );
-    if (!campaigns.length) return [];
-    const ids = campaigns.map((campaign) => campaign.campaign_id);
-    const [planRows] = await db.query(
-      `SELECT campaign_id, plan_name, billing_cycle
-       FROM promotion_campaign_plans WHERE campaign_id IN (?)
-       ORDER BY plan_name, billing_cycle`,
-      [ids]
-    );
-    return mapCampaigns(campaigns, planRows);
+    return mapCampaigns(campaigns);
   },
 
   async find(campaignId) {
     const [campaigns] = await db.query(
       `SELECT campaign_id, name, description, discount_type, discount_value, priority,
               starts_at, ends_at, applies_to_registration, applies_to_upgrade,
-              applies_to_renewal, is_active, created_at, updated_at
+              applies_to_renewal, applies_to_token_reload, is_active, created_at, updated_at
        FROM promotion_campaigns WHERE campaign_id = ? LIMIT 1`,
       [campaignId]
     );
     if (!campaigns[0]) return null;
-    const [planRows] = await db.query(
-      'SELECT campaign_id, plan_name, billing_cycle FROM promotion_campaign_plans WHERE campaign_id = ?',
-      [campaignId]
-    );
-    return mapCampaigns(campaigns, planRows)[0];
+    return mapCampaigns(campaigns)[0];
   },
 
   async create(data) {
@@ -71,16 +49,13 @@ const PromotionCampaignModel = {
       await connection.query(
         `INSERT INTO promotion_campaigns
          (campaign_id, name, description, discount_type, discount_value, priority,
-          starts_at, ends_at, applies_to_registration, applies_to_upgrade, applies_to_renewal, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          starts_at, ends_at, applies_to_registration, applies_to_upgrade, applies_to_renewal,
+          applies_to_token_reload, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [campaignId, data.name, data.description || null, data.discount_type, data.discount_value,
           data.priority, data.starts_at, data.ends_at, data.applies_to_registration ? 1 : 0,
-          data.applies_to_upgrade ? 1 : 0, data.applies_to_renewal ? 1 : 0, data.is_active ? 1 : 0]
-      );
-      await connection.query(
-        `INSERT INTO promotion_campaign_plans (campaign_id, plan_name, billing_cycle)
-         VALUES ?`,
-        [data.plans.map((plan) => [campaignId, plan.plan_name, plan.billing_cycle])]
+          data.applies_to_upgrade ? 1 : 0, data.applies_to_renewal ? 1 : 0,
+          data.applies_to_token_reload ? 1 : 0, data.is_active ? 1 : 0]
       );
       await connection.commit();
       return this.find(campaignId);
@@ -100,17 +75,12 @@ const PromotionCampaignModel = {
         `UPDATE promotion_campaigns
          SET name = ?, description = ?, discount_type = ?, discount_value = ?, priority = ?,
              starts_at = ?, ends_at = ?, applies_to_registration = ?, applies_to_upgrade = ?,
-             applies_to_renewal = ?, is_active = ?
+             applies_to_renewal = ?, applies_to_token_reload = ?, is_active = ?
          WHERE campaign_id = ?`,
         [data.name, data.description || null, data.discount_type, data.discount_value, data.priority,
           data.starts_at, data.ends_at, data.applies_to_registration ? 1 : 0,
           data.applies_to_upgrade ? 1 : 0, data.applies_to_renewal ? 1 : 0,
-          data.is_active ? 1 : 0, campaignId]
-      );
-      await connection.query('DELETE FROM promotion_campaign_plans WHERE campaign_id = ?', [campaignId]);
-      await connection.query(
-        'INSERT INTO promotion_campaign_plans (campaign_id, plan_name, billing_cycle) VALUES ?',
-        [data.plans.map((plan) => [campaignId, plan.plan_name, plan.billing_cycle])]
+          data.applies_to_token_reload ? 1 : 0, data.is_active ? 1 : 0, campaignId]
       );
       await connection.commit();
       return this.find(campaignId);
@@ -127,18 +97,14 @@ const PromotionCampaignModel = {
     return this.find(campaignId);
   },
 
-  async resolveBestOffer({ planName, billingCycle, purpose, listAmount }) {
-    const purposeColumn = PURPOSE_COLUMNS[purpose];
-    if (!purposeColumn || Number(listAmount) <= 0) return null;
+  async resolveBestOffer({ purpose, listAmount }) {
+    if (purpose !== 'token_reload' || Number(listAmount) <= 0) return null;
     const [campaigns] = await db.query(
       `SELECT c.campaign_id, c.name, c.description, c.discount_type, c.discount_value, c.priority, c.ends_at
        FROM promotion_campaigns c
-       INNER JOIN promotion_campaign_plans cp ON cp.campaign_id = c.campaign_id
        WHERE c.is_active = 1 AND c.starts_at <= NOW() AND c.ends_at > NOW()
-         AND c.${purposeColumn} = 1 AND cp.plan_name = ?
-         AND cp.billing_cycle IN ('Any', ?)
-       ORDER BY c.priority DESC, c.starts_at DESC, c.campaign_id DESC`,
-      [planName, billingCycle]
+         AND c.applies_to_token_reload = 1
+       ORDER BY c.priority DESC, c.starts_at DESC, c.campaign_id DESC`
     );
     const offer = campaigns.reduce((best, campaign) => {
       const raw = campaign.discount_type === 'percentage'

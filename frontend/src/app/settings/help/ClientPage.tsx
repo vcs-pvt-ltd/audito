@@ -52,7 +52,7 @@ function buildAdminGuide(accountType: string): RoleGuide {
     title: "1. Build your organization structure",
     description: `Recreate your real-world organization inside Audito by adding ${cfg.examples}.`,
     steps: [
-      { title: "Open Structure", detail: `Use the Structure menu in the sidebar to add your ${cfg.units}. Work top-down — create higher levels first so lower levels have a parent to attach to.` },
+      { title: "Open Structure", detail: `Use the Structure menu to create the ${cfg.units} your organization actually uses. Optional levels can be skipped; connect each entity to a valid parent in the Organization page.` },
       { title: "Add at least one of each level", detail: "You only need one entity per level to get started; you can keep adding more at any time afterwards." },
     ],
   });

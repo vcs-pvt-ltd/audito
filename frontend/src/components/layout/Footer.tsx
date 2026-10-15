@@ -1,4 +1,3 @@
-import Link from "next/link";
 import Image from "next/image";
 import { ArrowUpRight, Mail, ShieldCheck } from "lucide-react";
 import { useLanding } from "@/context/LandingContext";
@@ -6,7 +5,7 @@ import auditoLogo from "../../assets/logo/audito_logo.png";
 
 
 export default function Footer() {
-  const { setActiveSection } = useLanding();
+  const { setActiveSection, openPackageSetup } = useLanding();
   return (
     <footer className="border-t border-white/[0.08] bg-[#061b18]/70">
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
@@ -26,7 +25,7 @@ export default function Footer() {
             <ul className="space-y-2.5">
               <li><button onClick={() => setActiveSection(1)} className="text-sm text-gray-400 transition-colors hover:text-secondary-300">Features</button></li>
               <li><button onClick={() => setActiveSection(0)} className="text-sm text-gray-400 transition-colors hover:text-secondary-300">Pricing</button></li>
-              <li><Link href="/register" className="text-sm text-gray-400 transition-colors hover:text-secondary-300">Get started</Link></li>
+              <li><button type="button" onClick={openPackageSetup} className="text-sm text-gray-400 transition-colors hover:text-secondary-300">Get started</button></li>
             </ul>
           </div>
 
@@ -41,9 +40,9 @@ export default function Footer() {
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
             <p className="text-sm font-semibold text-white">Ready to simplify audits?</p>
             <p className="mt-1.5 text-xs leading-5 text-gray-400">Start building a more visible, accountable audit process today.</p>
-            <Link href="/register" className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-secondary-300 transition-colors hover:text-secondary-200">
+            <button type="button" onClick={openPackageSetup} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-secondary-300 transition-colors hover:text-secondary-200">
               Create your workspace <ArrowUpRight size={15} />
-            </Link>
+            </button>
             <a href="mailto:hi@audito.cloud" className="mt-3 flex items-center gap-1.5 text-xs text-gray-400 transition-colors hover:text-white">
               <Mail size={13} /> Talk to our team
             </a>

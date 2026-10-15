@@ -4,7 +4,17 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
-import { checklistApi, orgTreeApi, type AiChecklistQuestionSuggestion, type QuestionPayload, type QuestionOption } from "@/lib/api";
+import { checklistApi, orgTreeApi, type QuestionPayload, type QuestionOption } from "@/lib/api";
+import {
+  CHECKLIST_AI_BUILDER_KEY,
+  CHECKLIST_AI_CONTEXT_KEY,
+  CHECKLIST_AI_RESULT_KEY,
+  type ChecklistAiBuilderSnapshot,
+  type ChecklistAiWorkspaceContext,
+  type ChecklistAiWorkspaceResult,
+  readSessionJson,
+  writeSessionJson,
+} from "@/lib/checklistAiWorkspace";
 import { Button, IconButton, Modal, Input, Textarea } from "@/components/ui";
 import ChecklistMediaPreview from "@/components/checklist/ChecklistMediaPreview";
 
@@ -58,13 +68,6 @@ interface QuestionForm {
   question_text: string;
   answer_type: "free_text" | "single_option" | "multiple_options" | "dropdown";
   options: { text: string; marks: string }[];
-}
-
-interface AiQuestionDraft extends QuestionForm {
-  ai_checklist_suggestion_id: string;
-  source_reference?: string;
-  rationale?: string;
-  selected: boolean;
 }
 
 interface ChecklistFormData {
@@ -606,74 +609,6 @@ function ExcelConfirmModal({ open, questions, uploadResult, treeRoot, onConfirm,
   );
 }
 
-function AiQuestionReviewModal({ open, drafts, issues, treeRoot, onConfirm, onDiscard }: {
-  open: boolean;
-  drafts: AiQuestionDraft[];
-  issues: string[];
-  treeRoot: TreeNode | null;
-  onConfirm: () => void;
-  onDiscard: () => void;
-}) {
-  const selectedCount = drafts.filter(draft => draft.selected).length;
-  const selectedDrafts = drafts.filter(draft => draft.selected);
-  // AI returns the organization-tree edge from the selected scope. Resolve it
-  // again from the loaded tree for preview, because a shared entity can appear
-  // under a different edge in a hierarchy branch.
-  const hierarchyNodes = treeRoot ? flattenTree(treeRoot) : [];
-  const previewDrafts = selectedDrafts.map(draft => {
-    const exactNode = hierarchyNodes.find(node => questionMatchesNode(draft, node));
-    if (exactNode) return draft;
-    const matchingNode = hierarchyNodes.find(node => node.code === draft.entity_code);
-    return matchingNode ? { ...draft, org_tree_id: matchingNode.edge_id ?? null } : draft;
-  });
-  const entityCodesWithDrafts = new Set(previewDrafts.map(draft => questionKey(draft)));
-  previewDrafts.forEach(draft => entityCodesWithDrafts.add(draft.entity_code));
-  const prunedRoot = treeRoot ? pruneTreeByEntityCodes(treeRoot, entityCodesWithDrafts) : null;
-  const totalEntityCount = prunedRoot ? countPrunedEntities(prunedRoot) : entityCodesWithDrafts.size;
-
-  return (
-    <Modal
-      open={open}
-      onClose={onDiscard}
-      title="Confirm AI Question Import"
-      description={`${selectedCount} generated question${selectedCount !== 1 ? "s" : ""} across ${totalEntityCount} entit${totalEntityCount !== 1 ? "ies" : "y"}${issues.length ? ` · ${issues.length} question${issues.length !== 1 ? "s" : ""} skipped` : ""}`}
-      size="lg"
-      footer={
-        <>
-          <Button variant="secondary" onClick={onDiscard}>Discard</Button>
-          <Button disabled={!selectedCount} leftIcon={<Check size={14} />} onClick={onConfirm}>
-            Add {selectedCount} Question{selectedCount !== 1 ? "s" : ""}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div className="rounded-lg border border-secondary-500/20 bg-secondary-500/[0.07] p-3">
-          <p className="text-xs leading-relaxed text-secondary-100">Review the generated questions in your organization structure. They are added to the checklist only after you confirm.</p>
-        </div>
-        {issues.length > 0 && (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
-            <p className="mb-1.5 text-xs font-medium text-amber-300">Skipped questions:</p>
-            <ul className="max-h-20 space-y-0.5 overflow-y-auto text-[11px] text-amber-200/80">{issues.map((issue, index) => <li key={index}>• {issue}</li>)}</ul>
-          </div>
-        )}
-        <div className="max-h-[52vh] space-y-1 overflow-y-auto pr-1">
-          {prunedRoot ? (
-            ENTITY_TYPE_COLORS[prunedRoot.entity_type]
-              ? <ExcelTreeEntityNode node={prunedRoot} questions={previewDrafts} />
-              : (prunedRoot.children ?? []).map(child => <ExcelTreeEntityNode key={nodeKey(child.code, child.edge_id ?? null)} node={child} questions={previewDrafts} />)
-          ) : (
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-10 text-center">
-              <p className="mb-1 font-medium text-white">No hierarchy available</p>
-              <p className="text-sm text-gray-500">Questions were generated, but the organization hierarchy could not be displayed.</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
 function pruneTreeByEntityCodes(node: TreeNode, entityCodes: Set<string>): TreeNode | null {
   const prunedChildren: TreeNode[] = [];
   for (const child of node.children || []) {
@@ -689,7 +624,10 @@ function countPrunedEntities(node: TreeNode): number {
   return 1 + (node.children ?? []).reduce((s, c) => s + countPrunedEntities(c), 0);
 }
 
-function ExcelTreeEntityNode({ node, questions }: { node: TreeNode; questions: QuestionForm[] }) {
+function ExcelTreeEntityNode({ node, questions }: {
+  node: TreeNode;
+  questions: QuestionForm[];
+}) {
   const ownQs = questions.filter(q => questionMatchesNode(q, node));
   const totalQs = countDescendantQuestions(node, questions);
   const [expanded, setExpanded] = useState(totalQs > 0);
@@ -714,8 +652,8 @@ function ExcelTreeEntityNode({ node, questions }: { node: TreeNode; questions: Q
                 const meta = ANSWER_TYPE_META[q.answer_type];
                 const Icon = meta.icon;
                 return (
-                  <div key={q.id} className="flex items-start gap-2 py-1.5 px-2.5 rounded-lg bg-white/[0.015] border border-white/[0.05]">
-                    <span className="w-4 h-4 rounded-full bg-secondary-500/15 border border-secondary-500/20 flex items-center justify-center text-secondary-400 text-[9px] font-bold shrink-0 mt-0.5">{i + 1}</span>
+                  <div key={q.id} className="flex items-start gap-2 rounded-lg border border-secondary-500/15 bg-secondary-500/[0.04] px-2.5 py-2">
+                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-secondary-500/20 bg-secondary-500/15 text-[9px] font-bold text-secondary-400">{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-gray-200 leading-snug">{q.question_text}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -741,61 +679,15 @@ function ExcelTreeEntityNode({ node, questions }: { node: TreeNode; questions: Q
 
 // ─── Main Page ────────────────────────────────────────────────────
 
-function AiHierarchyPreview({ tree, hierarchyChain, scopeCode, onSelectScope }: { tree: TreeNode | null; hierarchyChain: string[]; scopeCode: string; onSelectScope: (code: string) => void }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    if (tree) setExpanded(new Set([nodeKey(tree.code, tree.edge_id ?? null)]));
-  }, [tree]);
-  if (!tree) return null;
-
-  const renderNode = (node: TreeNode, depth = 0): React.ReactNode => {
-    const key = nodeKey(node.code, node.edge_id ?? null);
-    const hasChildren = (node.children || []).length > 0;
-    const open = expanded.has(key);
-    const isScope = Boolean(scopeCode) && node.code === scopeCode;
-    const typeColor = ENTITY_TYPE_COLORS[node.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
-    const indent = depth * 14;
-    return (
-      <div key={key}>
-        <div className="flex items-center gap-1" style={{ marginLeft: indent + "px", width: "calc(100% - " + indent + "px)" }}>
-          {hasChildren ? (
-            <button type="button" aria-label={open ? `Collapse ${node.name}` : `Expand ${node.name}`} onClick={() => setExpanded(previous => {
-              const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next;
-            })} className="flex h-7 w-6 shrink-0 items-center justify-center rounded text-gray-500 transition-colors hover:bg-white/[0.06] hover:text-gray-300">
-              {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-            </button>
-          ) : <span className="w-6 shrink-0" />}
-          <button type="button" onClick={() => onSelectScope(node.code)} className={"flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/[0.04] " + (isScope ? "bg-secondary-500/10 ring-1 ring-secondary-500/25" : "")}>
-            <Building2 size={12} className="shrink-0 text-gray-500" />
-            <span className={"shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none " + typeColor}>{node.entity_type}</span>
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-white">{node.name}</span>
-            {isScope && <span className="text-[10px] font-medium text-secondary-300">Selected</span>}
-          </button>
-        </div>
-        {hasChildren && open && <div>{node.children.map(child => renderNode(child, depth + 1))}</div>}
-      </div>
-    );
-  };
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
-      <div className="border-b border-white/[0.06] px-3 py-2.5">
-        <p className="text-xs font-semibold text-white">Organization hierarchy</p>
-        <p className="mt-0.5 text-[11px] text-gray-500">Select an entity to generate questions for it and its child entities.</p>
-        {hierarchyChain.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-1.5">{hierarchyChain.map((level, index) => <span key={level} className="flex items-center gap-1.5"><span className={"rounded-full border px-2 py-0.5 text-[10px] " + (index === 0 ? "border-secondary-500/30 bg-secondary-500/15 text-secondary-300" : "border-white/10 bg-white/5 text-gray-400")}>{level}</span>{index < hierarchyChain.length - 1 && <ChevronRight size={10} className="text-gray-600" />}</span>)}</div>}
-      </div>
-      <div className="max-h-48 overflow-y-auto p-2">{renderNode(tree)}</div>
-    </div>
-  );
-}
-
 export default function CreateChecklistPage({ readOnly = false }: { readOnly?: boolean }) {
-  const { admin, accessToken, isLoading } = useAuth();
+  const { admin, accessToken, isLoading, subscription } = useAuth();
   const { toast } = useUiFeedback();
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("id") as string | undefined;
   const isEdit = !!editId;
+  const isAiFlow = searchParams.get("ai") === "1";
+  const aiPlanEligible = !subscription || subscription.is_active;
 
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<ChecklistFormData>({
@@ -806,11 +698,12 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
   });
   const [questions, setQuestions] = useState<QuestionForm[]>([]);
   const [excludedEntities, setExcludedEntities] = useState<Set<string>>(new Set());
-  const [showOnlyWithQuestions, setShowOnlyWithQuestions] = useState(false);
+  // A saved checklist covers only the areas that have questions; the rest of the
+  // organization is shown only while adding questions (Show all when editing).
+  const [showOnlyWithQuestions, setShowOnlyWithQuestions] = useState(readOnly || isEdit);
   const [checklistTypes, setChecklistTypes] = useState<ChecklistType[]>([]);
   const [treeEntities, setTreeEntities] = useState<TreeNode[]>([]);
   const [treeRoot, setTreeRoot] = useState<TreeNode | null>(null);
-  const [hierarchyChain, setHierarchyChain] = useState<string[]>([]);
   const [currencies, setCurrencies] = useState<string[]>(["$", "€", "£", "¥", "₹", "AED", "SAR"]);
 
   useEffect(() => {
@@ -843,26 +736,12 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
   const [showUploadConfirmModal, setShowUploadConfirmModal] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [mediaFileName, setMediaFileName] = useState("");
-  const [showAiGenerator, setShowAiGenerator] = useState(false);
-  const [showAiReview, setShowAiReview] = useState(false);
-  const [aiSourceFile, setAiSourceFile] = useState<File | null>(null);
-  const [aiQuestionCount, setAiQuestionCount] = useState("10");
-  const [aiFocus, setAiFocus] = useState("");
-  const [aiScopeCode, setAiScopeCode] = useState("");
-  const [generatingAi, setGeneratingAi] = useState(false);
-  const [aiDrafts, setAiDrafts] = useState<AiQuestionDraft[]>([]);
-  const [aiIssues, setAiIssues] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const mediaRef = useRef<HTMLInputElement>(null);
-  const aiDocumentRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
   }, [isLoading, admin, router]);
-
-  useEffect(() => {
-    if (treeRoot?.code) setAiScopeCode(previous => previous || treeRoot.code);
-  }, [treeRoot]);
 
   useEffect(() => {
     const load = async () => {
@@ -880,11 +759,10 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
       }
 
       if (treeRes.success && treeRes.data) {
-        const d = treeRes.data as { tree: TreeNode; hierarchyChain?: string[] };
+        const d = treeRes.data as { tree: TreeNode };
         if (d.tree) {
           setTreeEntities(flattenTree(d.tree));
           setTreeRoot(d.tree);
-          setHierarchyChain(d.hierarchyChain || []);
         }
       }
 
@@ -914,7 +792,7 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
             : [];
           const entityGroups = (cl.entity_questions as Array<{
           entity_code: string; org_tree_id?: string | null; entity_type: string; entity_name: string;
-            questions: Array<{ id: number; question_text: string; answer_type: string; options: Array<{ option_text: string; marks: number }> }>;
+            questions: Array<{ id: number; checklist_question_id: string; question_text: string; answer_type: string; options: Array<{ option_text: string; marks: number }> }>;
           }>) || [];
           const loadedQs: QuestionForm[] = [];
           for (const eg of entityGroups) {
@@ -922,7 +800,8 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
             const entityDisplayName = flatForLookup.find(n => nodeKey(n.code, n.edge_id ?? null) === nodeKey(eg.entity_code, egTreeId))?.name || eg.entity_code;
             for (const q of eg.questions) {
               loadedQs.push({
-                id: `db-${q.id}`,
+                // The save endpoint matches existing questions by checklist_question_id, not the numeric row id.
+                id: `db-${q.checklist_question_id}`,
                 entity_code: eg.entity_code,
                 org_tree_id: egTreeId,
                 entity_type: eg.entity_type,
@@ -938,10 +817,26 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
           if (loadedQs.length > 0) setShowOnlyWithQuestions(true);
         }
       }
+      const currentUrl = `${window.location.pathname}${window.location.search}`;
+      const aiSnapshot = readSessionJson<ChecklistAiBuilderSnapshot>(CHECKLIST_AI_BUILDER_KEY);
+      const aiResult = readSessionJson<ChecklistAiWorkspaceResult>(CHECKLIST_AI_RESULT_KEY);
+      if (aiSnapshot?.returnUrl === currentUrl) {
+        setFormData(aiSnapshot.formData as unknown as ChecklistFormData);
+        const returnedQuestions = aiResult?.returnUrl === currentUrl ? aiResult.questions as QuestionForm[] : [];
+        setQuestions([...(aiSnapshot.questions as QuestionForm[]), ...returnedQuestions]);
+        setStep(3);
+        setShowOnlyWithQuestions(false);
+        window.sessionStorage.removeItem(CHECKLIST_AI_BUILDER_KEY);
+        window.sessionStorage.removeItem(CHECKLIST_AI_CONTEXT_KEY);
+        window.sessionStorage.removeItem(CHECKLIST_AI_RESULT_KEY);
+        if (returnedQuestions.length) {
+          toast(`${returnedQuestions.length} AI question${returnedQuestions.length === 1 ? "" : "s"} added. Review scoring before saving.`, "success");
+        }
+      }
       setLoadingData(false);
     };
     load();
-  }, [accessToken, isEdit, editId]);
+  }, [accessToken, isEdit, editId, toast]);
 
   const setForm = (field: keyof ChecklistFormData, value: string) =>
     setFormData(p => ({ ...p, [field]: value }));
@@ -1087,7 +982,7 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
       const loadedQs: QuestionForm[] = [];
       for (const it of payload?.items || []) {
         const matchingNodes = effectiveTreeEntities.filter(n => n.code === it.entity_code);
-        const entityDisplayName = matchingNodes[0]?.name || it.entity_name || it.entity_code;
+        const entityDisplayName = matchingNodes[0]?.name || it.entity_name || "Unnamed entity";
         loadedQs.push({
           id: newLocalId(), entity_code: it.entity_code, org_tree_id: it.org_tree_id ?? null,
           entity_type: it.entity_type, entity_name: entityDisplayName, question_text: it.question_text,
@@ -1104,59 +999,36 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const handleGenerateAiQuestions = async () => {
-    if (!accessToken || !aiSourceFile) return;
-    if (aiSourceFile.size > 2 * 1024 * 1024) {
-      setSaveError("The reference document must be 2 MB or smaller.");
-      return;
-    }
-    const questionCount = Number.parseInt(aiQuestionCount, 10);
-    if (!Number.isInteger(questionCount) || questionCount < 1 || questionCount > 50) {
-      setSaveError("Choose between 1 and 50 AI questions.");
+  const launchAiWorkspace = () => {
+    if (!aiPlanEligible) {
+      router.push("/settings/billing");
       return;
     }
     if (treeEntities.length === 0) {
       setSaveError("Set up your organization structure before generating AI questions.");
       return;
     }
-    setGeneratingAi(true);
-    setSaveError("");
-    try {
-      const selectedType = checklistTypes.find(type => type.checklist_type_id === formData.checklist_type_id)?.name;
-      const res = await checklistApi.generateAiQuestions(accessToken, aiSourceFile, {
-        questionCount,
-        focus: aiFocus.trim(),
-        checklistType: selectedType,
-        scopeEntityCode: aiScopeCode || treeRoot?.code,
-        existingQuestions: questions.map(question => question.question_text).filter(Boolean),
-      });
-      if (!res.success || !res.data) throw new Error(res.message || "Failed to generate AI questions.");
-      const payload = res.data as { items: AiChecklistQuestionSuggestion[]; issues?: string[] };
-      const drafts: AiQuestionDraft[] = (payload.items || []).map(item => ({
-        id: newLocalId(),
-        ai_checklist_suggestion_id: item.ai_checklist_suggestion_id,
-        entity_code: item.entity_code,
-        org_tree_id: item.org_tree_id ?? null,
-        entity_type: item.entity_type,
-        entity_name: item.entity_name,
-        question_text: item.question_text,
-        answer_type: item.answer_type,
-        options: (item.options || []).map(option => ({ text: option.option_text, marks: String(option.marks) })),
-        source_reference: item.source_reference,
-        rationale: item.rationale,
-        selected: true,
-      }));
-      setAiDrafts(drafts);
-      setAiIssues(payload.issues || []);
-      setShowAiGenerator(false);
-      setShowAiReview(true);
-      if (!drafts.length) setSaveError("No valid questions were generated. Try a clearer document or adjust the focus.");
-    } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : "Failed to generate AI questions.");
-    } finally {
-      setGeneratingAi(false);
-    }
+    const returnUrl = `${window.location.pathname}${window.location.search}`;
+    const selectedType = checklistTypes.find(type => type.checklist_type_id === formData.checklist_type_id)?.name || "";
+    const context: ChecklistAiWorkspaceContext = {
+      returnUrl,
+      checklistName: formData.name.trim(),
+      checklistType: selectedType,
+      existingQuestions: questions.map(question => question.question_text.trim()).filter(Boolean),
+    };
+    const snapshot: ChecklistAiBuilderSnapshot = {
+      returnUrl,
+      step: 3,
+      formData: formData as unknown as Record<string, string>,
+      questions,
+    };
+    writeSessionJson(CHECKLIST_AI_CONTEXT_KEY, context);
+    writeSessionJson(CHECKLIST_AI_BUILDER_KEY, snapshot);
+    window.sessionStorage.removeItem(CHECKLIST_AI_RESULT_KEY);
+    router.push("/checklists/ai-generate");
   };
+
+  const openAiQuestionWorkspace = launchAiWorkspace;
 
   if (isLoading || loadingData) {
     return (
@@ -1336,17 +1208,17 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold text-white">Generate questions with AI</p>
-                        <span className="rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Coming soon</span>
                       </div>
-                      <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-gray-400">AI-assisted, organization-aware question generation is being prepared for a future release.</p>
+                      <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-gray-400">Upload a policy, SOP, or standard. Audito maps draft questions to your organization hierarchy for review before anything is added.</p>
                     </div>
                   </div>
                   <Button
-                    disabled
+                    disabled={aiPlanEligible && treeEntities.length === 0}
+                    onClick={openAiQuestionWorkspace}
                     leftIcon={<Sparkles size={15} />}
                     className="shrink-0"
                   >
-                    Coming soon
+                    {aiPlanEligible ? "Generate with AI" : "Activate package to use AI"}
                   </Button>
                 </div>
               </div>
@@ -1457,7 +1329,6 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-200">{q.question_text || <span className="text-gray-500 italic">No question text</span>}</p>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <span className="text-[11px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">{q.entity_code}</span>
                             <span className="text-[11px] text-gray-500">{q.entity_name}</span>
                           </div>
                         </div>
@@ -1486,7 +1357,7 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    {questions.length > 0 && (
+                    {questions.length > 0 && !readOnly && (
                       <button
                         onClick={() => setShowOnlyWithQuestions(p => !p)}
                         className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border transition-all ${
@@ -1556,6 +1427,10 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
                   if (!formData.num_workers || parseInt(formData.num_workers, 10) < 1) { setSaveError("Number of workers must be at least 1 to continue."); return; }
                 }
                 setSaveError("");
+                if (isAiFlow && step === 2) {
+                  launchAiWorkspace();
+                  return;
+                }
                 setStep(s => s + 1);
               }}
             >
@@ -1573,98 +1448,6 @@ export default function CreateChecklistPage({ readOnly = false }: { readOnly?: b
         </div>
 
         {/* Modals */}
-        <Modal
-          open={showAiGenerator}
-          onClose={() => {
-            if (generatingAi) return;
-            setShowAiGenerator(false);
-          }}
-          title="Generate Checklist Questions"
-          description="Your reference document is analyzed against your organization hierarchy. You will confirm the generated questions before they are added."
-          size="lg"
-          footer={
-            <>
-              <Button variant="secondary" disabled={generatingAi} onClick={() => setShowAiGenerator(false)}>Cancel</Button>
-              <Button loading={generatingAi} disabled={generatingAi || !aiSourceFile || treeEntities.length === 0} leftIcon={generatingAi ? undefined : <Sparkles size={14} />} onClick={handleGenerateAiQuestions}>
-                {generatingAi ? "Generating…" : "Generate Questions"}
-              </Button>
-            </>
-          }
-        >
-          <div className="space-y-5">
-            <div>
-              <FieldLabel label="Reference document" required />
-              <input
-                ref={aiDocumentRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
-                className="hidden"
-                onChange={event => {
-                  const file = event.target.files?.[0] || null;
-                  if (file && file.size > 2 * 1024 * 1024) {
-                    setAiSourceFile(null);
-                    setSaveError("The reference document must be 2 MB or smaller.");
-                    event.target.value = "";
-                    return;
-                  }
-                  setSaveError("");
-                  setAiSourceFile(file);
-                }}
-              />
-              <button type="button" onClick={() => aiDocumentRef.current?.click()} className="flex w-full items-center gap-3 rounded-xl border border-dashed border-white/20 bg-white/[0.025] p-4 text-left transition-colors hover:border-secondary-500/45 hover:bg-secondary-500/[0.05]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary-500/15 text-secondary-300"><Upload size={16} /></span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-white">{aiSourceFile?.name || "Choose a policy, procedure, SOP, or standard"}</span>
-                  <span className="mt-0.5 block text-xs text-gray-500">PDF, Word, TXT, or Markdown · 2 MB maximum</span>
-                </span>
-                {aiSourceFile && <span className="text-[11px] text-secondary-300">Change</span>}
-              </button>
-            </div>
-            <div>
-              <div className="rounded-lg border border-secondary-500/20 bg-secondary-500/[0.07] px-3 py-2.5 text-xs leading-relaxed text-secondary-100">
-                The document is processed only to generate these questions. It is not saved as checklist media. Select the organization area where questions should be assigned.
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-1">
-              <div>
-                <FieldLabel label="Number of questions" required />
-                <input value={aiQuestionCount} onChange={event => setAiQuestionCount(event.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" placeholder="10" className={inputCls} />
-                <p className="mt-1.5 text-[11px] text-gray-500">Choose 1–50 questions for the selected entity and its child entities.</p>
-              </div>
-            </div>
-            <AiHierarchyPreview tree={treeRoot} hierarchyChain={hierarchyChain} scopeCode={aiScopeCode || treeRoot?.code || ""} onSelectScope={setAiScopeCode} />
-            <div>
-              <FieldLabel label="Focus areas (optional)" />
-              <textarea value={aiFocus} onChange={event => setAiFocus(event.target.value)} rows={3} maxLength={300} placeholder="e.g. PPE use, emergency procedures, machine guarding, and incident reporting" className={`${inputCls} resize-none`} />
-              <p className="mt-1.5 text-[11px] text-gray-500">Be specific about the risks, controls, or departments you want to cover.</p>
-            </div>
-          </div>
-        </Modal>
-
-        <AiQuestionReviewModal
-          open={showAiReview}
-          drafts={aiDrafts}
-          issues={aiIssues}
-          treeRoot={treeRoot}
-          onConfirm={() => {
-            const hierarchyNodes = treeRoot ? flattenTree(treeRoot) : [];
-            const selected = aiDrafts
-              .filter(draft => draft.selected)
-              .map(({ ai_checklist_suggestion_id, source_reference, rationale, selected, ...question }) => {
-                const exactNode = hierarchyNodes.find(node => questionMatchesNode(question, node));
-                const matchingNode = exactNode || hierarchyNodes.find(node => node.code === question.entity_code);
-                return matchingNode
-                  ? { ...question, org_tree_id: matchingNode.edge_id ?? null, entity_type: matchingNode.entity_type, entity_name: matchingNode.name }
-                  : question;
-              });
-            setQuestions(previous => [...previous, ...selected]);
-            setShowOnlyWithQuestions(false);
-            setShowAiReview(false);
-            setAiDrafts([]);
-            toast(`${selected.length} AI question${selected.length !== 1 ? "s" : ""} added.`, "success");
-          }}
-          onDiscard={() => { setShowAiReview(false); setAiDrafts([]); setAiIssues([]); }}
-        />
 
         <ExcelConfirmModal
           open={showUploadConfirmModal}

@@ -13,14 +13,16 @@ async function getCapResponseStatusEnumValues() {
   if (Array.isArray(capResponseStatusEnumCache) && capResponseStatusEnumCache.length > 0) {
     return capResponseStatusEnumCache;
   }
-  const [rows] = await db.query("SHOW COLUMNS FROM cap_responses LIKE 'status'");
-  const type = rows?.[0]?.Type || '';
-  const match = /^enum\((.*)\)$/i.exec(type);
-  if (!match) return [];
-  capResponseStatusEnumCache = match[1]
-    .split(',')
-    .map((v) => v.trim().replace(/^'/, '').replace(/'$/, ''))
-    .filter(Boolean);
+  // The MySQL ENUM became a CHECK constraint, for example:
+  // CHECK (status::text = ANY (ARRAY['plan'::character varying, 'in_progress'::character varying, ...]))
+  const [rows] = await db.query(
+    `SELECT pg_get_constraintdef(c.oid) AS definition
+       FROM pg_constraint c
+      WHERE c.conrelid = 'public.cap_responses'::regclass AND c.contype = 'c'
+        AND pg_get_constraintdef(c.oid) LIKE '%status%'`
+  );
+  const definition = rows?.[0]?.definition || '';
+  capResponseStatusEnumCache = [...definition.matchAll(/'([^']+)'::/g)].map((match) => match[1]);
   return capResponseStatusEnumCache;
 }
 
@@ -215,8 +217,8 @@ const CapModel = {
       const e = entities[i];
       await db.query(
         `INSERT INTO cap_assignment_entities (cap_assignment_entity_id, cap_id, parent_cap_id, entity_code, org_tree_id, entity_type, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, 1)
-         ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), entity_type = VALUES(entity_type), is_active = 1`,
+         VALUES (?, ?, ?, ?, ?, ?, TRUE)
+         ON DUPLICATE KEY UPDATE parent_cap_id = VALUES(parent_cap_id), entity_type = VALUES(entity_type), is_active = TRUE`,
         [ids[i], cap_id, parentCapId, e.entity_code, e.org_tree_id ?? null, e.entity_type || null]
       );
     }

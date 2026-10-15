@@ -42,14 +42,15 @@ const {
 const { successResponse, errorResponse, validateRequiredFields, isValidEmail } = require('../utils/helpers');
 const { db } = require('../config/db');
 const crypto = require('crypto');
-const { sendOrganizationRegistrationVerificationEmail, sendCustomSolutionVerificationEmail, sendCustomSolutionRequestEmail, sendUserInvitationEmail, sendOtpEmail } = require('../services/emailService');
+const { sendOrganizationRegistrationVerificationEmail, sendUserInvitationEmail, sendOtpEmail } = require('../services/emailService');
 const PaymentModel = require('../models/PaymentModel');
 const { getOrgName, getOrgDetails, getCountryDialingCode } = require('../utils/orgLookup');
 const { getResendCooldownSeconds, recordResend } = require('../utils/emailResendCooldown');
 const SubscriptionModel = require('../models/SubscriptionModel');
-const CustomSolutionModel = require('../models/CustomSolutionModel');
-const PlanSettingsModel = require('../models/PlanSettingsModel');
-const PromotionCampaignModel = require('../models/PromotionCampaignModel');
+const ContactReviewModel = require('../models/ContactReviewModel');
+const { auditoContact } = require('../utils/auditoContact');
+const PackagePricingModel = require('../models/PackagePricingModel');
+const { canRegisterPackageEntry } = require('../config/packageHierarchy');
 const fs = require('fs');
 const path = require('path');
 
@@ -108,15 +109,6 @@ const deleteOrganizationLogo = (logoPath) => {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 };
 
-// Standard plans control the entity type that may start a workspace.
-// Customer-family registrations require Elite. Company and Audit Firm entry
-// points depend on the selected standard plan.
-const PLAN_REGISTRATION_ENTITY_ACCESS = {
-  Basic: ['Factory', 'Unit', 'Department', 'Audit Firm Department'],
-  Pro: ['Cluster', 'Factory', 'Unit', 'Department', 'Branch', 'Audit Firm Department'],
-  Elite: ['Customer', 'Buying Office', 'Supplier', 'Company', 'Cluster', 'Factory', 'Unit', 'Department', 'Audit Firm Company', 'Branch', 'Audit Firm Department']
-};
-
 // Helper: get entity code from admin (now just entity_code)
 const getEntityCode = (admin) => admin.entity_code || null;
 
@@ -135,7 +127,11 @@ function normalizeAccountType(accountType, entityType) {
   return accountType;
 }
 
-function generateTokensForRole(role, record) {
+// Sessions started from the Audito Auditor Android app carry this client marker.
+// They stay auditor sessions through refresh and cannot switch to another role.
+const AUDITOR_APP_CLIENT = 'auditor_app';
+
+function generateTokensForRole(role, record, client = null) {
   let payload;
   const actualRole = normalizeUserRole(record.role || role);
 
@@ -176,12 +172,14 @@ function generateTokensForRole(role, record) {
     };
   }
 
+  if (client) payload.client = client;
+
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   });
 
   const refreshToken = jwt.sign(
-    { userId: payload.userId, userCode: payload.userCode, role: actualRole },
+    { userId: payload.userId, userCode: payload.userCode, role: actualRole, ...(client ? { client } : {}) },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: '7d' }
   );
@@ -251,22 +249,13 @@ function getRootEntityCode(role, record) {
 
 async function getPlanLimitsForUser(role, record) {
   const rootCode = getRootEntityCode(role, record);
-  if (!rootCode) return await SubscriptionModel.getPlanLimits('Basic');
+  if (!rootCode) return { ...SubscriptionModel.DEFAULT_LIMITS };
   return await SubscriptionModel.getLimits(rootCode);
 }
 
-/**
- * Identifies whether the user's organization plan has expired and updates the
- * subscription accordingly. Deactivates any expired row (so limits fall back to
- * Basic), then returns the latest status for the client to surface a renewal prompt.
- */
+/** The workspace package status returned with the session. */
 async function resolveSubscriptionStatus(role, record) {
-  const rootCode = getRootEntityCode(role, record);
-  if (!rootCode) {
-    return { has_subscription: false, plan_name: 'Basic', billing_cycle: null, start_date: null, end_date: null, is_active: false, is_expired: false };
-  }
-  await SubscriptionModel.deactivateExpired(rootCode);
-  return await SubscriptionModel.getStatus(rootCode);
+  return SubscriptionModel.getStatus(getRootEntityCode(role, record));
 }
 
 async function collectAccounts(email) {
@@ -346,7 +335,6 @@ const register = async (req, res) => {
       org_name,
       registration_number,
       org_email,
-      address,
       country,
       org_phone_number,
       first_name,
@@ -356,22 +344,37 @@ const register = async (req, res) => {
       company_type,
       password,
       plan_name,
-      billing_cycle,
       timezone,
       promo_code,
-      custom_solution,
       organization_logo,
       privacy_policy_id
     } = req.body;
 
-    const isCustomPlan = plan_name === 'Custom';
+    // Self-service registration is always a configurable Company package.
+    if (plan_name !== 'Package') {
+      return errorResponse(res, 'Choose a Company package or contact the Audito team.', 400);
+    }
+    if (promo_code) return errorResponse(res, 'Promo codes are not available for Company packages.', 400);
+    const packagePricing = await PackagePricingModel.get();
+    if (Number(req.body.package_selection?.pricing_version) !== packagePricing.pricing_version) {
+      return errorResponse(res, 'Package pricing has changed. Return to pricing and review your selection before registering.', 409);
+    }
+    if (Number(req.body.package_selection?.expected_token_unit_price) !== packagePricing.token_unit_price) {
+      return errorResponse(res, 'The token price changed. Refresh the package summary and try again.', 409);
+    }
+    let packageQuote;
+    try { packageQuote = PackagePricingModel.quote(req.body.package_selection, packagePricing.token_unit_price); }
+    catch (error) { return errorResponse(res, error.message, 400); }
+    if (!(packageQuote.total_price > 0)) return errorResponse(res, 'The selected package has no price. Review your package selection.', 400);
+    if (!canRegisterPackageEntry(entity_type, packageQuote.company_levels)) {
+      return errorResponse(res, `${entity_type || 'This account type'} is unavailable with the selected company hierarchy. Add Cluster or Company in pricing, or choose an included starting type.`, 403);
+    }
+
     const customOnlyEntityTypes = new Set([
       'Customer', 'Buying Office', 'Supplier',
       'Audit Firm Company', 'Branch', 'Audit Firm Department',
     ]);
-    const missing = validateRequiredFields(req.body, isCustomPlan
-      ? ['entity_type', 'org_name', 'org_email', 'plan_name', 'custom_solution']
-      : ['entity_type', 'org_name', 'first_name', 'last_name', 'email', 'password', 'plan_name']);
+    const missing = validateRequiredFields(req.body, ['entity_type', 'org_name', 'first_name', 'last_name', 'email', 'password', 'plan_name']);
     if (missing) return errorResponse(res, missing, 400);
 
     const activePrivacyPolicy = await PrivacyPolicyModel.getPublished();
@@ -380,18 +383,8 @@ const register = async (req, res) => {
       return errorResponse(res, 'Please review and agree to the current Privacy Policy before registering.', 400);
     }
 
-    if (!isCustomPlan && customOnlyEntityTypes.has(entity_type)) {
-      return errorResponse(res, 'Customer and Audit Firm workspaces require a Custom plan.', 400);
-    }
-
-    // Validate promo code if provided
-    let discount = 0;
-    if (promo_code) {
-      const promo = await PromoCodeModel.findByCode(promo_code);
-      if (!promo) {
-        return errorResponse(res, 'Invalid or expired promo code.', 400);
-      }
-      discount = parseFloat(promo.discount_percentage);
+    if (customOnlyEntityTypes.has(entity_type)) {
+      return errorResponse(res, 'Customer and Audit Firm accounts require review by the Audito team.', 400);
     }
 
     if (!VALID_ENTITY_TYPES.includes(entity_type)) {
@@ -402,34 +395,19 @@ const register = async (req, res) => {
       );
     }
 
-    const normalizedPlanName = SubscriptionModel.normalizePlanName(plan_name);
-    if (!isCustomPlan) {
-      const planSettings = await PlanSettingsModel.find(normalizedPlanName);
-      if (!planSettings?.is_active) return errorResponse(res, 'The selected plan is not currently available.', 409);
-    }
-    const registrationEntityAccess = PLAN_REGISTRATION_ENTITY_ACCESS[normalizedPlanName] || PLAN_REGISTRATION_ENTITY_ACCESS.Elite;
-    if (plan_name !== 'Custom' && !registrationEntityAccess?.includes(entity_type)) {
-      return errorResponse(
-        res,
-        `${normalizedPlanName} does not include ${entity_type} as a workspace entry type. Choose an available type or upgrade the plan.`,
-        403
-      );
-    }
-
-    const registrationEmail = isCustomPlan ? org_email : email;
+    const registrationEmail = email;
     if (!isValidEmail(registrationEmail)) return errorResponse(res, 'Invalid email address.', 400);
-
-    if (!isCustomPlan) {
-      // Strong password validation: min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
-      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
-      if (!passwordRegex.test(password)) {
-        return errorResponse(res, 'Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character.', 400);
-      }
+    if (!/^[+()\d\s.-]{7,60}$/.test(String(phone_number || ''))) {
+      return errorResponse(res, 'Enter a valid phone number.', 400);
     }
 
-    // Custom requests do not create an admin yet. Standard registrations still
-    // reserve the administrator email immediately.
-    if (!isCustomPlan && await AdminModel.emailExists(email)) {
+    // Strong password validation: min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return errorResponse(res, 'Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character.', 400);
+    }
+
+    if (await AdminModel.emailExists(email)) {
       return errorResponse(res, 'Email already registered.', 409);
     }
 
@@ -445,11 +423,10 @@ const register = async (req, res) => {
       }
     }
 
-    // Generate entity code. Admin credentials are intentionally deferred for custom plans.
     const config = ENTITY_CONFIG[entity_type];
     const orgCode = await config.genCode();
-    const userCode = isCustomPlan ? null : await generateAdminUserCode();
-    const hashedPw = isCustomPlan ? null : await bcrypt.hash(password, await bcrypt.genSalt(12));
+    const userCode = await generateAdminUserCode();
+    const hashedPw = await bcrypt.hash(password, await bcrypt.genSalt(12));
 
     // Transaction: insert entity + admin
     await connection.beginTransaction();
@@ -496,7 +473,7 @@ const register = async (req, res) => {
     }
 
     // Insert admin with generic entity_code
-    const adminId = isCustomPlan ? null : await AdminModel.create({
+    const adminId = await AdminModel.create({
       admin_id: userCode,
       first_name,
       last_name,
@@ -510,65 +487,9 @@ const register = async (req, res) => {
       org_level: config.org_level
     });
 
-    // Free plans are activated immediately. Paid plans defer the subscription
-    // until payment is confirmed — until then limits fall back to Basic.
-    // Custom plans are also deferred until admin assigns a price.
-    // Basic starts with one free month. Its configured monthly price is used
-    // only when this subscription renews after that trial period.
-    const effectiveBillingCycle = normalizedPlanName === 'Basic' ? 'Monthly' : billing_cycle;
-    let planAmount = isCustomPlan ? 0 : await SubscriptionModel.computeAmount(plan_name, effectiveBillingCycle, entity_type);
+    // The package (its limits and tokens) is activated when this payment settles.
+    const planAmount = packageQuote.total_price;
     const listAmount = planAmount;
-    // Campaigns are automatic and never combine with a manually-entered promo
-    // code. A valid promo code keeps its established behaviour and takes
-    // precedence over an automatic promotion.
-    const campaignOffer = !isCustomPlan && !promo_code && normalizedPlanName !== 'Basic'
-      ? await PromotionCampaignModel.resolveBestOffer({
-        planName: normalizedPlanName,
-        billingCycle: effectiveBillingCycle === 'Yearly' ? 'Yearly' : 'Monthly',
-        purpose: 'registration',
-        listAmount,
-      })
-      : null;
-    if (normalizedPlanName === 'Basic') planAmount = 0;
-    const customVerificationToken = isCustomPlan ? crypto.randomBytes(32).toString('hex') : null;
-    if (campaignOffer) {
-      planAmount = campaignOffer.final_amount;
-    } else if (discount > 0) {
-      planAmount = planAmount * (1 - discount / 100);
-      planAmount = Math.max(0, parseFloat(planAmount.toFixed(2)));
-    }
-    if (!isCustomPlan && planAmount <= 0) {
-      await SubscriptionModel.createSubscription(connection, orgCode, normalizedPlanName, effectiveBillingCycle);
-    }
-
-    // For custom plans, store the custom solution request
-    if (isCustomPlan && custom_solution) {
-      const customLimits = await SubscriptionModel.normalizeCustomLimits({
-        company_level: custom_solution.max_company_levels,
-        department: custom_solution.max_departments,
-        audits: custom_solution.max_audits,
-        checklists: custom_solution.max_checklists,
-        auditors: custom_solution.max_auditors,
-        auditor_eval: custom_solution.allow_auditor_eval,
-        company_to_company: custom_solution.allow_company_to_company,
-      });
-      await CustomSolutionModel.create({
-        root_entity_code: orgCode,
-        admin_id: adminId,
-        org_name,
-        org_email,
-        entity_type,
-        max_company_levels: customLimits.company_level,
-        max_departments: customLimits.department,
-        max_audits: customLimits.audits,
-        max_checklists: customLimits.checklists,
-        max_auditors: customLimits.auditors,
-        allow_auditor_eval: customLimits.auditor_eval,
-        allow_company_to_company: customLimits.company_to_company,
-        verification_token: customVerificationToken,
-        verification_expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000),
-      }, connection);
-    }
 
     await PrivacyPolicyModel.recordAgreement(connection, {
       privacyPolicyId: activePrivacyPolicy.privacy_policy_id,
@@ -580,14 +501,6 @@ const register = async (req, res) => {
     });
 
     await connection.commit();
-
-    if (isCustomPlan) {
-      sendCustomSolutionVerificationEmail(org_email, org_name, customVerificationToken).catch(err => {
-        console.error('Failed to send custom solution verification email:', err);
-      });
-      recordResend(`verification:${org_email}`);
-      return successResponse(res, { custom_solution_pending: true }, 'Custom solution request created. Please verify the organization email to send it for pricing review.', 201);
-    }
 
     // Generate Verification Token and Send Email
     const verificationToken = crypto.randomBytes(32).toString('hex');
@@ -606,15 +519,19 @@ const register = async (req, res) => {
       const created = await PaymentModel.create({
         rootEntityCode: orgCode,
         purpose: 'registration',
-        planName: SubscriptionModel.normalizePlanName(plan_name),
-        billingCycle: billing_cycle === 'Yearly' ? 'Yearly' : 'Monthly',
+        planName: 'Package',
+        billingCycle: 'None',
         amount: planAmount,
+        tokenQuantity: packageQuote.total_tokens,
+        tokenUnitPrice: packageQuote.token_unit_price,
+        pricingSnapshot: {
+          purchase_type: 'company_package',
+          ...packageQuote,
+        },
         payerName: `${first_name} ${last_name}`,
         payerEmail: email,
         orgName: org_name,
-        promotionCampaignId: campaignOffer?.campaign_id || null,
         listAmount,
-        promotionDiscountAmount: campaignOffer?.discount_amount || 0,
       });
       payment = {
         payment_code: created.payment_code,
@@ -641,51 +558,31 @@ const register = async (req, res) => {
 
 /**
  * POST /api/auth/login
- * Body: { email, password, preferred_role? }
+ * Body: { email, password, preferred_role?, required_role? }
  *
  * Unified login — checks admins, auditors, and organization_users tables.
  * If the email exists in multiple tables, returns all available accounts
  * and logs into the first one whose password matches. A previous-role preference
  * may be supplied by the client, but it never bypasses password verification.
+ *
+ * required_role: "auditor" (sent by the Audito Auditor Android app) signs in to
+ * the auditor account only. It never falls back to another role for the same
+ * email, and the session it creates cannot switch roles.
  */
 const login = async (req, res) => {
   try {
-    const { email, password, preferred_role: preferredRole } = req.body;
+    const { email, password, preferred_role: preferredRole, required_role: requiredRoleInput } = req.body;
 
     const missing = validateRequiredFields(req.body, ['email', 'password']);
     if (missing) return errorResponse(res, missing, 400);
+
+    const requiredRole = requiredRoleInput == null || requiredRoleInput === '' ? null : String(requiredRoleInput).trim();
+    if (requiredRole && requiredRole !== 'auditor') return errorResponse(res, 'Unsupported required_role.', 400);
 
     // Find the email in all 3 tables
     const adminRec = await AdminModel.findByEmail(email);
     const auditorRec = await AuditorModel.findByEmail(email);
     const organizationUserRecord = await OrganizationUserModel.findByEmail(email);
-
-    // A custom-plan administrator is created before checkout but intentionally
-    // stays inactive until payment succeeds. If checkout was cancelled, allow
-    // the correct password to resume that existing payment instead of treating
-    // the account as invalid or creating another administrator.
-    if (adminRec && !adminRec.is_active && adminRec.is_verified && adminRec.password) {
-      const customRequest = await CustomSolutionModel.findByOrgCode(adminRec.entity_code);
-      if (customRequest?.admin_setup_completed && customRequest.admin_id === adminRec.admin_id && customRequest.payment_code) {
-        const payment = await PaymentModel.findByCode(customRequest.payment_code);
-        if (payment && ['pending', 'failed'].includes(payment.status) && await bcrypt.compare(password, adminRec.password)) {
-          return successResponse(
-            res,
-            {
-              payment_required: true,
-              payment: {
-                payment_code: payment.payment_code,
-                plan_name: payment.plan_name,
-                billing_cycle: payment.billing_cycle,
-                amount: Number(payment.amount),
-                currency: payment.currency,
-              },
-            },
-            'Your administrator account is ready. Please complete payment to activate the workspace.'
-          );
-        }
-      }
-    }
 
     // Build candidate list — { role, record } — with password-check candidates
     const candidates = [];
@@ -701,6 +598,13 @@ const login = async (req, res) => {
     if (auditorRec && auditorRec.is_active && auditorRec.password) {
       if (auditorRec.email_verified) candidates.push({ role: 'auditor', record: auditorRec });
       else unverifiedCandidates.push({ role: 'auditor', record: auditorRec });
+    }
+    if (requiredRole) {
+      // Only the required role's account may be signed in to, whatever else shares the email.
+      for (const list of [candidates, unverifiedCandidates]) {
+        const kept = list.filter((candidate) => normalizeUserRole(candidate.role) === requiredRole);
+        list.splice(0, list.length, ...kept);
+      }
     }
 
     // A user can legitimately have more than one account role under the same
@@ -736,62 +640,7 @@ const login = async (req, res) => {
           );
         }
       }
-      return errorResponse(res, 'Invalid email or password.', 401);
-    }
-
-    // Block login when the organization's plan has expired. Credentials are
-    // already verified above, so this only reveals expiry to the real account
-    // owner. Returned as a 200 with a `subscription_expired` flag (no tokens) so
-    // the browser doesn't log a network error for this expected, handled case;
-    // the client uses the flag to show a renew modal instead of signing in.
-    const subscription = await resolveSubscriptionStatus(activeRole, activeRecord);
-    if (subscription.is_expired) {
-      // Prepare a renewal payment so the client can route into the payment flow.
-      // Reuse an existing pending renewal to avoid spawning duplicates per attempt.
-      let payment = null;
-      const renewalListAmount = await SubscriptionModel.computeAmount(subscription.plan_name, subscription.billing_cycle, activeRecord.entity_type);
-      const renewalOffer = await PromotionCampaignModel.resolveBestOffer({
-        planName: SubscriptionModel.normalizePlanName(subscription.plan_name),
-        billingCycle: subscription.billing_cycle === 'Yearly' ? 'Yearly' : 'Monthly',
-        purpose: 'renewal',
-        listAmount: renewalListAmount,
-      });
-      const renewalAmount = renewalOffer?.final_amount ?? renewalListAmount;
-      if (renewalAmount > 0) {
-        const rootCode = getRootEntityCode(activeRole, activeRecord);
-        let pending = await PaymentModel.findPendingByOrgPurpose(rootCode, 'renewal');
-        if (!pending) {
-          const orgName = activeRole === 'admin'
-            ? await getOrgName(activeRecord.entity_type, activeRecord.entity_code)
-            : null;
-          pending = await PaymentModel.create({
-            rootEntityCode: rootCode,
-            purpose: 'renewal',
-            planName: SubscriptionModel.normalizePlanName(subscription.plan_name),
-            billingCycle: subscription.billing_cycle === 'Yearly' ? 'Yearly' : 'Monthly',
-            amount: renewalAmount,
-            payerName: `${activeRecord.first_name} ${activeRecord.last_name}`,
-            payerEmail: activeRecord.email,
-            orgName,
-            promotionCampaignId: renewalOffer?.campaign_id || null,
-            listAmount: renewalListAmount,
-            promotionDiscountAmount: renewalOffer?.discount_amount || 0,
-          });
-        }
-        payment = {
-          payment_code: pending.payment_code,
-          plan_name: pending.plan_name,
-          billing_cycle: pending.billing_cycle,
-          amount: Number(pending.amount),
-          currency: pending.currency,
-        };
-      }
-
-      return successResponse(
-        res,
-        { subscription_expired: true, subscription, payment },
-        'Your subscription has expired. Please renew to continue.'
-      );
+      return errorResponse(res, requiredRole ? 'No auditor account matches this email and password.' : 'Invalid email or password.', 401);
     }
 
     // Block login if the registration payment was never completed (paid plan
@@ -814,42 +663,10 @@ const login = async (req, res) => {
           'Please complete your subscription payment to continue.'
         );
       }
-
-      // Check if custom solution has been priced — route to payment
-      const customPriced = await CustomSolutionModel.findByOrgCode(activeRecord.entity_code);
-      if (customPriced && customPriced.status === 'priced' && customPriced.payment_code) {
-        const customPayment = await PaymentModel.findByCode(customPriced.payment_code);
-        if (customPayment && customPayment.status === 'pending') {
-          return successResponse(
-            res,
-            {
-              payment_required: true,
-              payment: {
-                payment_code: customPayment.payment_code,
-                plan_name: 'Custom',
-                billing_cycle: customPayment.billing_cycle,
-                amount: Number(customPayment.amount),
-                currency: customPayment.currency,
-              },
-            },
-            'Your custom plan is ready. Please complete payment to continue.'
-          );
-        }
-      }
-
-      // Check if custom solution is still pending admin review
-      const customPending = await CustomSolutionModel.findByOrgCodePending(activeRecord.entity_code);
-      if (customPending) {
-        return successResponse(
-          res,
-          { custom_solution_pending: true },
-          'Your custom solution request is being reviewed. We will notify you via email once pricing is ready.'
-        );
-      }
     }
 
     // Generate tokens for the matched account
-    const tokens = generateTokensForRole(activeRole, activeRecord);
+    const tokens = generateTokensForRole(activeRole, activeRecord, requiredRole ? AUDITOR_APP_CLIENT : null);
 
     // Store refresh token
     const refreshExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -869,11 +686,13 @@ const login = async (req, res) => {
       await AdminModel.updateLastLogin(recordId);
     }
 
-    // Collect ALL available accounts for this email (regardless of password match)
-    const accounts = await collectAccounts(email);
+    // Collect ALL available accounts for this email (regardless of password match).
+    // An auditor-only sign-in does not reveal the email's other accounts.
+    const allAccounts = await collectAccounts(email);
+    const accounts = requiredRole ? allAccounts.filter((account) => account.role === requiredRole) : allAccounts;
 
-    // Fetch plan limits (subscription already resolved & verified non-expired above)
     const plan_limits = await getPlanLimitsForUser(activeRole, activeRecord);
+    const subscription = await resolveSubscriptionStatus(activeRole, activeRecord);
 
     return successResponse(res, {
       admin: { ...buildUserResponse(activeRole, activeRecord), plan_limits },
@@ -892,17 +711,26 @@ const login = async (req, res) => {
 
 /**
  * POST /api/auth/refresh-token
- * Body: { refresh_token }
+ * Body: { refresh_token, required_role? }
+ *
+ * required_role: "auditor" refuses to refresh any session that is not an
+ * auditor's. Auditor app sessions stay auditor app sessions.
  */
 const refreshToken = async (req, res) => {
   try {
-    const { refresh_token } = req.body;
+    const { refresh_token, required_role: requiredRoleInput } = req.body;
     if (!refresh_token) return errorResponse(res, 'Refresh token is required.', 400);
+    const requiredRole = requiredRoleInput == null || requiredRoleInput === '' ? null : String(requiredRoleInput).trim();
+    if (requiredRole && requiredRole !== 'auditor') return errorResponse(res, 'Unsupported required_role.', 400);
 
     const decoded = jwt.verify(refresh_token, process.env.JWT_REFRESH_SECRET);
 
     const role = normalizeUserRole(decoded.role || 'admin');
     const userId = decoded.userId || decoded.adminId;  // backward compat
+    const client = decoded.client === AUDITOR_APP_CLIENT ? AUDITOR_APP_CLIENT : null;
+    if ((requiredRole && role !== requiredRole) || (client === AUDITOR_APP_CLIENT && role !== 'auditor')) {
+      return errorResponse(res, 'This session is not an auditor session.', 401);
+    }
 
     const [rows] = await db.query(
       'SELECT * FROM refresh_tokens WHERE admin_id = ? AND token = ? AND expires_at > NOW()',
@@ -922,7 +750,7 @@ const refreshToken = async (req, res) => {
 
     await db.query('DELETE FROM refresh_tokens WHERE token = ?', [refresh_token]);
 
-    const tokens = generateTokensForRole(role, record);
+    const tokens = generateTokensForRole(role, record, client);
 
     const refreshExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const recordId = role === 'admin' || role === 'audito_admin'
@@ -1011,8 +839,9 @@ const getMe = async (req, res) => {
       return errorResponse(res, 'Invalid role.', 400);
     }
 
-    // Collect available accounts for this email
-    const accounts = await collectAccounts(email);
+    // Collect available accounts for this email (auditor app sessions see only their own).
+    const allAccounts = await collectAccounts(email);
+    const accounts = req.user.client === AUDITOR_APP_CLIENT ? allAccounts.filter((account) => account.role === 'auditor') : allAccounts;
 
     // Fetch plan limits
     const record = (role === 'admin' || role === 'audito_admin') ? await AdminModel.findById(req.user.userCode) :
@@ -1164,6 +993,9 @@ const switchAccount = async (req, res) => {
     }
     if (!['admin', 'auditor', 'organization_user'].includes(target_role)) {
       return errorResponse(res, 'Invalid target_role.', 400);
+    }
+    if (req.user.client === AUDITOR_APP_CLIENT) {
+      return errorResponse(res, 'Switching accounts is not available in the Audito app.', 403);
     }
 
     // Derive email from the current session
@@ -1361,25 +1193,6 @@ const resendVerificationEmail = async (req, res) => {
       return successResponse(res, null, 'A verification email has been sent if the account is awaiting verification.');
     }
 
-    const [customRows] = await db.query(
-      `SELECT request_id, org_name, org_email
-       FROM custom_solution_requests
-       WHERE org_email = ? AND email_verified = FALSE AND verification_expires_at IS NOT NULL
-       ORDER BY created_at DESC LIMIT 1`,
-      [email]
-    );
-    if (customRows[0]) {
-      const token = crypto.randomBytes(32).toString('hex');
-      await db.query(
-        `UPDATE custom_solution_requests
-         SET verification_token = ?, verification_expires_at = ?
-         WHERE request_id = ?`,
-        [token, new Date(Date.now() + 48 * 60 * 60 * 1000), customRows[0].request_id]
-      );
-      await sendCustomSolutionVerificationEmail(customRows[0].org_email, customRows[0].org_name, token);
-      recordResend(cooldownKey);
-    }
-
     return successResponse(res, null, 'A verification email has been sent if the account is awaiting verification.');
   } catch (error) {
     console.error('Resend verification email error:', error);
@@ -1489,32 +1302,10 @@ const resetPassword = async (req, res) => {
 async function getVerifiedAdminResponseData(admin) {
   const pendingPayment = await PaymentModel.findPendingByOrgPurpose(admin.entity_code, 'registration');
 
-  let customSolutionPayment = null;
-  let custom_solution_pending = false;
-  if (!pendingPayment && admin.entity_code) {
-    const customRequest = await CustomSolutionModel.findByOrgCode(admin.entity_code);
-    if (customRequest) {
-      if (customRequest.status === 'priced' && customRequest.payment_code) {
-        const payment = await PaymentModel.findByCode(customRequest.payment_code);
-        if (payment && payment.status === 'pending') {
-          customSolutionPayment = {
-            payment_code: payment.payment_code,
-            plan_name: 'Custom',
-            billing_cycle: payment.billing_cycle,
-            amount: Number(payment.amount),
-          };
-        }
-      } else if (customRequest.status === 'pending') {
-        custom_solution_pending = true;
-      }
-    }
-  }
-
   return {
     email: admin.email,
     first_name: admin.first_name,
     needs_password: false,
-    custom_solution_pending,
     payment: pendingPayment
       ? {
           payment_code: pendingPayment.payment_code,
@@ -1522,7 +1313,7 @@ async function getVerifiedAdminResponseData(admin) {
           billing_cycle: pendingPayment.billing_cycle,
           amount: Number(pendingPayment.amount),
         }
-      : customSolutionPayment,
+      : null,
   };
 }
 
@@ -1560,27 +1351,8 @@ const verifyEmail = async (req, res) => {
       }, 'This email address is already verified.', 200);
     }
 
-    // Custom solution requests are verified before a workspace admin exists.
-    const customRequest = await CustomSolutionModel.findByVerificationToken(token);
-    if (customRequest) {
-      await CustomSolutionModel.verifyEmail(customRequest.request_id);
-      const [auditoAdmins] = await db.query(
-        `SELECT email FROM admins
-         WHERE role = 'audito_admin' AND is_active = TRUE AND is_verified = TRUE`
-      );
-      const recipients = auditoAdmins.map((item) => item.email).filter(Boolean);
-      if (recipients.length) {
-        sendCustomSolutionRequestEmail(recipients, {
-          orgName: customRequest.org_name,
-          orgEmail: customRequest.org_email,
-          entityType: customRequest.entity_type,
-        }).catch((err) => console.error('Failed to notify Audito admins of custom request:', err));
-      }
-      return successResponse(res, {
-        email: customRequest.org_email,
-        custom_solution_pending: true,
-        needs_password: false,
-      }, 'Organization email verified. Your custom solution request is now with our pricing team.', 200);
+    if (await ContactReviewModel.verify(token)) {
+      return successResponse(res, { contact_review_verified: true, contact: auditoContact() }, 'Email verified. The Audito team will review your request.', 200);
     }
 
     // 2. Check Auditors (uses email_token + expires)
@@ -1903,39 +1675,6 @@ const setAdminPassword = async (req, res) => {
 };
 
 /**
- * GET /api/auth/custom-solution/setup-admin/:paymentCode
- * Returns the verified organization email for the administrator setup screen.
- */
-const getCustomSolutionAdminSetup = async (req, res) => {
-  try {
-    const payment = await PaymentModel.findByCode(req.params.paymentCode);
-    if (!payment || payment.plan_name !== 'Custom' || payment.purpose !== 'registration') {
-      return errorResponse(res, 'Invalid custom-plan payment.', 404);
-    }
-
-    const request = await CustomSolutionModel.findByPaymentCode(payment.payment_code);
-    if (!request?.email_verified) {
-      return errorResponse(res, 'The custom solution request is not verified.', 403);
-    }
-
-    const config = ENTITY_CONFIG[request.entity_type];
-    if (!config) return errorResponse(res, 'Invalid organization type for this custom request.', 400);
-    const [orgRows] = await db.query(
-      `SELECT country FROM \`${config.table}\` WHERE \`${config.codeField}\` = ? LIMIT 1`,
-      [request.root_entity_code]
-    );
-
-    return successResponse(res, {
-      email: request.org_email,
-      country: orgRows[0]?.country || null,
-    }, 'Custom solution setup details retrieved.');
-  } catch (error) {
-    console.error('getCustomSolutionAdminSetup error:', error);
-    return errorResponse(res, 'Failed to retrieve administrator setup details.', 500);
-  }
-};
-
-/**
  * POST /api/auth/check-registration-email
  * Checks the organization email that will also be used for the initial admin.
  */
@@ -1955,76 +1694,8 @@ const checkRegistrationEmail = async (req, res) => {
   }
 };
 
-/**
- * POST /api/auth/custom-solution/setup-admin
- * Creates the first workspace admin after organization verification and before payment.
- */
-const setupCustomSolutionAdmin = async (req, res) => {
-  try {
-    const { payment_code, first_name, last_name, phone_number, password } = req.body;
-    const missing = validateRequiredFields(req.body, ['payment_code', 'first_name', 'last_name', 'phone_number', 'password']);
-    if (missing) return errorResponse(res, missing, 400);
-
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
-    if (!passwordRegex.test(password)) {
-      return errorResponse(res, 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character.', 400);
-    }
-
-    const payment = await PaymentModel.findByCode(payment_code);
-    if (!payment || payment.plan_name !== 'Custom' || payment.purpose !== 'registration') {
-      return errorResponse(res, 'Invalid custom-plan payment.', 404);
-    }
-    if (!['pending', 'failed'].includes(payment.status)) {
-      return errorResponse(res, 'This payment can no longer be used to set up the administrator account.', 409);
-    }
-
-    const request = await CustomSolutionModel.findByPaymentCode(payment_code);
-    if (!request || !request.email_verified) {
-      return errorResponse(res, 'The custom solution request is not verified.', 403);
-    }
-    if (request.admin_setup_completed || request.admin_id) {
-      return successResponse(res, { email: request.org_email, payment_code }, 'Administrator account is already set up. Continue to payment to activate the workspace.');
-    }
-    if (await AdminModel.emailExists(request.org_email)) {
-      return errorResponse(res, 'An account already exists for this organization email. Please contact support.', 409);
-    }
-
-    const config = ENTITY_CONFIG[request.entity_type];
-    if (!config) return errorResponse(res, 'Invalid organization type for this custom request.', 400);
-    const [orgRows] = await db.query(
-      `SELECT country FROM \`${config.table}\` WHERE \`${config.codeField}\` = ? LIMIT 1`,
-      [request.root_entity_code]
-    );
-    if (!orgRows.length) return errorResponse(res, 'Organization not found.', 404);
-
-    const adminId = await generateAdminUserCode();
-    const hashedPassword = await bcrypt.hash(password, 12);
-    await AdminModel.create({
-      admin_id: adminId,
-      first_name: first_name.trim(),
-      last_name: last_name.trim(),
-      email: request.org_email,
-      country: orgRows[0].country || null,
-      phone_number: phone_number?.trim() || null,
-      password: hashedPassword,
-      account_type: config.account_type,
-      entity_type: request.entity_type,
-      entity_code: request.root_entity_code,
-      org_level: config.org_level,
-    });
-    await AdminModel.markAsVerified(adminId);
-    // Credentials are ready for checkout, but access remains blocked until payment activates the plan.
-    await AdminModel.deactivate(adminId);
-    await CustomSolutionModel.completeAdminSetup(request.request_id, adminId);
-
-    return successResponse(res, { email: request.org_email, payment_code }, 'Administrator account created. Continue to payment to activate the workspace.', 201);
-  } catch (error) {
-    console.error('setupCustomSolutionAdmin error:', error);
-    return errorResponse(res, 'Failed to create administrator account.', 500);
-  }
-};
-
 module.exports = {
+  ENTITY_CONFIG,
   register,
   login,
   refreshToken,
@@ -2039,8 +1710,6 @@ module.exports = {
   verifyEmail,
   setAdminPassword,
   checkRegistrationEmail,
-  getCustomSolutionAdminSetup,
-  setupCustomSolutionAdmin,
   updateProfile,
   updateOrganization,
   getOnboardingStatus,

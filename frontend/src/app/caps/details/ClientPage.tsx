@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { getPreviewCards } from "@/lib/previewHierarchy";
 import { capApi } from "@/lib/api";
 import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
 import { Button, IconButton } from "@/components/ui";
@@ -280,7 +281,7 @@ function EntityCard({
           {index}
         </span>
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-white truncate block">{node.name || node.code}</span>
+          <span className="text-sm font-semibold text-white truncate block">{node.name || "Unnamed entity"}</span>
           <span className="text-[9px] font-medium px-1.5 py-0.5 rounded inline-block mt-0.5 bg-white/10 text-gray-300">
             {node.entity_type}
           </span>
@@ -622,7 +623,7 @@ export default function ClientPage() {
                     seen.add(instanceKey);
                     const nd = findInTree(code, edgeId);
                     const idx = i;
-                    breadcrumbNodes.push({ label: nd?.name || code, goTo: () => setStepHistory((h) => h.slice(0, idx + 1)) });
+                    breadcrumbNodes.push({ label: nd?.name || "Unnamed entity", goTo: () => setStepHistory((h) => h.slice(0, idx + 1)) });
                   }
                 }
               }
@@ -630,7 +631,7 @@ export default function ClientPage() {
               const navigateNode = (nd: TreeNode) => {
                 const code = nd.code;
                 const edgeId = nd.edge_id ?? null;
-                const hasQ = (questionsByKey[progressKey(code, edgeId)]?.length || 0) > 0;
+                const hasQ = getQuestionsForNode(nd, questionsByKey).length > 0;
                 const hasKids = (nd.children ?? []).some((c) => subtreeHasQuestions(c, questionsByKey));
                 if (!hasQ && hasKids) setStepHistory((h) => [...h, { mode: "cards", parentCode: code, parentOrgTreeId: edgeId }]);
                 else setStepHistory((h) => [...h, { mode: "questions", entityCode: code, orgTreeId: edgeId }]);
@@ -638,14 +639,10 @@ export default function ClientPage() {
 
               if (step.mode === "cards") {
                 const parent = step.parentCode ? findInTree(step.parentCode, step.parentOrgTreeId) : tree;
-                const cards = parent
-                  ? (step.parentCode === null
-                    ? ([parent].filter((n) => subtreeHasQuestions(n, questionsByKey))
-                      .length
-                      ? [parent]
-                      : (parent.children || []).filter((c) => subtreeHasQuestions(c, questionsByKey)))
-                    : (parent.children || []).filter((c) => subtreeHasQuestions(c, questionsByKey)))
-                  : [];
+                const cards = parent ? getPreviewCards(
+                  parent,
+                  isRoot && parent.code !== '__root__' && getQuestionsForNode(parent, questionsByKey).length > 0,
+                ) : [];
 
                 return (
                   <div className="space-y-5">
@@ -678,7 +675,7 @@ export default function ClientPage() {
                 );
               }
 
-              const node = findInTree(step.entityCode);
+              const node = findInTree(step.entityCode, step.orgTreeId);
               const entityCode = step.entityCode;
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
               const qs = getQuestionsForNode({ code: entityCode, edge_id: edgeId }, questionsByKey)
@@ -686,9 +683,7 @@ export default function ClientPage() {
                 .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
               // Next is only a drill-down action. A leaf entity has nowhere further
               // to navigate, so it must not offer a Next button.
-              const hasChildrenWithQuestions = (node?.children || []).some((child) =>
-                subtreeHasQuestions(child, questionsByKey)
-              );
+              const hasChildren = (node?.children || []).length > 0;
 
               return (
                 <div className="space-y-5">
@@ -725,7 +720,7 @@ export default function ClientPage() {
                     >
                       <ArrowLeft size={14} /> Back
                     </button>
-                    {hasChildrenWithQuestions && (
+                    {hasChildren && (
                       <button
                         onClick={() => setStepHistory(h => [...h, {
                           mode: "cards",

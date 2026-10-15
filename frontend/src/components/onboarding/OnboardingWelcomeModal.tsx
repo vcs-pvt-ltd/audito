@@ -1,100 +1,119 @@
 "use client";
 
-import React from "react";
 import Image from "next/image";
-import { ArrowRight, CheckCircle2, Compass, ShieldCheck, SkipForward, Sparkles } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowRight, Check, History, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui";
 import logo from "@/assets/logo/audito_logo.png";
+import type { JourneyItem } from "./journey";
+import { EASE, rise, stagger } from "./motion";
 
-export default function OnboardingWelcomeModal({
-  open,
-  busy,
-  heading,
-  description,
-  notes,
-  progressText,
-  primaryLabel,
-  secondaryLabel,
-  showSkip,
-  onStart,
-  onSkip,
+// The onboarding welcome page: what setup involves, the journey ahead, and one
+// clear action to start or continue. Rendered as a page, not as a dialog.
+export default function OnboardingWelcome({
+  busy, checking, heading, description, items, variant, progress,
+  primaryLabel, secondaryLabel, onStart, onSkip,
 }: {
-  open: boolean;
   busy: boolean;
+  /** Saved progress is still being loaded; the start action waits for it. */
+  checking?: boolean;
   heading: string;
   description: string;
-  notes: string[];
-  progressText?: string;
+  items: JourneyItem[];
+  /** "journey" shows setup steps with their status; "tips" shows what a role can do. */
+  variant: "journey" | "tips";
+  progress?: { done: number; total: number };
   primaryLabel: string;
   secondaryLabel?: string;
-  showSkip?: boolean;
   onStart: () => void;
-  onSkip: () => void;
+  onSkip?: () => void;
 }) {
-  if (!open) return null;
-
-  const showSkipButton = Boolean(showSkip && secondaryLabel);
+  const journey = variant === "journey";
+  const percent = progress && progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#083021]/85 p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl sm:p-8 lg:p-10" aria-labelledby="onboarding-title">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_90%_5%,rgba(217,163,70,0.2),transparent_28%),radial-gradient(circle_at_5%_100%,rgba(0,169,103,0.18),transparent_34%)]" />
-      <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 translate-x-1/3 -translate-y-1/3 rounded-full border border-secondary-400/15" />
+    <motion.section aria-labelledby="onboarding-title" className="relative mx-auto w-full max-w-6xl" initial="initial" animate="animate" variants={stagger(0.06)}>
+      <div aria-hidden className="pointer-events-none absolute -left-24 top-0 h-72 w-72 rounded-full bg-primary-500/[.08] blur-[100px]" />
 
-      <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-end">
+      <motion.div variants={rise} className="relative mb-10 flex items-center justify-between gap-4 sm:mb-14">
+        <Image src={logo} alt="Audito" width={120} height={36} className="h-8 w-auto object-contain" priority />
+        {journey && <span className="rounded-full border border-white/[.08] bg-white/[.03] px-3 py-1.5 text-xs text-gray-400">Setup guide</span>}
+      </motion.div>
+
+      <div className="relative grid items-center gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
         <div>
-          <div className="mb-7 flex items-center justify-between gap-4">
-            <Image src={logo} alt="Audito" width={108} height={30} className="h-7 w-auto object-contain sm:h-8" priority />
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-secondary-400/25 bg-secondary-500/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-secondary-300">
-              <Sparkles size={12} /> Guided setup
-            </span>
-          </div>
+          <motion.p variants={rise} className="mb-4 text-xs font-semibold uppercase tracking-[.2em] text-secondary-300">
+            {progress && progress.done > 0 ? "Setup in progress" : "Let’s get started"}
+          </motion.p>
+          <motion.h1 variants={rise} id="onboarding-title" className="max-w-lg text-4xl font-semibold leading-[1.08] tracking-tight text-white sm:text-5xl">{heading}</motion.h1>
+          <motion.p variants={rise} className="mt-5 max-w-md text-base leading-7 text-gray-300 sm:text-lg sm:leading-8">{description}</motion.p>
 
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary-300">Your workspace, ready your way</p>
-          <h1 id="onboarding-title" className="mt-3 max-w-3xl text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
-            {heading}
-          </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-gray-300 sm:text-base sm:leading-7">
-            {description}
-          </p>
-
-          <div className="mt-7 grid gap-3 sm:grid-cols-3">
-            {notes.map((note, index) => (
-              <div key={note} className="rounded-2xl border border-white/10 bg-black/10 p-4">
-                <span className="mb-3 flex h-7 w-7 items-center justify-center rounded-lg bg-secondary-500/15 text-xs font-bold text-secondary-300">
-                  {index + 1}
-                </span>
-                <p className="text-sm leading-5 text-gray-200">{note}</p>
+          {progress && progress.done > 0 && (
+            <motion.div variants={rise} className="mt-7 max-w-sm">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-white">{progress.done} of {progress.total} steps done</span>
+                <span className="tabular-nums text-gray-400">{percent}%</span>
               </div>
-            ))}
-          </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+                <motion.div className="h-full rounded-full bg-gradient-to-r from-primary-500 to-primary-300" initial={{ width: 0 }} animate={{ width: `${percent}%` }} transition={{ duration: 0.6, ease: EASE, delay: 0.2 }} />
+              </div>
+            </motion.div>
+          )}
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <button onClick={onStart} disabled={busy} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-300 to-secondary-500 px-5 py-3 text-sm font-bold text-primary-950 shadow-lg shadow-secondary-950/25 transition hover:from-secondary-200 hover:to-secondary-400 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">
-              {busy ? "Starting setup..." : primaryLabel}
-              <ArrowRight size={17} />
-            </button>
-            {showSkipButton && (
-              <button onClick={onSkip} disabled={busy} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/12 px-5 py-3 text-sm font-semibold text-gray-300 transition hover:border-white/25 hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">
-                <SkipForward size={16} /> {secondaryLabel}
-              </button>
-            )}
-          </div>
+          <motion.div variants={rise} className="mt-8 flex max-w-sm flex-col items-stretch gap-2 sm:mt-10">
+            <Button disabled={busy || checking} loading={busy || checking} rightIcon={<ArrowRight size={18} />} onClick={onStart} className="min-h-13 rounded-2xl text-base">
+              {checking ? "Checking your progress…" : busy ? "Please wait…" : primaryLabel}
+            </Button>
+            {secondaryLabel && onSkip && <Button variant="ghost" disabled={busy} onClick={onSkip} className="min-h-11 text-sm">{secondaryLabel}</Button>}
+          </motion.div>
+
+          {journey && (
+            <motion.p variants={rise} className="mt-5 flex max-w-sm items-start gap-2 text-xs leading-5 text-gray-400">
+              <History size={15} className="mt-0.5 shrink-0 text-secondary-300" aria-hidden />
+              Your progress is saved as you go. You can stop and come back to setup at any time.
+            </motion.p>
+          )}
         </div>
 
-        <aside className="rounded-2xl border border-white/10 bg-black/15 p-5 lg:p-6">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300">
-            <Compass size={20} />
+        <motion.div variants={rise} className="relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-surface-light via-surface to-surface-dark p-5 shadow-2xl shadow-black/20 sm:p-8">
+          <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-60 w-60 rounded-full border border-secondary-300/10" />
+          <div className="relative mb-6">
+            <h2 className="text-base font-semibold text-white">{journey ? "Your setup journey" : "Everything you need to begin"}</h2>
+            <p className="mt-1 text-sm text-gray-400">{journey ? `${items.length} steps. We guide you through each one.` : "A quick look at your workspace."}</p>
           </div>
-          <h2 className="mt-5 text-base font-semibold text-white">A clear path forward</h2>
-          <p className="mt-2 text-sm leading-6 text-gray-400">Complete each practical step at your own pace. Your progress is saved as you go.</p>
-          <div className="mt-5 border-t border-white/10 pt-4">
-            {progressText ? (
-              <div className="flex items-center gap-2 text-xs text-emerald-200"><CheckCircle2 size={15} /> {progressText}</div>
-            ) : (
-              <div className="flex items-center gap-2 text-xs text-gray-400"><ShieldCheck size={15} className="text-secondary-300" /> You can return to setup any time.</div>
-            )}
-          </div>
-        </aside>
+
+          <motion.ol className="relative" variants={stagger(0.05)}>
+            {items.map((item, index) => {
+              const done = item.state === "done";
+              const next = item.state === "next";
+              const last = index === items.length - 1;
+              return (
+                <motion.li key={item.key} variants={rise} className="relative flex gap-4 pb-5 last:pb-0" aria-current={next ? "step" : undefined}>
+                  {!last && <span aria-hidden className={`absolute left-[19px] top-11 bottom-1 w-px ${done ? "bg-primary-400/50" : "bg-white/10"}`} />}
+                  <span aria-hidden className={`relative grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-bold ${done ? "bg-primary-400 text-primary-950" : next ? "bg-secondary-400 text-primary-950 ring-4 ring-secondary-400/15" : "border border-white/15 text-gray-300"}`}>
+                    {done ? <Check size={18} strokeWidth={3} /> : index + 1}
+                  </span>
+                  <div className={`min-w-0 flex-1 rounded-2xl px-4 py-3 ${next ? "border border-secondary-400/25 bg-secondary-400/[.06]" : "border border-transparent"}`}>
+                    <p className="flex flex-wrap items-center gap-2">
+                      <span className={`text-sm font-semibold sm:text-base ${done ? "text-gray-300" : "text-white"}`}>{item.title}</span>
+                      {item.optional && <span className="rounded-full bg-white/[.06] px-2 py-0.5 text-[11px] text-gray-400">Optional</span>}
+                      {journey && done && <span className="rounded-full bg-primary-400/15 px-2 py-0.5 text-[11px] font-semibold text-primary-200">Done</span>}
+                      {journey && next && <span className="rounded-full bg-secondary-400/15 px-2 py-0.5 text-[11px] font-semibold text-secondary-200">Up next</span>}
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-gray-400">{item.description}</p>
+                    {journey && done && <span className="sr-only">Completed</span>}
+                  </div>
+                </motion.li>
+              );
+            })}
+          </motion.ol>
+
+          <p className="relative mt-6 flex items-start gap-2 border-t border-white/[.07] pt-5 text-xs leading-5 text-gray-400">
+            <ShieldCheck size={16} className="mt-0.5 shrink-0 text-secondary-300" aria-hidden />
+            {journey ? "You check AI suggestions before anything is saved to your organization." : "What you can see is based on your role and assigned areas."}
+          </p>
+        </motion.div>
       </div>
-    </section>
+    </motion.section>
   );
 }
