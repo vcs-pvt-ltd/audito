@@ -7,7 +7,13 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "migrate": "node src/database/migrate.js",
-    "test": "node --test --test-isolation=none test/*.test.js"
+    "db:convert": "node scripts/convert-mysql-dump.js",
+    "db:verify": "node scripts/verify-postgres.js",
+    "db:access": "node scripts/check-postgres-access.js",
+    "test": "node --test --test-isolation=none"
+  },
+  "nodemonConfig": {
+    "ignore": ["storage/**", "src/public/uploads/**", "test/**"]
   },
   "keywords": [],
   "author": "",
@@ -22,9 +28,9 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
-    "mysql2": "^3.17.4",
     "nodemailer": "^8.0.1",
     "nodemon": "^3.1.14",
+    "pg": "^8.23.1",
     "xlsx": "^0.18.5"
   }
 }

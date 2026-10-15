@@ -169,7 +169,7 @@ export default function AddEditEntityModal({
                 </option>
                 {parentOptions.map((opt) => (
                   <option key={opt.code} value={opt.code}>
-                    {opt.name} ({opt.code})
+                    {opt.name}
                   </option>
                 ))}
               </select>

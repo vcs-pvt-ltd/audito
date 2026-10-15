@@ -16,10 +16,12 @@
  *   POST   /api/caps/create-follow-up        Create follow-up audit
  *   POST   /api/caps/:id/evidence            Upload CAP evidence (by response_id)
  *   DELETE /api/caps/evidence/:evidenceId    Delete CAP evidence
+ *   DELETE /api/caps/:id                     Permanently delete a CAP (admin password required)
  */
 
 const CapModel = require('../models/CapModel');
 const AuditModel = require('../models/AuditModel');
+const AuditExecutionModel = require('../models/AuditExecutionModel');
 const OrganizationUserModel = require('../models/OrganizationUserModel');
 const AdminModel = require('../models/AdminModel');
 const AuditorModel = require('../models/AuditorModel');
@@ -39,8 +41,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { generateAuditId, generateCapId, generateCapEntityProgressIds, generateCapResponseId, generateCapResponseEvidenceId } = require('../utils/codeGenerator');
-const { MAX_EVIDENCE_BYTES, getEvidenceMediaType, getEvidencePolicy } = require('../utils/evidencePolicy');
+const { MAX_EVIDENCE_BYTES, evidenceSizeProblem, getEvidenceMediaType, getEvidencePolicy } = require('../utils/evidencePolicy');
 const { getCountryDialingCode } = require('../utils/orgLookup');
+const RecordDeletionService = require('../services/recordDeletionService');
+const { verifyAdminPassword, removeStoredMedia } = require('../utils/criticalDeletion');
 
 const ENTITY_TABLE_MAP = {
   'Customer': { table: 'customers', codeField: 'cust_code' },
@@ -81,7 +85,7 @@ const fileFilter = (req, file, cb) => {
   else cb(new Error('Only image, video, and audio files are allowed.'), false);
 };
 
-const capUpload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 1024 } });
+const capUpload = multer({ storage, fileFilter, limits: { fileSize: MAX_EVIDENCE_BYTES } });
 
 async function notifyCapCreated({ capId, capTitle, audit, entities, parentCapId, creator }) {
   const type = parentCapId ? 'sub_cap_created' : 'cap_created';
@@ -217,7 +221,9 @@ async function notifyCapCreated({ capId, capTitle, audit, entities, parentCapId,
 
     // Root CAP: seed from audit corrective actions
     const [correctiveActions] = await db.query(
-      `SELECT * FROM corrective_actions WHERE audit_id = ? AND (cap_response_id IS NULL OR cap_response_id = 0) ORDER BY entity_code`,
+      // cap_response_id is a code such as CRES0001. Actions raised by the audit
+      // have none; '' and '0' are placeholders left by older records.
+      `SELECT * FROM corrective_actions WHERE audit_id = ? AND (cap_response_id IS NULL OR cap_response_id IN ('', '0')) ORDER BY entity_code`,
       [audit_id]
     );
     if (!correctiveActions.length) {
@@ -497,10 +503,10 @@ const getCorrectiveActions = async (req, res) => {
     const evidenceByResponseId = await CapModel.getEvidenceByResponseIds(
       items.map((item) => item.response_id)
     );
-    items = items.map((item) => ({
+    items = await AuditExecutionModel.attachSelectedOptionTexts(items.map((item) => ({
       ...item,
       evidence: evidenceByResponseId[String(item.response_id)] || [],
-    }));
+    })));
     const responsibleUsersByEntity = await OrganizationUserModel.resolveResponsibleForEntities(
       items.map((item) => ({
         entity_code: item.entity_code,
@@ -1053,9 +1059,10 @@ const uploadCapEvidence = async (req, res) => {
       discardUploadedFile();
       return errorResponse(res, `${evidencePolicy.plan_name} plan allows image evidence only.`, 403);
     }
-    if (req.file.size > MAX_EVIDENCE_BYTES) {
+    const sizeProblem = evidenceSizeProblem(mediaType, req.file.size);
+    if (sizeProblem) {
       discardUploadedFile();
-      return errorResponse(res, 'Evidence file must be 2MB or less.', 400);
+      return errorResponse(res, sizeProblem, 400);
     }
     if ((await CapModel.getEvidence(responseId)).length > 0) {
       discardUploadedFile();
@@ -1109,6 +1116,45 @@ const deleteCapEvidence = async (req, res) => {
   }
 };
 
+// DELETE /api/caps/:id
+const deleteCap = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (req.user.role !== 'admin') {
+      return errorResponse(res, 'Only an organization administrator can permanently delete a CAP.', 403);
+    }
+
+    const cap = await CapModel.getCapById(id);
+    const audit = cap ? await AuditModel.findById(cap.audit_id) : null;
+    if (!cap || !audit || audit.created_by !== req.user.entityCode) {
+      return errorResponse(res, 'CAP not found.', 404);
+    }
+
+    const passwordCheck = await verifyAdminPassword(req.user, req.body?.password);
+    if (!passwordCheck.ok) {
+      return errorResponse(res, passwordCheck.message, passwordCheck.status);
+    }
+
+    const deletion = await RecordDeletionService.deleteCap({
+      capId: id,
+      ownerEntityCode: req.user.entityCode,
+    });
+    const media = await removeStoredMedia(deletion.evidencePaths);
+
+    return successResponse(res, {
+      deleted_caps: deletion.deletedCaps,
+      removed_media_files: media.removed,
+      media_cleanup_failed: media.failed,
+    }, media.failed
+      ? 'CAP data was deleted, but some media files could not be removed from the server.'
+      : 'CAP and all related data were permanently deleted.');
+  } catch (err) {
+    console.error('deleteCap error:', err);
+    if (err?.status) return errorResponse(res, err.message, err.status);
+    return errorResponse(res, 'Failed to delete CAP.', 500);
+  }
+};
+
 module.exports = {
   createCap,
   listCaps,
@@ -1127,6 +1173,7 @@ module.exports = {
   createFollowUpAudit,
   uploadCapEvidence,
   deleteCapEvidence,
+  deleteCap,
   getCorrectiveActions,
   saveCorrectiveActions,
   capUpload,

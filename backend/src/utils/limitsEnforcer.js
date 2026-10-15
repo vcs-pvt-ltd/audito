@@ -16,7 +16,7 @@ const DEPARTMENT_ENTITY_STORAGE = {
 const LimitsEnforcer = {
   /**
    * Serialize a quota check and its matching create operation across every
-   * backend process connected to the same MySQL server.
+   * backend process connected to the same PostgreSQL server.
    */
   async acquireQuotaLock(rootEntityCode, resourceType) {
     const lockHash = crypto
@@ -31,7 +31,7 @@ const LimitsEnforcer = {
       const connection = await db.getConnection();
       try {
         const [rows] = await connection.query(
-          'SELECT GET_LOCK(?, 0) AS acquired',
+          'SELECT pg_try_advisory_lock(hashtextextended(?, 0)) AS acquired',
           [lockName]
         );
         const acquired = Number(rows[0]?.acquired) === 1;
@@ -41,18 +41,20 @@ const LimitsEnforcer = {
             async release() {
               if (released) return;
               released = true;
+              let destroyConnection = false;
               try {
-                await connection.query('SELECT RELEASE_LOCK(?)', [lockName]);
+                await connection.query('SELECT pg_advisory_unlock(hashtextextended(?, 0))', [lockName]);
               } catch (releaseError) {
                 console.error('Failed to release quota lock:', releaseError.message);
+                destroyConnection = true;
               } finally {
-                connection.release();
+                connection.release(destroyConnection);
               }
             }
           };
         }
       } catch (error) {
-        connection.release();
+        connection.release(true);
         throw error;
       }
       connection.release();

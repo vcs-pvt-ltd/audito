@@ -177,6 +177,7 @@ function verifyCallback(payload) {
     paymentCode: String(values.transactionId || ''),
     gatewayReference: String(values.reference || values.transactionId || ''),
     status: String(values.status || ''),
+    amount: values.amount === undefined || values.amount === null || values.amount === '' ? null : String(values.amount),
     successful: successValues.some((value) => value.toUpperCase() === String(values.status || '').toUpperCase()),
   };
 }

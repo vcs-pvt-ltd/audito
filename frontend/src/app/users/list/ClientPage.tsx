@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { usersApi, orgTreeApi, countriesApi, authApi, type Country } from "@/lib/api";
 
-import { Plus, RefreshCw, Pencil, Trash2, Mail, CheckCircle, Clock, X, UserCheck, Users, Search, Crown, Lock, Star } from "lucide-react";
+import { Plus, RefreshCw, Pencil, Trash2, Mail, CheckCircle, Clock, X, UserCheck, Users, Search, Crown, Lock, Star, ChevronDown, ChevronRight, GitBranch } from "lucide-react";
 import LimitReachedModal from "@/components/modals/LimitReachedModal";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
@@ -166,6 +166,7 @@ function OrganizationScopeSelector({
   disabled?: boolean;
 }) {
   const [search, setSearch] = useState("");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const scopeByKey = useMemo(() => {
     const map = new Map<string, OrganizationUserScope>();
     for (const scope of value) {
@@ -174,6 +175,16 @@ function OrganizationScopeSelector({
     return map;
   }, [value]);
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, FlatNode[]>();
+    for (const node of nodes) {
+      if (!node.parent_id) continue;
+      const children = map.get(node.parent_id) || [];
+      children.push(node);
+      map.set(node.parent_id, children);
+    }
+    return map;
+  }, [nodes]);
 
   const keyForNode = (node: FlatNode) =>
     node.parent_id === null ? `root:${node.code}` : `tree:${node.id}`;
@@ -184,7 +195,7 @@ function OrganizationScopeSelector({
       const parent = nodeById.get(parentId);
       if (!parent) break;
       const scope = scopeByKey.get(keyForNode(parent));
-      if (scope?.scope_mode === "SUBTREE") return parent;
+      if (scope) return parent;
       parentId = parent.parent_id;
     }
     return null;
@@ -209,52 +220,142 @@ function OrganizationScopeSelector({
       ));
       return;
     }
-    onChange([...value, {
+    const next = value.filter((scope) => {
+      if (!scope.org_tree_id) return true;
+      const selectedNode = nodeById.get(String(scope.org_tree_id));
+      return !selectedNode || !isDescendantOf(selectedNode, node.id);
+    });
+    onChange([...next, {
       org_tree_id: node.parent_id === null ? null : node.id,
       entity_code: node.code,
       entity_type: node.entity_type,
-      scope_mode: "EXACT",
+      scope_mode: "SUBTREE",
     }]);
-  };
-
-  const setMode = (node: FlatNode, mode: "EXACT" | "SUBTREE") => {
-    if (disabled) return;
-    const key = keyForNode(node);
-    const next = value.map((scope) =>
-      (scope.org_tree_id ? `tree:${scope.org_tree_id}` : `root:${scope.entity_code}`) === key
-        ? { ...scope, scope_mode: mode }
-        : scope
-    );
-    onChange(mode === "SUBTREE"
-      ? next.filter((scope) => {
-          if (!scope.org_tree_id) return true;
-          const selectedNode = nodeById.get(String(scope.org_tree_id));
-          return !selectedNode || !isDescendantOf(selectedNode, node.id);
-        })
-      : next);
+    setExpandedIds((current) => new Set(current).add(node.id));
   };
 
   const query = search.trim().toLowerCase();
   // The workspace root is monitored by its administrator and must never be
   // assigned to an Organization User. Only child entities/branches are shown.
-  const assignableNodes = nodes.filter((node) => node.parent_id !== null);
-  const visibleNodes = query
-    ? assignableNodes.filter((node) =>
-        `${node.name} ${node.entity_type} ${node.path}`.toLowerCase().includes(query)
-      )
-    : assignableNodes;
+  const assignableNodes = useMemo(() => nodes.filter((node) => node.parent_id !== null), [nodes]);
+  const rootNodes = useMemo(() => assignableNodes.filter((node) => {
+    const parent = node.parent_id ? nodeById.get(node.parent_id) : null;
+    return !parent || parent.parent_id === null;
+  }), [assignableNodes, nodeById]);
+  const visibleIds = useMemo(() => {
+    if (!query) return null;
+    const result = new Set<string>();
+    for (const node of assignableNodes) {
+      if (!`${node.name} ${node.entity_type} ${node.path}`.toLowerCase().includes(query)) continue;
+      result.add(node.id);
+      let parentId = node.parent_id;
+      while (parentId) {
+        const parent = nodeById.get(parentId);
+        if (!parent || parent.parent_id === null) break;
+        result.add(parent.id);
+        parentId = parent.parent_id;
+      }
+    }
+    return result;
+  }, [assignableNodes, nodeById, query]);
+
+  useEffect(() => {
+    if (!rootNodes.length) return;
+    setExpandedIds((current) => current.size ? current : new Set(rootNodes.map((node) => node.id)));
+  }, [rootNodes]);
+
+  const selectedEntityCount = assignableNodes.filter((node) =>
+    scopeByKey.has(keyForNode(node)) || Boolean(coveringSubtree(node))
+  ).length;
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const expandAll = () => setExpandedIds(new Set(assignableNodes
+    .filter((node) => (childrenByParent.get(node.id) || []).length > 0)
+    .map((node) => node.id)));
+
+  const renderNode = (node: FlatNode, depth = 0): ReactNode => {
+    if (visibleIds && !visibleIds.has(node.id)) return null;
+    const key = keyForNode(node);
+    const selected = scopeByKey.get(key);
+    const inheritedFrom = coveringSubtree(node);
+    const children = childrenByParent.get(node.id) || [];
+    const visibleChildren = visibleIds ? children.filter((child) => visibleIds.has(child.id)) : children;
+    const hasChildren = visibleChildren.length > 0;
+    const open = query ? hasChildren : expandedIds.has(node.id);
+    const checked = Boolean(selected || inheritedFrom);
+
+    return (
+      <div key={key} className={depth > 0 ? "ml-3 border-l border-white/[.08] pl-3" : ""}>
+        <div className={`group flex min-w-0 items-center gap-2 rounded-xl border px-2.5 py-2.5 transition-colors ${
+          selected
+            ? "border-secondary-400/25 bg-secondary-500/10"
+            : inheritedFrom
+              ? "border-emerald-400/10 bg-emerald-400/[.035]"
+              : "border-transparent hover:border-white/[.08] hover:bg-white/[.035]"
+        }`}>
+          <button
+            type="button"
+            onClick={() => hasChildren && toggleExpanded(node.id)}
+            className="grid h-6 w-6 shrink-0 place-items-center text-gray-500 transition-colors hover:text-gray-300"
+            aria-label={hasChildren ? (open ? `Collapse ${node.name}` : `Expand ${node.name}`) : undefined}
+          >
+            {hasChildren ? (open ? <ChevronDown size={15} /> : <ChevronRight size={15} />) : <span className="h-1.5 w-1.5 rounded-full bg-gray-600" />}
+          </button>
+          <input
+            type="checkbox"
+            checked={checked}
+            disabled={disabled || Boolean(inheritedFrom)}
+            onChange={() => toggle(node)}
+            aria-label={`Grant access to ${node.name} and all child entities`}
+            className="h-4 w-4 shrink-0 accent-emerald-500 disabled:cursor-not-allowed"
+          />
+          <button
+            type="button"
+            disabled={disabled || Boolean(inheritedFrom)}
+            onClick={() => toggle(node)}
+            className="min-w-0 flex-1 text-left disabled:cursor-default"
+          >
+            <span className={`block truncate text-sm font-semibold ${checked ? "text-white" : "text-gray-300"}`}>{node.name}</span>
+            <span className="block truncate text-[10px] text-gray-600">{node.entity_type}{children.length ? ` · ${children.length} direct child${children.length === 1 ? "" : "ren"}` : ""}</span>
+          </button>
+          {selected ? (
+            <span className="shrink-0 rounded-full border border-secondary-400/20 bg-secondary-400/10 px-2 py-0.5 text-[9px] font-semibold text-secondary-200">Whole branch</span>
+          ) : inheritedFrom ? (
+            <span className="shrink-0 rounded-full border border-emerald-400/15 bg-emerald-400/[.08] px-2 py-0.5 text-[9px] font-semibold text-emerald-300">Included</span>
+          ) : null}
+        </div>
+        {hasChildren && open && <div className="mt-1 space-y-1">{visibleChildren.map((child) => renderNode(child, depth + 1))}</div>}
+      </div>
+    );
+  };
 
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Organization access</p>
-        <p className="mt-1 text-xs text-gray-500">
-          {disabled
-            ? "Organization access is locked because this user is already used in audit activity."
-            : "Select individual entities or grant access to an entity and all of its subentities."}
-        </p>
+    <div className="space-y-3 rounded-2xl border border-white/10 bg-black/[.08] p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-gray-400"><GitBranch size={14} className="text-secondary-300" /> Organization access</p>
+          <p className="mt-1 text-xs text-gray-500">
+            {disabled
+              ? "Organization access is locked because this user is already used in audit activity."
+              : "Select an entity to grant access to its entire branch. Every child entity is included automatically."}
+          </p>
+        </div>
+        {!loading && assignableNodes.length > 0 && (
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" onClick={expandAll} className="rounded-lg border border-white/10 bg-white/[.03] px-2.5 py-1.5 text-[10px] font-semibold text-gray-400 hover:bg-white/[.06] hover:text-white">Expand all</button>
+            <button type="button" onClick={() => setExpandedIds(new Set())} className="rounded-lg border border-white/10 bg-white/[.03] px-2.5 py-1.5 text-[10px] font-semibold text-gray-400 hover:bg-white/[.06] hover:text-white">Collapse all</button>
+          </div>
+        )}
       </div>
-      <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2.5">
         <Search size={14} className="text-gray-500" />
         <input
           value={search}
@@ -264,60 +365,24 @@ function OrganizationScopeSelector({
           className="w-full bg-transparent text-sm text-white outline-none placeholder:text-gray-600"
         />
       </div>
-      <div className={`max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-black/10 p-2 ${disabled ? "opacity-60" : ""}`}>
+      <div className={`max-h-80 overflow-y-auto rounded-xl border border-white/10 bg-black/10 p-2 custom-scrollbar ${disabled ? "opacity-60" : ""}`}>
         {loading ? (
           <Loading className="h-64" />
-        ) : visibleNodes.map((node) => {
-          const key = keyForNode(node);
-          const selected = scopeByKey.get(key);
-          const inheritedFrom = coveringSubtree(node);
-          return (
-            <div
-              key={key}
-              className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/[0.04]"
-              style={{ paddingLeft: `${8 + Math.max(0, node.depth - 1) * 18}px` }}
-            >
-              <input
-                type="checkbox"
-                checked={!!selected || !!inheritedFrom}
-                disabled={disabled || !!inheritedFrom}
-                onChange={() => toggle(node)}
-                className="h-4 w-4 shrink-0 accent-emerald-500"
-              />
-              <div className="min-w-0 flex-1">
-                <p className={`truncate text-sm ${selected ? "text-white" : "text-gray-300"}`}>{node.name}</p>
-                <p className="truncate text-[10px] text-gray-600">{node.entity_type}</p>
-              </div>
-              {inheritedFrom ? (
-                <span className="shrink-0 text-[10px] text-emerald-400">Inherited</span>
-              ) : selected ? (
-                <select
-                  value={selected.scope_mode}
-                  onChange={(event) => setMode(node, event.target.value as "EXACT" | "SUBTREE")}
-                  disabled={disabled}
-                  className="max-w-36 rounded-md border border-white/10 bg-primary-900 px-2 py-1 text-[11px] text-gray-300 outline-none"
-                >
-                  <option value="EXACT">This entity only</option>
-                  <option value="SUBTREE">Include subentities</option>
-                </select>
-              ) : null}
-            </div>
-          );
-        })}
-        {!loading && !visibleNodes.length && (
+        ) : rootNodes.map((node) => renderNode(node))}
+        {!loading && (!rootNodes.length || (visibleIds && visibleIds.size === 0)) && (
           <p className="px-3 py-8 text-center text-sm text-gray-500">No organization entities found.</p>
         )}
       </div>
       {value.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs text-gray-500">{value.length} access rule{value.length === 1 ? "" : "s"} selected</p>
+        <div className="rounded-xl border border-secondary-400/10 bg-secondary-500/[.04] px-3 py-2.5">
+          <p className="text-xs font-semibold text-secondary-100">{value.length} selected branch{value.length === 1 ? "" : "es"} · {selectedEntityCount} accessible entit{selectedEntityCount === 1 ? "y" : "ies"}</p>
           {value.map((scope) => {
             const node = scope.org_tree_id
               ? nodeById.get(String(scope.org_tree_id))
               : nodes.find((item) => item.parent_id === null && item.code === scope.entity_code);
             return (
               <p key={`${scope.org_tree_id || "root"}:${scope.entity_code}`} className="truncate text-xs text-gray-400">
-                {node?.path || "Selected organization area"} · {scope.scope_mode === "SUBTREE" ? "Whole branch" : "Exact"}
+                {node?.path || "Selected organization area"} · Whole branch
               </p>
             );
           })}
@@ -498,7 +563,7 @@ function UserModal({
         assigned_entity_code: editData.assigned_entity_code || "",
         assigned_entity_type: editData.assigned_entity_type || "",
         assigned_org_tree_id: editData.assigned_org_tree_id || undefined,
-        scopes: editData.scopes || [],
+        scopes: (editData.scopes || []).map((scope) => ({ ...scope, scope_mode: "SUBTREE" as const })),
       });
     } else {
       setForm({
@@ -776,15 +841,17 @@ function RegisterSelfModal({
   treeSteps,
   accessToken,
   accountType,
+  customScopes = false,
 }: {
   open: boolean;
   onNo: () => void;
-  onYes: (entityCode: string, entityType: string, assignedOrgTreeId?: string) => void;
+  onYes: (entityCode: string, entityType: string, assignedOrgTreeId?: string, scopes?: OrganizationUserScope[]) => void;
   loading: boolean;
   label: string;
   treeSteps: string[];
   accessToken: string | null;
   accountType: string;
+  customScopes?: boolean;
 }) {
   const [step, setStep] = useState<"confirm" | "select-entity">("confirm");
   const [flatNodes, setFlatNodes] = useState<FlatNode[]>([]);
@@ -792,6 +859,7 @@ function RegisterSelfModal({
   const [selectedEntityCode, setSelectedEntityCode] = useState("");
   const [selectedEntityType, setSelectedEntityType] = useState("");
   const [selectedOrgTreeId, setSelectedOrgTreeId] = useState<string | undefined>(undefined);
+  const [selectedScopes, setSelectedScopes] = useState<OrganizationUserScope[]>([]);
   const [treeLoading, setTreeLoading] = useState(false);
   const [entityError, setEntityError] = useState("");
 
@@ -803,45 +871,52 @@ function RegisterSelfModal({
       setSelectedEntityCode("");
       setSelectedEntityType("");
       setSelectedOrgTreeId(undefined);
+      setSelectedScopes([]);
       setEntityError("");
     }
   }, [open]);
 
   const fetchTree = async () => {
-    if (!accessToken || treeSteps.length === 0) return;
+    if (!accessToken || (!customScopes && treeSteps.length === 0)) return;
     setTreeLoading(true);
-    if (accountType === "Audit Firm") {
+    setEntityError("");
+    try {
       const res = await orgTreeApi.getTree(accessToken);
-      if (res.success && res.data) {
-        const data = res.data as { tree: TreeNode };
-        if (data.tree) {
-          const all = flattenTree(data.tree);
-          setFlatNodes(
-            all.filter(
-              (n) =>
-                n.entity_type === "Branch" || n.entity_type === "Audit Firm Department"
-            )
-          );
-        } else {
-          setFlatNodes([]);
-        }
-      } else {
+      if (!res.success || !res.data) {
         setFlatNodes([]);
+        setEntityError(res.message || "Unable to load the organization hierarchy.");
+        return;
       }
-    } else {
-      const res = await orgTreeApi.getTree(accessToken);
-      if (res.success && res.data) {
-        const data = res.data as { tree: TreeNode };
-        if (data.tree) setFlatNodes(flattenTree(data.tree));
+
+      const data = res.data as { tree: TreeNode };
+      if (!data.tree) {
+        setFlatNodes([]);
+        setEntityError("Set up the organization hierarchy before registering yourself.");
+        return;
       }
+
+      const all = flattenTree(data.tree);
+      if (customScopes && !all.some((node) => node.parent_id !== null)) {
+        setFlatNodes(all);
+        setEntityError("Create at least one organization entity before registering yourself as an organization user.");
+        return;
+      }
+      setFlatNodes(accountType === "Audit Firm" && !customScopes
+        ? all.filter((node) => node.entity_type === "Branch" || node.entity_type === "Audit Firm Department")
+        : all);
+    } catch (error) {
+      console.error("Failed to load organization hierarchy for self-registration", error);
+      setFlatNodes([]);
+      setEntityError("Unable to load the organization hierarchy. Please try again.");
+    } finally {
+      setTreeLoading(false);
     }
-    setTreeLoading(false);
   };
 
   const handleConfirmYes = () => {
-    if (treeSteps.length > 0) {
+    if (customScopes || treeSteps.length > 0) {
       setStep("select-entity");
-      fetchTree();
+      void fetchTree();
     } else {
       onYes("", "");
     }
@@ -873,6 +948,20 @@ function RegisterSelfModal({
   };
 
   const handleRegister = () => {
+    if (customScopes) {
+      if (!selectedScopes.length) {
+        setEntityError("Please select at least one organization branch.");
+        return;
+      }
+      const primaryScope = selectedScopes[0];
+      onYes(
+        primaryScope.entity_code,
+        primaryScope.entity_type || "",
+        primaryScope.org_tree_id || undefined,
+        selectedScopes,
+      );
+      return;
+    }
     if (!selectedEntityCode) {
       setEntityError(`Please select a ${treeSteps[treeSteps.length - 1]} to assign.`);
       return;
@@ -887,7 +976,7 @@ function RegisterSelfModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60" />
-      <div className="relative glass rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
+      <div className={`relative glass rounded-2xl w-full ${customScopes ? "max-w-2xl" : "max-w-sm"} max-h-[90vh] overflow-y-auto shadow-2xl`}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
           <h2 className="text-white font-semibold">Register as {label}</h2>
@@ -923,11 +1012,18 @@ function RegisterSelfModal({
         ) : (
           <>
             <div className="p-5 space-y-4">
-              <p className="text-sm text-gray-400">Select the entity to assign yourself to:</p>
+              <p className="text-sm text-gray-400">{customScopes ? "Choose the organization branches you need to access:" : "Select the entity to assign yourself to:"}</p>
               {treeLoading ? (
                 <div className="flex items-center justify-center py-6">
                   <span className="w-5 h-5 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" />
                 </div>
+              ) : customScopes ? (
+                <OrganizationScopeSelector
+                  nodes={flatNodes}
+                  value={selectedScopes}
+                  onChange={(scopes) => { setSelectedScopes(scopes); setEntityError(""); }}
+                  loading={false}
+                />
               ) : (
                 <div className="space-y-3">
                   {treeSteps.map((et, idx) => {
@@ -959,10 +1055,10 @@ function RegisterSelfModal({
               )}
             </div>
             <div className="flex gap-3 px-5 pb-5">
-              <button type="button" onClick={() => { setStep("confirm"); setStepSelections({}); setSelectedEntityCode(""); setSelectedEntityType(""); setSelectedOrgTreeId(undefined); setEntityError(""); }} className="flex-1 py-2.5 rounded-lg text-sm text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all">
+              <button type="button" onClick={() => { setStep("confirm"); setStepSelections({}); setSelectedEntityCode(""); setSelectedEntityType(""); setSelectedOrgTreeId(undefined); setSelectedScopes([]); setEntityError(""); }} className="flex-1 py-2.5 rounded-lg text-sm text-gray-400 border border-white/10 hover:border-white/20 hover:text-white transition-all">
                 Back
               </button>
-              <button type="button" onClick={handleRegister} disabled={loading || !selectedEntityCode} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-60 transition-all">
+              <button type="button" onClick={handleRegister} disabled={loading || (customScopes ? !selectedScopes.length : !selectedEntityCode)} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 disabled:opacity-60 transition-all">
                 {loading ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <UserCheck size={15} />}
                 Register
               </button>
@@ -1030,10 +1126,15 @@ export default function UsersClientPage() {
   const [registerSelfOpen, setRegisterSelfOpen] = useState(false);
   const [registerSelfLoading, setRegisterSelfLoading] = useState(false);
   const [orgCountry, setOrgCountry] = useState("");
-  // Session-scoped: once the admin declines (or self-registers) we stop
-  // re-prompting for the rest of this session. Resets on reload/navigation so
-  // the prompt reliably reappears (it never persisted correctly before).
-  const [registerMeDismissed, setRegisterMeDismissed] = useState(false);
+  // A declined automatic prompt stays closed for that role, but the next Add
+  // click may offer self registration again. A completed registration must not.
+  const [registerMeDismissed, setRegisterMeDismissed] = useState<Set<string>>(new Set());
+  const [selfRegisteredRoles, setSelfRegisteredRoles] = useState<Set<string>>(new Set());
+  // The user type whose list has finished loading; the prompt waits for it.
+  const [loadedType, setLoadedType] = useState<string | null>(null);
+  const [pendingAddType, setPendingAddType] = useState<string | null>(null);
+  const [listError, setListError] = useState("");
+  const listRequestId = useRef(0);
 
   // The admin may self-register at most one auditor AND one organization user from
   // their email. Suppress Register Me only for the role of the current page —
@@ -1074,19 +1175,44 @@ export default function UsersClientPage() {
 
   const fetchUsers = useCallback(async () => {
     if (!accessToken || !config) return;
+    const requestId = ++listRequestId.current;
     setLoading(true);
+    setListError("");
     try {
       const res = await usersApi.list(accessToken, config.backendType);
+      if (requestId !== listRequestId.current) return;
       if (res.success && res.data) {
         const data = res.data as { users: User[] };
         setUsers(data.users || []);
+        setLoadedType(config.backendType);
+      } else {
+        setLoadedType(null);
+        setPendingAddType(null);
+        setListError(res.message || "Could not load users. Try refreshing this list.");
       }
     } catch {
-      // no-op
+      if (requestId === listRequestId.current) {
+        setLoadedType(null);
+        setPendingAddType(null);
+        setListError("Could not load users. Try refreshing this list.");
+      }
     } finally {
-      setLoading(false);
+      if (requestId === listRequestId.current) setLoading(false);
     }
   }, [accessToken, config]);
+
+  // Switching between auditors and organization users keeps this page mounted:
+  // start the new type with a clean list and closed dialogs.
+  useEffect(() => {
+    listRequestId.current += 1;
+    setUsers([]);
+    setLoadedType(null);
+    setPendingAddType(null);
+    setListError("");
+    setRegisterSelfOpen(false);
+    setModalOpen(false);
+    setEditUser(null);
+  }, [typeSlug]);
 
   useEffect(() => {
     if (!isLoading && !admin) router.push("/login");
@@ -1118,18 +1244,18 @@ export default function UsersClientPage() {
   }, [fetchUsers, config]);
 
   const markRegisterMeCompleted = () => {
-    setRegisterMeDismissed(true);
+    setRegisterMeDismissed((current) => new Set(current).add(selfRegisterRole));
   };
 
   const isRegisterMeCompleted = () => {
     if (!admin) return true;
-    return registerMeDismissed;
+    return registerMeDismissed.has(selfRegisterRole);
   };
 
   useEffect(() => {
-    if (loading) return;
-    if (config?.customScopes) return;
-    if (isRegisterMeCompleted()) return;
+    // Wait for this type's own list, not the list of the type shown before.
+    if (loading || loadedType !== config?.backendType) return;
+    if (isRegisterMeCompleted() || selfRegisteredRoles.has(selfRegisterRole)) return;
     if (hasSelfAccountForRole) return;
     const alreadyInList = admin?.email
       ? users.some((u) => u.email.toLowerCase() === admin.email.toLowerCase())
@@ -1139,7 +1265,7 @@ export default function UsersClientPage() {
     if (isRegistering) {
       setRegisterSelfOpen(true);
     }
-  }, [loading, users, searchParams, admin?.email, hasSelfAccountForRole, config?.customScopes]);
+  }, [loading, loadedType, users, searchParams, admin?.email, hasSelfAccountForRole, registerMeDismissed, selfRegisteredRoles, selfRegisterRole]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -1160,7 +1286,7 @@ export default function UsersClientPage() {
     return filtered.slice(start, start + pageSize);
   }, [filtered, currentPage, pageSize]);
 
-  const handleAdd = () => {
+  const openAddForLoadedList = useCallback(() => {
     if (config.backendType === "Auditor" && admin?.plan_limits && users.length >= admin.plan_limits.auditors) {
       setLimitModalOpen(true);
       return;
@@ -1168,13 +1294,28 @@ export default function UsersClientPage() {
     const alreadyInList = admin?.email
       ? users.some((u) => u.email.toLowerCase() === admin.email.toLowerCase())
       : true;
-    if (!config.customScopes && !alreadyInList && !isRegisterMeCompleted() && !hasSelfAccountForRole) {
+    if (!alreadyInList && !selfRegisteredRoles.has(selfRegisterRole) && !hasSelfAccountForRole) {
       setRegisterSelfOpen(true);
       return;
     }
     setEditUser(null);
     setModalOpen(true);
+  }, [config.backendType, admin?.email, admin?.plan_limits, users, selfRegisteredRoles, selfRegisterRole, hasSelfAccountForRole]);
+
+  const handleAdd = () => {
+    if (loading || loadedType !== config.backendType) {
+      setPendingAddType(config.backendType);
+      if (listError) void fetchUsers();
+      return;
+    }
+    openAddForLoadedList();
   };
+
+  useEffect(() => {
+    if (pendingAddType !== config.backendType || loading || loadedType !== config.backendType) return;
+    setPendingAddType(null);
+    openAddForLoadedList();
+  }, [pendingAddType, config.backendType, loading, loadedType, openAddForLoadedList]);
 
   const isLimitExceeded = config && config.backendType === "Auditor" && admin?.plan_limits && users.length >= admin.plan_limits.auditors;
 
@@ -1264,9 +1405,9 @@ export default function UsersClientPage() {
         ? entities.find((item) => item.id === String(scope.org_tree_id))
         : entities.find((item) => item.parent_id === null && item.code === scope.entity_code);
       const name = node?.name || "1 organization area";
-      return `${name} · ${scope.scope_mode === "SUBTREE" ? "Whole branch" : "Exact"}`;
+      return `${name} · Whole branch`;
     }
-    return `${scopes.length} organization areas`;
+    return `${scopes.length} organization branches`;
   };
 
   const handleSubmit = async (formData: UserFormData) => {
@@ -1313,7 +1454,8 @@ export default function UsersClientPage() {
     email: string,
     assignedEntityCode: string,
     assignedEntityType: string,
-    assignedOrgTreeId?: string
+    assignedOrgTreeId?: string,
+    scopes?: OrganizationUserScope[],
   ) => {
     if (!accessToken) return;
     const res = await usersApi.createFromAdmin(accessToken, {
@@ -1322,18 +1464,20 @@ export default function UsersClientPage() {
       assigned_entity_code: assignedEntityCode || undefined,
       assigned_entity_type: assignedEntityType || undefined,
       assigned_org_tree_id: assignedOrgTreeId || undefined,
+      scopes: config.customScopes ? scopes : undefined,
     });
     if (!res.success) throw new Error(res.message || "Failed to create.");
     toast("User registered successfully.", "success");
     fetchUsers();
   };
 
-  const handleRegisterSelf = async (entityCode: string, entityType: string, assignedOrgTreeId?: string) => {
+  const handleRegisterSelf = async (entityCode: string, entityType: string, assignedOrgTreeId?: string, scopes?: OrganizationUserScope[]) => {
     if (!accessToken || !admin) return;
     setRegisterSelfLoading(true);
     try {
-      await handleSubmitFromAdmin(admin.email, entityCode, entityType, assignedOrgTreeId);
+      await handleSubmitFromAdmin(admin.email, entityCode, entityType, assignedOrgTreeId, scopes);
       markRegisterMeCompleted();
+      setSelfRegisteredRoles((current) => new Set(current).add(selfRegisterRole));
       setRegisterSelfOpen(false);
       await refreshMe();
       fetchUsers();
@@ -1388,6 +1532,10 @@ export default function UsersClientPage() {
             )}
           </div>
         </div>
+
+        {listError && <div role="alert" className="mb-6 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          {listError} <button type="button" onClick={() => void fetchUsers()} className="ml-2 font-semibold underline underline-offset-2">Retry</button>
+        </div>}
 
         {/* Search Bar */}
         {!loading && users.length > 0 && (
@@ -1649,6 +1797,7 @@ export default function UsersClientPage() {
           treeSteps={effectiveTreeSteps}
           accessToken={accessToken}
           accountType={admin.account_type || ""}
+          customScopes={config.customScopes}
         />
       </main>
     </div>

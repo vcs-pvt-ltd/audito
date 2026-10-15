@@ -6,6 +6,12 @@
 
 const { db } = require('../config/db');
 
+// Who carries out the audit, for list views: the assigned auditor and/or audit firm.
+const ASSIGNEE_NAME_COLUMNS = `NULLIF(TRIM(CONCAT_WS(' ', assigned_auditor.first_name, assigned_auditor.last_name)), '') AS auditor_name,
+              assigned_firm.name AS assigned_firm_name`;
+const ASSIGNEE_JOINS = `LEFT JOIN auditors assigned_auditor ON assigned_auditor.auditor_id = aa.assigned_auditor_id
+       LEFT JOIN audit_firm_companies assigned_firm ON assigned_firm.afc_code = aa.assigned_firm_code`;
+
 const AuditModel = {
 
   // ── ASSIGNMENTS ──────────────────────────────────────────────────
@@ -62,9 +68,18 @@ const AuditModel = {
     const [rows] = await db.query(
       `SELECT aa.*, c.name AS checklist_name,
               c.time_period_value, c.time_period_unit, c.media_path AS checklist_media_path,
-              c.budget AS checklist_budget, c.currency AS checklist_currency, c.num_workers AS checklist_num_workers
+              c.budget AS checklist_budget, c.currency AS checklist_currency, c.num_workers AS checklist_num_workers,
+              reservation.required_tokens AS token_required,
+              reservation.status AS token_status,
+              COALESCE((
+                SELECT SUM(allocation.allocated_tokens)
+                  FROM token_reservation_allocations allocation
+                 WHERE allocation.token_reservation_id = reservation.token_reservation_id
+                   AND allocation.status = 'burned'
+              ), 0) AS burned_tokens
        FROM audit_assignments aa
        LEFT JOIN checklists c ON c.checklist_id = aa.checklist_id
+       LEFT JOIN token_reservations reservation ON reservation.audit_id = aa.audit_id
        WHERE aa.audit_id = ? AND aa.is_active = TRUE`,
       [audit_id]
     );
@@ -89,11 +104,13 @@ const AuditModel = {
     const [rows] = await db.query(
       `SELECT aa.audit_id, aa.audit_id AS audit_code, aa.title, aa.audit_type, aa.status,
               aa.start_date, aa.end_date, aa.budget, aa.currency, aa.num_workers,
-              aa.assigned_auditor_id, aa.assigned_firm_code,
+              aa.assigned_auditor_id, aa.assigned_firm_code, aa.created_by,
               aa.created_at, aa.audit_mode, aa.parent_audit_id, aa.completed_at,
-              c.name AS checklist_name, c.checklist_id
+              c.name AS checklist_name, c.checklist_id,
+              ${ASSIGNEE_NAME_COLUMNS}
        FROM audit_assignments aa
        LEFT JOIN checklists c ON c.checklist_id = aa.checklist_id
+       ${ASSIGNEE_JOINS}
        WHERE aa.created_by IN (${ph}) AND aa.is_active = TRUE
        ORDER BY aa.created_at DESC`,
       codes
@@ -105,7 +122,7 @@ const AuditModel = {
     const [rows] = await db.query(
       `SELECT aa.audit_id, aa.audit_id AS audit_code, aa.title, aa.audit_type, aa.status,
               aa.start_date, aa.end_date, aa.budget, aa.currency, aa.num_workers,
-              aa.assigned_auditor_id, aa.assigned_firm_code,
+              aa.assigned_auditor_id, aa.assigned_firm_code, aa.created_by,
               aa.created_at, aa.audit_mode, aa.parent_audit_id, aa.completed_at,
               c.name AS checklist_name, c.checklist_id
        FROM audit_assignments aa
@@ -123,11 +140,13 @@ const AuditModel = {
     const [rows] = await db.query(
       `SELECT aa.audit_id, aa.audit_id AS audit_code, aa.title, aa.audit_type, aa.status,
               aa.start_date, aa.end_date, aa.budget, aa.currency, aa.num_workers,
-              aa.assigned_auditor_id, aa.assigned_firm_code, aa.assigned_org_tree_id,
+              aa.assigned_auditor_id, aa.assigned_firm_code, aa.assigned_org_tree_id, aa.created_by,
               aa.created_at, aa.audit_mode, aa.parent_audit_id, aa.completed_at,
-              c.name AS checklist_name, c.checklist_id
+              c.name AS checklist_name, c.checklist_id,
+              ${ASSIGNEE_NAME_COLUMNS}
        FROM audit_assignments aa
        LEFT JOIN checklists c ON c.checklist_id = aa.checklist_id
+       ${ASSIGNEE_JOINS}
        WHERE aa.assigned_firm_code = ? AND aa.is_active = TRUE AND aa.status != 'cancelled'
        ORDER BY aa.start_date ASC`,
       [firm_code]
@@ -164,11 +183,13 @@ const AuditModel = {
     const [rows] = await db.query(
       `SELECT DISTINCT aa.audit_id, aa.audit_id AS audit_code, aa.title, aa.audit_type, aa.status,
               aa.start_date, aa.end_date, aa.budget, aa.currency, aa.num_workers,
-              aa.assigned_auditor_id, aa.assigned_firm_code,
+              aa.assigned_auditor_id, aa.assigned_firm_code, aa.created_by,
               aa.created_at, aa.audit_mode, aa.parent_audit_id, aa.completed_at,
-              c.name AS checklist_name, c.checklist_id
+              c.name AS checklist_name, c.checklist_id,
+              ${ASSIGNEE_NAME_COLUMNS}
        FROM audit_assignments aa
        LEFT JOIN checklists c ON c.checklist_id = aa.checklist_id
+       ${ASSIGNEE_JOINS}
        INNER JOIN audit_assignment_entities aae ON aae.audit_id = aa.audit_id
        WHERE (${conditions.join(' OR ')})
          AND aa.is_active = TRUE 
@@ -271,8 +292,8 @@ const AuditModel = {
   },
 
   async update(audit_id, { title, audit_type, assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
-                     budget, currency, num_workers, start_date, end_date, notes, status }) {
-    await db.query(
+                     budget, currency, num_workers, start_date, end_date, notes, status }, executor = db) {
+    await executor.query(
       `UPDATE audit_assignments
        SET title = ?, audit_type = ?, assigned_auditor_id = ?,
            assigned_firm_code = ?, assigned_org_tree_id = ?, budget = ?, currency = ?, num_workers = ?,
@@ -292,7 +313,12 @@ const AuditModel = {
     );
   },
 
-  async updateEntities(audit_id, entities) {
+  async updateEntities(audit_id, entities, executor = null) {
+    if (executor) {
+      await executor.query('DELETE FROM audit_assignment_entities WHERE audit_id = ?', [audit_id]);
+      if (entities.length) await this.addEntities(audit_id, entities, executor);
+      return;
+    }
     const connection = await db.getConnection();
     try {
       await connection.beginTransaction();

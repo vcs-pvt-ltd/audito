@@ -22,7 +22,6 @@ export interface EntityRow {
 interface EntityTableProps {
   entities: EntityRow[];
   entityLabel: string;
-  codeField: string;
   parentLabel?: string;
   onEdit: (entity: EntityRow) => void;
   onDelete: (entity: EntityRow) => void;
@@ -32,7 +31,6 @@ interface EntityTableProps {
 export default function EntityTable({
   entities,
   entityLabel,
-  codeField,
   parentLabel,
   onEdit,
   onDelete,
@@ -66,7 +64,7 @@ export default function EntityTable({
             <Td className="text-white font-medium">{entity.name}</Td>
             {parentLabel && (
               <Td className="text-gray-400 text-xs">
-                {entity.parent_name || entity.parent_code || "—"}
+                {entity.parent_name || "—"}
               </Td>
             )}
             <Td className="text-gray-400">{entity.email || "—"}</Td>

@@ -1,15 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
 import { Sparkles, ArrowRight } from "lucide-react";
 import left1 from "@/assets/landing/hero-left1.png";
 import left2 from "@/assets/landing/hero-left2.png";
 import right1 from "@/assets/landing/hero-right1.png";
 import right2 from "@/assets/landing/hero-right2.png";
-import { PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
+import { useLanding } from "@/context/LandingContext";
 
 export default function HeroSection() {
+  const { openPackageSetup } = useLanding();
   return (
     <section className="relative flex flex-col justify-center bg-cover bg-center bg-no-repeat overflow-hidden">
       <style>{`
@@ -133,12 +133,12 @@ export default function HeroSection() {
             <strong className="text-white">improve efficiency</strong> with ease.
           </p>
 
-          <Link href="/register?plan=Basic"
+          <button type="button" onClick={openPackageSetup}
             className="hero-cta cta-glow inline-flex items-center gap-2 px-6 py-3 bg-[#B8860B] hover:bg-[#A07509] text-white font-semibold rounded-lg transition-colors text-sm group"
           >
-            Start a Free Trial
+            Select your package
             <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform duration-200" />
-          </Link>
+          </button>
         
         </div>
 
@@ -207,12 +207,12 @@ export default function HeroSection() {
               with ease
             </p>
 
-            <Link href="/register?plan=Basic"
+            <button type="button" onClick={openPackageSetup}
               className="hero-cta cta-glow inline-flex items-center gap-2 px-6 py-3 bg-[#B8860B] hover:bg-[#A07509] text-white font-semibold rounded-lg transition-colors text-sm group"
             >
-              Start a Free Trial
+              Select your package
               <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform duration-200" />
-            </Link>
+            </button>
            
           </div>
 

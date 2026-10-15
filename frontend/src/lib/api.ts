@@ -1,4 +1,6 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081/api";
+import type { AuditoContact } from "./auditoContact";
+import { apiBaseUrl, nativeApiConfigProblem } from "./apiConfig";
+import { isNativeApp } from "./native/platform";
 
 const NETWORK_ERROR_MESSAGE = "Unable to connect right now. Please check your connection and try again.";
 
@@ -10,19 +12,57 @@ function getFriendlyNetworkErrorMessage(error: unknown, fallback = NETWORK_ERROR
   return fallback;
 }
 
+// ─── Android app session refresh ──────────────────────────────────
+// The website signs out when an access token expires. The Android app first
+// exchanges its refresh token (AuthContext registers how) and retries once.
+
+/** A new access token, "offline" when the server could not be reached, or null when the session is over. */
+type SessionRefresher = () => Promise<string | "offline" | null>;
+
+let sessionRefresher: SessionRefresher | null = null;
+let refreshInFlight: Promise<string | "offline" | null> | null = null;
+
+export function setSessionRefresher(refresher: SessionRefresher | null) {
+  sessionRefresher = refresher;
+}
+
+/** Refreshes the Android app session once, however many requests ask at the same time. */
+export function refreshNativeSession(): Promise<string | "offline" | null> {
+  if (!sessionRefresher) return Promise.resolve(null);
+  if (!refreshInFlight) {
+    refreshInFlight = sessionRefresher().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+function sessionEnded() {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("auth:expired"));
+}
+
 async function formDataRequest(
   endpoint: string,
   token: string,
   formData: FormData,
-  method = "POST"
-) {
+  method = "POST",
+  retried = false
+): Promise<any> {
+  const configProblem = nativeApiConfigProblem();
+  if (configProblem) return { success: false, message: configProblem };
   try {
-    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const res = await fetch(`${apiBaseUrl()}${endpoint}`, {
       method,
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
     const json = await res.json().catch(() => null);
+
+    if (res.status === 401 && token && isNativeApp()) {
+      const fresh = retried ? null : await refreshNativeSession();
+      if (fresh === "offline") return { success: false, message: NETWORK_ERROR_MESSAGE };
+      if (fresh) return formDataRequest(endpoint, fresh, formData, method, true);
+      sessionEnded();
+      return { success: false, message: "Your session has ended. Please sign in again." };
+    }
 
     if (json) return json;
     return { success: false, message: `Request failed (${res.status}).` };
@@ -35,6 +75,8 @@ interface ApiOptions {
   method?: string;
   body?: Record<string, unknown>;
   token?: string;
+  /** Internal: the request was already retried after an Android session refresh. */
+  retried?: boolean;
 }
 
 async function apiRequest<T = unknown>(
@@ -48,13 +90,16 @@ async function apiRequest<T = unknown>(
     return { success: false, message: "Invalid request: missing identifier." };
   }
 
+  const configProblem = nativeApiConfigProblem();
+  if (configProblem) return { success: false, message: configProblem };
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   try {
-    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const res = await fetch(`${apiBaseUrl()}${endpoint}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
@@ -65,6 +110,19 @@ async function apiRequest<T = unknown>(
       json = await res.json();
     } catch {
       json = null;
+    }
+
+    // Android app: renew an expired session once and repeat the request.
+    if (res.status === 401 && token && isNativeApp() && !options.retried && endpoint !== "/auth/refresh-token") {
+      const fresh = await refreshNativeSession();
+      if (fresh === "offline") return { success: false, message: NETWORK_ERROR_MESSAGE };
+      if (fresh) return apiRequest<T>(endpoint, { ...options, token: fresh, retried: true });
+    }
+
+    // Android app: a deactivated account ends the session at once.
+    if (res.status === 403 && token && isNativeApp() && json?.message === "Account is deactivated.") {
+      sessionEnded();
+      return { success: false, message: "This account has been deactivated." };
     }
 
     // Expired/invalid session on an authenticated request: broadcast so
@@ -138,6 +196,7 @@ export interface RegisterPayload {
     allow_auditor_eval: boolean;
     allow_company_to_company: boolean;
   };
+  package_selection?: { company_levels: number; departments: number; lines_per_audit: number; expected_token_unit_price: number; pricing_version: number };
 }
 
 export interface PrivacyPolicySection { title: string; content: string; }
@@ -160,6 +219,8 @@ export interface LoginPayload {
   email: string;
   password: string;
   preferred_role?: string;
+  /** "auditor" from the Android app: sign in to the auditor account only. */
+  required_role?: "auditor";
 }
 
 export interface OnboardingStatus {
@@ -169,16 +230,20 @@ export interface OnboardingStatus {
 }
 
 export const authApi = {
+  getQuoteRegistration: (token: string) =>
+    apiRequest<{ quote: QuoteRegistrationView; contact: AuditoContact }>(`/auth/quote-registration/${encodeURIComponent(token)}`),
+  registerFromQuote: (data: QuoteRegistrationPayload) =>
+    apiRequest<{ payment: { payment_code: string; plan_name: string; amount: number; currency: string } }>("/auth/quote-registration", { method: "POST", body: data as unknown as Record<string, unknown> }),
   register: (data: RegisterPayload) =>
     apiRequest("/auth/register", { method: "POST", body: data as unknown as Record<string, unknown> }),
 
   login: (data: LoginPayload) =>
     apiRequest("/auth/login", { method: "POST", body: data as unknown as Record<string, unknown> }),
 
-  refreshToken: (refresh_token: string) =>
+  refreshToken: (refresh_token: string, required_role?: "auditor") =>
     apiRequest("/auth/refresh-token", {
       method: "POST",
-      body: { refresh_token },
+      body: { refresh_token, ...(required_role ? { required_role } : {}) },
     }),
 
   logout: (refresh_token: string) =>
@@ -240,21 +305,6 @@ export const authApi = {
       body: { email },
     }),
 
-  setupCustomSolutionAdmin: (data: {
-    payment_code: string;
-    first_name: string;
-    last_name: string;
-    phone_number?: string;
-    password: string;
-  }) =>
-    apiRequest("/auth/custom-solution/setup-admin", {
-      method: "POST",
-      body: data as unknown as Record<string, unknown>,
-    }),
-
-  getCustomSolutionAdminSetup: (paymentCode: string) =>
-    apiRequest<{ email: string; country: string | null }>(`/auth/custom-solution/setup-admin/${encodeURIComponent(paymentCode)}`),
-
   switchAccount: (token: string, target_role: string, password: string) =>
     apiRequest("/auth/switch-account", {
       method: "POST",
@@ -290,12 +340,6 @@ export const authApi = {
       method: "PUT",
       body: { action },
       token,
-    }),
-
-  validatePromoCode: (code: string) =>
-    apiRequest<{ code: string; discount_percentage: number }>("/auth/validate-promo-code", {
-      method: "POST",
-      body: { code },
     }),
 };
 
@@ -363,7 +407,185 @@ export const orgTreeApi = {
     }),
 };
 
+// ─── AI Organization Setup API ────────────────────────────────────
+
+export interface OrganizationAiDraftNode {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  entity_type: string;
+  confidence: number | null;
+  is_ai_generated: boolean;
+  source_entity_code?: string | null;
+  source_edge_id?: string | null;
+  reuse_source_node_id?: string | null;
+  baseline_name?: string | null;
+  baseline_parent_id?: string | null;
+  is_removed?: boolean;
+  is_locked?: boolean;
+  lock_reasons?: string[];
+  change_type?: "added" | "updated" | "removed" | "unchanged";
+}
+
+export interface OrganizationAiSetupSession {
+  onboarding_draft?: OnboardingDraft | null;
+  published_checklist_id?: string | null;
+  organization_ai_setup_session_id: string;
+  root_entity_code: string;
+  root_entity_type: string;
+  account_type: string;
+  setup_mode: "create" | "update";
+  status: "draft" | "analyzing" | "ready" | "publishing" | "published" | "failed" | "discarded";
+  summary: string | null;
+  warnings: string[];
+  error_message?: string | null;
+  model_name?: string | null;
+  updated_at?: string;
+}
+
+export interface OrganizationAiSetupPayload {
+  review_token?: string | null;
+  evidence_available?: boolean;
+  plan_issue?: string | null;
+  analysis_progress?: { stage: string; done: number; total: number } | null;
+  root_entity_name?: string | null;
+  /** Existing entity records of the organization that are not in this draft. */
+  entity_catalog?: { code: string; name: string; entity_type: string }[];
+  session: OrganizationAiSetupSession;
+  nodes: OrganizationAiDraftNode[];
+}
+
+export interface OrganizationAiSetupResponse extends OrganizationAiSetupPayload {
+  assistant_message?: string;
+}
+
+export interface OrganizationAiChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface OnboardingQuestion {
+  id: string;
+  node_id: string | null;
+  section?: string;
+  question_text: string;
+  answer_type: string;
+  options: { option_text: string; marks: number | null }[];
+  source_reference: string;
+  origin: string;
+  /** Provenance of the area, answer type and scores. */
+  details_origin?: string;
+  selected: boolean;
+}
+export interface OnboardingDraft {
+  checklist: {
+    name: string; description: string; type_name: string; checklist_type_id: string;
+    time_period_value: number | null; time_period_unit: string;
+    repeat_duration_value: number | null; repeat_duration_unit: string; source_reference: string;
+    /** Entered by the user, not read from the document. */
+    budget: number | null; currency: string; num_workers: number | null;
+  };
+  questions: OnboardingQuestion[];
+  node_evidence: Record<string, { source_reference: string; origin: string; parent_origin?: string }>;
+  entity_catalog_included?: boolean;
+  /** Setup reads the organization first, then the questions after it is verified. */
+  structure_read?: boolean;
+  questions_generated?: boolean;
+  part_roles?: Record<string, string>;
+}
+
+export const organizationAiSetupApi = {
+  completion: (token: string) => apiRequest<{ completed: boolean }>("/organization-ai-setup/completion", { token }),
+  current: (token: string) =>
+    apiRequest<OrganizationAiSetupPayload | null>("/organization-ai-setup/current", { token }),
+
+  create: (token: string, combined = false) =>
+    apiRequest<OrganizationAiSetupPayload>("/organization-ai-setup", { method: "POST", body: { combined }, token }),
+
+  get: (token: string, id: string) =>
+    apiRequest<OrganizationAiSetupPayload>(`/organization-ai-setup/${id}`, { token }),
+
+  analyze: (token: string, id: string, documents: File[]) => {
+    const formData = new FormData();
+    documents.forEach((document) => formData.append("documents", document));
+    return formDataRequest(`/organization-ai-setup/${id}/analyze`, token, formData) as Promise<{ success: boolean; data?: OrganizationAiSetupResponse; message?: string }>;
+  },
+
+  /** Reads the audit questions onto the saved, verified organization. */
+  generateQuestions: (token: string, id: string) =>
+    apiRequest<OrganizationAiSetupPayload>(`/organization-ai-setup/${id}/questions`, { method: "POST", token }),
+
+  chat: (token: string, id: string, message: string, history: OrganizationAiChatMessage[]) =>
+    apiRequest<OrganizationAiSetupResponse>(`/organization-ai-setup/${id}/chat`, { method: "POST", body: { message, history }, token }),
+
+  update: (token: string, id: string, data: { nodes: OrganizationAiDraftNode[]; summary?: string; warnings?: string[]; onboarding_draft?: OnboardingDraft; review_token?: string | null }) =>
+    apiRequest<OrganizationAiSetupPayload>(`/organization-ai-setup/${id}`, { method: "PUT", body: data as unknown as Record<string, unknown>, token }),
+
+  discard: (token: string, id: string) =>
+    apiRequest<null>(`/organization-ai-setup/${id}/discard`, { method: "POST", token }),
+
+  publish: (token: string, id: string, reviewToken?: string | null) =>
+    apiRequest<{ created_count?: number; updated_count?: number; removed_count?: number; checklist_id?: string | null; already_published?: boolean }>(`/organization-ai-setup/${id}/publish`, { method: "POST", body: { review_token: reviewToken }, token }),
+};
+
 // ─── Links API ────────────────────────────────────────────────────
+
+export interface VisualScanTreeNode {
+  org_tree_id: string | null;
+  entity_code: string;
+  entity_type: string;
+  name: string;
+  children: VisualScanTreeNode[];
+}
+
+export interface VisualScanIssue {
+  summary: string;
+  severity: "low" | "medium" | "high" | "critical";
+  observations: string[];
+  evidence_count: number;
+}
+
+export interface VisualScanResult {
+  scene_summary: string;
+  issue_summary: string;
+  image_quality: "good" | "usable" | "poor";
+  needs_another_image: boolean;
+  safety_message: string;
+  issues: VisualScanIssue[];
+  location: {
+    entity_code: string;
+    org_tree_id: string | null;
+    entity_type: string;
+    name: string;
+  };
+  context_used: {
+    internal_evidence_records: number;
+    historical_issue_examples: number;
+    historical_comparison_examples: number;
+  };
+}
+
+export const visualScanApi = {
+  getContext: (token: string) =>
+    apiRequest<{ tree: VisualScanTreeNode }>("/visual-scans/context", { token }),
+
+  analyze: (token: string, image: File, payload: {
+    entity_code: string;
+    org_tree_id: string | null;
+    notes?: string;
+  }) => {
+    const formData = new FormData();
+    formData.append("image", image);
+    formData.append("entity_code", payload.entity_code);
+    if (payload.org_tree_id) formData.append("org_tree_id", payload.org_tree_id);
+    if (payload.notes?.trim()) formData.append("notes", payload.notes.trim());
+    return formDataRequest("/visual-scans/analyze", token, formData) as Promise<{
+      success: boolean;
+      data?: VisualScanResult;
+      message?: string;
+    }>;
+  },
+};
 
 export const linksApi = {
   getMyLinks: (token: string) =>
@@ -606,7 +828,7 @@ export const checklistApi = {
   // Excel template download (with auth token)
   downloadExcelTemplate: async (token: string) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/checklists/excel-template`, {
+      const res = await fetch(`${apiBaseUrl()}/checklists/excel-template`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -643,21 +865,30 @@ export const checklistApi = {
 
   // AI document analysis. Suggestions are returned as drafts and are not saved to a checklist.
   generateAiQuestions: async (token: string, file: File, payload: {
-    questionCount: number;
     focus?: string;
     checklistType?: string;
     scopeEntityCode?: string;
+    scopeOrgTreeId?: string | null;
     existingQuestions?: string[];
+    continueGeneration?: boolean;
   }) => {
     const formData = new FormData();
     formData.append("source_document", file);
-    formData.append("question_count", String(payload.questionCount));
     if (payload.focus) formData.append("focus", payload.focus);
     if (payload.checklistType) formData.append("checklist_type", payload.checklistType);
     if (payload.scopeEntityCode) formData.append("scope_entity_code", payload.scopeEntityCode);
+    if (payload.scopeOrgTreeId) formData.append("scope_org_tree_id", payload.scopeOrgTreeId);
     if (payload.existingQuestions?.length) formData.append("existing_questions", JSON.stringify(payload.existingQuestions));
+    if (payload.continueGeneration) formData.append("continue_generation", "true");
     return formDataRequest("/checklists/ai/generate-questions", token, formData);
   },
+
+  finalizeAiSuggestions: (token: string, jobId: string, acceptedIds: string[]) =>
+    apiRequest<{ accepted_count: number }>(`/checklists/ai/jobs/${jobId}/suggestions`, {
+      method: "PUT",
+      body: { accepted_ids: acceptedIds },
+      token,
+    }),
 };
 
 
@@ -697,6 +928,11 @@ export const auditApi = {
   create: (token: string, data: AuditPayload) =>
     apiRequest("/audits", { method: "POST", body: data as unknown as Record<string, unknown>, token }),
 
+  quote: (token: string, data: Pick<AuditPayload, "checklist_id" | "entities" | "start_date">) =>
+    apiRequest<{ quote: { required_tokens: number; available_tokens: number; shortage_tokens: number; can_assign: boolean } }>(
+      "/audits/quote", { method: "POST", body: data as unknown as Record<string, unknown>, token }
+    ),
+
   list: (token: string) =>
     apiRequest("/audits", { token }),
 
@@ -712,11 +948,17 @@ export const auditApi = {
   update: (token: string, id: string, data: Partial<AuditPayload>) =>
     apiRequest(`/audits/${id}`, { method: "PUT", body: data as unknown as Record<string, unknown>, token }),
 
-  delete: (token: string, id: string) =>
-    apiRequest(`/audits/${id}`, { method: "DELETE", token }),
+  delete: (token: string, id: string, password: string) =>
+    apiRequest<{ deleted_caps: number; removed_media_files: number; media_cleanup_failed: number }>(
+      `/audits/${id}`,
+      { method: "DELETE", body: { password }, token }
+    ),
 
   cancel: (token: string, id: string) =>
     apiRequest(`/audits/${id}/cancel`, { method: "POST", token }),
+
+  restore: (token: string, id: string) =>
+    apiRequest(`/audits/${id}/restore`, { method: "POST", token }),
 
   count: (token: string) =>
     apiRequest<{ count: number }>("/audits/count", { token }),
@@ -944,6 +1186,12 @@ export const capApi = {
 
   get: (token: string, id: string) =>
     apiRequest(`/caps/${id}`, { token }),
+
+  delete: (token: string, id: string, password: string) =>
+    apiRequest<{ deleted_caps: number; removed_media_files: number; media_cleanup_failed: number }>(
+      `/caps/${id}`,
+      { method: "DELETE", body: { password }, token }
+    ),
 
   getFirmProgressDetail: (token: string, id: string) =>
     apiRequest(`/caps/${id}/firm-progress`, { token }),
@@ -1282,11 +1530,11 @@ export const learningApi = {
   updateEvaluationPaper: (token: string, id: string, body: Record<string, any>) => apiRequest(`/learning/evaluation-papers/${id}`, { method: 'PUT', body, token }),
   deleteEvaluationPaper: (token: string, id: string) => apiRequest(`/learning/evaluation-papers/${id}`, { method: 'DELETE', token }),
   setEvaluationQuestions: (token: string, id: string, questions: any[]) => apiRequest(`/learning/evaluation-papers/${id}/questions`, { method: 'POST', body: { questions }, token }),
-  evaluationExcelTemplateUrl: () => `${API_BASE_URL}/learning/evaluation-papers/excel-template`,
+  evaluationExcelTemplateUrl: () => `${apiBaseUrl()}/learning/evaluation-papers/excel-template`,
 
   downloadEvaluationExcelTemplate: async (token: string) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/excel-template`, {
+      const res = await fetch(`${apiBaseUrl()}/learning/evaluation-papers/excel-template`, {
         method: 'GET',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1311,7 +1559,7 @@ export const learningApi = {
     const formData = new FormData();
     formData.append('questions_file', file);
     try {
-      const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/questions/preview-upload`, {
+      const res = await fetch(`${apiBaseUrl()}/learning/evaluation-papers/questions/preview-upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -1326,7 +1574,7 @@ export const learningApi = {
     const formData = new FormData();
     formData.append('questions_file', file);
     try {
-      const res = await fetch(`${API_BASE_URL}/learning/evaluation-papers/${paperId}/questions/upload`, {
+      const res = await fetch(`${apiBaseUrl()}/learning/evaluation-papers/${paperId}/questions/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -1371,11 +1619,22 @@ export const myLearningApi = {
 };
 
 export const landingApi = {
+  submitContactReview: (data: ContactReviewInput) =>
+    apiRequest<ContactReviewSubmitResult>("/landing/contact-review", { method: "POST", body: data as unknown as Record<string, unknown> }),
+  getContactDetails: () => apiRequest<AuditoContact>("/landing/contact-details"),
   submitContact: (data: { name: string; email: string; company?: string; phone?: string; country?: string; message: string }) =>
     apiRequest("/landing/contact", { method: "POST", body: data as unknown as Record<string, unknown> }),
   getPrivacyPolicy: () => apiRequest<PrivacyPolicy>("/landing/privacy-policy"),
-  askAssistant: (message: string) => apiRequest<LandingAssistantReply>("/landing/assistant/message", { method: "POST", body: { message } }),
+  askAssistant: (message: string, history: LandingAssistantHistoryMessage[] = []) =>
+    apiRequest<LandingAssistantReply>("/landing/assistant/message", { method: "POST", body: { message, history } }),
+  createAssistantVoiceSession: (history: LandingAssistantHistoryMessage[] = []) =>
+    apiRequest<LandingAssistantVoiceSession>("/landing/assistant/voice/session", { method: "POST", body: { history } }),
 };
+
+export interface LandingAssistantHistoryMessage {
+  role: "assistant" | "user";
+  content: string;
+}
 
 export interface LandingAssistantAction {
   label: string;
@@ -1387,44 +1646,11 @@ export interface LandingAssistantReply {
   actions: LandingAssistantAction[];
 }
 
-export interface AiKnowledgeSource {
-  ai_knowledge_source_id: string;
-  source_type: "article" | "document";
-  title: string;
-  category?: string | null;
-  tags: string[];
-  body_content?: string | null;
-  source_file_name?: string | null;
-  source_mime?: string | null;
-  status: "draft" | "processing" | "published" | "failed" | "archived";
-  error_message?: string | null;
-  published_at?: string | null;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface PlanSetting {
-  plan_name: string;
-  display_name?: string;
-  description?: string | null;
-  sort_order?: number;
-  monthly_price: number;
-  yearly_discount_percent: number;
-  max_company_levels: number;
-  max_departments: number;
-  max_audits: number;
-  max_checklists: number;
-  max_auditors: number;
-  allow_auditor_eval: boolean;
-  allow_company_to_company: boolean;
-  is_active: boolean;
-  updated_at?: string;
-}
-
-export interface PlanEntryPrice { entity_type: string; monthly_price: number; }
-export interface PromotionCampaignPlan {
-  plan_name: string;
-  billing_cycle: "Monthly" | "Yearly" | "Any";
+export interface LandingAssistantVoiceSession {
+  value: string;
+  expires_at: number;
+  model: string;
+  voice: string;
 }
 
 export interface PromotionCampaign {
@@ -1439,30 +1665,123 @@ export interface PromotionCampaign {
   applies_to_registration: boolean;
   applies_to_upgrade: boolean;
   applies_to_renewal: boolean;
+  applies_to_token_reload: boolean;
   is_active: boolean;
-  plans: PromotionCampaignPlan[];
   created_at?: string;
   updated_at?: string;
 }
 
-export interface PlanCatalog {
-  plans: PlanSetting[];
-  entry_prices: PlanEntryPrice[];
-  active_promotions?: PromotionCampaign[];
+export interface PackagePricing {
+  pricing_version: number;
+  company_level_charges: Record<number, number>;
+  token_unit_price: number;
+  free_company_levels: number;
+  free_departments: number;
+  company_level_price: number;
+  department_price: number;
+  updated_at?: string;
 }
 
-export const plansApi = {
-  getPublic: () => apiRequest<PlanCatalog>("/landing/plans"),
+export interface ContactReviewInput {
+  account_type: string;
+  entity_type: string;
+  organization_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  country: string;
+  departments: number;
+  lines_per_audit: number;
+  notes?: string;
+}
+
+export interface ContactReviewRequest extends Omit<ContactReviewInput, "departments" | "lines_per_audit"> {
+  request_id: string;
+  /** Older requests were sent before these were asked. */
+  departments: number | null;
+  lines_per_audit: number | null;
+  status: "pending" | "quoted" | "closed";
+  assigned_price: number | string | null;
+  /** Message sent to the requester with the quote. */
+  admin_notes: string | null;
+  /** Notes for the Audito team only. */
+  internal_notes?: string | null;
+  email_verified: number | boolean;
+  quoted_at?: string | null;
+  closed_at?: string | null;
+  /** Tokens included in the quote (everything paid becomes tokens). */
+  quoted_tokens?: number | null;
+  token_unit_price?: number | string | null;
+  registration_expires_at?: string | null;
+  registration_link_active?: boolean;
+  registered_at?: string | null;
+  registered_root_entity_code?: string | null;
+  payment_code?: string | null;
+  payment_status?: "pending" | "processing" | "paid" | "failed" | "cancelled" | null;
+  payment_amount?: number | string | null;
+  paid_at?: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+/** A quoted Customer or Audit Firm request, as shown on its registration page. */
+export interface QuoteRegistrationView {
+  organization_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  account_type: string;
+  entity_type: string;
+  country: string;
+  departments: number | null;
+  lines_per_audit: number | null;
+  price: number;
+  tokens: number;
+  token_unit_price: number;
+  currency: string;
+  message: string;
+  expires_at: string;
+}
+
+export interface QuoteRegistrationPayload {
+  token: string;
+  org_name: string;
+  registration_number?: string;
+  org_phone_number: string;
+  country: string;
+  address_line_1: string;
+  address_line_2: string;
+  address_line_3?: string;
+  timezone?: string;
+  first_name: string;
+  last_name: string;
+  phone_number: string;
+  password: string;
+  privacy_policy_id: string;
+}
+
+export interface ContactReviewSubmitResult {
+  request_id: string;
+  email_sent: boolean;
+  contact: AuditoContact;
+}
+
+export const packagePricingApi = {
+  get: () => apiRequest<PackagePricing>("/landing/package-pricing"),
 };
 
 // ─── Payments API ──────────────────────────────────────────────────
 
 export interface PaymentDetails {
   payment_code: string;
-  purpose?: "registration" | "upgrade" | "renewal";
+  purpose?: "registration" | "upgrade" | "renewal" | "plan_activation" | "plan_upgrade" | "token_reload";
   plan_name: string;
   billing_cycle: string;
   amount: number;
+  token_quantity?: number;
+  bonus_token_quantity?: number;
+  token_unit_price?: number | null;
+  pricing_snapshot?: Record<string, unknown> | null;
   currency: string;
   status?: "pending" | "processing" | "paid" | "failed" | "cancelled";
   payer_name?: string | null;
@@ -1476,6 +1795,8 @@ export interface PaymentDetails {
   list_amount?: number;
   promotion_discount_amount?: number;
   promotion_campaign_id?: string | null;
+  promo_code?: string | null;
+  promo_discount_amount?: number;
   manual_approval_status?: "not_requested" | "requested" | "approved";
   manual_approval_requested_at?: string | null;
   manual_approval_reviewed_at?: string | null;
@@ -1499,37 +1820,14 @@ export interface SavedPaymentMethod {
   created_at: string;
 }
 
-export interface CustomSolutionRequest {
-  request_id: string;
-  root_entity_code: string;
-  admin_id: string;
-  org_name: string;
-  org_email: string;
-  entity_type: string;
-  max_company_levels: number;
-  max_departments: number;
-  max_audits: number;
-  max_checklists: number;
-  max_auditors: number;
-  allow_auditor_eval: boolean;
-  allow_company_to_company: boolean;
-  status: "pending" | "priced" | "accepted" | "rejected";
-  assigned_price: number | null;
-  assigned_billing_cycle: string | null;
-  admin_notes: string | null;
-  payment_code: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface AdminDashboardStats {
   counts: {
     messages: number;
     messages_unread: number;
     promo_codes: number;
     promo_codes_active: number;
-    custom_solutions: number;
-    custom_solutions_pending: number;
+    contact_reviews: number;
+    contact_reviews_pending: number;
     organizations: number;
     organizations_paid: number;
     audito_admins: number;
@@ -1552,7 +1850,12 @@ export interface AdminPayment {
   org_name: string | null;
   org_name_resolved: string | null;
   plan_name: string;
-  billing_cycle: string;
+  token_quantity: number;
+  bonus_token_quantity: number;
+  token_unit_price: number | null;
+  pricing_snapshot: Record<string, unknown> | string | null;
+  fulfillment_type: string | null;
+  fulfilled_token_quantity: number | null;
   invoice_number: string | null;
   paid_at: string | null;
   created_at: string;
@@ -1570,11 +1873,13 @@ export interface AdminPayment {
 
 export interface RegisteredOrganization {
   root_entity_code: string;
+  /** "Package" (Company package) or "Custom" (quoted account). */
   plan_name: string;
-  billing_cycle: string;
+  /** Status of the workspace's registration payment. */
+  payment_status: string;
+  /** 1 once the registration payment is paid. */
   is_active: number;
-  start_date: string;
-  end_date: string;
+  activated_at: string | null;
   created_at: string;
   first_name: string | null;
   last_name: string | null;
@@ -1591,18 +1896,18 @@ export interface RegisteredOrganization {
 export const paymentApi = {
   // Public — payment page lookup & confirmation (temporary; gateway webhook later)
   get: (code: string) => apiRequest<PaymentPageData>(`/payments/${code}`),
+  applyPromoCode: (code: string, promoCode: string) =>
+    apiRequest<PaymentPageData>(`/payments/${code}/promo-code`, { method: "POST", body: { code: promoCode } }),
+  removePromoCode: (code: string) =>
+    apiRequest<PaymentPageData>(`/payments/${code}/promo-code`, { method: "DELETE" }),
+  completeFree: (code: string) =>
+    apiRequest<PaymentPageData>(`/payments/${code}/complete-free`, { method: "POST" }),
   initiate: (code: string, body: { save_payment_method?: boolean } = {}) =>
     apiRequest<{ payment: PaymentDetails; checkout: { action: string; method: "GET" | "POST"; fields: Record<string, string> } }>(`/payments/${code}/initiate`, { method: "POST", body }),
   requestManualApproval: (code: string) =>
     apiRequest<PaymentPageData>(`/payments/${code}/manual-approval-request`, { method: "POST" }),
 
   // Authenticated (admin)
-  checkout: (token: string, body: { plan_name: string; billing_cycle: string; purpose: "upgrade" | "renewal" }) =>
-    apiRequest<{ payment: PaymentDetails }>("/payments/checkout", {
-      method: "POST",
-      body: body as unknown as Record<string, unknown>,
-      token,
-    }),
   list: (token: string) => apiRequest<{ payments: PaymentDetails[] }>("/payments", { token }),
   listMethods: (token: string) => apiRequest<{ methods: SavedPaymentMethod[] }>("/payments/methods", { token }),
   setDefaultMethod: (token: string, id: string) =>
@@ -1611,31 +1916,90 @@ export const paymentApi = {
     apiRequest(`/payments/methods/${id}`, { method: "DELETE", token }),
 };
 
-// ─── Link Billing Credits API ────────────────────────────────────
-
-export interface LinkBillingCredit {
-  credit_id: string;
-  organization_link_id: string;
-  credit_for_entity_code: string;
-  credit_from_entity_code: string;
-  source_plan_name: string;
-  source_billing_cycle: string;
-  source_yearly_billed: number;
-  remaining_months: number;
-  credit_amount: number;
-  applied_amount: number;
-  status: "active" | "fully_applied" | "reversed";
-  created_at: string;
-  reversed_at: string | null;
+export interface TokenWallet {
+  root_entity_code: string;
+  available_tokens: number;
+  held_tokens: number;
+  lifetime_burned_tokens: number;
+  plan_name: string;
+  token_unit_price: number;
+  daily_free_tokens: number;
+  wallet_members?: Array<{
+    root_entity_code: string;
+    source: "workspace" | "linked_requester";
+    link_code: string | null;
+    display_name: string | null;
+    entity_type: string | null;
+    available_tokens: number;
+    held_tokens: number;
+    lifetime_burned_tokens: number;
+  }>;
 }
 
-export const billingCreditsApi = {
-  list: (token: string) =>
-    apiRequest<{ credits: LinkBillingCredit[]; available_amount: number }>("/billing/credits", { token }),
+export interface TokenReloadPackage {
+  token_reload_package_id: string;
+  display_name: string;
+  token_quantity: number;
+  bonus_token_quantity: number;
+  amount: number;
+  currency: string;
+}
 
-  preview: (token: string, linkCode: string) =>
-    apiRequest<{ credit: LinkBillingCredit | null }>(`/billing/credits/preview/${linkCode}`, { token }),
+export interface AdminTokenReloadPackage {
+  id: number;
+  token_reload_package_id: string;
+  display_name: string;
+  token_quantity: number;
+  bonus_token_quantity: number;
+  is_active: boolean | number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type TokenReloadPackageInput = Pick<AdminTokenReloadPackage,
+  "display_name" | "token_quantity" | "bonus_token_quantity" | "is_active"
+>;
+
+export interface TokenLedgerEntry {
+  token_ledger_entry_id: string;
+  root_entity_code: string;
+  entry_type: "grant" | "reserve" | "release" | "burn" | "expire" | "adjustment";
+  available_delta: number;
+  held_delta: number;
+  burned_delta: number;
+  description: string | null;
+  audit_title: string | null;
+  auditor_name: string | null;
+  created_at: string;
+}
+
+export const tokenApi = {
+  wallet: (token: string) => apiRequest<{ wallet: TokenWallet }>("/tokens/wallet", { token }),
+  packages: (token: string) => apiRequest<{ plan_name: string; token_unit_price: number; packages: TokenReloadPackage[] }>("/tokens/packages", { token }),
+  ledger: (token: string, limit = 100) => apiRequest<{ entries: TokenLedgerEntry[] }>(`/tokens/ledger?limit=${limit}`, { token }),
+  checkout: (token: string, packageId: string) => apiRequest<{ payment: PaymentDetails }>("/tokens/checkout", {
+    method: "POST", body: { package_id: packageId }, token,
+  }),
+  /** Current department limit, departments in use, and the price of `departments`. */
+  departmentUpgrade: (token: string, departments?: number) =>
+    apiRequest<DepartmentUpgradeInfo>(`/tokens/department-upgrade${departments ? `?departments=${departments}` : ""}`, { token }),
+  buyDepartments: (token: string, departments: number) =>
+    apiRequest<{ applied: boolean; departments?: number; payment?: { payment_code: string; amount: number; currency: string } }>("/tokens/department-upgrade", {
+      method: "POST", body: { departments }, token,
+    }),
 };
+
+export interface DepartmentUpgradeInfo {
+  current: number;
+  used: number;
+  plan_name: string;
+  quote: {
+    from_departments: number; departments: number;
+    previous_department_charge: number; department_charge: number;
+    token_unit_price: number; total_tokens: number; total_price: number;
+    free_departments: number; department_price: number;
+  };
+}
 
 // ─── Admin API ────────────────────────────────────────────────────
 export interface ContactMessage {
@@ -1658,8 +2022,12 @@ export interface PromoCode {
   id?: number;
   code: string;
   discount_percentage: number;
-  is_active: boolean;
+  is_active: boolean | number;
   expires_at: string | null;
+  max_redemptions?: number | null;
+  /** Paid checkouts that used this code. */
+  redemptions?: number;
+  total_discount?: number | string;
   created_at: string;
 }
 
@@ -1676,33 +2044,22 @@ export interface AdminUser {
 }
 
 export const adminApi = {
-  listAiKnowledgeSources: (token: string) => apiRequest<AiKnowledgeSource[]>("/admin/ai-knowledge", { token }),
-  createAiKnowledgeArticle: (token: string, data: { title: string; category?: string; tags?: string[]; body_content: string }) =>
-    apiRequest<{ source: AiKnowledgeSource }>("/admin/ai-knowledge/articles", { method: "POST", body: data as unknown as Record<string, unknown>, token }),
-  uploadAiKnowledgeDocument: async (token: string, file: File, data: { title: string; category?: string; tags?: string[] }) => {
-    const formData = new FormData();
-    formData.append("document", file);
-    formData.append("title", data.title);
-    if (data.category) formData.append("category", data.category);
-    if (data.tags?.length) formData.append("tags", data.tags.join(","));
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/ai-knowledge/documents`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData });
-      const payload = await res.json().catch(() => null);
-      if (payload && typeof payload.success === "boolean") return payload;
-      return { success: false, message: payload?.message || `Document upload failed (${res.status}).` };
-    } catch (error) {
-      return { success: false, message: getFriendlyNetworkErrorMessage(error, "Document upload failed.") };
-    }
-  },
-  updateAiKnowledgeSource: (token: string, sourceId: string, data: { title: string; category?: string; tags?: string[]; body_content?: string }) =>
-    apiRequest<{ source: AiKnowledgeSource }>(`/admin/ai-knowledge/${encodeURIComponent(sourceId)}`, { method: "PUT", body: data as unknown as Record<string, unknown>, token }),
-  publishAiKnowledgeSource: (token: string, sourceId: string) =>
-    apiRequest<{ source: AiKnowledgeSource }>(`/admin/ai-knowledge/${encodeURIComponent(sourceId)}/publish`, { method: "POST", token }),
-  unpublishAiKnowledgeSource: (token: string, sourceId: string) =>
-    apiRequest<{ source: AiKnowledgeSource }>(`/admin/ai-knowledge/${encodeURIComponent(sourceId)}/unpublish`, { method: "POST", token }),
-  deleteAiKnowledgeSource: (token: string, sourceId: string) =>
-    apiRequest<null>(`/admin/ai-knowledge/${encodeURIComponent(sourceId)}`, { method: "DELETE", token }),
-
+  getPackagePricing: (token: string) => apiRequest<PackagePricing>("/admin/package-pricing", { token }),
+  updatePackagePricing: (token: string, token_unit_price: number) =>
+    apiRequest<PackagePricing>("/admin/package-pricing", { method: "PUT", body: { token_unit_price }, token }),
+  listContactReviews: (token: string) => apiRequest<ContactReviewRequest[]>("/admin/contact-reviews", { token }),
+  quoteContactReview: (token: string, requestId: string, assigned_price: number, admin_notes: string) =>
+    apiRequest<ContactReviewRequest>(`/admin/contact-reviews/${encodeURIComponent(requestId)}/quote`, { method: "POST", body: { assigned_price, admin_notes }, token }),
+  resendContactReviewQuote: (token: string, requestId: string) =>
+    apiRequest<ContactReviewRequest>(`/admin/contact-reviews/${encodeURIComponent(requestId)}/resend-quote`, { method: "POST", token }),
+  closeContactReview: (token: string, requestId: string) =>
+    apiRequest<ContactReviewRequest>(`/admin/contact-reviews/${encodeURIComponent(requestId)}/close`, { method: "POST", token }),
+  reopenContactReview: (token: string, requestId: string) =>
+    apiRequest<ContactReviewRequest>(`/admin/contact-reviews/${encodeURIComponent(requestId)}/reopen`, { method: "POST", token }),
+  updateContactReviewNotes: (token: string, requestId: string, internal_notes: string) =>
+    apiRequest<ContactReviewRequest>(`/admin/contact-reviews/${encodeURIComponent(requestId)}/notes`, { method: "PUT", body: { internal_notes }, token }),
+  resendContactReviewVerification: (token: string, requestId: string) =>
+    apiRequest<ContactReviewRequest>(`/admin/contact-reviews/${encodeURIComponent(requestId)}/resend-verification`, { method: "POST", token }),
   listPrivacyPolicies: (token: string) => apiRequest<PrivacyPolicy[]>("/admin/privacy-policies", { token }),
   createPrivacyPolicy: (token: string, data: Pick<PrivacyPolicy, "title" | "intro" | "sections">) =>
     apiRequest<{ policy: PrivacyPolicy }>("/admin/privacy-policies", { method: "POST", body: data as unknown as Record<string, unknown>, token }),
@@ -1713,24 +2070,22 @@ export const adminApi = {
   deletePrivacyPolicy: (token: string, policyId: string) =>
     apiRequest<null>(`/admin/privacy-policies/${encodeURIComponent(policyId)}`, { method: "DELETE", token }),
 
-  listPlanSettings: (token: string) => apiRequest<PlanCatalog>("/admin/plan-settings", { token }),
+  listTokenPackages: (token: string) =>
+    apiRequest<{ packages: AdminTokenReloadPackage[] }>("/admin/token-packages", { token }),
 
-  updatePlanSettings: (token: string, planName: string, data: Omit<PlanSetting, "plan_name" | "updated_at" | "yearly_discount_percent">) =>
-    apiRequest<{ plan: PlanSetting }>(`/admin/plan-settings/${encodeURIComponent(planName)}`, {
+  createTokenPackage: (token: string, data: TokenReloadPackageInput) =>
+    apiRequest<{ package: AdminTokenReloadPackage }>("/admin/token-packages", {
+      method: "POST", body: data as unknown as Record<string, unknown>, token,
+    }),
+
+  updateTokenPackage: (token: string, packageId: string, data: TokenReloadPackageInput) =>
+    apiRequest<{ package: AdminTokenReloadPackage }>(`/admin/token-packages/${encodeURIComponent(packageId)}`, {
       method: "PUT", body: data as unknown as Record<string, unknown>, token,
     }),
 
-  updateYearlyDiscount: (token: string, yearly_discount_percent: number) =>
-    apiRequest<PlanCatalog>("/admin/plan-settings/yearly-discount", {
-      method: "PUT", body: { yearly_discount_percent }, token,
-    }),
-
-  createPlanSettings: (token: string, data: Omit<PlanSetting, "yearly_discount_percent" | "updated_at">) =>
-    apiRequest<{ plan: PlanSetting }>("/admin/plan-settings", { method: "POST", body: data as unknown as Record<string, unknown>, token }),
-
-  updateEntryPrice: (token: string, entityType: string, monthly_price: number) =>
-    apiRequest<{ entry_price: PlanEntryPrice }>(`/admin/entry-prices/${encodeURIComponent(entityType)}`, {
-      method: "PUT", body: { monthly_price }, token,
+  deleteTokenPackage: (token: string, packageId: string) =>
+    apiRequest<null>(`/admin/token-packages/${encodeURIComponent(packageId)}`, {
+      method: "DELETE", token,
     }),
 
   listPromotionCampaigns: (token: string) =>
@@ -1764,15 +2119,21 @@ export const adminApi = {
   listPromoCodes: (token: string) =>
     apiRequest<PromoCode[]>("/admin/promo-codes", { token }),
   
-  createPromoCode: (token: string, data: { code: string; discount_percentage: number; expires_at?: string }) =>
+  createPromoCode: (token: string, data: { code: string; discount_percentage: number; expires_at?: string | null; max_redemptions?: number | null }) =>
     apiRequest("/admin/promo-codes", {
       method: "POST",
       body: data as unknown as Record<string, unknown>,
       token,
     }),
-  
+
   deactivatePromoCode: (token: string, id: string) =>
     apiRequest(`/admin/promo-codes/${id}/deactivate`, {
+      method: "POST",
+      token,
+    }),
+
+  activatePromoCode: (token: string, id: string) =>
+    apiRequest(`/admin/promo-codes/${id}/activate`, {
       method: "POST",
       token,
     }),
@@ -1809,28 +2170,6 @@ export const adminApi = {
   deleteAdmin: (token: string, adminId: string) =>
     apiRequest(`/admin/admins/${adminId}`, {
       method: "DELETE",
-      token,
-    }),
-
-  // Custom solution requests
-  listCustomSolutions: (token: string, params?: { status?: string }) => {
-    const qs = new URLSearchParams();
-    if (params?.status) qs.set('status', params.status);
-    const query = qs.toString();
-    return apiRequest<CustomSolutionRequest[]>(`/admin/custom-solutions${query ? `?${query}` : ""}`, { token });
-  },
-
-  getCustomSolution: (token: string, requestId: string) =>
-    apiRequest<CustomSolutionRequest>(`/admin/custom-solutions/${requestId}`, { token }),
-
-  assignCustomSolutionPrice: (token: string, requestId: string, data: {
-    assigned_price: number;
-    assigned_billing_cycle: "Monthly" | "Yearly";
-    admin_notes?: string;
-  }) =>
-    apiRequest(`/admin/custom-solutions/${requestId}/assign-price`, {
-      method: "POST",
-      body: data as unknown as Record<string, unknown>,
       token,
     }),
 

@@ -274,7 +274,7 @@ function EntityTreeSection({
             {/* Questions */}
             {hasQuestions && (
               <div className="px-4 py-3 space-y-2">
-                {questions.map((q) => {
+                {questions.map((q, index) => {
                   const resp = responses.find(
                     (r) => r.checklist_question_id === q.checklist_question_id && sameEntityInstance(node.code, nodeOrgTreeId, r)
                   );
@@ -292,7 +292,7 @@ function EntityTreeSection({
                       }`}
                     >
                       <span className="shrink-0 w-5 h-5 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[9px] text-gray-500 font-mono mt-0.5">
-                        {q.order_index + 1}
+                        {index + 1}
                       </span>
                       <div className="flex-1 min-w-0 space-y-1.5">
                         <p className="text-xs text-gray-200 leading-snug">{q.question_text}</p>
@@ -411,7 +411,7 @@ function AuditEntityBreakdownNavigator({
           <button type="button" onClick={() => setHistory((items) => items.slice(0, -1))} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-gray-300 transition-colors hover:border-white/20 hover:text-white">
             <ArrowLeft size={12} /> Back
           </button>
-          <span className="min-w-0 truncate text-xs text-gray-400">{current.name || current.code}</span>
+          <span className="min-w-0 truncate text-xs text-gray-400">{current.name || "Unnamed entity"}</span>
         </div>
       )}
 
@@ -419,7 +419,7 @@ function AuditEntityBreakdownNavigator({
         {nodes.map((node, index) => {
           const key = `${node.code}__${node.edge_id ?? "null"}`;
           const progress = aggregatedMap.get(key) || report.progress.find((item) => sameEntityInstance(node.code, node.edge_id ?? null, item));
-          const entityName = node.name || (progress as any)?.entity_name || report.audit.entities.find((item) => sameEntityInstance(node.code, node.edge_id ?? null, item))?.entity_name || node.code;
+          const entityName = node.name || (progress as any)?.entity_name || report.audit.entities.find((item) => sameEntityInstance(node.code, node.edge_id ?? null, item))?.entity_name || "Unnamed entity";
           const pct = progress && progress.total_marks > 0 ? Math.round((progress.obtained_marks / progress.total_marks) * 100) : 0;
           const childCount = (node.children || []).filter(hasAuditInBranch).length;
           const capCount = (progress as any)?.cap_required_count || 0;

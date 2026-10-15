@@ -135,7 +135,7 @@ function EntityTreeSection({
 
   const progress = aggregatedMap?.get(nodeKey);
 
-  const entityName = node.name || node.code;
+  const entityName = node.name || "Unnamed entity";
 
   const nodeQuestions = isCapEntity ? questions.filter((q) =>
     sameEntityInstance(node.code, nodeOrgTreeId, q, { allowGeneric: true })
@@ -336,7 +336,7 @@ function CapEntityBreakdownNavigator({
     ? (current.children || []).filter(hasCapInBranch)
     : tree
       ? (tree.code === "__root__" ? tree.children || [] : [tree]).filter(hasCapInBranch)
-      : entities.map((entity) => ({ code: entity.entity_code, name: entity.entity_code, entity_type: entity.entity_type || "", edge_id: entity.org_tree_id ?? null, children: [] }));
+      : entities.map((entity) => ({ code: entity.entity_code, name: "Unnamed entity", entity_type: entity.entity_type || "", edge_id: entity.org_tree_id ?? null, children: [] }));
 
   return (
     <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 sm:p-4">
@@ -345,7 +345,7 @@ function CapEntityBreakdownNavigator({
           <button type="button" onClick={() => setHistory((items) => items.slice(0, -1))} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-gray-300 transition-colors hover:border-white/20 hover:text-white">
             <ArrowLeft size={12} /> Back
           </button>
-          <span className="min-w-0 truncate text-xs text-gray-400">{current.name || current.code}</span>
+          <span className="min-w-0 truncate text-xs text-gray-400">{current.name || "Unnamed entity"}</span>
         </div>
       )}
 
@@ -362,7 +362,7 @@ function CapEntityBreakdownNavigator({
               className="group overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] text-left transition-all hover:border-white/20 hover:bg-white/[0.05] disabled:cursor-default disabled:hover:border-white/10 disabled:hover:bg-white/[0.03]">
               <div className="flex items-center gap-3 bg-gradient-to-r from-primary-800 to-primary-800/60 px-3.5 py-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary-500 text-xs font-bold text-white shadow-lg shadow-secondary-500/30">{index + 1}</span>
-                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-white">{node.name || node.code}</p><span className="mt-0.5 inline-block rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-gray-300">{node.entity_type || "Entity"}</span></div>
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-white">{node.name || "Unnamed entity"}</p><span className="mt-0.5 inline-block rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-gray-300">{node.entity_type || "Entity"}</span></div>
                 {childCount > 0 && <ChevronRight size={18} className="text-white/60 transition-transform group-hover:translate-x-0.5 group-hover:text-white" />}
               </div>
               <div className="space-y-2.5 p-3.5">
@@ -538,9 +538,14 @@ export default function MyCapReportPage() {
   const capPdfReport = useMemo(() => {
     if (!cap) return null;
     const entitiesMap = new Map<string, { entity_code: string; entity_type: string; entity_name: string }>();
+    const entityNameByInstance = new Map<string, string>();
     const walkTree = (n: EntityTreeNode | null) => {
       if (!n) return;
-      if (n.code && n.code !== "__root__") entitiesMap.set(n.code, { entity_code: n.code, entity_type: n.entity_type || "", entity_name: n.name || n.code });
+      if (n.code && n.code !== "__root__") {
+        const entityName = n.name || "Unnamed entity";
+        entitiesMap.set(n.code, { entity_code: n.code, entity_type: n.entity_type || "", entity_name: entityName });
+        entityNameByInstance.set(`${n.code}__${n.edge_id ?? "null"}`, entityName);
+      }
       for (const c of n.children || []) walkTree(c);
     };
     walkTree(entityTree);
@@ -549,22 +554,29 @@ export default function MyCapReportPage() {
       const r = responseMap[q.cap_question_id];
       return { id: r?.cap_response_id || q.cap_question_id, cap_question_id: q.cap_question_id, entity_code: q.entity_code, org_tree_id: q.org_tree_id ?? null, answer_text: r?.response_text || null, selected_option_ids: (r?.selected_option_ids as string | null) || null, marks_obtained: Number(r?.marks_obtained || 0), remarks: r?.remarks || null, cap_required: Number(r?.cap_required || 0), status: r?.status || q.status || "plan", evidence: r?.evidence || [] };
     });
-    const normalizedProgress = Array.from(aggregatedProgressMap.entries()).map(([key, p]) => ({
-      entity_code: key.split("__")[0],
-      entity_name: key.split("__")[0],
-      total_questions: p.total_questions || 0,
-      answered_questions: p.answered_questions || 0,
-      total_marks: p.total_marks || 0,
-      obtained_marks: p.obtained_marks || 0,
-      status: "plan",
-      org_tree_id: key.includes("__") ? (key.split("__")[1] === "null" ? null : key.split("__")[1]) : null,
+    // Keep PDF progress at the directly assigned entity level. CapPdfRenderer performs
+    // the same hierarchy roll-up as AuditPdfRenderer; passing aggregated tree values
+    // here would count descendant marks again when their parent is rolled up.
+    const normalizedProgress = progress.map((item) => ({
+      entity_code: item.entity_code,
+      entity_name:
+        entityNameByInstance.get(`${item.entity_code}__${item.org_tree_id ?? "null"}`) ||
+        item.entity_name ||
+        entitiesMap.get(item.entity_code)?.entity_name ||
+        "Unnamed entity",
+      total_questions: Number(item.total_questions || 0),
+      answered_questions: Number(item.answered_questions || 0),
+      total_marks: Number(item.total_marks || 0),
+      obtained_marks: Number(item.obtained_marks || 0),
+      status: item.status || "not_started",
+      org_tree_id: item.org_tree_id ?? null,
     }));
     return {
       audit: { audit_id: cap.cap_id, audit_code: cap.cap_id, title: cap.title, status: cap.status, start_date: String(auditMeta?.start_date || cap.start_date || ""), end_date: String(auditMeta?.end_date || cap.end_date || ""), organization_name: auditMeta?.organization_name || "", organization_email: auditMeta?.organization_email || "", organization_phone: auditMeta?.organization_phone || "", organization_logo: auditMeta?.organization_logo || null, auditor_name: auditMeta?.auditor_name || [auditMeta?.assigned_auditor_first_name, auditMeta?.assigned_auditor_last_name].filter(Boolean).join(" ") || "", auditor_email: auditMeta?.auditor_email || "", auditor_phone: auditMeta?.auditor_phone || "", entities: Array.from(entitiesMap.values()) },
       responses: normalizedResponses, progress: normalizedProgress, questions: normalizedQuestions,
       summary: { total_marks: summaryData.total_marks, obtained_marks: summaryData.obtained_marks, score_pct: summaryData.score_pct, total_questions: summaryData.total_questions, answered_questions: summaryData.answered_questions, total_entities: entitiesMap.size },
     };
-  }, [cap, questions, responseMap, entityTree, auditMeta, aggregatedProgressMap, summaryData]);
+  }, [cap, questions, responseMap, entityTree, auditMeta, progress, summaryData]);
 
   if (isLoading) {
     return (
@@ -702,7 +714,7 @@ export default function MyCapReportPage() {
                     )
                   ) : entities.length > 0 ? (
                     entities.map((entity, idx) => (
-                      <EntityTreeSection key={`${entity.entity_code}-${idx}`} node={{ code: entity.entity_code, name: entity.entity_code, entity_type: entity.entity_type || "", edge_id: entity.org_tree_id ?? null, children: [] }} questions={questions} responses={responses} aggregatedMap={aggregatedProgressMap} capEntityCodes={capEntityCodes} />
+                      <EntityTreeSection key={`${entity.entity_code}-${idx}`} node={{ code: entity.entity_code, name: "Unnamed entity", entity_type: entity.entity_type || "", edge_id: entity.org_tree_id ?? null, children: [] }} questions={questions} responses={responses} aggregatedMap={aggregatedProgressMap} capEntityCodes={capEntityCodes} />
                     ))
                   ) : <p className="text-xs italic text-gray-500">No entity data available.</p>}
                 </div>

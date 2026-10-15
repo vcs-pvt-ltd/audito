@@ -1,10 +1,16 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { auditExecutionApi } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
+import { mediaUrl } from "@/lib/apiConfig";
+import { isNativeApp } from "@/lib/native/platform";
+import { saveReportPdf } from "@/lib/native/reportFiles";
+import { drawEvidenceAndRemarks, type EvidenceReportRow } from "@/components/report/pdfEvidence";
 import auditoLogo from "../../assets/logo/audito_logo.png";
 
 
@@ -126,16 +132,12 @@ interface CapPdfRendererProps {
 export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
   const [downloading, setDownloading] = useState(false);
 
-  const getAccessToken = () => {
-    try {
-      const stored = localStorage.getItem("audito_auth");
-      if (!stored) return null;
-      const parsed = JSON.parse(stored);
-      return (parsed?.accessToken as string) || null;
-    } catch {
-      return null;
-    }
-  };
+  const { accessToken } = useAuth();
+  const { toast } = useUiFeedback();
+  // Read at generation time, so a renewed session token is used.
+  const accessTokenRef = useRef(accessToken);
+  accessTokenRef.current = accessToken;
+  const getAccessToken = () => accessTokenRef.current;
 
   const loadImageAsDataUrl = async (url: string): Promise<string | undefined> => {
     try {
@@ -206,19 +208,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
     );
   };
 
-  const MEDIA_ORIGIN =
-    process.env.NEXT_PUBLIC_MEDIA_URL ||
-    (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(
-      /\/api\/?$/,
-      ""
-    );
-  const getMediaUrl = (filePath: string) => {
-    if (!filePath) return "";
-    if (filePath.startsWith("http://") || filePath.startsWith("https://"))
-      return filePath;
-    const path = filePath.startsWith("/") ? filePath : `/${filePath}`;
-    return `${MEDIA_ORIGIN}${path}`;
-  };
+  const getMediaUrl = (filePath: string) => mediaUrl(filePath);
 
 
 
@@ -259,7 +249,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
 
       const entityNameByCode: Record<string, string> = {};
       report.audit.entities.forEach((e) => {
-        entityNameByCode[e.entity_code] = e.entity_name || e.entity_code;
+        entityNameByCode[e.entity_code] = e.entity_name || "Unnamed entity";
       });
 
       const currentDate = new Date().toLocaleDateString();
@@ -526,7 +516,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
               const key = p.entity_code;
               if (!rollupMap[key]) {
                 rollupMap[key] = {
-                  name: p.entity_name || entityNameByCode[p.entity_code] || p.entity_code,
+                  name: p.entity_name || entityNameByCode[p.entity_code] || "Unnamed entity",
                   total_marks: 0,
                   obtained_marks: 0,
                 };
@@ -584,9 +574,13 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
 
       // ── Findings Table helpers ─────────────────────────────────
       const tableWidth = pageWidth - margin * 2;
-      const COL_Q = tableWidth * 0.45; // Question
-      const COL_R = tableWidth * 0.38; // Response
-      const COL_S = tableWidth * 0.17; // Score 
+      const COL_N = tableWidth * 0.09; // # (question number)
+      const COL_Q = tableWidth * 0.38; // Question
+      const COL_R = tableWidth * 0.36; // Response
+      const COL_S = tableWidth - COL_N - COL_Q - COL_R; // Score
+      const X_Q = margin + COL_N;
+      // Where each question's row is, so Evidence & Remarks can link to it.
+      const questionAnchors = new Map<string, { page: number; y: number }>();
 
       const drawFindingsTableHeader = (y: number): number => {
         const hdrH = 26;
@@ -598,16 +592,15 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
         }
 
         doc.setFillColor(...PRIMARY);
-        doc.rect(margin, y, COL_Q, hdrH, "F");
-        doc.rect(margin + COL_Q, y, COL_R, hdrH, "F");
-        doc.rect(margin + COL_Q + COL_R, y, COL_S, hdrH, "F");
+        doc.rect(margin, y, tableWidth, hdrH, "F");
 
         doc.setFont("helvetica", "bold");
         doc.setFontSize(9);
         doc.setTextColor(255, 255, 255);
-        doc.text("Question", margin + 10, y + 17);
-        doc.text("Response", margin + COL_Q + 8, y + 17);
-        doc.text("Score", margin + COL_Q + COL_R + COL_S / 2, y + 17, {
+        doc.text("#", margin + COL_N / 2, y + 17, { align: "center" });
+        doc.text("Question", X_Q + 8, y + 17);
+        doc.text("Response", X_Q + COL_Q + 8, y + 17);
+        doc.text("Score", X_Q + COL_Q + COL_R + COL_S / 2, y + 17, {
           align: "center",
         });
 
@@ -618,7 +611,8 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
         q: CapQuestion,
         resp: CapResponse | undefined,
         y: number,
-        displayNumber: string
+        displayNumber: string,
+        anchorKey?: string
       ): number => {
         const hasCap = (resp?.cap_required || 0) === 1;
         const lineH = 13;
@@ -657,15 +651,15 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
 
         // Measure wrapped lines
         doc.setFontSize(9);
-        const questionLines = doc.splitTextToSize(
-          `${displayNumber}. ${q.question_text}`,
-          COL_Q - 16
-        );
+        const questionLines = doc.splitTextToSize(q.question_text, COL_Q - 16);
+        doc.setFont("helvetica", "bold");
+        const numberLines = doc.splitTextToSize(displayNumber, COL_N - 8);
+        doc.setFont("helvetica", "normal");
         const answerLines = finalAnswer
           ? doc.splitTextToSize(finalAnswer, COL_R - 16)
           : ["—"];
 
-        const contentLines = Math.max(questionLines.length, answerLines.length);
+        const contentLines = Math.max(questionLines.length, answerLines.length, numberLines.length);
         const rowH = Math.max(
           40,
           Math.min(180, paddingV * 2 + contentLines * lineH)
@@ -694,18 +688,29 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
           doc.rect(margin, y, 3, rowH, "F");
         }
 
+        if (anchorKey) {
+          questionAnchors.set(anchorKey, { page: doc.getCurrentPageInfo().pageNumber, y });
+        }
+
         // Cell borders
         doc.setDrawColor(...BORDER);
         doc.setLineWidth(0.4);
-        doc.rect(margin, y, COL_Q, rowH);
-        doc.rect(margin + COL_Q, y, COL_R, rowH);
-        doc.rect(margin + COL_Q + COL_R, y, COL_S, rowH);
+        doc.rect(margin, y, COL_N, rowH);
+        doc.rect(X_Q, y, COL_Q, rowH);
+        doc.rect(X_Q + COL_Q, y, COL_R, rowH);
+        doc.rect(X_Q + COL_Q + COL_R, y, COL_S, rowH);
+
+        // Number cell
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(...DARK);
+        doc.text(numberLines, margin + COL_N / 2, y + paddingV + lineH - 3, { align: "center" });
 
         // Question cell
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9);
         doc.setTextColor(...TEXT_DARK);
-        doc.text(questionLines, margin + 10, y + paddingV + lineH - 3);
+        doc.text(questionLines, X_Q + 8, y + paddingV + lineH - 3);
 
         // Response cell
         if (finalAnswer && finalAnswer !== "—") {
@@ -716,7 +721,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
           doc.setTextColor(...TEXT_GRAY);
         }
         doc.setFontSize(9);
-        doc.text(answerLines, margin + COL_Q + 8, y + paddingV + lineH - 3);
+        doc.text(answerLines, X_Q + COL_Q + 8, y + paddingV + lineH - 3);
 
         // Score cell
         const qPct =
@@ -735,7 +740,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
         doc.setTextColor(...scoreColor);
         doc.text(
           `${resp?.marks_obtained ?? 0}/${q.total_marks}`,
-          margin + COL_Q + COL_R + COL_S / 2,
+          X_Q + COL_Q + COL_R + COL_S / 2,
           y + rowH / 2 + 4,
           { align: "center" }
         );
@@ -862,7 +867,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
                     `${nodeRespKeyBase}::${q.cap_question_id}`,
                     qNo
                   );
-                  cy = renderQuestionRow(q, resp, cy, qNo);
+                  cy = renderQuestionRow(q, resp, cy, qNo, `${nodeRespKeyBase}::${q.cap_question_id}`);
                 });
                 cy += 12; // spacing after table
               }
@@ -922,7 +927,7 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
             const resp = responseByEntityQuestion.get(`${code}::${q.cap_question_id}`);
             const qNo = String(q.order_index || index + 1);
             questionNumberByEntityQuestion.set(`${code}::${q.cap_question_id}`, qNo);
-            cy = renderQuestionRow(q, resp, cy, qNo);
+            cy = renderQuestionRow(q, resp, cy, qNo, `${code}::${q.cap_question_id}`);
           });
         }
       }
@@ -934,182 +939,36 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
       });
 
       if (responsesWithDetails.length > 0) {
-        doc.addPage();
-        doc.setFillColor(255, 255, 255);
-        doc.rect(0, 0, pageWidth, pageHeight, "F");
-
-        let cy = 65;
-
-        doc.setTextColor(...DARK);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(16);
-        doc.text("Evidence & Remarks", margin, cy);
-        cy += 20;
-
-        const eColWidths = {
-          question: (pageWidth - margin * 2) * 0.35,
-          evidence: (pageWidth - margin * 2) * 0.35,
-          remark: (pageWidth - margin * 2) * 0.3,
-        };
-
-        const drawEvidenceHeaders = (y: number) => {
-          doc.setFillColor(...PRIMARY);
-          doc.rect(margin, y, eColWidths.question, 30, "F");
-          doc.rect(margin + eColWidths.question, y, eColWidths.evidence, 30, "F");
-          doc.rect(margin + eColWidths.question + eColWidths.evidence, y, eColWidths.remark, 30, "F");
-
-          doc.setTextColor(255, 255, 255);
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(10);
-          doc.text("Question Reference", margin + 10, y + 20);
-          doc.text("Evidence / Attachments", margin + eColWidths.question + 10, y + 20);
-          doc.text("Remarks", margin + eColWidths.question + eColWidths.evidence + 10, y + 20);
-        };
-
-        drawEvidenceHeaders(cy);
-        cy += 35;
-
         const sorted = [...responsesWithDetails].sort((a, b) => {
           const keyA = `${a.entity_code}::${a.org_tree_id ?? "null"}::${a.cap_question_id}`;
           const keyB = `${b.entity_code}::${b.org_tree_id ?? "null"}::${b.cap_question_id}`;
           const qa = questionNumberByEntityQuestion.get(keyA) || "";
           const qb = questionNumberByEntityQuestion.get(keyB) || "";
-          return qa.localeCompare(qb, undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
+          return qa.localeCompare(qb, undefined, { numeric: true, sensitivity: "base" });
         });
 
+        const evidenceRows: EvidenceReportRow[] = [];
         for (const resp of sorted) {
           const q = report.questions.find((qq) => qq.cap_question_id === resp.cap_question_id);
           if (!q) continue;
-
           const respKey = `${resp.entity_code}::${resp.org_tree_id ?? "null"}::${resp.cap_question_id}`;
-          const qNo = questionNumberByEntityQuestion.get(respKey) || "—";
-          const hasEvidence = resp.evidence && resp.evidence.length > 0;
-          const hasRemark =
-            resp.remarks && resp.remarks.trim() !== "";
-
-          const evidenceH = hasEvidence ? resp.evidence.length * 20 : 15;
-          const remarkH = hasRemark
-            ? Math.ceil(resp.remarks!.length / 60) * 15
-            : 15;
-          const questionH = Math.ceil(qNo.length / 50) * 12;
-          const rowHeight = Math.max(80, evidenceH + remarkH + questionH + 20);
-
-          if (cy + rowHeight > pageHeight - 80) {
-            doc.addPage();
-            doc.setFillColor(255, 255, 255);
-            doc.rect(0, 0, pageWidth, pageHeight, "F");
-            cy = 65;
-            drawEvidenceHeaders(cy);
-            cy += 35;
-          }
-
-          doc.setDrawColor(...BORDER);
-          doc.setLineWidth(0.5);
-
-          // Question cell
-          doc.rect(margin, cy, eColWidths.question, rowHeight);
-          doc.setTextColor(...TEXT_DARK);
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(9);
-          const wrappedQuestion = doc.splitTextToSize(
-            qNo,
-            eColWidths.question - 20
-          );
-          doc.text(wrappedQuestion, margin + 10, cy + 15);
-
-          // Evidence cell
-          doc.rect(margin + eColWidths.question, cy, eColWidths.evidence, rowHeight);
-          if (hasEvidence) {
-            let evidenceY = cy + 15;
-            for (let i = 0; i < resp.evidence.length; i++) {
-              const ev = resp.evidence[i];
-              if (isLikelyImageEvidence(ev)) {
-                try {
-                  const imageData = await loadImageAsDataUrl(
-                    getMediaUrl(ev.file_path)
-                  );
-                  if (imageData) {
-                    const imgWidth = Math.min(80, eColWidths.evidence - 20);
-                    const imgHeight = 60;
-                    const fmt = inferImageFormat(imageData);
-                    doc.addImage(
-                      imageData,
-                      fmt,
-                      margin + eColWidths.question + 10,
-                      evidenceY,
-                      imgWidth,
-                      imgHeight
-                    );
-                    evidenceY += imgHeight + 5;
-                  } else {
-                    doc.setFont("helvetica", "normal");
-                    doc.setFontSize(8);
-                    doc.setTextColor(59, 130, 246);
-                    doc.text("📎", margin + eColWidths.question + 10, evidenceY);
-                    evidenceY += 15;
-                  }
-                } catch {
-                  doc.setFont("helvetica", "normal");
-                  doc.setFontSize(8);
-                  doc.setTextColor(59, 130, 246);
-                  doc.text("📎", margin + eColWidths.question + 10, evidenceY);
-                  evidenceY += 15;
-                }
-              } else {
-                doc.setFont("helvetica", "normal");
-                doc.setFontSize(8);
-                doc.setTextColor(59, 130, 246);
-                doc.text("📄", margin + eColWidths.question + 10, evidenceY);
-                evidenceY += 15;
-              }
-            }
-          } else {
-            doc.setTextColor(...TEXT_GRAY);
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(8);
-            doc.text(
-              "No evidence attached",
-              margin + eColWidths.question + 10,
-              cy + rowHeight / 2
-            );
-          }
-
-          // Remarks cell
-          doc.rect(
-            margin + eColWidths.question + eColWidths.evidence,
-            cy,
-            eColWidths.remark,
-            rowHeight
-          );
-          if (hasRemark) {
-            doc.setTextColor(...TEXT_DARK);
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(8.5);
-            const wrappedRemark = doc.splitTextToSize(
-              resp.remarks!,
-              eColWidths.remark - 20
-            );
-            doc.text(
-              wrappedRemark,
-              margin + eColWidths.question + eColWidths.evidence + 10,
-              cy + 15
-            );
-          } else {
-            doc.setTextColor(...TEXT_GRAY);
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(8);
-            doc.text(
-              "No remarks provided",
-              margin + eColWidths.question + eColWidths.evidence + 10,
-              cy + rowHeight / 2
-            );
-          }
-
-          cy += rowHeight + 2;
+          evidenceRows.push({
+            qNo: questionNumberByEntityQuestion.get(respKey) || "—",
+            questionText: q.question_text,
+            anchor: questionAnchors.get(respKey),
+            remarks: resp.remarks,
+            evidence: resp.evidence || [],
+          });
         }
+
+        // Question references link back to Detailed Findings; images keep their proportions.
+        await drawEvidenceAndRemarks(doc, evidenceRows, {
+          pageWidth,
+          pageHeight,
+          margin,
+          colors: { PRIMARY, DARK, TEXT_DARK, TEXT_GRAY, BORDER },
+          mediaUrl: getMediaUrl,
+        });
       }
 
       // ─── Headers & Footers ─────────────────────────────────────
@@ -1131,9 +990,11 @@ export function CapPdfRenderer({ report, entityTree }: CapPdfRendererProps) {
       }
 
       const fileName = `${safeTitle(title)}.pdf`;
-      doc.save(fileName);
+      // Browser download on the website; Android share sheet in the app.
+      await saveReportPdf(doc, fileName);
     } catch (error) {
       console.error("PDF Generation Error:", error);
+      if (isNativeApp()) toast("The report could not be saved. Please try again.", "error");
     } finally {
       setDownloading(false);
     }

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import IconButton from "./IconButton";
+import { useNativeBackHandler } from "@/lib/native/backButton";
 
 type Size = "sm" | "md" | "lg" | "xl";
 
@@ -49,6 +50,8 @@ export default function Modal({
 }: ModalProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // Android app: back closes the dialog first.
+  useNativeBackHandler(() => { onClose(); return true; }, open);
 
   if (!open || !mounted) return null;
 

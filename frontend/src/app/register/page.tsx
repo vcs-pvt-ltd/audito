@@ -1,2193 +1,308 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo, useRef } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import {
-  Building2,
-  LayoutGrid,
-  User,
-  ArrowRight,
-  ArrowLeft,
-  Eye,
-  EyeOff,
-  Loader2,
-  Check,
-  CheckCircle2,
-  ShieldCheck,
-  Globe,
-  BarChart3,
-  Tag,
-  X,
-  Crown,
-  LockKeyhole,
-  ImagePlus,
-} from "lucide-react";
+import { Suspense, useEffect, useMemo, useRef, useState, type FormEvent, type ChangeEvent } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, ImagePlus, Loader2 } from "lucide-react";
 import logo from "@/assets/logo/audito_logo.png";
-import {
-  authApi,
-  countriesApi,
-  landingApi,
-  plansApi,
-  type Country,
-  type PlanCatalog,
-  type PrivacyPolicy,
-  type PromotionCampaign,
-  type RegisterPayload,
-  type AllEntityType,
-} from "@/lib/api";
-import { canRegisterEntityType, CUSTOM_PLAN_MINIMUM_LIMITS, PLAN_COMPANY_LEVEL_LIMITS } from "@/lib/planLimits";
+import { authApi, countriesApi, landingApi, packagePricingApi, type AllEntityType, type ContactReviewInput, type Country, type PackagePricing, type PrivacyPolicy, type RegisterPayload } from "@/lib/api";
+import { canRegisterPackageEntry, FREE_COMPANY_LEVELS, MIN_AUDIT_LINES, hierarchySelectionLabel, type CompanyEntryType } from "@/lib/packageHierarchy";
+import AccountTypeStep, { type AccountGroup } from "./AccountTypeStep";
 import OrganizationLogoCropModal from "@/components/organization/OrganizationLogoCropModal";
-import { type OrganizationLogoCrop } from "@/lib/organizationLogo";
+import type { OrganizationLogoCrop } from "@/lib/organizationLogo";
+import { COUNTRY_TIMEZONE_MAP } from "@/lib/countryTimezones";
+import { DEFAULT_AUDITO_CONTACT, type AuditoContact } from "@/lib/auditoContact";
+import AuditoContactCard from "@/components/shared/AuditoContactCard";
+import CountryField from "@/components/shared/CountryField";
 
-/* ─── Country Code → IANA Timezone Map ──────────────────────────── */
+const fieldClass = "w-full min-h-11 rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-white placeholder-gray-500 transition-all focus:border-secondary-400/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-secondary-500/10";
+const primaryClass = "flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50";
+const money = (amount: number) => `$${amount.toFixed(2)}`;
+const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const validPhone = (phone: string) => /^[+()\d\s.-]{7,60}$/.test(phone);
 
-const COUNTRY_TIMEZONE_MAP: Record<string, string> = {
-  AF: "Asia/Kabul", AL: "Europe/Tirane", DZ: "Africa/Algiers", AO: "Africa/Luanda",
-  AR: "America/Argentina/Buenos_Aires", AM: "Asia/Yerevan", AU: "Australia/Sydney",
-  AT: "Europe/Vienna", AZ: "Asia/Baku", BH: "Asia/Bahrain", BD: "Asia/Dhaka",
-  BY: "Europe/Minsk", BE: "Europe/Brussels", BZ: "America/Belize", BJ: "Africa/Porto-Novo",
-  BT: "Asia/Thimphu", BO: "America/La_Paz", BA: "Europe/Sarajevo", BW: "Africa/Gaborone",
-  BR: "America/Sao_Paulo", BN: "Asia/Brunei", BG: "Europe/Sofia", BF: "Africa/Ouagadougou",
-  BI: "Africa/Bujumbura", KH: "Asia/Phnom_Penh", CM: "Africa/Douala", CA: "America/Toronto",
-  CV: "Atlantic/Cape_Verde", CF: "Africa/Bangui", TD: "Africa/Ndjamena", CL: "America/Santiago",
-  CN: "Asia/Shanghai", CO: "America/Bogota", KM: "Indian/Comoro", CG: "Africa/Brazzaville",
-  CD: "Africa/Kinshasa", CR: "America/Costa_Rica", HR: "Europe/Zagreb", CU: "America/Havana",
-  CY: "Asia/Nicosia", CZ: "Europe/Prague", DK: "Europe/Copenhagen", DJ: "Africa/Djibouti",
-  DO: "America/Santo_Domingo", EC: "America/Guayaquil", EG: "Africa/Cairo",
-  SV: "America/El_Salvador", GQ: "Africa/Malabo", ER: "Africa/Asmara", EE: "Europe/Tallinn",
-  ET: "Africa/Addis_Ababa", FI: "Europe/Helsinki", FR: "Europe/Paris", GA: "Africa/Libreville",
-  GM: "Africa/Banjul", GE: "Asia/Tbilisi", DE: "Europe/Berlin", GH: "Africa/Accra",
-  GR: "Europe/Athens", GT: "America/Guatemala", GN: "Africa/Conakry", GW: "Africa/Bissau",
-  GY: "America/Guyana", HT: "America/Port-au-Prince", HN: "America/Tegucigalpa",
-  HK: "Asia/Hong_Kong", HU: "Europe/Budapest", IS: "Atlantic/Reykjavik", IN: "Asia/Kolkata",
-  ID: "Asia/Jakarta", IR: "Asia/Tehran", IQ: "Asia/Baghdad", IE: "Europe/Dublin",
-  IL: "Asia/Jerusalem", IT: "Europe/Rome", CI: "Africa/Abidjan", JM: "America/Jamaica",
-  JP: "Asia/Tokyo", JO: "Asia/Amman", KZ: "Asia/Almaty", KE: "Africa/Nairobi",
-  KP: "Asia/Pyongyang", KR: "Asia/Seoul", KW: "Asia/Kuwait", KG: "Asia/Bishkek",
-  LA: "Asia/Vientiane", LV: "Europe/Riga", LB: "Asia/Beirut", LS: "Africa/Maseru",
-  LR: "Africa/Monrovia", LY: "Africa/Tripoli", LI: "Europe/Vaduz", LT: "Europe/Vilnius",
-  LU: "Europe/Luxembourg", MK: "Europe/Skopje", MG: "Indian/Antananarivo", MW: "Africa/Blantyre",
-  MY: "Asia/Kuala_Lumpur", MV: "Indian/Maldives", ML: "Africa/Bamako", MT: "Europe/Malta",
-  MR: "Africa/Nouakchott", MU: "Indian/Mauritius", MX: "America/Mexico_City", MD: "Europe/Chisinau",
-  MC: "Europe/Monaco", MN: "Asia/Ulaanbaatar", ME: "Europe/Podgorica", MA: "Africa/Casablanca",
-  MZ: "Africa/Maputo", MM: "Asia/Rangoon", NA: "Africa/Windhoek", NP: "Asia/Kathmandu",
-  NL: "Europe/Amsterdam", NZ: "Pacific/Auckland", NI: "America/Managua", NE: "Africa/Niamey",
-  NG: "Africa/Lagos", NO: "Europe/Oslo", OM: "Asia/Muscat", PK: "Asia/Karachi",
-  PA: "America/Panama", PG: "Pacific/Port_Moresby", PY: "America/Asuncion", PE: "America/Lima",
-  PH: "Asia/Manila", PL: "Europe/Warsaw", PT: "Europe/Lisbon", QA: "Asia/Qatar",
-  RO: "Europe/Bucharest", RU: "Europe/Moscow", RW: "Africa/Kigali", SA: "Asia/Riyadh",
-  SN: "Africa/Dakar", RS: "Europe/Belgrade", SL: "Africa/Freetown", SG: "Asia/Singapore",
-  SK: "Europe/Bratislava", SI: "Europe/Ljubljana", SO: "Africa/Mogadishu", ZA: "Africa/Johannesburg",
-  SS: "Africa/Juba", ES: "Europe/Madrid", LK: "Asia/Colombo", SD: "Africa/Khartoum",
-  SR: "America/Paramaribo", SZ: "Africa/Mbabane", SE: "Europe/Stockholm", CH: "Europe/Zurich",
-  SY: "Asia/Damascus", TW: "Asia/Taipei", TJ: "Asia/Dushanbe", TZ: "Africa/Dar_es_Salaam",
-  TH: "Asia/Bangkok", TL: "Asia/Dili", TG: "Africa/Lome", TT: "America/Port_of_Spain",
-  TN: "Africa/Tunis", TR: "Europe/Istanbul", TM: "Asia/Ashgabat", UG: "Africa/Kampala",
-  UA: "Europe/Kiev", AE: "Asia/Dubai", GB: "Europe/London", US: "America/New_York",
-  UY: "America/Montevideo", UZ: "Asia/Tashkent", VE: "America/Caracas", VN: "Asia/Ho_Chi_Minh",
-  YE: "Asia/Aden", ZM: "Africa/Lusaka", ZW: "Africa/Harare",
-};
-
-/* ─── Account Type Config ─────────────────────────────────────────── */
-
-type AccountGroup = "Customer" | "Company" | "Audit Firm";
-type AccountEntityType = {
-  name: AllEntityType;
-  label?: string;
-  level: number;
-  desc: string;
-  color?: string;
-};
-
-type AccountTypeConfig = {
-  key: AccountGroup;
-  label: string;
-  icon: any;
-  description: string;
-  entityTypes: AccountEntityType[];
-  highlightLevels: number[];
-  detail: {
-    desc: string;
-    capabilities: { icon: any; label: string }[];
-  };
-};
-
-const accountTypes: AccountTypeConfig[] = [
-  {
-    key: "Customer",
-    label: "Customers",
-    icon: Building2,
-    description: "For buyer, buying-office, and supplier workspaces",
-    entityTypes: [
-      { name: "Customer", level: 7, color: "bg-secondary-500", desc: "Best for a main buyer managing its supplier network." },
-      { name: "Buying Office", level: 6, color: "bg-secondary-500/80", desc: "For a regional office that manages local suppliers." },
-      { name: "Supplier", level: 5, color: "bg-secondary-500/60", desc: "For a supplier completing customer audits and actions." },
-    ],
-    highlightLevels: [7, 6, 5],
-    detail: {
-      desc: "Set up buyer and supplier audit operations.",
-      capabilities: [
-        { icon: Globe, label: "Manage global supplier audits" },
-        { icon: ShieldCheck, label: "Control compliance across regions" },
-        { icon: BarChart3, label: "Centralized reporting & analytics" },
-      ],
-    },
-  },
-  {
-    key: "Company",
-    label: "Company",
-    icon: LayoutGrid,
-    description: "For company operations, sites, and departments",
-    entityTypes: [
-      { name: "Company", level: 5, color: "bg-primary-400", desc: "Best for the main organization that owns the workspace." },
-      { name: "Cluster", level: 4, color: "bg-primary-400/80", desc: "For a group of companies, regions, or business units." },
-      { name: "Factory", level: 3, color: "bg-primary-400/60", desc: "For one manufacturing or operating site." },
-      { name: "Unit", level: 2, color: "bg-primary-400/40", desc: "For an operational unit inside a factory." },
-      { name: "Department", level: 1, color: "bg-primary-400/30", desc: "For a department-level audit workspace." },
-    ],
-    highlightLevels: [6, 5, 4, 3, 2, 1],
-    detail: {
-      desc: "Set up your company structure for audits.",
-      capabilities: [
-        { icon: LayoutGrid, label: "Multi-level org structure" },
-        { icon: ShieldCheck, label: "Factory & unit management" },
-        { icon: BarChart3, label: "Operational reporting" },
-      ],
-    },
-  },
-  {
-    key: "Audit Firm",
-    label: "Audit Firms",
-    icon: User,
-    description: "For audit firms, branches, and specialist teams",
-    entityTypes: [
-      { name: "Audit Firm Company", label: "Company", level: 5, color: "bg-accent-500", desc: "Best for the main audit-firm workspace." },
-      { name: "Branch", level: 4, color: "bg-accent-500/80", desc: "For a branch that manages local audit teams." },
-      { name: "Audit Firm Department", label: "Department", level: 3, color: "bg-accent-500/60", desc: "For a specialist audit department or team." },
-    ],
-    highlightLevels: [5, 4, 3],
-    detail: {
-      desc: "Set up your audit firm, branches, and teams.",
-      capabilities: [
-        { icon: User, label: "Manage audit teams" },
-        { icon: Globe, label: "Multi-branch operations" },
-        { icon: ShieldCheck, label: "Client audit linking" },
-      ],
-    },
-  },
-];
-
-/* ─── Helpers ────────────────────────────────────────────────────── */
-
-const ALL_LEVELS = [7, 6, 5, 4, 3, 2, 1];
-/** Price or plan requirement shown on every selectable hierarchy card. */
-const ENTITY_ENTRY_PRICE_LABELS: Partial<Record<AllEntityType, string>> = {
-  Customer: "$999",
-  "Buying Office": "$599",
-  Supplier: "$299",
-  Cluster: "$199",
-  Factory: "$99",
-  Branch: "$599",
-  Company: "$299",
-  "Audit Firm Company": "$999",
-  "Audit Firm Department": "$299",
-};
-
-const CUSTOM_CONFIGURATION_FEATURES = [
-  { key: "max_company_levels" as const, label: "Company levels", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_company_levels, max: 100, desc: "Company-level capacity for your workspace" },
-  { key: "max_departments" as const, label: "Departments", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_departments, max: 100, desc: "Department entities in your organization" },
-  { key: "max_audits" as const, label: "Audits", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_audits, max: 100, desc: "Active audit assignments" },
-  { key: "max_checklists" as const, label: "Audit checklists", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_checklists, max: 100, desc: "Reusable audit checklist templates" },
-  { key: "max_auditors" as const, label: "Auditors", min: CUSTOM_PLAN_MINIMUM_LIMITS.max_auditors, max: 100, desc: "Auditor accounts on your team" },
-];
-
-type CustomSolutionLimits = {
-  max_company_levels: number;
-  max_departments: number;
-  max_audits: number;
-  max_checklists: number;
-  max_auditors: number;
-  allow_auditor_eval: boolean;
-  allow_company_to_company: boolean;
-};
-
-const normalizeCustomSolution = (candidate?: Partial<CustomSolutionLimits>): CustomSolutionLimits => ({
-  max_company_levels: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_company_levels, Number(candidate?.max_company_levels) || CUSTOM_PLAN_MINIMUM_LIMITS.max_company_levels),
-  max_departments: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_departments, Number(candidate?.max_departments) || CUSTOM_PLAN_MINIMUM_LIMITS.max_departments),
-  max_audits: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_audits, Number(candidate?.max_audits) || CUSTOM_PLAN_MINIMUM_LIMITS.max_audits),
-  max_checklists: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_checklists, Number(candidate?.max_checklists) || CUSTOM_PLAN_MINIMUM_LIMITS.max_checklists),
-  max_auditors: Math.max(CUSTOM_PLAN_MINIMUM_LIMITS.max_auditors, Number(candidate?.max_auditors) || CUSTOM_PLAN_MINIMUM_LIMITS.max_auditors),
-  allow_auditor_eval: true,
-  allow_company_to_company: true,
-});
-
-/** Returns the bar colour class for a given group + level, or null if empty */
-function getLevelStyle(group: AccountGroup, level: number): string | null {
-  const config = accountTypes.find((t) => t.key === group)!;
-  const et = config.entityTypes.find((e) => e.level === level);
-  return et ? (et.color ?? null) : null;
+function Progress({ step, contactMode }: { step: number; contactMode: boolean }) {
+  const total = contactMode ? 2 : 3;
+  return <div className="mx-auto mb-2 flex max-w-xs items-center justify-center gap-2" aria-label={`Step ${step + 1} of ${total}`}>
+    {Array.from({ length: total }, (_, index) => <div key={index} className={`h-1.5 rounded-full transition-all duration-300 ${index === step ? "w-10 bg-secondary-400 shadow-[0_0_12px_rgba(217,163,70,.32)]" : index < step ? "w-7 bg-secondary-500/50" : "w-7 bg-white/10"}`} />)}
+  </div>;
 }
 
-/** Returns the entity name for a given group + level, or null */
-function getLevelName(group: AccountGroup, level: number): string | null {
-  const config = accountTypes.find((t) => t.key === group)!;
-  const et = config.entityTypes.find((e) => e.level === level);
-  return et ? (et.label ?? et.name) : null;
-}
-
-/** Returns the stored entity type for a hierarchy level (not its display label). */
-function getLevelEntityType(group: AccountGroup, level: number): AllEntityType | null {
-  const config = accountTypes.find((t) => t.key === group)!;
-  return config.entityTypes.find((e) => e.level === level)?.name ?? null;
-}
-
-/* ─── Input Component ────────────────────────────────────────────── */
-
-function Input({
-  label,
-  required,
-  type = "text",
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  required?: boolean;
-  type?: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-gray-300">
-        {label} {required && <span className="text-red-400">*</span>}
-      </label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full min-h-11 rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-white placeholder-gray-500 transition-all focus:border-secondary-400/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-secondary-500/10"
-        placeholder={placeholder}
-      />
-    </div>
-  );
-}
-
-/* ─── Step Indicator ─────────────────────────────────────────────── */
-
-function StepIndicator({ current, total }: { current: number; total: number }) {
-  return (
-    <div className="mx-auto mb-2 flex max-w-xs items-center justify-center gap-2" aria-label={`Step ${current} of ${total}`}>
-      {Array.from({ length: total }, (_, i) => (
-        <div
-          key={i}
-          className={`h-1.5 rounded-full transition-all duration-300 ${i + 1 === current
-            ? "w-10 bg-secondary-400 shadow-[0_0_12px_rgba(217,163,70,.32)]"
-            : i + 1 < current
-              ? "w-7 bg-secondary-500/50"
-              : "w-7 bg-white/10"
-            }`}
-        />
-      ))}
-    </div>
-  );
-}
-
-/* ─── Plan Selection Step ──────────────────────────────────────── */
-
-function PlanSelectionStep({
-  selectedPlan,
-  billingCycle,
-  onPlanSelect,
-  onBillingCycleChange,
-  onNext,
-  error,
-  promoCode,
-  promoDiscount,
-  promoLoading,
-  promoError,
-  onPromoCodeChange,
-  onValidatePromo,
-  onRemovePromo,
-  planCatalog,
-}: {
-  selectedPlan: string;
-  billingCycle: "Monthly" | "Yearly";
-  onPlanSelect: (plan: string) => void;
-  onBillingCycleChange: (cycle: "Monthly" | "Yearly") => void;
-  onNext: () => void;
-  error: string;
-  promoCode: string;
-  promoDiscount: number | null;
-  promoLoading: boolean;
-  promoError: string;
-  onPromoCodeChange: (value: string) => void;
-  onValidatePromo: () => void;
-  onRemovePromo: () => void;
-  planCatalog: PlanCatalog | null;
-}) {
+function RegistrationContent() {
   const router = useRouter();
-  const isYearly = billingCycle === "Yearly";
-  const yearlyDiscount = Number(planCatalog?.plans[0]?.yearly_discount_percent ?? 20);
-
-  const basePlans = [
-    {
-      key: "Basic",
-      name: "Basic",
-      price: "$0",
-      period: "/month",
-      subtitle: "First month free, then $99/month",
-      desc: "Perfect for trying out Audito",
-      color: "from-[#378745]/40 to-[#1D4226]/40",
-      textColor: "text-white",
-    },
-    {
-      key: "Pro",
-      name: "Pro",
-      price: isYearly ? `$${Math.round(199 * 12 * 0.8)}` : "$199",
-      period: isYearly ? "/year" : "/month",
-      subtitle: isYearly ? `Save $${Math.round(199 * 12 * 0.2)}/year` : null,
-      desc: "For growing teams",
-      color: "from-[#F1FDF9]/40 to-[#B7DAD0]/60",
-      textColor: "text-[#062D27]",
-      badge: "Most Popular",
-    },
-    {
-      key: "Elite",
-      name: "Elite",
-      price: isYearly ? `$${Math.round(299 * 12 * 0.8)}` : "$299",
-      period: isYearly ? "/year" : "/month",
-      subtitle: isYearly ? `Save $${Math.round(299 * 12 * 0.2)}/year` : null,
-      desc: "For large organizations",
-      color: "from-[#0F766E] to-[#062D27]",
-      textColor: "text-white",
-    },
-    {
-      key: "Custom",
-      name: "Custom",
-      price: "",
-      period: "",
-      subtitle: null,
-      desc: "Tailored to your needs",
-      color: "from-[#1a1a2e]/60 to-[#16213e]/60",
-      textColor: "text-[#EECA53]",
-    },
-  ];
-  const plans = [
-    ...basePlans,
-    ...(planCatalog?.plans || [])
-      .filter((plan) => !["Basic", "Pro", "Elite"].includes(plan.plan_name))
-      .map((plan) => ({
-        key: plan.plan_name,
-        name: plan.display_name || plan.plan_name,
-        price: "$0",
-        period: "/month",
-        subtitle: null,
-        desc: plan.description || "A flexible Audito plan",
-        color: "from-[#173b36] to-[#0a2522]",
-        textColor: "text-white",
-      })),
-  ];
-  const displayPlans = plans.map((plan) => {
-    const config = planCatalog?.plans.find((item) => item.plan_name === plan.key);
-    if (!config) return { ...plan, isActive: true };
-    const monthly = Number(config.monthly_price);
-    const yearly = Math.round(monthly * 12 * (1 - Number(config.yearly_discount_percent) / 100));
-    const displayMonthly = Math.round(monthly);
-    const isBasic = plan.key === "Basic";
-    const listAmount = isBasic || !isYearly ? displayMonthly : yearly;
-    const campaign = !isBasic ? (planCatalog?.active_promotions || [])
-      .filter((offer) => offer.applies_to_registration && offer.plans.some((eligible) => eligible.plan_name === plan.key && (eligible.billing_cycle === "Any" || eligible.billing_cycle === (isYearly ? "Yearly" : "Monthly"))))
-      .reduce<PromotionCampaign | null>((best, offer) => {
-        const savings = offer.discount_type === "percentage" ? listAmount * Number(offer.discount_value) / 100 : Number(offer.discount_value);
-        const bestSavings = !best ? 0 : best.discount_type === "percentage" ? listAmount * Number(best.discount_value) / 100 : Number(best.discount_value);
-        return savings > bestSavings ? offer : best;
-      }, null) : null;
-    const campaignDiscount = campaign ? Math.min(listAmount, campaign.discount_type === "percentage" ? Math.round(listAmount * Number(campaign.discount_value) / 100) : Math.round(Number(campaign.discount_value))) : 0;
-    const finalAmount = listAmount - campaignDiscount;
-    return {
-      ...plan,
-      price: isBasic ? "$0" : `$${finalAmount.toLocaleString()}`,
-      period: isBasic || !isYearly ? "/month" : "/year",
-      originalPrice: campaign ? `$${listAmount.toLocaleString()}` : undefined,
-      campaignLabel: campaign ? `${campaign.discount_type === "percentage" ? `${campaign.discount_value}% off` : `$${campaign.discount_value} off`} · ${campaign.name}` : undefined,
-      campaignEndsAt: campaign?.ends_at,
-      subtitle: isBasic ? `$${displayMonthly.toLocaleString()}/mo from 2nd month` : isYearly && Number(config.yearly_discount_percent) > 0 ? `Save ${config.yearly_discount_percent}% yearly` : null,
-      isActive: config.is_active,
-    };
-  });
-  const selectedPlanConfig = planCatalog?.plans.find((plan) => plan.plan_name === selectedPlan);
-  const isSelectedPlanAvailable = selectedPlan === "Custom" || selectedPlanConfig?.is_active !== false;
-
-  const comparisonRows = [
-    {
-      group: "WORKSPACE MANAGEMENT",
-      feature: "Company levels",
-      values: [
-        String(PLAN_COMPANY_LEVEL_LIMITS.Basic),
-        String(PLAN_COMPANY_LEVEL_LIMITS.Pro),
-        String(PLAN_COMPANY_LEVEL_LIMITS.Elite),
-      ],
-    },
-    { group: "WORKSPACE MANAGEMENT", feature: "Departments", values: ["4", "8", "16"] },
-    { group: "WORKSPACE MANAGEMENT", feature: "Number of Audits", values: ["2", "6", "14"] },
-    { group: "WORKSPACE MANAGEMENT", feature: "Audit Checklists", values: ["3", "6", "25"] },
-    { group: "WORKSPACE MANAGEMENT", feature: "Number of Auditors", values: ["1", "3", "15"] },
-    { group: "CORE FEATURES", feature: "Auditor Evaluation System", values: [false, false, true] },
-    { group: "CORE FEATURES", feature: "Link Company to Company", values: [false, false, true] },
-  ];
-  const renderedComparisonRows = comparisonRows.map((row) => {
-    if (!planCatalog) return row;
-    const values = planCatalog.plans.map((plan) => row.feature === "Company levels" ? String(plan.max_company_levels) : row.feature === "Departments" ? String(plan.max_departments) : row.feature === "Number of Audits" ? String(plan.max_audits) : row.feature === "Audit Checklists" ? String(plan.max_checklists) : row.feature === "Number of Auditors" ? String(plan.max_auditors) : row.feature === "Auditor Evaluation System" ? !!plan.allow_auditor_eval : !!plan.allow_company_to_company);
-    return { ...row, values };
-  });
-  const workspaceRows = renderedComparisonRows.filter((r) => r.group === "WORKSPACE MANAGEMENT");
-  const coreRows = renderedComparisonRows.filter((r) => r.group === "CORE FEATURES");
-
-  return (
-    <div className="p-5 pt-1 sm:p-8 sm:pt-2">
-      <div className="mb-6 flex items-start gap-3">
-        <button type="button" onClick={() => router.push('/?section=pricing')} aria-label="Back to pricing" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6">
-          <ArrowLeft size={18} />
-        </button>
-        <div>
-          <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Choose your plan</h3>
-          <p className="mt-1 text-sm leading-relaxed text-gray-400">Compare workspace limits and select the plan that fits your organization.</p>
-        </div>
-      </div>
-
-   
-
-      {/* ── Comparison Table ── */}
-      {/* Desktop table */}
-      <div className="hidden lg:block mb-7 overflow-x-auto">
-        <div className="min-w-[580px] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-white/5 text-secondary-400">
-                <th className="text-left px-5 py-3 text-xs tracking-wide font-semibold uppercase">Workspace Management</th>
-                <th className="px-5 py-3 text-xs font-semibold">Basic</th>
-                <th className="px-5 py-3 text-xs font-semibold">Pro</th>
-                <th className="px-5 py-3 text-xs font-semibold">Elite</th>
-              </tr>
-            </thead>
-            <tbody>
-              {workspaceRows.map((row) => (
-                <tr key={row.feature} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
-                  <td className="px-5 py-3 text-gray-200 text-xs">{row.feature}</td>
-                  {row.values.map((v, i) => (
-                    <td key={i} className="px-5 py-3 text-center text-white font-medium text-xs">
-                      {v}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              <tr className="border-t border-white/10 bg-white/5">
-                <td className="px-5 py-2.5 text-xs tracking-wide font-semibold uppercase text-secondary-400">Core Features</td>
-                <td /><td /><td />
-              </tr>
-              {coreRows.map((row) => (
-                <tr key={row.feature} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
-                  <td className="px-5 py-3 text-gray-200 text-xs">{row.feature}</td>
-                  {row.values.map((v, i) => (
-                    <td key={i} className="px-5 py-3 text-center">
-                      {v
-                        ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950 shadow-sm shadow-secondary-500/40 mx-auto"><Check size={12} /></span>
-                        : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400 mx-auto"><X size={12} /></span>}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-         {/* Billing toggle */}
-      <div className="mb-7 flex justify-center">
-        <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/15 p-1.5">
-          {(["Monthly", "Yearly"] as const).map((cycle) => (
-            <button
-              key={cycle}
-              type="button"
-              disabled={selectedPlan === "Basic" && cycle === "Yearly"}
-              onClick={() => onBillingCycleChange(cycle)}
-              className={`relative min-w-24 px-5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
-                billingCycle === cycle
-                  ? "bg-secondary-500 text-primary-950 shadow"
-                  : "text-gray-400 hover:text-white"
-              } disabled:cursor-not-allowed disabled:opacity-40`}
-            >
-              {cycle}
-              {cycle === "Yearly" && billingCycle !== "Yearly" && (
-                <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-emerald-500 text-primary-950 text-[8px] font-bold rounded-full">
-                  -{yearlyDiscount}%
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Mobile/tablet comparison cards */}
-      <div className="lg:hidden space-y-3 mb-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1">Workspace Management</p>
-        {workspaceRows.map((row) => (
-          <div key={row.feature} className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
-            <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-            <div className="grid grid-cols-3 divide-x divide-white/10">
-              {["Basic", "Pro", "Elite"].map((name, i) => (
-                <div key={name} className="flex flex-col items-center py-3 gap-1">
-                  <span className="text-[10px] text-gray-400">{name}</span>
-                  <span className="text-sm font-semibold text-white">{row.values[i]}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-        <p className="text-xs font-semibold uppercase tracking-wide text-secondary-400 px-1 pt-2">Core Features</p>
-        {coreRows.map((row) => (
-          <div key={row.feature} className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
-            <p className="px-4 py-2.5 text-sm text-white font-medium border-b border-white/10">{row.feature}</p>
-            <div className="grid grid-cols-3 divide-x divide-white/10">
-              {["Basic", "Pro", "Elite"].map((name, i) => (
-                <div key={name} className="flex flex-col items-center py-3 gap-1">
-                  <span className="text-[10px] text-gray-400">{name}</span>
-                  {row.values[i]
-                    ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950"><Check size={12} /></span>
-                    : <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-red-400"><X size={12} /></span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Plan cards */}
-      <div className="mb-7 grid grid-cols-1 gap-4 sm:grid-cols-4">
-        {displayPlans.map((plan) => {
-          const isSelected = selectedPlan === plan.key;
-          const campaignPlan = plan as typeof plan & { campaignLabel?: string; campaignEndsAt?: string; originalPrice?: string };
-          return (
-            <button
-              key={plan.key}
-              type="button"
-              disabled={plan.isActive === false}
-              onClick={() => onPlanSelect(plan.key)}
-              className={`relative flex min-h-[180px] flex-col text-left rounded-2xl p-5 border transition-all duration-200 ${
-                isSelected
-                  ? `bg-gradient-to-br ${plan.color} border-secondary-400/60 ring-2 ring-secondary-400 ring-offset-2 ring-offset-[#0b2118] shadow-xl shadow-black/20`
-                  : `bg-gradient-to-br ${plan.color} border-white/10 hover:-translate-y-0.5 hover:border-white/20 hover:shadow-lg hover:shadow-black/15`
-              } disabled:cursor-not-allowed disabled:opacity-45`}
-            >
-              {plan.badge && (
-                <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gradient-to-r from-[#EECA53] to-[#E1A300] text-[#062D27] text-[9px] font-bold rounded-full uppercase tracking-wide whitespace-nowrap">
-                  {plan.badge}
-                </div>
-              )}
-              <div className="flex items-center gap-2 mb-3">
-                {plan.key === "Custom" ? (
-                  <Image src={logo} alt="Audito" className="h-auto w-16 object-contain" />
-                ) : plan.key === "Elite" ? (
-                  <Crown size={18} className="text-white" />
-                ) : (
-                  <Image src={logo} alt="Audito" className="h-auto w-16 object-contain" />
-                )}
-                <h4 className={`text-lg font-bold ${plan.textColor}`}>{plan.name}</h4>
-              </div>
-              {plan.price && (
-                <div className="mb-2">
-                  {campaignPlan.campaignLabel && <p className={`mb-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${plan.key === "Pro" ? "border-[#062D27]/15 bg-[#062D27]/10 text-[#062D27]" : "border-secondary-400/25 bg-secondary-500/15 text-secondary-200"}`}>{campaignPlan.campaignLabel}</p>}
-                  {campaignPlan.originalPrice && <span className={`mr-1.5 text-sm font-medium line-through ${plan.textColor} opacity-45`}>{campaignPlan.originalPrice}</span>}
-                  <span className={`text-2xl font-bold ${plan.textColor}`}>{plan.price}</span>
-                  {plan.period && <span className={`ml-1 text-xs ${plan.textColor} opacity-60`}>{plan.period}</span>}
-                </div>
-              )}
-              {campaignPlan.campaignEndsAt && <p className={`mb-1 text-[10px] ${plan.textColor} opacity-60`}>Offer ends {new Date(campaignPlan.campaignEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>}
-              {plan.subtitle && (
-                <p className="text-[11px] text-secondary-400 font-medium mb-1">{plan.subtitle}</p>
-              )}
-              <p className={`text-xs ${plan.textColor} opacity-60`}>{plan.desc}</p>
-              {plan.isActive === false && <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-red-300">Currently unavailable</p>}
-              <div className={`mt-auto w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? "border-secondary-400 bg-secondary-400" : "border-white/20"}`}>
-                {isSelected && <Check size={11} className="text-primary-950" />}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {(["Pro", "Elite"] as const).includes(selectedPlan as "Pro" | "Elite") && (
-        <PromoCodePanel
-          planName={selectedPlan as "Pro" | "Elite"}
-          billingCycle={billingCycle}
-          promoCode={promoCode}
-          promoDiscount={promoDiscount}
-          promoLoading={promoLoading}
-          promoError={promoError}
-          onPromoCodeChange={onPromoCodeChange}
-          onValidate={onValidatePromo}
-          onRemove={onRemovePromo}
-          baseMonthlyPrice={Number(selectedPlanConfig?.monthly_price ?? (selectedPlan === "Pro" ? 199 : 299))}
-          yearlyDiscountPercent={Number(selectedPlanConfig?.yearly_discount_percent ?? 20)}
-        />
-      )}
-
-      {error && (
-        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-          <p className="text-sm text-red-400">{error}</p>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={onNext}
-        disabled={!isSelectedPlanAvailable}
-        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Continue Setup
-        <ArrowRight size={18} />
-      </button>
-
-      <p className="text-center text-sm text-gray-400 mt-5">
-        Already have an account?{" "}
-        <Link href="/login" className="text-secondary-400 hover:text-secondary-300 font-medium">Log in</Link>
-      </p>
-    </div>
-  );
-}
-
-/* ─── Step 2: Account Type + Hierarchy ────────────────────── */
-
-function PromoCodePanel({
-  planName,
-  billingCycle,
-  promoCode,
-  promoDiscount,
-  promoLoading,
-  promoError,
-  onPromoCodeChange,
-  onValidate,
-  onRemove,
-  baseMonthlyPrice,
-  yearlyDiscountPercent,
-}: {
-  planName: "Pro" | "Elite";
-  billingCycle: "Monthly" | "Yearly";
-  promoCode: string;
-  promoDiscount: number | null;
-  promoLoading: boolean;
-  promoError: string;
-  onPromoCodeChange: (value: string) => void;
-  onValidate: () => void;
-  onRemove: () => void;
-  baseMonthlyPrice?: number;
-  yearlyDiscountPercent?: number;
-}) {
-  const effectiveMonthlyPrice = baseMonthlyPrice ?? (planName === "Pro" ? 199 : 299);
-  const effectiveYearlyDiscount = yearlyDiscountPercent ?? 20;
-  const originalAmount = billingCycle === "Yearly"
-    ? Math.round(effectiveMonthlyPrice * 12 * (1 - effectiveYearlyDiscount / 100))
-    : Math.round(effectiveMonthlyPrice);
-  const discountedAmount = promoDiscount === null
-    ? null
-    : Math.max(0, Math.round(originalAmount * (1 - promoDiscount / 100)));
-  const savings = discountedAmount === null ? null : Math.round(originalAmount - discountedAmount);
-  const formatAmount = (amount: number) => `$${Math.round(amount).toLocaleString()}`;
-
-  return (
-    <section className="mb-6 rounded-2xl border border-white/[0.1] bg-white/[0.03] p-4 sm:p-5">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-secondary-400/20 bg-secondary-500/15 text-secondary-300"><Tag size={16} /></div>
-        <div className="min-w-0 flex-1">
-          <h4 className="text-sm font-semibold text-white">Do you have a promo code?</h4>
-          <p className="mt-0.5 text-xs leading-5 text-gray-400">Apply it now and your discount will be included when you continue to payment.</p>
-        </div>
-      </div>
-
-      {promoDiscount !== null ? (
-        <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.08] p-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="flex items-center gap-2 text-sm font-medium text-emerald-200"><CheckCircle2 size={16} /> {promoDiscount}% discount applied</p>
-            <button type="button" onClick={onRemove} className="text-xs font-semibold text-emerald-300 transition hover:text-white">Remove code</button>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 border-t border-emerald-400/15 pt-3 sm:grid-cols-3">
-            <div><p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-100/50">Original</p><p className="mt-0.5 text-sm text-emerald-50/70 line-through">{formatAmount(originalAmount)}</p></div>
-            <div><p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-100/50">You save</p><p className="mt-0.5 text-sm font-semibold text-emerald-300">{formatAmount(savings ?? 0)}</p></div>
-            <div className="col-span-2 sm:col-span-1 sm:text-right"><p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-100/50">New price</p><p className="mt-0.5 text-xl font-bold text-white">{formatAmount(discountedAmount ?? originalAmount)} <span className="text-[10px] font-medium text-emerald-100/60">/{billingCycle === "Yearly" ? "year" : "month"}</span></p></div>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-4">
-          <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-[minmax(0,1fr)_auto]">
-            <input value={promoCode} onChange={(e) => onPromoCodeChange(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onValidate(); } }} placeholder="Enter promo code" autoCapitalize="characters" className="min-h-11 w-full rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white placeholder:font-normal placeholder:normal-case placeholder:tracking-normal placeholder:text-gray-500 transition-all focus:border-secondary-400/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-secondary-500/10" />
-            <button type="button" onClick={onValidate} disabled={promoLoading || !promoCode.trim()} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-secondary-400/25 bg-secondary-500/10 px-5 py-3 text-sm font-semibold text-secondary-300 transition hover:bg-secondary-500/20 min-[480px]:w-auto min-[480px]:whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">{promoLoading && <Loader2 size={15} className="animate-spin" />}{promoLoading ? "Checking…" : "Apply code"}</button>
-          </div>
-          {promoError && <p className="mt-2 rounded-lg border border-red-400/20 bg-red-400/[0.06] px-3 py-2 text-xs font-medium text-red-300">{promoError}</p>}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function PromoCodeStep({
-  planName,
-  billingCycle,
-  onNext,
-  onBack,
-  planCatalog,
-  ...promoProps
-}: {
-  planName: "Pro" | "Elite";
-  billingCycle: "Monthly" | "Yearly";
-  onNext: () => void;
-  onBack: () => void;
-  planCatalog: PlanCatalog | null;
-} & React.ComponentProps<typeof PromoCodePanel>) {
-  const config = planCatalog?.plans.find((plan) => plan.plan_name === planName);
-  return (
-    <div className="p-5 pt-1 sm:p-8 sm:pt-2">
-      
-
-      {/* Header */}
-      <div className="flex items-start gap-3 mb-5">
-        <button type="button" onClick={onBack} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6">
-          <ArrowLeft size={18} />
-        </button>
-        <div>
-          <h3 className="text-xl sm:text-2xl font-semibold tracking-tight text-white">Apply a promo code</h3>
-          <p className="mt-1 text-sm leading-relaxed text-gray-400">Your {planName} {billingCycle.toLowerCase()} plan is selected. A promo code is optional and can be applied before you continue.</p>
-        </div>
-      </div>
-      
-      
-      <PromoCodePanel
-        planName={planName}
-        billingCycle={billingCycle}
-        baseMonthlyPrice={Number(config?.monthly_price ?? (planName === "Pro" ? 199 : 299))}
-        yearlyDiscountPercent={Number(config?.yearly_discount_percent ?? 20)}
-        {...promoProps}
-      />
-      <button type="button" onClick={onNext} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px">
-        Continue to account type <ArrowRight size={18} />
-      </button>
-    </div>
-  );
-}
-
-function AccountTypeStep({
-  selectedGroup,
-  selectedEntityType,
-  planName,
-  customCompanyLevelLimit,
-  entryPriceLabels,
-  onGroupSelect,
-  onEntityTypeSelect,
-  onNext,
-  onBack,
-  error,
-}: {
-  selectedGroup: AccountGroup | null;
-  selectedEntityType: AllEntityType | null;
-  planName: string;
-  customCompanyLevelLimit: number;
-  entryPriceLabels: Partial<Record<AllEntityType, string>>;
-  onGroupSelect: (g: AccountGroup) => void;
-  onEntityTypeSelect: (e: AllEntityType) => void;
-  onNext: () => void;
-  onBack: () => void;
-  error: string;
-}) {
-  const activeGroup = selectedGroup ?? "Customer";
-  const activeConfig = accountTypes.find((t) => t.key === activeGroup)!;
-  // Prices remain visible even when a level is unavailable for the selected
-  // plan, so customers can see the available entry-point pricing.
-  const shouldShowEntryPrices = () => true;
-
-  const isEntityLocked = (group: AccountGroup, entityName: AllEntityType) =>
-    !canRegisterEntityType(planName, group, entityName);
-
-  const firstAvailableEntity = (group: AccountGroup) =>
-    accountTypes.find((type) => type.key === group)!.entityTypes.find((entity) => !isEntityLocked(group, entity.name))?.name;
-
-  const isLevelLocked = (group: AccountGroup, level: number) => {
-    const config = accountTypes.find((type) => type.key === group)!;
-    const entity = config.entityTypes.find((item) => item.level === level);
-    return entity ? isEntityLocked(group, entity.name) : false;
-  };
-
-  const handleLevelClick = (group: AccountGroup, level: number) => {
-    const name = getLevelName(group, level);
-    if (!name) return;
-    const availableEntity = firstAvailableEntity(group);
-    if (!availableEntity) return;
-    if (group !== activeGroup) onGroupSelect(group);
-    const config = accountTypes.find((t) => t.key === group)!;
-    const et = config.entityTypes.find((e) => e.level === level)!;
-    if (isEntityLocked(group, et.name)) return;
-    onEntityTypeSelect(et.name);
-  };
-
-  const selectedLevel =
-    selectedEntityType
-      ? activeConfig.entityTypes.find((e) => e.name === selectedEntityType)?.level ?? null
-      : null;
-  const selectedEntity = selectedEntityType
-    ? activeConfig.entityTypes.find((e) => e.name === selectedEntityType)
-    : activeConfig.entityTypes[0];
-  const ActiveIcon = activeConfig.icon;
-
-  return (
-    <div className="p-5 pt-1 sm:p-8 sm:pt-2">
-      {/* Header */}
-      <div className="flex items-start gap-3 mb-5">
-        <button type="button" onClick={onBack} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white transition-colors sm:left-6 sm:top-6">
-          <ArrowLeft size={18} />
-        </button>
-        <div>
-          <h3 className="text-xl sm:text-2xl font-semibold tracking-tight text-white">Choose your account type</h3>
-          <p className="mt-1 text-sm leading-relaxed text-gray-400">Select your organization type and starting level.</p>
-        </div>
-      </div>
-
-    
-
-     
-
-      {/* ══════════════════════════════════════
-          MOBILE LAYOUT (< sm)
-      ══════════════════════════════════════ */}
-      <div className="sm:hidden space-y-5">
-        {/* Group selector tabs */}
-        <div className="grid grid-cols-3 gap-2">
-          {accountTypes.map((type) => {
-            const Icon = type.icon;
-            const isActive = activeGroup === type.key;
-            const isGroupLocked = !firstAvailableEntity(type.key);
-            return (
-              <button
-                key={type.key}
-                type="button"
-                disabled={isGroupLocked}
-                onClick={() => { const entity = firstAvailableEntity(type.key); onGroupSelect(type.key); if (entity) onEntityTypeSelect(entity); }}
-                className={`relative flex min-h-[86px] flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-2xl border transition-all ${isGroupLocked ? "cursor-not-allowed border-white/[0.06] bg-black/10 opacity-45" : isActive ? "bg-secondary-500/12 border-secondary-500/50 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10"}`}
-              >
-                <Icon size={18} className={isActive ? "text-secondary-400" : "text-gray-400"} />
-                <span className={`text-[11px] font-semibold text-center leading-tight ${isActive ? "text-secondary-400" : "text-white"}`}>{type.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Entity type list for selected group */}
-        <div className="space-y-2">
-          <p className="text-[10px] font-semibold tracking-[2px] text-secondary-500 uppercase px-1">Choose organizational level</p>
-          {activeConfig.entityTypes.map((et) => {
-            const isSelected = selectedEntityType === et.name;
-            const isLocked = isEntityLocked(activeGroup, et.name);
-            return (
-              <button
-                key={et.name}
-                type="button"
-                disabled={isLocked}
-                onClick={() => onEntityTypeSelect(et.name)}
-                className={`w-full min-h-[68px] flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${isLocked ? "cursor-not-allowed border-white/[0.06] bg-black/10 opacity-45" : isSelected ? "bg-secondary-500/10 border-secondary-500/45 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10"}`}
-              >
-                <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${et.color ?? "bg-white/20"}`} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold ${isSelected ? "text-secondary-400" : "text-white"}`}>{et.label ?? et.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{et.desc}</p>
-                </div>
-                {shouldShowEntryPrices() && entryPriceLabels[et.name] && <span className="self-end text-[10px] font-semibold text-secondary-300">{entryPriceLabels[et.name]}</span>}
-                {isLocked ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500"><LockKeyhole size={12} /> Upgrade</span>
-                ) : isSelected && <Check size={15} className="text-secondary-400 shrink-0" />}
-              </button>
-            );
-          })}
-        </div>
-        
-      </div>
-
-      {/* ══════════════════════════════════════
-          DESKTOP LAYOUT (sm+)
-      ══════════════════════════════════════ */}
-      <div className="hidden sm:block">
-        {/* Top: 3 account type cards */}
-        <div className="grid grid-cols-3 gap-3 mb-7">
-          {accountTypes.map((type) => {
-            const Icon = type.icon;
-            const isActive = activeGroup === type.key;
-            const isGroupLocked = !firstAvailableEntity(type.key);
-            return (
-              <button
-                key={type.key}
-                type="button"
-                disabled={isGroupLocked}
-                onClick={() => { const entity = firstAvailableEntity(type.key); onGroupSelect(type.key); if (entity) onEntityTypeSelect(entity); }}
-                className={`group relative min-h-[132px] text-left rounded-2xl p-4 border transition-all duration-200 ${isGroupLocked ? "cursor-not-allowed border-white/[0.06] bg-black/10 opacity-45" : isActive ? "bg-secondary-500/10 border-secondary-500/50 shadow-lg shadow-black/10" : "bg-white/[0.035] border-white/10 hover:-translate-y-0.5 hover:bg-white/[0.055] hover:border-white/20"}`}
-              >
-                {isActive && <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-primary-950"><Check size={12} strokeWidth={3} /></span>}
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-colors ${isActive ? "bg-secondary-500/20" : "bg-white/5 group-hover:bg-white/10"}`}>
-                  <Icon size={18} className={isActive ? "text-secondary-400" : "text-gray-400"} />
-                </div>
-                <p className={`text-sm font-semibold ${isActive ? "text-secondary-400" : "text-white"}`}>{type.label}</p>
-                <p className="text-xs text-gray-500 mt-0.5 leading-snug">{type.description}</p>
-                
-              </button>
-            );
-          })}
-        </div>
-       
-
-        {/* Bottom: full-width hierarchy grid */}
-        <div className="rounded-2xl border border-white/[0.08] bg-black/10 p-4 sm:p-5">
-          <div className="mb-4 flex items-end justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-semibold tracking-[2px] text-secondary-500 uppercase">Organization hierarchy</p>
-              <p className="mt-1 text-xs text-gray-500">Higher levels have broader workspace oversight.</p>
-            </div>
-            <span className="hidden md:inline text-[10px] text-gray-500">Select one level to continue</span>
-          </div>
-          <div className="min-w-0">
-            <div className="grid grid-cols-3 gap-3">
-              {accountTypes.map((type) => {
-                const isColActive = activeGroup === type.key;
-                return (
-                  <div key={type.key} className="flex flex-col gap-1.5">
-                    {ALL_LEVELS.map((lvl) => {
-                      const name = getLevelName(type.key, lvl);
-                      const entityType = getLevelEntityType(type.key, lvl);
-                      const colorCls = getLevelStyle(type.key, lvl);
-                      const isEmpty = !name;
-                      const isLocked = !isEmpty && isLevelLocked(type.key, lvl);
-                      const isSelected = isColActive && selectedLevel === lvl && !isEmpty;
-                      return (
-                        <div key={lvl} className="flex items-center gap-2">
-                          <span className={`text-[9px] font-mono w-5 text-right shrink-0 ${isEmpty ? "text-white/10" : "text-secondary-600"}`}>L{lvl}</span>
-                          <button
-                            type="button"
-                            disabled={isEmpty || isLocked}
-                            onClick={() => handleLevelClick(type.key, lvl)}
-                            title={isLocked ? `${planName} does not include ${name} as a workspace entry type. Choose an available type or upgrade the plan.` : undefined}
-                            className={`relative flex-1 h-10 rounded-xl px-3 text-xs font-medium text-left transition-all ${isEmpty ? "cursor-default opacity-[0.08]" : isLocked ? "cursor-not-allowed bg-white/[0.035] text-gray-400" : "cursor-pointer text-white hover:brightness-110 hover:translate-x-0.5"} ${isLocked ? "" : colorCls ?? "bg-white/5"} ${isSelected ? "ring-2 ring-secondary-300 ring-offset-2 ring-offset-[#0a1d15] shadow-lg shadow-black/20" : ""}`}
-                          >
-                            <span className="flex items-center justify-between gap-1">
-                              <span className="truncate">{name ?? ""}</span>
-                              {isLocked ? <LockKeyhole size={11} className="shrink-0" /> : isSelected && <Check size={12} className="shrink-0" strokeWidth={3} />}
-                            </span>
-                            {entityType && shouldShowEntryPrices() && entryPriceLabels[entityType] && <span className="absolute bottom-1 right-2 text-[9px] font-semibold text-secondary-200">{entryPriceLabels[entityType]}</span>}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-          {/* Selected account summary — kept at the top so context stays visible while choosing a level. */}
-      <div className="mt-6 overflow-hidden rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/[0.11] via-primary-500/[0.08] to-transparent">
-        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
-          <div className="flex min-w-0 flex-1 items-center gap-3.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-secondary-500/25 bg-secondary-500/15 text-secondary-400 shadow-lg shadow-black/10">
-              <ActiveIcon size={21} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-secondary-500">Currently selected</p>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <p className="text-base font-semibold text-white">{selectedEntity?.label ?? selectedEntity?.name ?? activeConfig.label}</p>
-                {selectedEntity && <span className="rounded-full border border-white/10 bg-black/10 px-2 py-0.5 text-[10px] font-medium text-gray-400">Level {selectedEntity.level}</span>}
-              </div>
-              <p className="mt-1 text-xs leading-relaxed text-gray-400">{selectedEntity?.desc ?? activeConfig.detail.desc}</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 sm:max-w-[46%] sm:justify-end">
-            {activeConfig.detail.capabilities.map((cap) => {
-              const CapIcon = cap.icon;
-              return (
-                <span key={cap.label} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/10 px-2.5 py-1.5 text-[10px] font-medium text-gray-300">
-                  <CapIcon size={11} className="text-secondary-400" />
-                  {cap.label}
-                </span>
-              );
-            })}
-
-            
-          </div>
-        </div>
-      </div>
-      </div>
-      
-
-      {error && (
-        <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-          <p className="text-sm text-red-400">{error}</p>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={onNext}
-        className="mt-7 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3.5 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px"
-      >
-        Continue Setup
-        <ArrowRight size={18} />
-      </button>
-
-      <p className="text-center text-sm text-gray-400 mt-5">
-        Already have an account?{" "}
-        <Link href="/login" className="text-secondary-400 hover:text-secondary-300 font-medium">Log in</Link>
-      </p>
-    </div>
-  );
-}
-
-/* ─── Register Form ──────────────────────────────────────────────── */
-
-function RegisterForm() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-
-  const planFromUrl = searchParams.get("plan");
-  const typeFromUrl = searchParams.get("type");
-  const billingFromUrl = searchParams.get("billing");
-  const isPricingPromoPlan = planFromUrl === "Pro" || planFromUrl === "Elite";
-
-  const [step, setStep] = useState(() => {
-    if (isPricingPromoPlan) return 1;
-    if (planFromUrl && planFromUrl !== "Custom") return 2;
-    if (planFromUrl === "Custom") return 2;
-    return 1;
-  });
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const search = useSearchParams();
+  const contactMode = search.get("contact") === "1";
+  const selection = useMemo(() => ({ company_levels: Number(search.get("company_levels") || FREE_COMPANY_LEVELS), departments: Number(search.get("departments") || 5), lines_per_audit: Number(search.get("lines_per_audit") || MIN_AUDIT_LINES) }), [search]);
+  const validSelection = Number.isSafeInteger(selection.company_levels) && selection.company_levels >= FREE_COMPANY_LEVELS && selection.company_levels <= 5 && Number.isSafeInteger(selection.departments) && selection.departments >= 1 && selection.departments <= 10000 && Number.isSafeInteger(selection.lines_per_audit) && selection.lines_per_audit >= MIN_AUDIT_LINES && selection.lines_per_audit <= 1000000;
+  const needsPackageSetup = !contactMode && (search.get("package") === "1" || !search.has("company_levels") || !search.has("departments") || !search.has("lines_per_audit") || !validSelection);
+  const packageSetupHref = `/register/select-package?company_levels=${selection.company_levels}&departments=${selection.departments}&lines_per_audit=${selection.lines_per_audit}`;
+  const automaticEntityType: AllEntityType | "" = !contactMode && validSelection
+    ? selection.company_levels === 5 ? "Company" : selection.company_levels === 4 ? "Cluster" : ""
+    : "";
+  const [pricing, setPricing] = useState<PackagePricing | null>(null);
+  const [privacy, setPrivacy] = useState<PrivacyPolicy | null>(null);
+  const [accountType, setAccountType] = useState<AccountGroup | "">(automaticEntityType ? "Company" : "");
+  const [entityType, setEntityType] = useState<AllEntityType | "">(automaticEntityType);
+  const [step, setStep] = useState(0);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [isRegistered, setIsRegistered] = useState(false);
-  const [resendSeconds, setResendSeconds] = useState(0);
-  const [resendingVerification, setResendingVerification] = useState(false);
-  const [resendMessage, setResendMessage] = useState("");
-  const [resendError, setResendError] = useState("");
-  const [selectedGroup, setSelectedGroup] = useState<AccountGroup | null>(
-    (typeFromUrl && ["Customer", "Company", "Audit Firm"].includes(typeFromUrl) ? typeFromUrl : "Customer") as AccountGroup
-  );
-  const [selectedEntityType, setSelectedEntityType] = useState<AllEntityType | null>(
-    (typeFromUrl && ["Customer", "Company", "Audit Firm"].includes(typeFromUrl)
-      ? accountTypes.find((t) => t.key === typeFromUrl)!.entityTypes[0].name
-      : "Customer") as AllEntityType
-  );
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  // Promo code state
-  const [promoCode, setPromoCode] = useState("");
-  const [promoDiscount, setPromoDiscount] = useState<number | null>(null);
-  const [promoLoading, setPromoLoading] = useState(false);
-  const [promoError, setPromoError] = useState("");
-
-  const [isCustomPlan, setIsCustomPlan] = useState(false);
-  const [customLimitsReady, setCustomLimitsReady] = useState(false);
-  const [customSolution, setCustomSolution] = useState<CustomSolutionLimits>(() => normalizeCustomSolution());
-
-  const [formData, setFormData] = useState<RegisterPayload & { promo_code?: string }>({
-    entity_type: "Customer",
-    org_name: "",
-    registration_number: "",
-    org_email: "",
-    address_line_1: "",
-    address_line_2: "",
-    address_line_3: "",
-    country: "Sri Lanka",
-    org_phone_number: "",
-    company_type: "",
-    first_name: "",
-    last_name: "",
-    email: "",
-    phone_number: "",
-    password: "",
-    plan_name: "Free",
-    billing_cycle: billingFromUrl === "Yearly" ? "Yearly" : "Monthly",
-    timezone: "Asia/Colombo",
-    promo_code: "",
-    organization_logo: null,
-    privacy_policy_id: "",
-  });
-
+  const [done, setDone] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [organization, setOrganization] = useState({ name: "", registrationNumber: "", email: "", phone: "", companyType: "", country: "Sri Lanka", address1: "", address2: "", address3: "", timezone: "Asia/Colombo", logo: null as string | null });
+  const [administrator, setAdministrator] = useState({ firstName: "", lastName: "", email: "", phone: "", password: "" });
+  const [contact, setContact] = useState({ organizationName: "", contactName: "", email: "", phone: "", country: "Sri Lanka", departments: "", lines: "", notes: "" });
+  const [teamContact, setTeamContact] = useState<AuditoContact>(DEFAULT_AUDITO_CONTACT);
+  const [verificationSent, setVerificationSent] = useState(true);
   const [countries, setCountries] = useState<Country[]>([]);
-  const [countrySearch, setCountrySearch] = useState("");
-  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
-  const [agreedToPrivacyPolicy, setAgreedToPrivacyPolicy] = useState(false);
-  const [privacyPolicy, setPrivacyPolicy] = useState<PrivacyPolicy | null>(null);
-  const organizationLogoInputRef = useRef<HTMLInputElement>(null);
-  const [organizationLogoCrop, setOrganizationLogoCrop] = useState<OrganizationLogoCrop>("wide");
-  const [organizationLogoFile, setOrganizationLogoFile] = useState<File | null>(null);
-  const [checkingRegistrationEmail, setCheckingRegistrationEmail] = useState(false);
-  const [planCatalog, setPlanCatalog] = useState<PlanCatalog | null>(null);
-
-  const selectedCountry = countries.find((c) => c.country === formData.country);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoCrop, setLogoCrop] = useState<OrganizationLogoCrop>("wide");
+  const logoInput = useRef<HTMLInputElement>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const company = accountType === "Company";
+  const selectedCountry = countries.find((country) => country.country === organization.country);
   const dialCode = selectedCountry?.international_dialing || "";
-  const entryPriceLabels = useMemo(() => {
-    const labels = { ...ENTITY_ENTRY_PRICE_LABELS };
-    for (const entry of planCatalog?.entry_prices ?? []) {
-      labels[entry.entity_type as AllEntityType] = `$${Number(entry.monthly_price).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-    }
-    const formatPlanPrice = (planName: "Basic" | "Pro" | "Elite", fallback: number) => {
-      const plan = planCatalog?.plans.find((item) => item.plan_name === planName);
-      return `$${Number(plan?.monthly_price ?? fallback).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-    };
-    // Company hierarchy cards follow their plan prices, not independent entry prices.
-    labels.Factory = "1st month free";
-    labels.Cluster = formatPlanPrice("Pro", 199);
-    labels.Company = formatPlanPrice("Elite", 299);
-    return labels;
-  }, [planCatalog]);
-
-  useEffect(() => {
-    countriesApi.getAll().then(setCountries);
-  }, []);
-
-  useEffect(() => {
-    if (resendSeconds <= 0) return;
-    const timer = window.setInterval(() => setResendSeconds((current) => Math.max(0, current - 1)), 1000);
-    return () => window.clearInterval(timer);
-  }, [resendSeconds]);
-
-  useEffect(() => {
-    plansApi.getPublic().then((result) => { if (result.success && result.data) setPlanCatalog(result.data); });
-  }, []);
-
-  useEffect(() => {
-    landingApi.getPrivacyPolicy().then((result) => {
-      if (result.success && result.data) {
-        setPrivacyPolicy(result.data);
-        setFormData((previous) => ({ ...previous, privacy_policy_id: result.data!.privacy_policy_id }));
-      }
-    });
-  }, []);
-
-  useEffect(() => {
-    const plan = searchParams.get("plan");
-    const type = searchParams.get("type");
-    const billing = searchParams.get("billing");
-
-    if (type && ["Customer", "Company", "Audit Firm"].includes(type)) {
-      const group = type as AccountGroup;
-      setSelectedGroup(group);
-      const defaultEntity = accountTypes.find((t) => t.key === group)!.entityTypes
-        .find((entity) => canRegisterEntityType(plan || "Basic", group, entity.name))?.name;
-      if (!defaultEntity) return;
-      setSelectedEntityType(defaultEntity);
-      setFormData((prev) => ({ ...prev, entity_type: defaultEntity }));
-    }
-
-    if (plan) {
-      if (plan === "Custom") {
-        setIsCustomPlan(true);
-        setFormData((prev) => ({ ...prev, plan_name: "Custom" }));
-        setCustomLimitsReady(false);
-      } else if (planCatalog?.plans.some((item) => item.plan_name === plan)) {
-        setFormData((prev) => ({ ...prev, plan_name: plan }));
-        if (plan === "Elite" && !type) {
-          setSelectedGroup("Company");
-          setSelectedEntityType("Company");
-          setFormData((prev) => ({ ...prev, entity_type: "Company" }));
-        }
-      }
-    }
-    if (billing === "Monthly" || billing === "Yearly") {
-      setFormData((prev) => ({ ...prev, billing_cycle: billing }));
-    }
-  }, [searchParams, planCatalog]);
-
-  // Keep the selected entry type valid when the selected plan changes.
-  useEffect(() => {
-    const planName = formData.plan_name ?? "Basic";
-    if (selectedGroup && selectedEntityType && canRegisterEntityType(planName, selectedGroup, selectedEntityType)) return;
-
-    const replacement = accountTypes
-      .map((group) => ({ group: group.key, entity: group.entityTypes.find((item) => canRegisterEntityType(planName, group.key, item.name))?.name }))
-      .find((item) => item.entity);
-    if (!replacement?.entity) return;
-    const nextEntityType = replacement.entity;
-    setSelectedGroup(replacement.group);
-    setSelectedEntityType(nextEntityType);
-    setFormData((prev) => ({ ...prev, entity_type: nextEntityType }));
-  }, [formData.plan_name, selectedEntityType, selectedGroup]);
-
-  // Auto-sync org_email to admin email
-  useEffect(() => {
-    setFormData((prev) => ({ ...prev, email: prev.org_email || "" }));
-  }, [formData.org_email]);
-
-  const updateField = <K extends keyof RegisterPayload>(field: K, value: RegisterPayload[K]) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    setError("");
+  const contactDialCode = countries.find((country) => country.country === contact.country)?.international_dialing || "";
+  const passwordRequirements = {
+    length: administrator.password.length >= 8,
+    upper: /[A-Z]/.test(administrator.password), lower: /[a-z]/.test(administrator.password),
+    number: /\d/.test(administrator.password), special: /[@$!%*?&#]/.test(administrator.password),
   };
 
-  const handleOrganizationLogoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const quote = useMemo(() => {
+    if (!pricing || pricing.pricing_version !== 3 || !validSelection) return null;
+    const levelCharge = pricing.company_level_charges[selection.company_levels];
+    const departmentCharge = selection.departments <= 5 ? 0 : selection.departments * 10;
+    const lineCharge = selection.lines_per_audit * pricing.token_unit_price;
+    const extraTokens = (levelCharge + departmentCharge) / pricing.token_unit_price;
+    return Number.isSafeInteger(extraTokens) ? { total: levelCharge + departmentCharge + lineCharge, tokens: selection.lines_per_audit + extraTokens } : null;
+  }, [pricing, selection, validSelection]);
+
+  useEffect(() => {
+    if (!contactMode && !needsPackageSetup) packagePricingApi.get().then((result) => { if (result.success && result.data?.pricing_version === 3) setPricing(result.data); else setError(result.message || "Package pricing is unavailable."); });
+    landingApi.getPrivacyPolicy().then((result) => { if (result.success && result.data) setPrivacy(result.data); });
+  }, [contactMode, needsPackageSetup]);
+  useEffect(() => { if (needsPackageSetup) router.replace(packageSetupHref); }, [needsPackageSetup, packageSetupHref, router]);
+  useEffect(() => {
+    setAccountType(automaticEntityType ? "Company" : "");
+    setEntityType(automaticEntityType);
+    setStep(0);
+    setError("");
+  }, [contactMode, automaticEntityType, needsPackageSetup]);
+  useEffect(() => { countriesApi.getAll().then(setCountries); }, []);
+  useEffect(() => {
+    if (!contactMode) return;
+    landingApi.getContactDetails().then((result) => { if (result.success && result.data?.email) setTeamContact(result.data); }).catch(() => undefined);
+  }, [contactMode]);
+
+  function chooseAccount(type: AccountGroup) {
+    if (contactMode ? type === "Company" : type !== "Company") return;
+    setAccountType(type); setEntityType(""); setError("");
+  }
+  function chooseLogo(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-
-    if (!['image/png', 'image/jpeg'].includes(file.type)) {
-      setError("Organization logo must be a PNG or JPEG image.");
-      return;
-    }
-    setOrganizationLogoFile(file);
-  };
-
-  const handleGroupSelect = (group: AccountGroup) => {
-    setSelectedGroup(group);
-    const defaultEntity = accountTypes.find((t) => t.key === group)!.entityTypes
-      .find((entity) => canRegisterEntityType(formData.plan_name ?? "Basic", group, entity.name))?.name;
-    if (!defaultEntity) return;
-    setSelectedEntityType(defaultEntity);
-    setFormData((prev) => ({ ...prev, entity_type: defaultEntity }));
-  };
-
-  const handleEntityTypeSelect = (entityType: AllEntityType) => {
-    setSelectedEntityType(entityType);
-    setFormData((prev) => ({ ...prev, entity_type: entityType }));
-  };
-
-  const handleStep1Next = () => {
-    if (!formData.plan_name || (formData.plan_name !== "Custom" && !planCatalog?.plans.some((plan) => plan.plan_name === formData.plan_name))) {
-      setError("Please select a plan to continue.");
-      return;
-    }
-    setError("");
-    if (formData.plan_name === "Custom") {
-      setIsCustomPlan(true);
-      setCustomLimitsReady(false);
-      setStep(2);
-    } else {
-      setStep(2);
-    }
-  };
-
-  const handleStep2Next = () => {
-    if (!selectedEntityType) {
-      setError("Please select an entity type to continue.");
-      return;
-    }
-    if (!selectedGroup || !canRegisterEntityType(formData.plan_name ?? "Basic", selectedGroup, selectedEntityType)) {
-      setError(`${formData.plan_name} does not include the selected organization entry type. Choose an available type or upgrade your plan.`);
-      return;
-    }
-    setError("");
-    setStep(isCustomPlan ? 3 : 4);
-  };
-
-  const passwordRequirements = useMemo(() => ({
-    length: formData.password.length >= 8,
-    upper: /[A-Z]/.test(formData.password),
-    lower: /[a-z]/.test(formData.password),
-    number: /[0-9]/.test(formData.password),
-    special: /[@$!%*?&#]/.test(formData.password),
-  }), [formData.password]);
-
-  const passwordStrength = useMemo(() => {
-    const met = Object.values(passwordRequirements).filter(Boolean).length;
-    if (met === 0) return { label: "", color: "bg-gray-800", width: "0%", text: "gray-500" };
-    if (met <= 2) return { label: "Weak", color: "bg-red-500", width: "33%", text: "text-red-500" };
-    if (met <= 4) return { label: "Medium", color: "bg-yellow-500", width: "66%", text: "text-yellow-500" };
-    return { label: "Strong", color: "bg-emerald-500", width: "100%", text: "text-emerald-500" };
-  }, [passwordRequirements]);
-
-  const validateStep3 = () => {
-    if (!formData.org_name.trim()) return "Organization name is required.";
-    if (
-      selectedEntityType === "Company" &&
-      (!formData.company_type || !formData.company_type.trim())
-    )
-      return "Company type is required.";
-    if (!formData.org_email?.trim()) return "Organization email is required.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.org_email || ""))
-      return "Invalid organization email address.";
-    if (!formData.country?.trim()) return "Country is required.";
-    if (!formData.org_phone_number?.trim()) return "Organization phone number is required.";
-    if (!formData.address_line_1?.trim()) return "Address line 1 is required.";
-    if (!formData.address_line_2?.trim()) return "Address line 2 is required.";
-    if (isCustomPlan && !privacyPolicy) return "The Privacy Policy is currently unavailable. Please try again shortly.";
-    if (isCustomPlan && !agreedToPrivacyPolicy) return "You must agree to the Privacy Policy to submit your plan for review.";
-    return null;
-  };
-
-  const validateStep4 = () => {
-    if (!formData.first_name.trim()) return "First name is required.";
-    if (!formData.last_name.trim()) return "Last name is required.";
-    if (!formData.email.trim()) return "Email is required.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
-      return "Invalid email address.";
-    if (!formData.phone_number?.trim()) return "Phone number is required.";
-
-    // Password Strength Check
-    const { length, upper, lower, number, special } = passwordRequirements;
-    if (!length || !upper || !lower || !number || !special) {
-      return "Please ensure your password meets all requirements.";
-    }
-
-    if (!formData.password) return "Password is required.";
-    if (formData.password !== confirmPassword) return "Passwords do not match.";
-    if (!privacyPolicy) return "The Privacy Policy is currently unavailable. Please try again shortly.";
-    if (!agreedToPrivacyPolicy) return "You must agree to the Privacy Policy to create an account.";
-    return null;
-  };
-
-  const handleValidatePromo = async () => {
-    if (!promoCode.trim()) {
-      setPromoError("Enter a promo code.");
-      return;
-    }
-    setPromoLoading(true);
-    setPromoError("");
-    setPromoDiscount(null);
-    try {
-      const res = await authApi.validatePromoCode(promoCode.trim());
-      if (res.success && res.data) {
-        setPromoDiscount(res.data.discount_percentage);
-        setFormData((prev) => ({ ...prev, promo_code: promoCode.trim().toUpperCase() }));
-      } else {
-        setPromoError((res as any).message || "Invalid or expired promo code.");
-        setFormData((prev) => ({ ...prev, promo_code: "" }));
-      }
-    } catch {
-      setPromoError("Failed to validate promo code.");
-    } finally {
-      setPromoLoading(false);
-    }
-  };
-
-  const handleRemovePromo = () => {
-    setPromoCode("");
-    setPromoDiscount(null);
-    setPromoError("");
-    setFormData((prev) => ({ ...prev, promo_code: "" }));
-  };
-
-  const handleOrganizationDetailsNext = async () => {
-    const err = validateStep3();
-    if (err) { setError(err); return; }
-    if (isCustomPlan) {
-      void handleSubmit();
-      return;
-    }
-
-    setCheckingRegistrationEmail(true);
-    setError("");
-    try {
-      // The organization email is automatically used as the first admin email.
-      const response = await authApi.checkRegistrationEmail((formData.org_email || "").trim());
-      if (!response.success) {
-        setError(response.message || "Unable to check the organization email.");
-        return;
-      }
-      setFormData((previous) => ({ ...previous, email: (previous.org_email || "").trim() }));
-      setStep(5);
-    } catch {
-      setError("Unable to check the organization email. Please try again.");
-    } finally {
-      setCheckingRegistrationEmail(false);
-    }
-  };
-
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    const err = isCustomPlan ? validateStep3() : validateStep4();
-    if (err) { setError(err); return; }
-    setLoading(true);
-    setError("");
-    try {
-      const payload = isCustomPlan
-        ? { ...formData, custom_solution: normalizeCustomSolution(customSolution) }
-        : formData;
-      const res = (await authApi.register(payload)) as { success: boolean; message?: string };
-      // Email verification comes first; paid plans continue to payment after
-      // the email is verified (see the verify-email page).
-      if (res.success) {
-        setIsRegistered(true);
-        setResendSeconds(30);
-      }
-      else setError(res.message || "Registration failed.");
-    } catch {
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendVerification = async () => {
-    const verificationEmail = isCustomPlan ? formData.org_email : formData.email;
-    if (!verificationEmail || resendingVerification || resendSeconds > 0) return;
-    setResendingVerification(true);
-    setResendMessage("");
-    setResendError("");
-    const response = await authApi.resendVerification(verificationEmail);
-    if (response.success) {
-      setResendSeconds(30);
-      setResendMessage("A new verification email has been sent. Please check your inbox.");
-    } else {
-      setResendError(response.message || "Unable to resend the verification email.");
-    }
-    setResendingVerification(false);
-  };
-
-  const activeConfig = selectedGroup
-    ? accountTypes.find((t) => t.key === selectedGroup)!
-    : null;
-
-  /* ── Success screen ── */
-  if (isRegistered) {
-    return (
-      <div className="min-h-screen bg-transparent flex flex-col pt-12">
-        <div className="max-w-md mx-auto w-full px-4">
-          <div className="bg-white/5 border border-white/10 p-8 rounded-2xl text-center backdrop-blur-xl">
-            <CheckCircle2 className="mx-auto text-secondary-500 mb-6" size={64} />
-            <h1 className="text-xl font-bold text-white mb-2">{isCustomPlan ? "Your Plan Is Ready for Review" : "Check Your Email"}</h1>
-            {isCustomPlan ? (
-              <p className="text-gray-400 mb-8 max-w-sm mx-auto leading-relaxed">
-                We sent a verification link to <span className="text-white font-medium">{formData.org_email}</span>.
-                After you verify it, your custom plan will be sent to our team for review. We&apos;ll contact you with the next steps and pricing.
-              </p>
-            ) : (
-              <p className="text-gray-400 mb-8 max-w-sm mx-auto leading-relaxed">
-                We&apos;ve sent a verification link to <span className="text-white font-medium">{formData.email}</span>.
-                Please click the link inside to activate your account.
-              </p>
-            )}
-            {resendMessage && <p className="mb-4 rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3 text-sm text-emerald-200">{resendMessage}</p>}
-            {resendError && <p className="mb-4 rounded-xl border border-red-400/25 bg-red-400/10 p-3 text-sm text-red-200">{resendError}</p>}
-            <button
-              type="button"
-              disabled={resendingVerification || resendSeconds > 0}
-              onClick={() => void handleResendVerification()}
-              className="mb-4 w-full text-sm font-medium text-secondary-400 transition-colors hover:text-secondary-300 disabled:cursor-not-allowed disabled:text-gray-500"
-            >
-              {resendingVerification ? "Sending verification email..." : resendSeconds > 0 ? `Resend available in ${resendSeconds}s` : "Resend verification email"}
-            </button>
-            <Link
-              href={isCustomPlan ? "/" : "/login"}
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 px-6 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400"
-            >
-              {isCustomPlan ? "Return to Home" : "Go to Login"} <ArrowRight size={18} />
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
+    if (!["image/png", "image/jpeg"].includes(file.type)) return setError("Organization logo must be a PNG or JPEG image.");
+    setLogoFile(file);
   }
+  function back() { setStep((current) => current - 1); setError(""); }
+  function continueFromAccount() {
+    if (!accountType || !entityType) return setError("Select an account type and a starting level.");
+    if (!contactMode && accountType !== "Company") return setError("This package is for Company workspaces. Contact the Audito team for Customer or Audit Firm accounts.");
+    if (contactMode && accountType === "Company") return setError("Choose a Company package in pricing to continue.");
+    if (company && (!quote || !canRegisterPackageEntry(entityType as CompanyEntryType, selection.company_levels))) return setError("Select an available starting level for your package.");
+    setError(""); setStep(1);
+  }
+  async function continueFromOrganization(event: FormEvent) {
+    event.preventDefault();
+    if (!organization.name.trim() || !validEmail(organization.email) || !validPhone(organization.phone) || !organization.country.trim() || !organization.address1.trim() || !organization.address2.trim()) return setError("Complete the required organization details, including country and address.");
+    if (entityType === "Company" && !organization.companyType) return setError("Select a company type.");
+    setBusy(true);
+    const result = await authApi.checkRegistrationEmail(organization.email.trim());
+    setBusy(false);
+    if (!result.success) return setError(result.message || "Unable to check the organization email.");
+    setAdministrator((current) => ({ ...current, email: organization.email.trim(), phone: current.phone || organization.phone }));
+    setError(""); setStep(2);
+  }
+  async function submitCompany(event: FormEvent) {
+    event.preventDefault();
+    if (contactMode) return setError("Choose a Company package in pricing to continue.");
+    if (!entityType || !canRegisterPackageEntry(entityType as CompanyEntryType, selection.company_levels) || !quote || !pricing) return setError("Review your starting level and package.");
+    if (!privacy || !agreed) return setError("Review and agree to the current Privacy Policy.");
+    if (!administrator.firstName.trim() || !administrator.lastName.trim() || !validEmail(administrator.email) || !validPhone(administrator.phone)) return setError("Complete your administrator details.");
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/.test(administrator.password)) return setError("Password needs 8 characters, uppercase, lowercase, a number, and a special character.");
+    if (administrator.password !== confirmPassword) return setError("Passwords do not match.");
+    const payload: RegisterPayload = {
+      entity_type: entityType, org_name: organization.name.trim(), registration_number: organization.registrationNumber.trim(),
+      org_email: organization.email.trim(), org_phone_number: organization.phone.trim(), company_type: organization.companyType.trim(),
+      country: organization.country.trim(), address_line_1: organization.address1.trim(), address_line_2: organization.address2.trim(), address_line_3: organization.address3.trim(), timezone: organization.timezone, organization_logo: organization.logo,
+      first_name: administrator.firstName.trim(), last_name: administrator.lastName.trim(), email: administrator.email.trim(),
+      phone_number: administrator.phone.trim(), password: administrator.password, plan_name: "Package", billing_cycle: "None",
+      privacy_policy_id: privacy.privacy_policy_id, package_selection: { ...selection, expected_token_unit_price: pricing.token_unit_price, pricing_version: pricing.pricing_version },
+    };
+    setBusy(true); setError("");
+    const result = await authApi.register(payload);
+    setBusy(false);
+    if (result.success) setDone(true); else setError(result.message || "Registration failed.");
+  }
+  async function submitContact(event: FormEvent) {
+    event.preventDefault();
+    if (!accountType || accountType === "Company" || !entityType) return setError("Select a Customer or Audit Firm account type.");
+    if (!contact.organizationName.trim() || !contact.contactName.trim() || !validEmail(contact.email) || !validPhone(contact.phone)) return setError("Enter your organization, name, valid email, and phone number.");
+    if (!contact.country) return setError("Select your country.");
+    const departments = Number(contact.departments);
+    const lines = Number(contact.lines);
+    if (!Number.isSafeInteger(departments) || departments < 1 || departments > 10000) return setError("Enter the number of departments, from 1 to 10,000.");
+    if (!Number.isSafeInteger(lines) || lines < 1 || lines > 1000000) return setError("Enter the audit lines per audit, from 1 to 1,000,000.");
+    const payload: ContactReviewInput = { account_type: accountType, entity_type: entityType, organization_name: contact.organizationName.trim(), contact_name: contact.contactName.trim(), email: contact.email.trim(), phone: contact.phone.trim(), country: contact.country, departments, lines_per_audit: lines, notes: contact.notes.trim() };
+    setBusy(true); setError("");
+    const result = await landingApi.submitContactReview(payload);
+    setBusy(false);
+    if (result.success) {
+      if (result.data?.contact?.email) setTeamContact(result.data.contact);
+      setVerificationSent(result.data?.email_sent !== false);
+      setDone(true);
+    } else setError(result.message || "Could not send your request.");
+  }
+  const input = (label: string, value: string, update: (value: string) => void, type = "text", required = false, placeholder = "") => <div>
+    <label className="mb-2 block text-sm font-medium text-gray-300">{label} {required && <span className="text-red-400">*</span>}</label>
+    <input type={type} required={required} value={value} placeholder={placeholder} onChange={(event) => update(event.target.value)} className={fieldClass} />
+  </div>;
 
-  return (
-    <div className="relative min-h-screen px-4 pb-12 pt-16 sm:py-12">
-      {/* Background blobs */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/3 left-1/4 w-80 h-80 bg-primary-600/15 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/3 right-1/4 w-60 h-60 bg-accent-500/10 rounded-full blur-3xl" />
-      </div>
+  if (needsPackageSetup) return <div className="flex min-h-screen items-center justify-center"><Loader2 size={32} className="animate-spin text-secondary-400" /><span className="sr-only">Opening package selection</span></div>;
 
-      <div className="glass relative mx-auto max-w-4xl overflow-hidden rounded-3xl border-white/10 pt-6 shadow-2xl shadow-black/20 sm:pt-8">
-        {/* Logo */}
-        <div className="mb-5 px-5 text-center sm:px-8">
-          <Link href="/" className="inline-block">
-            <Image src={logo} alt="Audito" width={110} height={30} className="h-8 mx-auto" />
-          </Link>
-          <p className="mb-1 mt-3 text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">
-            Create your workspace
-          </p>
-        </div>
-
-        <StepIndicator current={isCustomPlan ? Math.max(1, step - 1) : step} total={isCustomPlan ? 3 : 4} />
-        <p className={"mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8 " + (isPricingPromoPlan && step === 1 ? "hidden" : "")}>
-          {step === 1 && "Step 1 of 4 — Choose Your Plan"}
-          {step === 2 && (isCustomPlan ? "Step 1 of 3 — Account Type" : "Step 2 of 4 — Account Type")}
-          {step === 3 && (isCustomPlan ? "Step 2 of 3 — Configure Plan" : "Step 3 of 4 — Organization Details")}
-          {step === 4 && (isCustomPlan ? "Step 3 of 3 — Organization Details" : "Step 4 of 4 — Admin Account")}
-          {step === 5 && "Step 4 of 4 — Admin Account"}
-        </p>
-        {isPricingPromoPlan && step === 1 && <p className="mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8">Step 1 of 4 — Promo Code</p>}
-
-        {/* ─── Step 1: Plan Selection ── */}
-        {step === 1 && !planFromUrl && (
-          <PlanSelectionStep
-            selectedPlan={formData.plan_name || "Basic"}
-            billingCycle={formData.billing_cycle as "Monthly" | "Yearly"}
-            onPlanSelect={(plan) => {
-              setFormData((prev) => ({ ...prev, plan_name: plan, billing_cycle: plan === "Basic" ? "Monthly" : prev.billing_cycle }));
-              if (plan === "Elite") {
-                setSelectedGroup("Company");
-                setSelectedEntityType("Company");
-                setFormData((prev) => ({ ...prev, entity_type: "Company" }));
-              }
-              if (plan !== "Pro" && plan !== "Elite") handleRemovePromo();
-              setError("");
-            }}
-            onBillingCycleChange={(cycle) => updateField("billing_cycle", cycle)}
-            onNext={handleStep1Next}
-            error={error}
-            promoCode={promoCode}
-            promoDiscount={promoDiscount}
-            promoLoading={promoLoading}
-            promoError={promoError}
-            onPromoCodeChange={(value) => { setPromoCode(value); setPromoError(""); }}
-            onValidatePromo={() => void handleValidatePromo()}
-            onRemovePromo={handleRemovePromo}
-            planCatalog={planCatalog}
-          />
-        )}
-
-        {/* ─── Step 2: Merged account type + hierarchy ── */}
-        {step === 1 && isPricingPromoPlan && (
-          <PromoCodeStep
-            planName={planFromUrl as "Pro" | "Elite"}
-            billingCycle={formData.billing_cycle as "Monthly" | "Yearly"}
-            planCatalog={planCatalog}
-            promoCode={promoCode}
-            promoDiscount={promoDiscount}
-            promoLoading={promoLoading}
-            promoError={promoError}
-            onPromoCodeChange={(value) => { setPromoCode(value); setPromoError(""); }}
-            onValidate={() => void handleValidatePromo()}
-            onRemove={handleRemovePromo}
-            onBack={() => router.push("/?section=pricing")}
-            onNext={() => { setError(""); setStep(2); }}
-          />
-        )}
-
-        {step === 2 && (
-          <>
-            <AccountTypeStep
-            selectedGroup={selectedGroup}
-            selectedEntityType={selectedEntityType}
-            planName={formData.plan_name ?? "Basic"}
-            customCompanyLevelLimit={5}
-            entryPriceLabels={entryPriceLabels}
-            onGroupSelect={handleGroupSelect}
-            onEntityTypeSelect={handleEntityTypeSelect}
-            onNext={handleStep2Next}
-            onBack={() => {
-              if (isPricingPromoPlan) setStep(1);
-              else if (isCustomPlan) router.push("/");
-              else router.push("/");
-            }}
-            error={error}
-            />
-          </>
-        )}
-
-        {/* ─── Step 3: Custom Configuration (when coming from /custom-solution without pre-filled limits) ── */}
-        {step === 3 && isCustomPlan && (() => {
-          const updateCustomLimit = (key: keyof typeof CUSTOM_PLAN_MINIMUM_LIMITS, value: number) => {
-            const feature = CUSTOM_CONFIGURATION_FEATURES.find((item) => item.key === key)!;
-            setCustomSolution((previous) => ({ ...previous, [key]: Math.min(feature.max, Math.max(feature.min, value)) }));
-          };
-
-          return (
-            <div className="p-5 pt-1 sm:p-8 sm:pt-2">
-              <div className="mb-6 flex items-start gap-3">
-                <button type="button" onClick={() => setStep(2)} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6">
-                  <ArrowLeft size={18} />
-                </button>
-                <div>
-                  <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Configure your custom plan</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-gray-400">Start with every Elite feature, then increase the capacity your workspace requires.</p>
-                </div>
-              </div>
-
-              {error && (
-                <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-                  <p className="text-sm text-red-400">{error}</p>
-                </div>
-              )}
-
-              <div className="mb-7 space-y-4">
-                <div className="rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/10 to-transparent p-4">
-                  <p className="text-sm font-semibold text-white">Elite is your starting point</p>
-                  <p className="mt-1 text-xs leading-relaxed text-gray-400">Every custom plan includes Elite&apos;s feature set. Capacity can increase from this baseline, but never decrease below it.</p>
-                </div>
-                <p className="text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Capacity</p>
-                {CUSTOM_CONFIGURATION_FEATURES.map((feature) => {
-                  const value = customSolution[feature.key];
-                  const volume = (value / feature.max) * 100;
-                  const eliteMarker = (feature.min / feature.max) * 100;
-                  return (
-                    <div key={feature.key} className="rounded-2xl border border-white/[0.08] bg-black/10 p-4 transition-colors hover:bg-white/[0.035]">
-                      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(240px,0.9fr)] sm:items-center">
-                        <div><p className="text-sm font-medium text-white">{feature.label}</p><p className="mt-0.5 text-[11px] text-gray-500">{feature.desc}</p></div>
-                        <div>
-                          <div className="mb-2 flex justify-end"><output className="text-[11px] font-semibold text-secondary-300">{value}</output></div>
-                          <div className="relative">
-                            <input type="range" min={0} max={feature.max} value={value} onChange={(event) => updateCustomLimit(feature.key, Number(event.target.value))} aria-label={`${feature.label} volume`} className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-secondary-500" style={{ background: `linear-gradient(to right, #D4AF37 0%, #D4AF37 ${volume}%, rgba(255,255,255,.1) ${volume}%, rgba(255,255,255,.1) 100%)` }} />
-                            <span aria-hidden="true" className="pointer-events-none absolute -top-1 h-4 w-px bg-secondary-200" style={{ left: `${eliteMarker}%` }} />
-                            <span aria-hidden="true" className="pointer-events-none absolute -top-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-semibold text-secondary-300" style={{ left: `${eliteMarker}%` }}>Elite {feature.min}</span>
-                          </div>
-                          <div className="mt-1.5 flex justify-between text-[10px] text-gray-500"><span>0</span><span>{feature.max}</span></div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <p className="pt-3 text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Included Elite features</p>
-                {[["Auditor Evaluation System", "Evaluate auditor performance with tests and scoring"], ["Company-to-Company Linking", "Link and collaborate with external organizations"]].map(([title, description]) => (
-                  <div key={title} className="flex items-center justify-between gap-4 rounded-2xl border border-secondary-500/15 bg-secondary-500/[0.06] p-4"><div><p className="text-sm font-medium text-white">{title}</p><p className="mt-0.5 text-[11px] text-gray-500">{description}</p></div><span className="inline-flex items-center gap-1.5 rounded-full border border-secondary-500/25 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-300"><Check size={12} /> Included</span></div>
-                ))}
-              </div>
-
-              <div className="mb-7 rounded-2xl border border-secondary-500/20 bg-gradient-to-r from-secondary-500/10 to-transparent p-4 sm:p-5">
-                <p className="text-xs text-secondary-400 font-semibold uppercase tracking-wide mb-2">Your Custom Selection</p>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  {CUSTOM_CONFIGURATION_FEATURES.map((feature) => <span key={feature.key} className="text-gray-400">{feature.label}: <span className="font-medium text-white">{customSolution[feature.key]}</span></span>)}
-                  <span className="text-gray-400">Elite features: <span className="font-medium text-white">Included</span></span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setError("");
-                  setCustomLimitsReady(true);
-                  setStep(4);
-                }}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px"
-              >
-                Next: Organization Details
-                <ArrowRight size={16} />
-              </button>
-            </div>
-          );
-        })()}
-
-        {/* ─── Step 4: Organization Details ──────────────────────────── */}
-        {step === 4 && (
-          <div className="p-5 pt-1 sm:p-8 sm:pt-2">
-            <div className="mb-7 flex items-start gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setStep(isCustomPlan ? 3 : 2);
-                }}
-                aria-label="Go back"
-                className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"
-              >
-                <ArrowLeft size={18} />
-              </button>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Organization details</h3>
-                  <span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-400">{activeConfig?.label}</span>
-                </div>
-                <p className="mt-1 text-sm leading-relaxed text-gray-400">Tell us about the organization this Audito workspace belongs to.</p>
-              </div>
-            </div>
-
-            {error && (
-              <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-                <p className="text-sm text-red-400">{error}</p>
-              </div>
-            )}
-
-            <div className="space-y-5">
-              <Input
-                label="Organization Name"
-                required
-                value={formData.org_name}
-                onChange={(v) => updateField("org_name", v)}
-                placeholder="Enter organization name"
-              />
-
-              <div>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300">Organization logo <span className="text-xs font-normal text-gray-500">(optional)</span></label>
-                    <p className="mt-0.5 text-xs text-gray-500">PNG or JPEG. We crop and optimize it for your report header.</p>
-                  </div>
-                </div>
-                <input
-                  ref={organizationLogoInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg"
-                  className="hidden"
-                  onChange={handleOrganizationLogoChange}
-                />
-                <div className="flex min-h-20 items-center gap-3 rounded-xl border border-dashed border-white/15 bg-black/10 p-3">
-                  {formData.organization_logo ? (
-                    <img src={formData.organization_logo} alt="Organization logo preview" className="h-14 w-20 rounded-lg border border-white/10 bg-white object-contain p-1" />
-                  ) : (
-                    <div className="flex h-14 w-20 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-gray-500">
-                      <ImagePlus size={20} />
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-white">{formData.organization_logo ? "Logo selected" : "Add your organization logo"}</p>
-                    <p className="mt-0.5 text-xs text-gray-500">Optional branding for audit and CAP reports.</p>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button type="button" onClick={() => organizationLogoInputRef.current?.click()} className="rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-medium text-gray-200 transition-colors hover:bg-white/10">
-                      {formData.organization_logo ? "Replace" : "Select"}
-                    </button>
-                    {formData.organization_logo && (
-                      <button type="button" onClick={() => updateField("organization_logo", null)} className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20">
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <OrganizationLogoCropModal
-                open={Boolean(organizationLogoFile)}
-                file={organizationLogoFile}
-                initialCrop={organizationLogoCrop}
-                onClose={() => setOrganizationLogoFile(null)}
-                onError={setError}
-                onApply={(organization_logo, crop) => {
-                  updateField("organization_logo", organization_logo);
-                  setOrganizationLogoCrop(crop);
-                  setOrganizationLogoFile(null);
-                }}
-              />
-
-              {selectedEntityType === "Company" && (
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300">
-                    Company Type <span className="text-red-400">*</span>
-                  </label>
-                  <select
-                    value={formData.company_type || ""}
-                    onChange={(e) => updateField("company_type", e.target.value)}
-                    className="w-full min-h-11 rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-white transition-all focus:border-secondary-400/60 focus:outline-none focus:ring-4 focus:ring-secondary-500/10"
-                  >
-                    <option value="" disabled className="bg-[#0c2218] text-white">Select company type</option>
-                    <option value="Ready to sell" className="bg-[#0c2218] text-white">Ready to sell</option>
-                    <option value="Ready to bill" className="bg-[#0c2218] text-white">Ready to bill</option>
-                  </select>
-                </div>
-              )}
-
-              <Input
-                label="Registration Number"
-                value={formData.registration_number || ""}
-                onChange={(v) => updateField("registration_number", v)}
-                placeholder="Business registration number"
-              />
-
-              <Input
-                label="Organization Email"
-                required
-                type="email"
-                value={formData.org_email || ""}
-                onChange={(v) => updateField("org_email", v)}
-                placeholder="info@company.com"
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Country Dropdown */}
-                <div className="relative">
-                  <label className="mb-2 block text-sm font-medium text-gray-300">Country <span className="text-red-400">*</span></label>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-white transition-all hover:border-white/20"
-                    onClick={() => setShowCountryDropdown(!showCountryDropdown)}
-                  >
-                    {formData.country ? (
-                      <>
-                        <span>{selectedCountry?.flag}</span>
-                        <span className="truncate">{formData.country}</span>
-                        {dialCode && (
-                          <span className="text-gray-500 ml-auto text-xs">{dialCode}</span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-gray-500">Country</span>
-                    )}
-                  </div>
-                  {showCountryDropdown && (
-                    <div className="absolute z-50 mt-2 max-h-60 w-full overflow-hidden rounded-2xl border border-white/15 bg-[#0b2118]/95 shadow-2xl backdrop-blur-xl">
-                      <div className="p-2 border-b border-white/10">
-                        <input
-                          type="text"
-                          value={countrySearch}
-                          onChange={(e) => setCountrySearch(e.target.value)}
-                          placeholder="Search countries..."
-                          className="w-full rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-secondary-400/60 focus:outline-none"
-                          autoFocus
-                        />
-                      </div>
-                      <div className="overflow-y-auto max-h-40">
-                        {countries
-                          .filter((c) =>
-                            c.country.toLowerCase().includes(countrySearch.toLowerCase())
-                          )
-                          .map((c) => (
-                            <div
-                              key={c.id}
-                              className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-white/10 ${formData.country === c.country
-                                ? "bg-secondary-500/15 text-secondary-400"
-                                : "text-white"
-                                }`}
-                              onClick={() => {
-                                const tz = COUNTRY_TIMEZONE_MAP[c.country_code] ?? "";
-                                setFormData(prev => ({ ...prev, country: c.country, timezone: tz }));
-                                setError("");
-                                setShowCountryDropdown(false);
-                                setCountrySearch("");
-                              }}
-                            >
-                              <span>{c.flag}</span>
-                              <span className="truncate">{c.country}</span>
-                              {c.international_dialing && (
-                                <span className="text-gray-500 ml-auto text-xs">
-                                  {c.international_dialing}
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Org Phone */}
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300">Phone number <span className="text-red-400">*</span></label>
-                  <div className="flex">
-                    {dialCode && (
-                      <span className="inline-flex items-center rounded-l-xl border border-r-0 border-white/10 bg-white/[0.04] px-3 text-sm text-gray-400">
-                        {dialCode}
-                      </span>
-                    )}
-                    <input
-                      type="text"
-                      value={formData.org_phone_number || ""}
-                      onChange={(e) => updateField("org_phone_number", e.target.value)}
-                      placeholder="Phone number"
-                      className={`min-h-11 w-full border border-white/10 bg-black/10 px-4 py-3 text-sm text-white placeholder-gray-500 transition-all focus:border-secondary-400/60 focus:outline-none focus:ring-4 focus:ring-secondary-500/10 ${dialCode ? "rounded-r-xl" : "rounded-xl"
-                        }`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Timezone hint — outside the grid so it never disrupts Country/Phone layout */}
-              {formData.timezone && (
-                <div className="-mt-1 flex items-center gap-1.5 rounded-lg border border-white/[0.06] bg-black/10 px-3 py-2 text-[11px] text-gray-500">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-secondary-600"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  Timezone auto-detected: <span className="text-secondary-500 font-medium">{formData.timezone}</span>
-                </div>
-              )}
-
-              <div className="space-y-5 border-t border-white/[0.07] pt-5">
-                <Input
-                  label="Address Line 1"
-                  required
-                  value={formData.address_line_1 || ""}
-                  onChange={(v) => updateField("address_line_1", v)}
-                  placeholder="Street address, P.O. box"
-                />
-                <Input
-                  label="Address Line 2"
-                  required
-                  value={formData.address_line_2 || ""}
-                  onChange={(v) => updateField("address_line_2", v)}
-                  placeholder="Apartment, suite, unit, building, floor, etc."
-                />
-                <Input
-                  label="Address Line 3"
-                  value={formData.address_line_3 || ""}
-                  onChange={(v) => updateField("address_line_3", v)}
-                  placeholder="City, State/Province, Region (optional)"
-                />
-              </div>
-
-              {isCustomPlan && (
-                <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${
-                  agreedToPrivacyPolicy
-                    ? "border-secondary-400/30 bg-secondary-500/[0.07]"
-                    : "border-white/10 bg-black/10 hover:border-white/20"
-                }`}>
-                  <input
-                    type="checkbox"
-                    checked={agreedToPrivacyPolicy}
-                    onChange={(event) => setAgreedToPrivacyPolicy(event.target.checked)}
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-secondary-500"
-                  />
-                  <span className="text-xs leading-relaxed text-gray-400">
-                    I have read and agree to the{" "}
-                    <a
-                      href="/privacy-policies/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium text-secondary-400 hover:text-secondary-300"
-                    >
-                      {privacyPolicy ? `${privacyPolicy.title} (${privacyPolicy.version})` : "Privacy Policy"}
-                    </a>.
-                  </span>
-                </label>
-              )}
-
-              <button
-                type="button"
-                onClick={() => void handleOrganizationDetailsNext()}
-                disabled={checkingRegistrationEmail || (isCustomPlan && (!agreedToPrivacyPolicy || !privacyPolicy))}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isCustomPlan ? "Submit Your Plan for Review" : checkingRegistrationEmail ? "Checking email…" : "Next: Admin Account"}
-                <ArrowRight size={16} />
-              </button>
-            </div>
-
-            <p className="text-center text-sm text-gray-400 mt-4">
-              Already have an account?{" "}
-              <Link href="/login" className="text-secondary-400 hover:text-secondary-300 font-medium">
-                Log in
-              </Link>
-            </p>
+  return <div className="relative min-h-screen px-4 pb-12 pt-16 text-white sm:py-12">
+    <div className="pointer-events-none absolute inset-0 overflow-hidden"><div className="absolute left-1/4 top-1/3 h-80 w-80 rounded-full bg-primary-600/15 blur-3xl" /><div className="absolute bottom-1/3 right-1/4 h-60 w-60 rounded-full bg-accent-500/10 blur-3xl" /></div>
+    <div className="glass relative mx-auto max-w-4xl overflow-hidden rounded-3xl border-white/10 pt-6 shadow-2xl shadow-black/20 sm:pt-8">
+      <div className="mb-5 px-5 text-center sm:px-8"><Link href="/" className="inline-block"><Image src={logo} alt="Audito" width={110} height={30} className="mx-auto h-8" priority /></Link><p className="mb-1 mt-3 text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Create your workspace</p></div>
+      {done ? company
+        ? <div className="p-8 text-center sm:p-12"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-secondary-500/15 text-secondary-300"><Check size={30} /></div><h1 className="mt-5 text-2xl font-semibold text-white">Check your email</h1><p className="mx-auto mt-3 max-w-lg text-sm text-gray-400">Verify your email to continue to payment for your package.</p><Link href="/" className={`${primaryClass} mt-7`}>Return home <ArrowRight size={18} /></Link></div>
+        : <div className="mx-auto max-w-xl p-6 sm:p-10">
+          <div className="text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-secondary-500/15 text-secondary-300"><Check size={30} /></div>
+            <h1 className="mt-5 text-2xl font-semibold text-white">Request sent for review</h1>
+            <p className="mx-auto mt-2 max-w-md text-sm text-gray-400">Thank you, {contact.contactName.trim().split(" ")[0] || "there"}. We sent the details of your {accountType} request to <span className="text-gray-200">{contact.email.trim()}</span>.</p></div>
+          {!verificationSent && <p role="alert" className="mt-6 rounded-xl border border-amber-400/25 bg-amber-400/10 p-3 text-sm text-amber-100">We saved your request but could not send the verification email. Contact the Audito team below and we will continue your review.</p>}
+          <ol className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm">
+            {[
+              ["Verify your email", verificationSent ? "Open the email from Audito and select Verify Email. The link works for 48 hours." : "The Audito team will verify your request with you."],
+              ["We review your request", `Our team checks your ${contact.departments || "–"} departments and ${contact.lines ? Number(contact.lines).toLocaleString() : "–"} audit lines per audit.`],
+              ["You receive a quote", "We email your price and the next steps to set up your workspace."],
+            ].map(([title, text], index) => <li key={title} className="flex gap-3"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-secondary-500/15 text-xs font-bold text-secondary-300">{index + 1}</span><span><span className="block font-semibold text-white">{title}</span><span className="block text-gray-400">{text}</span></span></li>)}
+          </ol>
+          <div className="mt-4"><AuditoContactCard contact={teamContact} title="Questions? Contact the Audito team" description="Message us on WhatsApp or by email. Mention your organization name." message={`Hello Audito team, I sent a ${accountType} account request for ${contact.organizationName.trim()}.`} /></div>
+          <Link href="/" className={`${primaryClass} mt-6`}>Return home <ArrowRight size={18} /></Link>
+        </div> : <>
+        <Progress step={step} contactMode={contactMode} />
+        <p className="mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8">Step {step + 1} of {contactMode ? 2 : 3} — {step === 0 ? "Account Type" : company ? step === 1 ? "Organization Details" : "Admin Account" : "Contact Details"}</p>
+        {step > 0 && error && <p role="alert" className="mx-5 mb-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400 sm:mx-8">{error}</p>}
+        {step === 0 && <AccountTypeStep
+          selectedGroup={accountType}
+          selectedEntityType={entityType}
+          companyLevels={selection.company_levels}
+          hasPackage={!contactMode && Boolean(quote)}
+          defaultGroup={contactMode ? "Customer" : "Company"}
+          mode={contactMode ? "contact" : "package"}
+          packageSetupHref={packageSetupHref}
+          onGroupSelect={chooseAccount}
+          onEntityTypeSelect={(type) => { setEntityType(type); setError(""); }}
+          onNext={continueFromAccount}
+          error={error}
+        />}
+        {step === 1 && company && <form onSubmit={continueFromOrganization} className="p-5 pt-1 sm:p-8 sm:pt-2">
+          <div className="mb-7 flex items-start gap-3">
+            <button type="button" onClick={back} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"><ArrowLeft size={18} /></button>
+            <div><h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Organization details</h3><p className="mt-1 text-sm leading-relaxed text-gray-400">Tell us about the organization this Audito workspace belongs to.</p></div>
           </div>
-        )}
-
-        {/* ─── Step 5: Admin Account ─────────────────────────────────── */}
-        {step === 5 && (
-          <form onSubmit={handleSubmit} className="p-5 pt-1 sm:p-8 sm:pt-2">
-            <div className="mb-7 flex items-start gap-3">
-              <button
-                type="button"
-                onClick={() => setStep(isCustomPlan && !customLimitsReady ? 3 : 4)}
-                aria-label="Go back"
-                className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"
-              >
-                <ArrowLeft size={18} />
-              </button>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Admin account</h3>
-                  <span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-400">{activeConfig?.label}</span>
-                </div>
-                <p className="mt-1 text-sm leading-relaxed text-gray-400">Create the primary administrator who will manage this workspace.</p>
+          <div className="space-y-5">
+            {input("Organization Name", organization.name, (value) => setOrganization((current) => ({ ...current, name: value })), "text", true, "Enter organization name")}
+            <div>
+              <label className="block text-sm font-medium text-gray-300">Organization logo <span className="text-xs font-normal text-gray-500">(optional)</span></label>
+              <p className="mt-0.5 text-xs text-gray-500">PNG or JPEG. We crop and optimize it for your report header.</p>
+              <input ref={logoInput} type="file" accept="image/png,image/jpeg" className="hidden" onChange={chooseLogo} />
+              <div className="mt-2 flex min-h-20 items-center gap-3 rounded-xl border border-dashed border-white/15 bg-black/10 p-3">
+                {organization.logo ? <img src={organization.logo} alt="Organization logo preview" className="h-14 w-20 rounded-lg border border-white/10 bg-white object-contain p-1" /> : <div className="flex h-14 w-20 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-gray-500"><ImagePlus size={20} /></div>}
+                <div className="min-w-0 flex-1"><p className="text-sm font-medium text-white">{organization.logo ? "Logo selected" : "Add your organization logo"}</p><p className="mt-0.5 text-xs text-gray-500">Optional branding for audit and CAP reports.</p></div>
+                <div className="flex shrink-0 gap-2"><button type="button" onClick={() => logoInput.current?.click()} className="rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-medium text-gray-200 hover:bg-white/10">{organization.logo ? "Replace" : "Select"}</button>{organization.logo && <button type="button" onClick={() => setOrganization((current) => ({ ...current, logo: null }))} className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/20">Remove</button>}</div>
               </div>
+              <OrganizationLogoCropModal open={Boolean(logoFile)} file={logoFile} initialCrop={logoCrop} onClose={() => setLogoFile(null)} onError={setError} onApply={(value, crop) => { setOrganization((current) => ({ ...current, logo: value })); setLogoCrop(crop); setLogoFile(null); }} />
             </div>
-
-            {error && (
-              <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-                <p className="text-sm text-red-400">{error}</p>
-              </div>
-            )}
-
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input
-                  label="First Name"
-                  required
-                  value={formData.first_name}
-                  onChange={(v) => updateField("first_name", v)}
-                  placeholder="First name"
-                />
-                <Input
-                  label="Last Name"
-                  required
-                  value={formData.last_name}
-                  onChange={(v) => updateField("last_name", v)}
-                  placeholder="Last name"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300">
-                    Email <span className="text-red-400">*</span>
-                    <span className="ml-1.5 text-[10px] text-secondary-500 font-normal">(same as organization email)</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    readOnly
-                    className="min-h-11 w-full cursor-not-allowed rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-sm text-white/50 placeholder-gray-500"
-                    placeholder="auto-filled from organization email"
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300">Phone number <span className="text-red-400">*</span></label>
-                  <div className="flex">
-                    {dialCode && (
-                      <span className="inline-flex h-[46px] items-center rounded-l-xl border border-r-0 border-white/10 bg-white/[0.04] px-3 text-sm text-gray-400">
-                        {dialCode}
-                      </span>
-                    )}
-                    <input
-                      type="text"
-                      value={formData.phone_number || ""}
-                      onChange={(e) => updateField("phone_number", e.target.value)}
-                      placeholder="Phone number"
-                      className={`h-[46px] w-full border border-white/10 bg-black/10 px-4 py-3 text-sm text-white placeholder-gray-500 transition-all focus:border-secondary-400/60 focus:outline-none focus:ring-4 focus:ring-secondary-500/10 ${dialCode ? "rounded-r-xl" : "rounded-xl"
-                        }`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-          
-
-              {/* Password Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300">
-                    Password <span className="text-red-400">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={formData.password}
-                      onChange={(e) => updateField("password", e.target.value)}
-                      className="min-h-11 w-full rounded-xl border border-white/10 bg-black/10 px-4 py-3 pr-12 text-sm text-white placeholder-gray-500 transition-all focus:border-secondary-400/60 focus:outline-none focus:ring-4 focus:ring-secondary-500/10"
-                      placeholder="Strong password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                    >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300">
-                    Confirm Password <span className="text-red-400">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showConfirmPassword ? "text" : "password"}
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className={`min-h-11 w-full rounded-xl border bg-black/10 px-4 py-3 pr-12 text-sm text-white placeholder-gray-500 transition-all focus:outline-none focus:ring-4 ${
-                        confirmPassword && formData.password !== confirmPassword 
-                        ? "border-red-500/50 focus:border-red-500 focus:ring-red-500/10" 
-                        : "border-white/10 focus:border-secondary-400/60 focus:ring-secondary-500/10"
-                      }`}
-                      placeholder="Repeat password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                    >
-                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Password Requirements Checklist */}
-              {formData.password && (
-                <div className="animate-in fade-in slide-in-from-top-2 rounded-2xl border border-white/[0.08] bg-black/10 p-4 duration-300">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[10px] text-gray-500 uppercase tracking-wider">Security Strength</span>
-                    <span className={`text-[10px] uppercase tracking-wider ${passwordStrength.text}`}>{passwordStrength.label}</span>
-                  </div>
-                  <div className="h-1 bg-white/5 rounded-full overflow-hidden mb-4">
-                    <div 
-                      className={`h-full transition-all duration-500 ${passwordStrength.color}`}
-                      style={{ width: passwordStrength.width }}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    {[
-                      { key: "length", label: "8+ Characters" },
-                      { key: "upper", label: "Uppercase Letter" },
-                      { key: "lower", label: "Lowercase Letter" },
-                      { key: "number", label: "One Number" },
-                      { key: "special", label: "Special Character (@$!%*?&#)" },
-                    ].map((req) => (
-                      <div key={req.key} className="flex items-center gap-2">
-                        <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border transition-colors ${
-                          passwordRequirements[req.key as keyof typeof passwordRequirements] 
-                          ? "bg-secondary-500/20 border-secondary-500/50" 
-                          : "border-white/10"
-                        }`}>
-                          {passwordRequirements[req.key as keyof typeof passwordRequirements] && <Check size={8} className="text-secondary-400" />}
-                        </div>
-                        <span className={`text-[10px] font-medium transition-colors ${
-                          passwordRequirements[req.key as keyof typeof passwordRequirements] ? "text-white" : "text-gray-500"
-                        }`}>{req.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Privacy Policy Agreement */}
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <div className="relative mt-0.5">
-                  <input
-                    type="checkbox"
-                    checked={agreedToPrivacyPolicy}
-                    onChange={(e) => setAgreedToPrivacyPolicy(e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${
-                    agreedToPrivacyPolicy
-                      ? "bg-secondary-500 border-secondary-500"
-                      : "border-white/30 bg-white/5 group-hover:border-white/50"
-                  }`}>
-                    {agreedToPrivacyPolicy && (
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path d="M2.5 6L5 8.5L9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary-950" />
-                      </svg>
-                    )}
-                  </div>
-                </div>
-                <span className="text-sm text-gray-400 leading-snug">
-                  I agree to the{" "}
-                  <a
-                    href="/privacy-policies/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-secondary-400 hover:text-secondary-300 font-medium underline underline-offset-2"
-                  >
-                    {privacyPolicy ? `${privacyPolicy.title} (${privacyPolicy.version})` : "Privacy Policy"}
-                  </a>
-                  {" "}and acknowledge that my data will be processed in accordance with it.
-                </span>
-              </label>
-
-              <button
-                type="submit"
-                disabled={loading || !agreedToPrivacyPolicy || !privacyPolicy}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-secondary-400 to-secondary-500 py-3 font-semibold text-primary-950 shadow-lg shadow-secondary-950/25 transition-all hover:from-secondary-300 hover:to-secondary-400 active:translate-y-px disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50"
-              >
-                {loading ? <Loader2 size={18} className="animate-spin" /> : "Create Account"}
-              </button>
+            {entityType === "Company" && <div><label className="mb-2 block text-sm font-medium text-gray-300">Company Type <span className="text-red-400">*</span></label><select required value={organization.companyType} onChange={(event) => setOrganization((current) => ({ ...current, companyType: event.target.value }))} className={fieldClass}><option value="">Select company type</option><option value="Ready to sell">Ready to sell</option><option value="Ready to bill">Ready to bill</option></select></div>}
+            {input("Registration Number", organization.registrationNumber, (value) => setOrganization((current) => ({ ...current, registrationNumber: value })), "text", false, "Business registration number")}
+            {input("Organization Email", organization.email, (value) => setOrganization((current) => ({ ...current, email: value })), "email", true, "info@company.com")}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <CountryField countries={countries} value={organization.country}
+                onChange={(country) => setOrganization((current) => ({ ...current, country: country.country, timezone: COUNTRY_TIMEZONE_MAP[country.country_code] || "" }))} />
+              <div><label className="mb-2 block text-sm font-medium text-gray-300">Phone number <span className="text-red-400">*</span></label><div className="flex">{dialCode && <span className="inline-flex items-center rounded-l-xl border border-r-0 border-white/10 bg-white/[0.04] px-3 text-sm text-gray-400">{dialCode}</span>}<input type="tel" required value={organization.phone} onChange={(event) => setOrganization((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone number" className={fieldClass + (dialCode ? " rounded-l-none" : "")} /></div></div>
             </div>
-
-            <p className="text-center text-sm text-gray-400 mt-4">
-              Already have an account?{" "}
-              <Link href="/login" className="text-secondary-400 hover:text-secondary-300 font-medium">
-                Log in
-              </Link>
-            </p>
-          </form>
-        )}
-      </div>
-    </div>
-  );
+            {organization.timezone && <div className="-mt-1 flex items-center gap-1.5 rounded-lg border border-white/[0.06] bg-black/10 px-3 py-2 text-[11px] text-gray-500">Timezone auto-detected: <span className="font-medium text-secondary-500">{organization.timezone}</span></div>}
+            <div className="space-y-5 border-t border-white/[0.07] pt-5">
+              {input("Address Line 1", organization.address1, (value) => setOrganization((current) => ({ ...current, address1: value })), "text", true, "Street address, P.O. box")}
+              {input("Address Line 2", organization.address2, (value) => setOrganization((current) => ({ ...current, address2: value })), "text", true, "Apartment, suite, unit, building, floor, etc.")}
+              {input("Address Line 3", organization.address3, (value) => setOrganization((current) => ({ ...current, address3: value })), "text", false, "City, State/Province, Region (optional)")}
+            </div>
+            {quote && <div className="rounded-2xl border border-secondary-500/20 bg-secondary-500/[0.07] p-4 text-xs text-gray-300"><strong className="text-white">{entityType} workspace</strong> · {hierarchySelectionLabel(selection.company_levels)} · {selection.departments} departments · {selection.lines_per_audit} audit lines · {quote.tokens.toLocaleString()} tokens · {money(quote.total)} total <Link href={packageSetupHref} className="ml-2 text-secondary-400 underline">Edit package</Link></div>}
+            <button type="submit" disabled={busy} className={primaryClass}>{busy ? "Checking email..." : "Next: Admin Account"} <ArrowRight size={16} /></button>
+          </div>
+          <p className="mt-4 text-center text-sm text-gray-400">Already have an account? <Link href="/login" className="font-medium text-secondary-400 hover:text-secondary-300">Log in</Link></p>
+        </form>}
+        {step === 2 && company && <form onSubmit={submitCompany} className="p-5 pt-1 sm:p-8 sm:pt-2">
+          <div className="mb-7 flex items-start gap-3"><button type="button" onClick={back} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"><ArrowLeft size={18} /></button><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Admin account</h3><span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-400">Company</span></div><p className="mt-1 text-sm leading-relaxed text-gray-400">Create the primary administrator who will manage this workspace.</p></div></div>
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{input("First Name", administrator.firstName, (value) => setAdministrator((current) => ({ ...current, firstName: value })), "text", true, "First name")}{input("Last Name", administrator.lastName, (value) => setAdministrator((current) => ({ ...current, lastName: value })), "text", true, "Last name")}</div>
+            <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-2">
+              <div><label className="mb-2 block text-sm font-medium text-gray-300">Email <span className="text-red-400">*</span><span className="ml-1.5 text-[10px] font-normal text-secondary-500">(same as organization email)</span></label><input type="email" value={administrator.email} readOnly className="min-h-11 w-full cursor-not-allowed rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-sm text-white/50" /></div>
+              <div><label className="mb-2 block text-sm font-medium text-gray-300">Phone number <span className="text-red-400">*</span></label><div className="flex">{dialCode && <span className="inline-flex items-center rounded-l-xl border border-r-0 border-white/10 bg-white/[0.04] px-3 text-sm text-gray-400">{dialCode}</span>}<input type="tel" required value={administrator.phone} onChange={(event) => setAdministrator((current) => ({ ...current, phone: event.target.value }))} className={fieldClass + (dialCode ? " rounded-l-none" : "")} placeholder="Phone number" /></div></div>
+            </div>
+            <div className="space-y-5 border-t border-white/[0.07] pt-5">
+              <div><label className="mb-2 block text-sm font-medium text-gray-300">Password <span className="text-red-400">*</span></label><div className="relative"><input type={showPassword ? "text" : "password"} required value={administrator.password} onChange={(event) => setAdministrator((current) => ({ ...current, password: event.target.value }))} className={fieldClass + " pr-12"} placeholder="Create a strong password" /><button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((shown) => !shown)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
+              <div><label className="mb-2 block text-sm font-medium text-gray-300">Confirm Password <span className="text-red-400">*</span></label><div className="relative"><input type={showConfirmPassword ? "text" : "password"} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={fieldClass + " pr-12"} placeholder="Repeat password" /><button type="button" aria-label={showConfirmPassword ? "Hide confirmation" : "Show confirmation"} onClick={() => setShowConfirmPassword((shown) => !shown)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">{showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>{confirmPassword && administrator.password !== confirmPassword && <p className="mt-1 text-xs text-red-400">Passwords do not match.</p>}</div>
+            </div>
+            {administrator.password && <div className="rounded-2xl border border-white/[0.08] bg-black/10 p-4"><p className="mb-3 text-[10px] uppercase tracking-wider text-gray-500">Security strength</p><div className="mb-4 h-1 overflow-hidden rounded-full bg-white/5"><div className={"h-full transition-all " + (Object.values(passwordRequirements).every(Boolean) ? "w-full bg-emerald-500" : Object.values(passwordRequirements).filter(Boolean).length > 2 ? "w-2/3 bg-yellow-500" : "w-1/3 bg-red-500")} /></div><div className="grid grid-cols-2 gap-x-4 gap-y-2">{[{ key: "length", label: "8+ Characters" }, { key: "upper", label: "Uppercase Letter" }, { key: "lower", label: "Lowercase Letter" }, { key: "number", label: "One Number" }, { key: "special", label: "Special Character (@$!%*?&#)" }].map((rule) => <div key={rule.key} className="flex items-center gap-2"><span className={"flex h-3.5 w-3.5 items-center justify-center rounded-full border " + (passwordRequirements[rule.key as keyof typeof passwordRequirements] ? "border-secondary-500/50 bg-secondary-500/20" : "border-white/10")}>{passwordRequirements[rule.key as keyof typeof passwordRequirements] && <Check size={8} className="text-secondary-400" />}</span><span className={"text-[10px] font-medium " + (passwordRequirements[rule.key as keyof typeof passwordRequirements] ? "text-white" : "text-gray-500")}>{rule.label}</span></div>)}</div></div>}
+            {quote && pricing && <div className="rounded-2xl border border-secondary-500/20 bg-secondary-500/[0.07] p-4 text-xs text-gray-300"><strong className="text-white">Your package</strong><p className="mt-1">{entityType} workspace · {hierarchySelectionLabel(selection.company_levels)} · {selection.departments} departments · {selection.lines_per_audit} audit lines</p><p className="mt-1">1 token = 1 audit line at {money(pricing.token_unit_price)} per token. {quote.tokens.toLocaleString()} tokens · {money(quote.total)} total.</p></div>}
+            <label className="group flex cursor-pointer items-start gap-3"><span className="relative mt-0.5"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="peer sr-only" /><span className={"flex h-5 w-5 items-center justify-center rounded border transition-all " + (agreed ? "border-secondary-500 bg-secondary-500" : "border-white/30 bg-white/5 group-hover:border-white/50")}>{agreed && <Check size={12} className="text-primary-950" />}</span></span><span className="text-sm leading-snug text-gray-400">I agree to the <Link href="/privacy-policies" target="_blank" className="font-medium text-secondary-400 underline underline-offset-2 hover:text-secondary-300">{privacy ? privacy.title + " (" + privacy.version + ")" : "Privacy Policy"}</Link> and acknowledge that my data will be processed in accordance with it.</span></label>
+            <button type="submit" disabled={busy || !quote || !privacy || !agreed} className={primaryClass}>{busy ? <Loader2 size={18} className="animate-spin" /> : "Create Account"}</button>
+          </div>
+          <p className="mt-4 text-center text-sm text-gray-400">Already have an account? <Link href="/login" className="font-medium text-secondary-400 hover:text-secondary-300">Log in</Link></p>
+        </form>}
+        {step === 1 && !company && <form onSubmit={submitContact} className="p-5 pt-1 sm:p-8 sm:pt-2">
+          <div className="mb-7 flex items-start gap-3"><button type="button" onClick={back} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"><ArrowLeft size={18} /></button><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Contact the Audito team</h3><span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-400">{accountType}</span></div><p className="mt-1 text-sm leading-relaxed text-gray-400">Tell us about the organization requesting a {entityType} account.</p></div></div>
+          <div className="space-y-5">
+            {input("Organization Name", contact.organizationName, (value) => setContact((current) => ({ ...current, organizationName: value })), "text", true, "Enter organization name")}
+            {input("Your Name", contact.contactName, (value) => setContact((current) => ({ ...current, contactName: value })), "text", true, "Your full name")}
+            {input("Email", contact.email, (value) => setContact((current) => ({ ...current, email: value })), "email", true, "you@company.com")}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <CountryField countries={countries} value={contact.country} onChange={(country) => setContact((current) => ({ ...current, country: country.country }))} />
+              <div><label className="mb-2 block text-sm font-medium text-gray-300">Phone number <span className="text-red-400">*</span></label><div className="flex">{contactDialCode && <span className="inline-flex items-center rounded-l-xl border border-r-0 border-white/10 bg-white/[0.04] px-3 text-sm text-gray-400">{contactDialCode}</span>}<input type="tel" required value={contact.phone} onChange={(event) => setContact((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone number" className={fieldClass + (contactDialCode ? " rounded-l-none" : "")} /></div></div>
+            </div>
+            <fieldset className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              <legend className="px-1 text-sm font-semibold text-white">Workspace size</legend>
+              <p className="-mt-1 mb-4 text-xs text-gray-400">We use these to prepare your quote. An estimate is fine.</p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="review-departments" className="mb-2 block text-sm font-medium text-gray-300">Departments <span className="text-red-400">*</span></label>
+                  <input id="review-departments" type="number" inputMode="numeric" min={1} max={10000} step={1} required value={contact.departments} placeholder="For example: 12"
+                    onChange={(event) => setContact((current) => ({ ...current, departments: event.target.value }))} className={fieldClass} aria-describedby="review-departments-help" />
+                  <p id="review-departments-help" className="mt-1.5 text-xs text-gray-500">Areas you will audit, from 1 to 10,000.</p>
+                </div>
+                <div>
+                  <label htmlFor="review-lines" className="mb-2 block text-sm font-medium text-gray-300">Audit lines per audit <span className="text-red-400">*</span></label>
+                  <input id="review-lines" type="number" inputMode="numeric" min={1} max={1000000} step={1} required value={contact.lines} placeholder="For example: 150"
+                    onChange={(event) => setContact((current) => ({ ...current, lines: event.target.value }))} className={fieldClass} aria-describedby="review-lines-help" />
+                  <p id="review-lines-help" className="mt-1.5 text-xs text-gray-500">Questions or checks in one audit.</p>
+                </div>
+              </div>
+            </fieldset>
+            <div><label className="mb-2 block text-sm font-medium text-gray-300">Additional details</label><textarea value={contact.notes} onChange={(event) => setContact((current) => ({ ...current, notes: event.target.value }))} className={fieldClass} rows={4} placeholder="Tell us what you need, for example sites, audit types or timelines" /></div>
+            <button type="submit" disabled={busy} className={primaryClass}>{busy ? <Loader2 size={18} className="animate-spin" /> : "Send for Review"}<ArrowRight size={16} /></button>
+            <AuditoContactCard contact={teamContact} title="Prefer to talk first?" description="Message us on WhatsApp or send an email." />
+          </div>
+          <p className="mt-4 text-center text-sm text-gray-400">Already have an account? <Link href="/login" className="font-medium text-secondary-400 hover:text-secondary-300">Log in</Link></p>
+        </form>}
+      </>}
+    </div></div>;
 }
 
-/* ─── Page Export ─────────────────────────────────────────────────── */
-
-export default function RegisterPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center bg-transparent">
-          <Loader2 size={32} className="animate-spin text-secondary-400" />
-        </div>
-      }
-    >
-      <RegisterForm />
-    </Suspense>
-  );
-}
+export default function RegisterPage() { return <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><Loader2 size={32} className="animate-spin text-secondary-400" /></div>}><RegistrationContent /></Suspense>; }

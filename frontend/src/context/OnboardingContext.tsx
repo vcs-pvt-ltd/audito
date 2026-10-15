@@ -3,11 +3,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { authApi, auditApi, checklistApi, orgTreeApi, usersApi } from "@/lib/api";
+import { authApi, auditApi, checklistApi, orgTreeApi, usersApi, organizationAiSetupApi } from "@/lib/api";
 
 type StepState = "done" | "pending";
+type OrganizationSetupMethod = "ai" | "manual" | null;
 
-interface StepItem {
+export interface StepItem {
   key: string;
   title: string;
   description: string;
@@ -17,10 +18,23 @@ interface StepItem {
   optional?: boolean;
 }
 
+interface OnboardingCounts {
+  entities: number;
+  auditors: number;
+  organizationUsers: number;
+  checklists: number;
+  audits: number;
+}
+
 interface OnboardingContextType {
   loading: boolean;
   busy: boolean;
+  /** True once saved progress has been read from this browser. */
+  hydrated: boolean;
   isActive: boolean;
+  organizationSetupMethod: OrganizationSetupMethod;
+  counts: OnboardingCounts;
+  entityOrder: Array<{ slug: string; label: string; level: number }>;
   startOnboarding: () => void;
   stopOnboardingLocal: () => void;
   started: boolean;
@@ -38,11 +52,13 @@ interface OnboardingContextType {
   goNext: () => void;
   goBack: () => void;
   openCurrentStep: () => void;
+  goToStep: (index: number) => void;
   refreshProgress: () => Promise<void>;
   completeOnboarding: () => Promise<void>;
   skipOnboarding: () => Promise<void>;
+  resumeOnboarding: () => Promise<void>;
   showCompletionModal: boolean;
-  closeCompletionModal: () => void;
+  closeCompletionModal: (href?: string) => void;
   totalSteps: number;
 }
 
@@ -90,6 +106,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [isActive, setIsActive] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const [organizationSetupMethod, setOrganizationSetupMethod] = useState<OrganizationSetupMethod>(null);
 
   const [structureCount, setStructureCount] = useState(0);
   const [orgDone, setOrgDone] = useState(false);
@@ -97,6 +115,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   const [organizationUserCount, setOrganizationUserCount] = useState(0);
   const [auditorCount, setAuditorCount] = useState(0);
   const [checklistCount, setChecklistCount] = useState(0);
+  const [combinedSetupDone, setCombinedSetupDone] = useState(false);
   const [auditCount, setAuditCount] = useState(0);
 
   const filteredEntityOrder = useMemo(() => {
@@ -128,11 +147,12 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       const order = filteredEntityOrder;
       const organizationUserLevels = organizationUserOrder;
 
-      const [treeRes, auditorsRes, checklistRes, auditRes, ...restRes] = await Promise.all([
+      const [treeRes, auditorsRes, checklistRes, auditRes, setupRes, ...restRes] = await Promise.all([
         orgTreeApi.getTree(accessToken),
         usersApi.list(accessToken, "Auditor"),
         checklistApi.list(accessToken),
         auditApi.list(accessToken),
+        organizationAiSetupApi.completion(accessToken),
         ...order.map((t) => orgTreeApi.listEntities(accessToken, t.label)),
         ...organizationUserLevels.map((h) => usersApi.list(accessToken, h.userType)),
       ]);
@@ -141,6 +161,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       const organizationUsersRes = restRes.slice(order.length);
 
       setStructureCount(order.length);
+      setCombinedSetupDone(Boolean(setupRes.success && setupRes.data?.completed));
 
       if (treeRes.success && treeRes.data) {
         const tree = (treeRes.data as any).tree;
@@ -168,16 +189,34 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     if (typeof window === "undefined") return;
     const active = window.localStorage.getItem("audito_onboarding_active") === "1";
     const step = Number(window.localStorage.getItem("audito_onboarding_step") || "0");
+    const savedMethod = window.localStorage.getItem("audito_onboarding_organization_method");
     setIsActive(active);
     setStarted(active);
+    setOrganizationSetupMethod(savedMethod === "ai" || savedMethod === "manual" ? savedMethod : null);
     if (!Number.isNaN(step)) setCurrentStep(step);
+    setHydrated(true);
   }, []);
 
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentType = searchParams.get("type");
   const searchKey = searchParams.toString();
+  const isManualOrganizationSetup = searchParams.get("manual") === "1" || organizationSetupMethod === "manual";
   const isAdmin = admin?.role === "admin";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let method: OrganizationSetupMethod | undefined;
+    if (pathname === "/organization/setup-choice") method = null;
+    else if (searchParams.get("manual") === "1") method = "manual";
+    else if (pathname.startsWith("/organization/ai-setup")) method = "ai";
+
+    if (method === undefined) return;
+    setOrganizationSetupMethod(method);
+    if (method) window.localStorage.setItem("audito_onboarding_organization_method", method);
+    else window.localStorage.removeItem("audito_onboarding_organization_method");
+  }, [pathname, searchKey, searchParams]);
 
   const steps = useMemo<StepItem[]>(() => {
     if (!isAdmin) return [];
@@ -186,41 +225,81 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     const organizationUserLevels = organizationUserOrder;
 
     const baseSteps: StepItem[] = [];
+    // A saved combined setup keeps the guided order even when browser storage
+    // was cleared or the admin continues on another device.
+    const combinedAi = (organizationSetupMethod === "ai" || (combinedSetupDone && organizationSetupMethod !== "manual"))
+      && admin?.account_type !== "Audit Firm";
 
-    // Mission 1: Entities (if any below us)
-    if (order.length > 0) {
+    // Manual setup creates reusable entity records before mapping them. AI setup
+    // creates and maps the required entities as part of one organization mission.
+    if (order.length > 0 && organizationSetupMethod === "manual") {
       baseSteps.push({
         key: "entities",
         title: "Create Entities",
-        description: `Add your organization units (${order.map(o => o.label).slice(0, 2).join(", ")}...).`,
+        description: "Add the areas your organization has, such as factories or departments. You arrange them in the next step.",
         instructions: [
-          "Navigate through different entity levels",
-          "Create at least one entity to proceed",
-          "One entity is enough to complete this mission"
+          "Add the entities of this type that you use",
+          "Leave a type empty if your organization does not have it",
+          "Add at least one entity in total"
         ],
-        href: `/structure/list?type=${order[0].slug}`,
+        href: "/structure?manual=1",
         state: entityCount > 0 ? "done" : "pending",
       });
     }
 
-    // Mission 2: Org Mapping (only if we can have children)
-    if (order.length > 0) {
+    if (order.length > 0 || combinedAi) {
       baseSteps.push({
-        key: "org-mapping",
-        title: "Organization Mapping",
-        description: "Link your entities to define the reporting hierarchy.",
-        instructions: ["Open organization tree", "Link parent-child entities", "Establish the data flow"],
-        href: "/organization",
-        state: orgDone ? "done" : "pending",
+        key: "organization-setup",
+        title: "Set Up Organization",
+        description: organizationSetupMethod === "manual"
+          ? "Place each entity under the area it reports to, then save your organization structure."
+          : organizationSetupMethod === "ai" || combinedAi
+            ? "Upload your audit sheet, review what Audito prepared, then save your organization and checklist."
+          : "Choose how to set up your organization: with AI from a document, or by yourself.",
+        instructions: organizationSetupMethod === "manual"
+          ? [
+              "Place each entity under the correct parent",
+              "Check the complete structure",
+              "Save the structure to continue"
+            ]
+          : organizationSetupMethod === "ai" || combinedAi
+            ? [
+                combinedAi ? "Upload your existing audit sheet" : "Upload a document or describe your organization",
+                combinedAi ? "Review your organization and checklist" : "Correct the suggestion with AI or by hand",
+                combinedAi ? "Confirm the checklist details and save" : "Review and apply the final structure"
+              ]
+          : [
+              "Choose AI setup or manual setup",
+              "Review the organization structure",
+              "Save it before adding your team"
+            ],
+        // Once the AI setup is saved it does not run again; the organization page shows the result.
+        href: combinedAi ? (combinedSetupDone ? "/organization" : "/organization/ai-setup?onboarding=1") : "/organization/setup-choice",
+        state: (combinedAi ? combinedSetupDone || (orgDone && checklistCount > 0) : orgDone) ? "done" : "pending",
       });
     }
+
+    const checklistStep = (fromAiSetup: boolean): StepItem => ({
+      key: "checklists",
+      title: "Create Checklist",
+      description: fromAiSetup
+        ? "Your AI setup creates this checklist from your audit sheet. Open it to check the questions, or create another checklist."
+        : "Create the questions your auditors answer during an audit.",
+      instructions: fromAiSetup
+        ? ["Open the checklist made from your audit sheet", "Check its questions and the areas they apply to", "Create another checklist if you need one"]
+        : ["Enter the checklist name and details", "Set scoring and how often it repeats", "Add questions and choose where they apply"],
+      href: "/checklists",
+      state: checklistCount > 0 ? "done" : "pending",
+    });
+    // The AI setup makes the checklist together with the organization, so it comes next.
+    if (admin?.account_type !== "Audit Firm" && combinedAi) baseSteps.push(checklistStep(true));
 
     // Mission 3: Auditors (Everyone can have auditors)
     baseSteps.push({
       key: "auditors",
       title: "Create Auditors",
-      description: "Add the personnel who will perform the actual audits.",
-      instructions: ["Add at least one auditor", "Assign to the relevant firm/branch", "Ensure they receive their invite"],
+      description: "Add the people who carry out your audits. Each auditor gets an invitation to sign in.",
+      instructions: ["Add at least one auditor", "Check their email address", "They receive an invitation to sign in"],
       href: "/users/list?type=auditors",
       state: auditorCount > 0 ? "done" : "pending",
     });
@@ -230,11 +309,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       baseSteps.push({
         key: "organization-users",
         title: "Create Organization Users",
-        description: "Invite users and choose the organization areas they can access.",
+        description: "Invite people who need to see audit results, and choose the areas they can see.",
         instructions: [
           "Add an organization user",
-          "Select permitted entities from the organization tree",
-          "Choose exact or whole-branch access"
+          "Choose the areas they can see",
+          "Pick one area only, or the area and everything below it"
         ],
         href: `/users/list?type=${organizationUserLevels[0].slug}`,
         state: organizationUserCount > 0 ? "done" : "pending",
@@ -242,40 +321,28 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       });
     }
 
-    // Mission 5: Checklists (Optional or skipped for Audit Firms)
-    if (admin?.account_type !== "Audit Firm") {
-      baseSteps.push({
-        key: "checklists",
-        title: "Create Checklist",
-        description: "Design your first audit questionnaire.",
-        instructions: [
-          "Enter basic checklist details",
-          "Configure scoring and repeat settings",
-          "Add questions and assign them to entities"
-        ],
-        href: "/checklists",
-        state: checklistCount > 0 ? "done" : "pending",
-      });
-    }
+    // Mission 5: Checklists (skipped for Audit Firms; after the organization for AI setup)
+    if (admin?.account_type !== "Audit Firm" && !combinedAi) baseSteps.push(checklistStep(false));
     // Mission 6: Audits
     if (admin?.account_type !== "Audit Firm") {
       baseSteps.push({
         key: "audits",
         title: "Assign First Audit",
-        description: "Finalize your setup by launching your first audit mission.",
-        instructions: ["Select a checklist template", "Choose target entities and auditors", "Set the audit timeline"],
+        description: "Choose a checklist, an auditor and a date to schedule your first audit.",
+        instructions: ["Choose New audit and pick a checklist", "Choose the areas and the auditor", "Set the audit dates"],
         href: "/audits",
         state: auditCount > 0 ? "done" : "pending",
       });
     }
 
     return baseSteps;
-  }, [isAdmin, filteredEntityOrder, organizationUserOrder, entityCount, orgDone, organizationUserCount, auditorCount, checklistCount, auditCount]);
+  }, [isAdmin, admin?.account_type, filteredEntityOrder, organizationUserOrder, entityCount, orgDone, combinedSetupDone, organizationUserCount, auditorCount, checklistCount, auditCount, organizationSetupMethod]);
 
   useEffect(() => {
     if (!isActive) return;
     const stepIdx = steps.findIndex(s => {
-      if (s.key === "entities") return pathname.startsWith("/structure/list");
+      if (s.key === "organization-setup") return pathname.startsWith("/organization");
+      if (s.key === "entities") return pathname.startsWith("/structure");
       if (s.key === "organization-users") {
         return pathname.startsWith("/users/list") && currentType !== "auditors";
       }
@@ -333,7 +400,16 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
       if (currentIndex !== -1 && currentIndex < order.length - 1) {
         const nextSlug = order[currentIndex + 1].slug;
-        router.push(`/structure/list?type=${nextSlug}&onboarding=1`);
+        router.push(`/structure/list?type=${nextSlug}&manual=1&onboarding=1`);
+        return;
+      }
+
+      if (currentIndex === order.length - 1) {
+        setCurrentStep(currentStep + 1);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("audito_onboarding_step", String(currentStep + 1));
+        }
+        router.push("/organization?manual=1&onboarding=1");
         return;
       }
     }
@@ -357,11 +433,26 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
     const s = steps[next];
     if (s) router.push(`${s.href}${s.href.includes("?") ? "&" : "?"}onboarding=1`);
-  }, [currentStep, currentType, steps, router, filteredEntityOrder, organizationUserOrder]);
+  }, [currentStep, currentType, steps, router, filteredEntityOrder, organizationUserOrder, isManualOrganizationSetup, pathname]);
 
   const goBack = useCallback(() => {
     const step = steps[currentStep];
     if (!step) return;
+
+    if (step.key === "organization-setup" && isManualOrganizationSetup && pathname === "/organization") {
+      const lastEntity = filteredEntityOrder[filteredEntityOrder.length - 1];
+      const entityStepIndex = steps.findIndex((item) => item.key === "entities");
+      if (entityStepIndex !== -1) {
+        setCurrentStep(entityStepIndex);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("audito_onboarding_step", String(entityStepIndex));
+        }
+      }
+      router.push(lastEntity
+        ? `/structure/list?type=${lastEntity.slug}&manual=1&onboarding=1`
+        : "/organization/setup-choice?onboarding=1");
+      return;
+    }
 
     if (step.key === "entities") {
       const order = filteredEntityOrder;
@@ -369,7 +460,12 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
       if (currentIndex > 0) {
         const prevSlug = order[currentIndex - 1].slug;
-        router.push(`/structure/list?type=${prevSlug}&onboarding=1`);
+        router.push(`/structure/list?type=${prevSlug}&manual=1&onboarding=1`);
+        return;
+      }
+
+      if (currentIndex === 0) {
+        router.push("/organization/setup-choice?onboarding=1");
         return;
       }
     }
@@ -413,30 +509,38 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
 
     router.push(`${prevStep.href}${prevStep.href.includes("?") ? "&" : "?"}onboarding=1`);
-  }, [currentStep, currentType, steps, router, filteredEntityOrder, organizationUserOrder]);
+  }, [currentStep, currentType, steps, router, filteredEntityOrder, organizationUserOrder, isManualOrganizationSetup, pathname]);
 
   const canGoBack = useMemo(() => {
+    if (steps[currentStep]?.key === "organization-setup" && isManualOrganizationSetup
+      && pathname === "/organization") return true;
     if (currentStep > 0) return true;
 
     // Within first step (Entities)
     if (steps[0]?.key === "entities") {
       const order = filteredEntityOrder;
       const currentIndex = order.findIndex(o => o.slug === currentType);
-      return currentIndex > 0;
+      return currentIndex >= 0;
     }
 
     return false;
-  }, [currentStep, currentType, filteredEntityOrder, steps]);
+  }, [currentStep, currentType, filteredEntityOrder, steps, isManualOrganizationSetup, pathname]);
 
   const canGoNext = useMemo(() => {
     const step = steps[currentStep];
     if (!step) return false;
+
+    if (step.key === "organization-setup") {
+      if (pathname === "/organization/setup-choice" || pathname.startsWith("/organization/ai-setup")) return false;
+      if (pathname === "/organization" && !orgDone) return false;
+    }
 
     // Within Entities, we can go next if there are more sub-levels
     if (step.key === "entities") {
       const order = filteredEntityOrder;
       const currentIndex = order.findIndex(o => o.slug === currentType);
       if (currentIndex !== -1 && currentIndex < order.length - 1) return true;
+      if (currentIndex === order.length - 1) return entityCount > 0;
     }
 
     // Within Organization Users
@@ -448,13 +552,22 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
     // Standard mission navigation
     return currentStep < steps.length - 1 && canEnterStep(currentStep + 1);
-  }, [currentStep, currentType, steps, canEnterStep, filteredEntityOrder, organizationUserOrder]);
+  }, [currentStep, currentType, steps, canEnterStep, filteredEntityOrder, organizationUserOrder, pathname, orgDone, entityCount]);
 
   const openCurrentStep = useCallback(() => {
     const step = steps[currentStep];
     if (!step) return;
     router.push(`${step.href}${step.href.includes("?") ? "&" : "?"}onboarding=1`);
   }, [steps, currentStep, router]);
+
+  // Opens any step the journey allows, for example from the onboarding bar.
+  const goToStep = useCallback((index: number) => {
+    const target = steps[index];
+    if (!target || !canEnterStep(index)) return;
+    setCurrentStep(index);
+    if (typeof window !== "undefined") window.localStorage.setItem("audito_onboarding_step", String(index));
+    router.push(`${target.href}${target.href.includes("?") ? "&" : "?"}onboarding=1`);
+  }, [steps, canEnterStep, router]);
 
   const skipOnboarding = useCallback(async () => {
     if (!accessToken) return;
@@ -465,10 +578,24 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       if (typeof window !== "undefined") {
         window.localStorage.removeItem("audito_onboarding_active");
         window.localStorage.removeItem("audito_onboarding_step");
+        window.localStorage.removeItem("audito_onboarding_organization_method");
       }
       setIsActive(false);
       await refreshMe();
       router.replace("/dashboard");
+    }
+  }, [accessToken, refreshMe, router]);
+
+  // Reopens setup after it was skipped. Only the status flags reset; everything
+  // created so far is kept and counted again.
+  const resumeOnboarding = useCallback(async () => {
+    if (!accessToken) return;
+    setBusy(true);
+    const res = await authApi.updateOnboarding(accessToken, "reset");
+    setBusy(false);
+    if (res.success) {
+      await refreshMe();
+      router.push("/onboarding");
     }
   }, [accessToken, refreshMe, router]);
 
@@ -483,14 +610,15 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
   }, [accessToken, allDone, refreshMe]);
 
-  const closeCompletionModal = useCallback(() => {
+  const closeCompletionModal = useCallback((href = "/dashboard") => {
     setShowCompletionModal(false);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("audito_onboarding_active");
       window.localStorage.removeItem("audito_onboarding_step");
+      window.localStorage.removeItem("audito_onboarding_organization_method");
     }
     setIsActive(false);
-    router.replace("/dashboard");
+    router.replace(href);
   }, [router]);
 
   const startOnboarding = useCallback(() => {
@@ -508,19 +636,25 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   const stopOnboardingLocal = useCallback(() => {
     setIsActive(false);
     setStarted(false);
+    setOrganizationSetupMethod(null);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("audito_onboarding_active");
       window.localStorage.removeItem("audito_onboarding_step");
+      window.localStorage.removeItem("audito_onboarding_organization_method");
     }
   }, []);
+
+  const counts = useMemo<OnboardingCounts>(() => ({
+    entities: entityCount, auditors: auditorCount, organizationUsers: organizationUserCount, checklists: checklistCount, audits: auditCount,
+  }), [entityCount, auditorCount, organizationUserCount, checklistCount, auditCount]);
 
   return (
     <Ctx.Provider
       value={{
-        loading, busy, started, setStarted, steps, currentStep, setCurrentStep,
-        isActive, startOnboarding, stopOnboardingLocal,
+        loading, busy, hydrated, started, setStarted, steps, currentStep, setCurrentStep,
+        isActive, organizationSetupMethod, counts, entityOrder: filteredEntityOrder, startOnboarding, stopOnboardingLocal,
         doneCount, progressPct, allDone, canGoBack, canGoNext, canEnterStep, nextRecommendedStep,
-        goNext, goBack, openCurrentStep, refreshProgress, completeOnboarding, skipOnboarding,
+        goNext, goBack, openCurrentStep, goToStep, refreshProgress, completeOnboarding, skipOnboarding, resumeOnboarding,
         showCompletionModal, closeCompletionModal, totalSteps: steps.length
       }}
     >

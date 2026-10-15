@@ -16,7 +16,6 @@ const { generateLinkCode, generateOrganizationLinkId } = require('../utils/codeG
 const { successResponse, errorResponse, validateRequiredFields } = require('../utils/helpers');
 const { sendLinkRequestEmail } = require('../services/emailService');
 const { db } = require('../config/db');
-const LinkBillingCreditModel = require('../models/LinkBillingCreditModel');
 const SubscriptionModel = require('../models/SubscriptionModel');
 const {
   ORG_LEVELS,
@@ -244,7 +243,7 @@ const createLink = async (req, res) => {
     }, 'Link request sent.', 201);
 
   } catch (error) {
-    if (error.code === 'ER_DUP_ENTRY') {
+    if (error.code === '23505') {
       return errorResponse(res, 'A link request already exists between these entities.', 409);
     }
     console.error('Create link error:', error);
@@ -659,18 +658,6 @@ const respondToLink = async (req, res) => {
 
     await LinkModel.updateStatus(linkCode, status, { markKeyVerified: action === 'accept' });
 
-    if (status === 'accepted') {
-      // Generate billing credit for Elite-to-Elite links
-      try {
-        const credit = await LinkBillingCreditModel.generateCreditOnAccept(link);
-        if (credit) {
-          console.log(`Generated billing credit ${credit.link_billing_credit_id} for ${credit.credit_for_entity_code}: $${credit.credit_amount}`);
-        }
-      } catch (creditErr) {
-        console.error('Failed to generate link billing credit:', creditErr.message);
-      }
-    }
-
     return successResponse(res, { link_code: linkCode, status }, `Link ${status}.`);
   } catch (error) {
     console.error('Respond to link error:', error);
@@ -711,13 +698,6 @@ const removeLink = async (req, res) => {
         console.error('Failed to remove tree edge on link remove:', treeErr.message);
       }
 
-      // Reverse any billing credits associated with this link
-      try {
-        const reversed = await LinkBillingCreditModel.reverseCreditsForLink(link.link_code, link.organization_link_id);
-        if (reversed) console.log(`Reversed ${reversed} billing credit(s) for link ${link.link_code}`);
-      } catch (creditErr) {
-        console.error('Failed to reverse link billing credits:', creditErr.message);
-      }
     }
 
     await LinkModel.remove(linkCode);

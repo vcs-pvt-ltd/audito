@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { IconButton } from "@/components/ui";
 import { capApi, auditExecutionApi } from "@/lib/api";
+import { getPreviewCards } from "@/lib/previewHierarchy";
 import {
   AlertCircle,
   ArrowLeft,
@@ -123,7 +124,7 @@ function EntityPreviewCard({
           {index}
         </span>
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-white truncate block">{node.name || node.code}</span>
+          <span className="text-sm font-semibold text-white truncate block">{node.name || "Unnamed entity"}</span>
           <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border inline-block mt-0.5 ${typeCls}`}>{node.entity_type}</span>
         </div>
         <ChevronRight size={18} className="text-white/60 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
@@ -300,16 +301,16 @@ export default function MyCapPreviewPage() {
   function getCards(): TreeNode[] {
     if (!prunedTree || activeStep.mode !== "cards") return [];
     const { parentCode } = activeStep;
-    if (parentCode === null) {
-      return ENTITY_TYPE_COLORS[prunedTree.entity_type] ? [prunedTree] : (prunedTree.children ?? []);
-    }
-    const parent = findInTree(prunedTree, parentCode, activeStep.parentEdgeId);
-    return parent ? (parent.children ?? []) : [];
+    const parent = parentCode === null ? prunedTree : findInTree(prunedTree, parentCode, activeStep.parentEdgeId);
+    return parent ? getPreviewCards(
+      parent,
+      parentCode === null && parent.code !== '__root__' &&
+        (qMap[`${parent.code}__${parent.edge_id ?? 'null'}`] || qMap[`${parent.code}__null`] || []).length > 0,
+    ) : [];
   }
 
   const navigateCard = (node: TreeNode) => {
-    const k = `${node.code}__${node.edge_id ?? 'null'}`;
-    const hasQ = (qMap[k] || qMap[`${node.code}__null`] || []).length > 0;
+    const hasQ = (qMap[`${node.code}__${node.edge_id ?? 'null'}`] || qMap[`${node.code}__null`] || []).length > 0;
     const hasKids = (node.children ?? []).length > 0;
     if (!hasQ && hasKids) {
       setStepHistory(h => [...h, { mode: "cards", parentCode: node.code, parentEdgeId: node.edge_id ?? null }]);
@@ -318,7 +319,7 @@ export default function MyCapPreviewPage() {
         mode: "questions",
         entityCode: node.code,
         entityEdgeId: node.edge_id ?? null,
-        entityName: node.name || node.code,
+        entityName: node.name || "Unnamed entity",
       }]);
     }
   };
@@ -417,7 +418,7 @@ export default function MyCapPreviewPage() {
               {activeStep.mode === "cards" ? (
                 // ── Cards view ──────────────────────────────────
                 (() => {
-                  // If no tree, fall back to flat entity list
+                  // Keep the hierarchy required for navigating CAP entities.
                   if (!prunedTree) {
                     if (entities.length === 0) {
                       return (
@@ -427,43 +428,7 @@ export default function MyCapPreviewPage() {
                         </div>
                       );
                     }
-                    return (
-                      <div className="space-y-5">
-                        {cardsEntityPath}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {entities.map((e, i) => {
-                          const k = `${e.entity_code}__${(e as any).org_tree_id ?? 'null'}`;
-                          const qs = qMap[k] || [];
-                          const typeCls = ENTITY_TYPE_COLORS[e.entity_type] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30";
-                          return (
-                            <div key={k}
-                              onClick={() => setStepHistory(h => [...h, {
-                                mode: "questions",
-                                entityCode: e.entity_code,
-                                entityEdgeId: (e as any).org_tree_id ?? null,
-                                entityName: e.entity_name || e.entity_code,
-                              }])}
-                              className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg hover:shadow-black/20 group">
-                              <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
-                                <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white shrink-0">
-                                  {i + 1}
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                  <span className="text-sm font-semibold text-white truncate block">{e.entity_name || e.entity_code}</span>
-                                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border inline-block mt-0.5 ${typeCls}`}>{e.entity_type}</span>
-                                </div>
-                                <ChevronRight size={18} className="text-white/60 group-hover:text-white transition-all shrink-0" />
-                              </div>
-                              <div className="p-4 flex items-center gap-1.5 text-xs text-gray-400">
-                                <ClipboardList size={13} className="text-secondary-400" />
-                                <span>{qs.length} Action{qs.length !== 1 ? "s" : ""}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        </div>
-                      </div>
-                    );
+                    return <p className="py-16 text-center text-sm text-gray-400">Organization hierarchy unavailable. Try again to load this CAP.</p>;
                   }
 
                   const cards = getCards();
@@ -503,7 +468,7 @@ export default function MyCapPreviewPage() {
                   };
                   const k = `${step.entityCode}__${step.entityEdgeId ?? 'null'}`;
                   const qs = qMap[k] || qMap[`${step.entityCode}__null`] || [];
-                  const entityNode = prunedTree ? findInTree(prunedTree, step.entityCode) : null;
+                  const entityNode = prunedTree ? findInTree(prunedTree, step.entityCode, step.entityEdgeId) : null;
                   const subEntities = entityNode ? (entityNode.children ?? []) : [];
 
                   return (
@@ -531,7 +496,7 @@ export default function MyCapPreviewPage() {
                       )}
 
                       {(() => {
-                        const hasSubEntityQuestions = subEntities.some(c => countDescendantQuestions(c, qMap) > 0);
+                        const hasSubEntityQuestions = subEntities.length > 0;
                         return (
                           <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/[0.06]">
                             <button

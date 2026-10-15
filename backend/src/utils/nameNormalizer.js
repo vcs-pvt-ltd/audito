@@ -35,6 +35,53 @@ function normalizeEntityName(name) {
     .replace(/0+(\d)/g, '$1');    // strip leading zeros in number runs
 }
 
+// Singular form of a word for comparison: samples → sample, batteries → battery.
+function singularWord(word) {
+  if (word.length <= 3 || /^\d+$/.test(word)) return word;
+  if (word.endsWith('ies') && word.length > 4) return `${word.slice(0, -3)}y`;
+  if (/(ss|sh|ch|x|z)es$/.test(word)) return word.slice(0, -2);
+  if (word.endsWith('s') && !/(ss|us|is)$/.test(word)) return word.slice(0, -1);
+  return word;
+}
+
+/** Words of a name for comparison: lower case, no punctuation, singular, no leading zeros. */
+function nameWords(name) {
+  return String(name ?? '').toLowerCase().replace(/&/g, ' and ')
+    .split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+    .map(word => (/^\d+$/.test(word) ? String(Number(word)) : singularWord(word)));
+}
+
+// Whether one word is the other with a single letter missing ("Cuting" / "Cutting").
+// A changed letter does not count: "Press" / "Dress" and "Sewing" / "Sawing" differ.
+function oneLetterMissing(a, b) {
+  if (Math.abs(a.length - b.length) !== 1 || a[0] !== b[0]) return false;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  for (let index = 0; index < long.length; index++) {
+    if (long.slice(0, index) + long.slice(index + 1) === short) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether two organization names name the same thing despite small changes:
+ * case, spacing, punctuation, singular/plural ("Sample" / "Samples"), or one
+ * missing letter inside a longer word ("Cuting" / "Cutting"). Short labels and numbers
+ * must match exactly, so "Line A" / "Line B" and "Unit 1" / "Unit 2" differ.
+ */
+function namesLookSame(a, b) {
+  const x = nameWords(a), y = nameWords(b);
+  if (!x.length || !y.length) return false;
+  if (x.join('') === y.join('')) return true;
+  if (x.length !== y.length) return false;
+  let differences = 0;
+  for (let index = 0; index < x.length; index++) {
+    if (x[index] === y[index]) continue;
+    const pair = x[index] + y[index];
+    if (++differences > 1 || x[index].length < 5 || y[index].length < 5 || /\d/.test(pair) || !oneLetterMissing(x[index], y[index])) return false;
+  }
+  return differences === 1;
+}
+
 /**
  * Checks whether a normalized-duplicate of `name` already exists in `table`,
  * scoped by whatever extra WHERE conditions the caller supplies (e.g. the
@@ -92,4 +139,4 @@ async function findDuplicateName({
   return null;
 }
 
-module.exports = { normalizeEntityName, findDuplicateName };
+module.exports = { normalizeEntityName, findDuplicateName, namesLookSame };

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
+import { useOnboarding } from "@/context/OnboardingContext";
 import { structureApi, authApi } from "@/lib/api";
 
 import EntityTable, {
@@ -117,12 +118,6 @@ const ENTITY_CONFIGS: Record<string, EntityConfig> = {
   },
 };
 
-const ORDER_BY_ACCOUNT: Record<string, string[]> = {
-  Company: ["cluster", "factory", "unit", "department", "section"],
-  Customer: ["buying-office", "supplier"],
-  "Audit Firm": ["branch", "audit-firm-department"],
-};
-
 // ─── Page Component ──────────────────────────────────────────────
 
 export default function SetupStructurePage() {
@@ -130,6 +125,7 @@ export default function SetupStructurePage() {
   const searchParams = useSearchParams();
   const { admin, accessToken, isLoading } = useAuth();
   const { alert, confirm, toast } = useUiFeedback();
+  const { isActive: onboardingActive, refreshProgress } = useOnboarding();
 
   const entityType = searchParams.get("type") as string;
   const config = ENTITY_CONFIGS[entityType];
@@ -139,7 +135,6 @@ export default function SetupStructurePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [editEntity, setEditEntity] = useState<EntityRow | null>(null);
-  const [orderBlockMessage, setOrderBlockMessage] = useState<string | null>(null);
   const [orgRegistrationNumber, setOrgRegistrationNumber] = useState<string>("");
   const [orgCountry, setOrgCountry] = useState<string>("");
 
@@ -188,54 +183,12 @@ export default function SetupStructurePage() {
         );
       }
 
-      // Enforce ordered entity creation by account type:
-      // cannot create a deeper level before its immediate parent level exists.
-      if (admin?.role === "admin") {
-        const LEVEL_MAP: Record<string, number> = {
-          "buying-office": 7,
-          "supplier": 7,
-          "cluster": 4,
-          "factory": 3,
-          "unit": 2,
-          "department": 1,
-          "section": 0,
-          "branch": 3,
-          "audit-firm-department": 1,
-        };
-
-        const orgLevel = admin.org_level ?? 0;
-        const fullOrder = ORDER_BY_ACCOUNT[admin.account_type || ""] || [];
-        // Filter the order to only include levels below the admin's own level
-        const order = fullOrder.filter(slug => orgLevel > (LEVEL_MAP[slug] ?? -1));
-
-        const idx = order.indexOf(entityType);
-        if (idx > 0) {
-          const prevSlug = order[idx - 1];
-          const prevConfig = ENTITY_CONFIGS[prevSlug];
-          if (prevConfig) {
-            const prevRes = await structureApi.listByType(accessToken, prevConfig.apiSlug);
-            const prevItems = prevRes.success && prevRes.data
-              ? (((prevRes.data as { items?: EntityRow[] }).items) || [])
-              : [];
-            const prevCount = prevItems.filter((item) => !item.is_linked).length;
-            if (prevCount <= 0) {
-              setOrderBlockMessage(`Create at least one ${prevConfig.label} before creating ${config.labelPlural}.`);
-            } else {
-              setOrderBlockMessage(null);
-            }
-          } else {
-            setOrderBlockMessage(null);
-          }
-        } else {
-          setOrderBlockMessage(null);
-        }
-      }
     } catch (err) {
       console.error("Data load failed", err);
     } finally {
       setLoading(false);
     }
-  }, [accessToken, config, admin?.role, admin?.account_type, entityType]);
+  }, [accessToken, config]);
 
   useEffect(() => {
     fetchEntities();
@@ -314,14 +267,6 @@ export default function SetupStructurePage() {
   const isLimitExceeded = entityLimit !== undefined && localEntityCount >= entityLimit;
 
   const handleAdd = async () => {
-    if (orderBlockMessage) {
-      await alert({
-        title: "Order Required",
-        message: orderBlockMessage,
-        variant: "warning",
-      });
-      return;
-    }
     if (entityLimit !== undefined && localEntityCount >= entityLimit) {
       setLimitModalOpen(true);
       return;
@@ -361,7 +306,8 @@ export default function SetupStructurePage() {
     );
     if (res.success) {
       toast("Entity deleted successfully.", "success");
-      fetchEntities();
+      await fetchEntities();
+      if (onboardingActive) await refreshProgress();
     } else {
       toast(res.message || "Failed to delete entity.", "error");
     }
@@ -408,7 +354,8 @@ export default function SetupStructurePage() {
       }
       toast("Entity added successfully.", "success");
     }
-    fetchEntities();
+    await fetchEntities();
+    if (onboardingActive) await refreshProgress();
   };
 
   // ─── Render ────────────────────────────────────────────────────
@@ -443,7 +390,6 @@ export default function SetupStructurePage() {
             {canCreateEntities && (
               <Button
                 onClick={handleAdd}
-                disabled={!!orderBlockMessage}
                 leftIcon={isLimitExceeded ? <Crown size={16} /> : <Plus size={16} />}
               >
                 <span className="sm:hidden">{isLimitExceeded ? "Upgrade" : "Add"}</span>
@@ -460,16 +406,10 @@ export default function SetupStructurePage() {
             <p className="mt-1 text-sm leading-relaxed text-gray-300">
               {hasLinkedEntities
                 ? `Linked ${config.labelPlural.toLowerCase()} belong to the requester organization and are available here as read-only records. They do not use your plan limits.`
-                : `Create each ${config.label.toLowerCase()} once, then use that same entity in multiple places when you set up your organization structure. There’s no need to add duplicate names.`}
+                : `Create only the ${config.labelPlural.toLowerCase()} your organization actually uses. Optional levels do not need placeholder entities, and each saved entity can be placed where it belongs in the organization structure.`}
             </p>
           </div>
         </div>
-        {orderBlockMessage && (
-          <div className="mb-5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
-            <p className="text-sm text-amber-200">{orderBlockMessage}</p>
-          </div>
-        )}
-
         {/* Search Bar */}
         {!loading && entities.length > 0 && (
           <div className="mb-6 max-w-lg">
@@ -498,7 +438,6 @@ export default function SetupStructurePage() {
             action={canCreateEntities ? (
               <button
                 onClick={handleAdd}
-                disabled={!!orderBlockMessage}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all disabled:opacity-20"
               >
                 <Plus size={16} />
@@ -514,7 +453,6 @@ export default function SetupStructurePage() {
               <EntityTable
                 entities={paginated}
                 entityLabel={config.label}
-                codeField={config.codeField}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 startIndex={(currentPage - 1) * pageSize}

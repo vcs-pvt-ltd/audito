@@ -44,4 +44,52 @@ const failGenerationJob = (jobId, message) => db.query(
   [String(message || 'Generation failed.').slice(0, 500), jobId]
 );
 
-module.exports = { createGenerationJob, saveSuggestions, completeGenerationJob, failGenerationJob };
+const finalizeSuggestions = async ({ jobId, entityCode, requestedBy, acceptedIds = [] }) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [jobs] = await connection.query(
+      `SELECT ai_checklist_job_id
+         FROM ai_checklist_generation_jobs
+        WHERE ai_checklist_job_id = ? AND entity_code = ? AND requested_by = ?
+        FOR UPDATE`,
+      [jobId, entityCode, requestedBy]
+    );
+    if (!jobs.length) {
+      const error = new Error('AI generation session not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    await connection.query(
+      `UPDATE ai_checklist_question_suggestions
+          SET status = 'discarded'
+        WHERE ai_checklist_job_id = ?`,
+      [jobId]
+    );
+
+    const ids = [...new Set((acceptedIds || []).map(String).filter(Boolean))].slice(0, 250);
+    let acceptedCount = 0;
+    if (ids.length) {
+      const marks = ids.map(() => '?').join(',');
+      const [result] = await connection.query(
+        `UPDATE ai_checklist_question_suggestions
+            SET status = 'accepted'
+          WHERE ai_checklist_job_id = ?
+            AND ai_checklist_suggestion_id IN (${marks})`,
+        [jobId, ...ids]
+      );
+      acceptedCount = result.affectedRows;
+    }
+
+    await connection.commit();
+    return acceptedCount;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+module.exports = { createGenerationJob, saveSuggestions, completeGenerationJob, failGenerationJob, finalizeSuggestions };

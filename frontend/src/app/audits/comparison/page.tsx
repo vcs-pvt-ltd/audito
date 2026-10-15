@@ -429,7 +429,7 @@ export default function AuditComparisonPage() {
     comparison.entities.forEach((entity) => {
       const key = entityKey(entity.entity_code, entity.org_tree_id);
       if (!options.has(key)) {
-        options.set(key, { key, name: entity.entity_code, entityType: entity.entity_type || "Organization entity", hierarchyLabel: entity.entity_code, depth: 0 });
+        options.set(key, { key, name: "Unnamed entity", entityType: entity.entity_type || "Organization entity", hierarchyLabel: "Unnamed entity", depth: 0 });
       }
     });
     return [...options.values()];

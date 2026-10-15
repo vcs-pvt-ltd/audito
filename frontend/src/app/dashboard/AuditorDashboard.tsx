@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   FileCheck, TrendingUp, CheckCircle2, ClipboardCheck, AlertTriangle,
-  Clock, Bell, ArrowRight, Building2, ShieldCheck, Play, MapPin, BookOpen, LucideIcon
+  Clock, Bell, ArrowRight, Building2, ShieldCheck, Play, MapPin, BookOpen, LucideIcon, ScanLine
 } from "lucide-react";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
@@ -516,7 +516,15 @@ export default function AuditorDashboard({ overview, admin }: { overview: Dashbo
           {/* Quick Navigation Footer */}
           <div className="flex flex-col gap-1.5 shrink-0 select-none">
             <h2 className="text-[10px] font-bold text-[#ffffff50] tracking-wider uppercase px-0.5">Quick Navigation</h2>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <button
+                onClick={() => router.push("/ai-site-scan")}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#ffffff06] border border-[#ffffff0d] hover:bg-[#ffffff10] hover:border-[#ffffff1a] transition-all group"
+              >
+                <ScanLine size={13} className="text-white/50 group-hover:text-emerald-400 transition-colors shrink-0" />
+                <span className="text-[11px] text-white/70 group-hover:text-white/90 transition-colors truncate">AI Site Scan</span>
+                <ArrowRight size={10} className="text-white/20 group-hover:text-white/45 transition-colors ml-auto shrink-0" />
+              </button>
               <button
                 onClick={() => router.push("/my-audits")}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#ffffff06] border border-[#ffffff0d] hover:bg-[#ffffff10] hover:border-[#ffffff1a] transition-all group"

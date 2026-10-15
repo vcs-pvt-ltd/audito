@@ -6,6 +6,9 @@ import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { useExecution } from "@/context/ExecutionContext";
 import { capApi, auditExecutionApi } from "@/lib/api";
+import { answerDraftKey, clearAnswerDraft, pruneAnswerDrafts, readAnswerDraft, writeAnswerDraft } from "@/lib/answerDrafts";
+import { useNativeBackHandler } from "@/lib/native/backButton";
+import { evidenceSizeProblem } from "@/utils/imageOptimizer";
 
 // Shared utilities
 import { findNode, findNodeByEdgeId, getAggProgress, TreeNode as SharedTreeNode } from "@/utils/treeHelpers";
@@ -13,7 +16,6 @@ import { ENTITY_TYPE_COLORS, fmtDate } from "@/utils/executionFormatters";
 import {
   calculateProgress,
   progressKey,
-  compressImage,
   getEvidenceUrl,
   inferEvidenceKind,
   fmtFileSize,
@@ -131,7 +133,7 @@ function EntityCard({
       <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60 border-b border-white/[0.04]">
         <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-secondary-500/30">{index}</span>
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-white truncate block">{node.name || node.code}</span>
+          <span className="text-sm font-semibold text-white truncate block">{node.name || "Unnamed entity"}</span>
           <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded inline-block mt-0.5 ${ENTITY_TYPE_COLORS[node.entity_type] ?? "bg-gray-500/20 text-gray-300"}`}>{node.entity_type}</span>
         </div>
         <ChevronRight size={18} className="text-white/60 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
@@ -160,7 +162,6 @@ function EntityCard({
   );
 }
 
-const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
 
 interface CapQuestionCardHandle {
   isDirty: () => boolean;
@@ -171,6 +172,8 @@ interface CapQuestionCardHandle {
 
 interface CapQuestionCardProps {
   question: CapQuestion;
+  /** 1, 2, 3… within the entity (not the checklist position). */
+  displayNumber: number;
   response?: CapResponse;
   capId: string;
   entityCode: string;
@@ -186,6 +189,7 @@ interface CapQuestionCardProps {
 const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(function CapQuestionCard(
   {
     question,
+    displayNumber,
     response,
     capId,
     entityCode,
@@ -208,11 +212,14 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
     };
   }, [response?.answer_text, response?.response_text, response?.selected_option_ids, response?.marks_obtained, response?.remarks, response?.cap_required]);
 
-  const [answerText, setAnswerText] = useState(baseline.answerText);
-  const [selectedOptions, setSelectedOptions] = useState<string[]>(baseline.selectedOptions);
-  const [freeTextMarks, setFreeTextMarks] = useState(baseline.freeTextMarks);
-  const [remarks, setRemarks] = useState(baseline.remarks);
-  const [capRequired, setCapRequired] = useState(baseline.capRequired);
+  // Unsaved answers are kept in this browser until saved (see lib/answerDrafts).
+  const draftKey = answerDraftKey("cap", capId, entityCode, question.cap_question_id);
+  const [initial] = useState(() => readAnswerDraft(draftKey, baseline) ?? baseline);
+  const [answerText, setAnswerText] = useState(initial.answerText);
+  const [selectedOptions, setSelectedOptions] = useState<string[]>(initial.selectedOptions);
+  const [freeTextMarks, setFreeTextMarks] = useState(initial.freeTextMarks);
+  const [remarks, setRemarks] = useState(initial.remarks);
+  const [capRequired, setCapRequired] = useState(initial.capRequired);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [evidence, setEvidence] = useState<Evidence[]>(response?.evidence || []);
@@ -267,15 +274,25 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
   }, [dirty, onDirtyChange, question.cap_question_id]);
 
   useEffect(() => {
-    setAnswerText(baseline.answerText);
-    setSelectedOptions(baseline.selectedOptions);
-    setFreeTextMarks(baseline.freeTextMarks);
-    setRemarks(baseline.remarks);
-    setCapRequired(baseline.capRequired);
+    // When the response is refreshed from the server, start from it again,
+    // keeping an unsaved answer from this browser that still applies.
+    const values = readAnswerDraft(draftKey, baseline) ?? baseline;
+    setAnswerText(values.answerText);
+    setSelectedOptions(values.selectedOptions);
+    setFreeTextMarks(values.freeTextMarks);
+    setRemarks(values.remarks);
+    setCapRequired(values.capRequired);
     setEvidence(response?.evidence || []);
-    setShowRemarks(!!baseline.remarks);
+    setShowRemarks(!!values.remarks);
     setShowEvidence((response?.evidence || []).length > 0);
-  }, [baseline, response?.evidence]);
+  }, [baseline, response?.evidence]); // draftKey is fixed for a mounted question
+
+  // Keep a changed answer in this browser until it is saved. Runs after the
+  // refresh above, so a just-saved answer is never stored again as a draft.
+  useEffect(() => {
+    if (dirty) writeAnswerDraft(draftKey, { answerText, selectedOptions, freeTextMarks, remarks, capRequired }, baseline);
+    else clearAnswerDraft(draftKey);
+  }, [dirty, answerText, selectedOptions, freeTextMarks, remarks, capRequired, baseline, draftKey]);
 
   useEffect(() => {
     if (marksObtained >= maxMarks) setCapRequired(false);
@@ -295,6 +312,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
     } as any);
     setSaving(false);
     if (!res.success) return false;
+    clearAnswerDraft(draftKey);
     await onSaved();
     return true;
   };
@@ -312,10 +330,12 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
       cap_required: canToggleCap ? capRequired : false,
     } as any);
     setSaving(false);
+    if (res.success) clearAnswerDraft(draftKey);
     return res.success;
   };
 
   const discard = () => {
+    clearAnswerDraft(draftKey);
     setAnswerText(baseline.answerText);
     setSelectedOptions(baseline.selectedOptions);
     setFreeTextMarks(baseline.freeTextMarks);
@@ -340,8 +360,9 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
       setEvidenceErr("Your plan allows image evidence only.");
       return false;
     }
-    if (file.size > MAX_EVIDENCE_BYTES) {
-      setEvidenceErr(`File size must be 2MB or less. Selected: ${fmtFileSize(file.size)}`);
+    const sizeProblem = evidenceSizeProblem(file);
+    if (sizeProblem) {
+      setEvidenceErr(sizeProblem);
       return false;
     }
     let localResponseId: string | null = null;
@@ -370,16 +391,10 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
 
     setUploading(true);
     setEvidenceToast("");
-    let processedFile = file;
     const fileType = file.type.startsWith("image/") ? "image" :
       file.type.startsWith("video/") ? "video" : "audio";
 
-    // Compress images
-    if (fileType === "image") {
-      processedFile = await compressImage(file);
-    }
-
-    const res = await capApi.uploadEvidence?.(accessToken, capId, String(responseId), processedFile, fileType);
+    const res = await capApi.uploadEvidence?.(accessToken, capId, String(responseId), file, fileType);
     if (res?.success && res?.data) {
       setEvidence(prev => [...prev, res.data as Evidence]);
       setEvidenceToast("Evidence uploaded");
@@ -420,17 +435,20 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
   const atCfg = answerTypeConfig[question.answer_type] || answerTypeConfig.free_text;
 
   return (
-    <div className={`rounded-xl border overflow-hidden transition-all ${isAnswered ? "border-emerald-500/20 bg-white/[0.03]" : "border-white/[0.06] bg-white/[0.02]"
+    <div className={`rounded-xl border overflow-hidden transition-all ${
+      dirty ? "border-amber-400/40 bg-amber-400/[0.04]" : isAnswered ? "border-emerald-500/20 bg-white/[0.03]" : "border-white/[0.06] bg-white/[0.02]"
       }`}>
       {/* Accordion header */}
       <button
         onClick={() => onToggle?.(question.cap_question_id)}
         className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-white/[0.03] transition-colors"
       >
-        <span className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold transition-colors ${
-          (isAnswered || response?.status === "completed") ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : "bg-white/5 text-gray-500"
+        {/* Number within the entity: amber = answered but not saved, green = saved */}
+        <span aria-label={`Question ${displayNumber}${dirty ? ", unsaved changes" : isAnswered ? ", saved" : ", not answered"}`} className={`shrink-0 w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold transition-colors ${
+          dirty ? "bg-amber-400 text-primary-950 border-amber-300 shadow-sm shadow-amber-400/30"
+            : (isAnswered || response?.status === "completed") ? "bg-emerald-500 text-white border-emerald-400" : "bg-white/5 text-gray-300 border-white/15"
         }`}>
-          {question.order_index + 1}
+          {displayNumber}
         </span>
         <p className={`text-sm flex-1 ${isOpen ? "text-white font-medium" : "text-gray-300 truncate"}`}>
           {question.question_text}
@@ -683,7 +701,7 @@ const CapQuestionCard = forwardRef<CapQuestionCardHandle, CapQuestionCardProps>(
               </div>
             )}
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] text-gray-600">Max 2MB</span>
+              <span className="text-[10px] text-gray-600">Photos up to 5MB · video and audio up to 2MB</span>
               {uploading && (
                 <div className="flex items-center gap-1.5 text-xs text-secondary-400">
                   <div className="w-3 h-3 border border-secondary-400 border-t-transparent rounded-full animate-spin" />
@@ -742,7 +760,12 @@ export default function MyCapExecutePage() {
   const contentRef = useRef<HTMLDivElement>(null);
   const questionCardRefs = useRef<Record<string, CapQuestionCardHandle | null>>({});
   const dirtyMapRef = useRef<Record<string, boolean>>({});
+  // Drop answer drafts of CAPs left unfinished for a long time.
+  useEffect(() => { pruneAnswerDrafts(); }, []);
   const [hasUnsaved, setHasUnsaved] = useState(false);
+  // How many questions on this entity have unsaved answers, and whether Save is running.
+  const [unsavedCount, setUnsavedCount] = useState(0);
+  const [savingAll, setSavingAll] = useState(false);
   const [navModalOpen, setNavModalOpen] = useState(false);
   const pendingNavRef = useRef<null | (() => void)>(null);
   const [openQuestionId, setOpenQuestionId] = useState<string | null>(null);
@@ -815,7 +838,7 @@ export default function MyCapExecutePage() {
           if (!instances[key]) {
             instances[key] = {
               code,
-              name: (q as any).question_entity_name || (q as any).entity_name || code,
+              name: (q as any).question_entity_name || (q as any).entity_name || "Unnamed entity",
               entity_type: (q as any).question_entity_type || "",
               edge_id: otid,
             };
@@ -847,7 +870,10 @@ export default function MyCapExecutePage() {
       setResponses(grouped);
       if (progressRes?.success && progressRes.data) setProgress((progressRes.data as { progress: CapProgress[] }).progress || []);
       if (detailRes?.success && detailRes.data) setCap((detailRes.data as { cap: Cap }).cap);
-      setHasUnsaved(false);
+      // Answers restored from this device stay unsaved after a reload.
+      const count = Object.values(dirtyMapRef.current).filter(Boolean).length;
+      setHasUnsaved(count > 0);
+      setUnsavedCount(count);
     } catch {
       setError("Network error.");
     }
@@ -859,8 +885,9 @@ export default function MyCapExecutePage() {
 
   const handleDirtyChange = useCallback((questionId: string, dirty: boolean) => {
     dirtyMapRef.current[questionId] = dirty;
-    const anyDirty = Object.values(dirtyMapRef.current).some(d => d);
-    setHasUnsaved(anyDirty);
+    const count = Object.values(dirtyMapRef.current).filter(Boolean).length;
+    setHasUnsaved(count > 0);
+    setUnsavedCount(count);
   }, []);
 
   const discardAllDirty = useCallback(() => {
@@ -869,19 +896,26 @@ export default function MyCapExecutePage() {
     }
     dirtyMapRef.current = {};
     setHasUnsaved(false);
+    setUnsavedCount(0);
   }, []);
 
   const saveAllDirty = useCallback(async (): Promise<boolean> => {
-    for (const ref of Object.values(questionCardRefs.current)) {
-      if (ref?.isDirty?.()) {
-        const ok = await ref?.saveOnly?.();
-        if (!ok) return false;
+    setSavingAll(true);
+    try {
+      for (const ref of Object.values(questionCardRefs.current)) {
+        if (ref?.isDirty?.()) {
+          const ok = await ref?.saveOnly?.();
+          if (!ok) return false;
+        }
       }
+      dirtyMapRef.current = {};
+      setHasUnsaved(false);
+      setUnsavedCount(0);
+      await load();
+      return true;
+    } finally {
+      setSavingAll(false);
     }
-    dirtyMapRef.current = {};
-    setHasUnsaved(false);
-    await load();
-    return true;
   }, [load]);
 
   const requestNav = useCallback((fn: () => void) => {
@@ -889,6 +923,14 @@ export default function MyCapExecutePage() {
     pendingNavRef.current = fn;
     setNavModalOpen(true);
   }, [hasUnsaved]);
+
+  // Android back: one step up the areas, then back to the CAP, asking first about unsaved answers.
+  useNativeBackHandler(() => {
+    if (savingAll) return true;
+    if (stepHistory.length > 1) requestNav(() => setStepHistory((history) => history.length > 1 ? history.slice(0, -1) : history));
+    else requestNav(() => router.push(`/my-caps/details?id=${capId}`));
+    return true;
+  });
 
   const qMap: Record<string, CapQuestion[]> = {};
   for (const q of questions) {
@@ -922,6 +964,19 @@ export default function MyCapExecutePage() {
     }
   }
 
+  // The questions view's Next (to the areas below that still have questions),
+  // also offered in the header. Same rules as the Next button under the questions.
+  let headerNext: (() => void) | null = null;
+  if (activeStep?.mode === "questions" && prunedTree) {
+    const nextOrgTreeId = (activeStep as any).orgTreeId ?? null;
+    const node = nextOrgTreeId ? findNodeByEdgeId(prunedTree, nextOrgTreeId) : findNode(prunedTree, activeStep.entityCode);
+    const hasNext = (node?.children ?? []).some((child) => getAggProgress(child as any, questionInstanceKeys, pMap, (code, n) => progressKey(code, (n as any).edge_id ?? null), qMap).tQ > 0);
+    if (hasNext) {
+      const entityCode = activeStep.entityCode;
+      headerNext = () => setStepHistory((h) => [...h, { mode: "cards", parentCode: entityCode, parentOrgTreeId: nextOrgTreeId }]);
+    }
+  }
+
   if (isLoading) return <div className="min-h-full bg-transparent flex items-center justify-center px-4"><div className="w-8 h-8 border-2 border-secondary-400 border-t-transparent rounded-full animate-spin" /></div>;
   if (!admin || !accessToken) return null;
 
@@ -941,6 +996,19 @@ export default function MyCapExecutePage() {
             </div>
           </div>
           <div className="flex items-center gap-4 shrink-0">
+            <Button size="sm" leftIcon={<Save size={14} />} loading={savingAll} disabled={!hasUnsaved || savingAll}
+              title={hasUnsaved ? "Save all unsaved answers" : "No unsaved answers"}
+              onClick={async () => {
+                const ok = await saveAllDirty();
+                toast(ok ? "All changes saved." : "Failed to save response.", ok ? "success" : "error");
+              }}>
+              Save{unsavedCount > 0 ? ` (${unsavedCount})` : ""}
+            </Button>
+            {headerNext && (
+              <Button size="sm" variant="secondary" rightIcon={<ChevronRight size={14} />} disabled={savingAll} onClick={headerNext}>
+                Next
+              </Button>
+            )}
             <div className="hidden md:flex items-center gap-3">
               <div className="text-right">
                 <span className="text-xs text-gray-400">{answeredQ}/{totalQ} questions</span>
@@ -979,7 +1047,7 @@ export default function MyCapExecutePage() {
                   if (code) {
                     const edgeId = s.mode === "questions" ? s.orgTreeId : s.parentOrgTreeId;
                     const nd = edgeId ? findNodeByEdgeId(prunedTree, edgeId) : findNode(prunedTree, code);
-                    label = nd?.name || code;
+                    label = nd?.name || "Unnamed entity";
                   }
                   breadcrumbNodes.push({
                     label: label || "Root",
@@ -1120,6 +1188,11 @@ export default function MyCapExecutePage() {
                   </div>
 
                   <div className="space-y-2 mb-6">
+                    {questionsForEntity.length > 0 && <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-400">
+                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" />Answered, not saved (kept on this device)</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Saved answer</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border border-white/20 bg-white/5" />Not answered</span>
+                    </p>}
                     {hasUnsaved && (
                       <div className="flex justify-end">
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
@@ -1127,13 +1200,14 @@ export default function MyCapExecutePage() {
                         </span>
                       </div>
                     )}
-                    {questionsForEntity.map((q) => {
+                    {questionsForEntity.map((q, index) => {
                       const resp = responses[q.cap_question_id]?.[0];
                       return (
                         <CapQuestionCard
                           key={q.cap_question_id}
                           ref={(r) => { questionCardRefs.current[q.cap_question_id] = r; }}
                           question={q}
+                          displayNumber={index + 1}
                           response={resp}
                           capId={capId}
                           entityCode={entityCode}

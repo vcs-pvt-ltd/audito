@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, ClipboardList, ChevronDown, ChevronRight } from "lucide-react";
+import { useNativeBackHandler } from "@/lib/native/backButton";
 
 export interface CapItem {
   id: string;
@@ -65,6 +66,9 @@ export default function CAPModal({
     }
     return acc;
   }, [caps]);
+
+  // Android app: back closes this dialog.
+  useNativeBackHandler(() => { onClose(); return true; }, open);
 
   if (!open) return null;
 

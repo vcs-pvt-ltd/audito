@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { getPreviewCards } from "@/lib/previewHierarchy";
 import { capApi } from "@/lib/api";
 import { getEvidenceUrl, inferEvidenceKind } from "@/utils/executionService";
 import { Button, IconButton } from "@/components/ui";
@@ -218,7 +219,7 @@ function EntityCard({
           {index}
         </span>
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-white truncate block">{node.name || node.code}</span>
+          <span className="text-sm font-semibold text-white truncate block">{node.name || "Unnamed entity"}</span>
           <span className="text-[9px] font-medium px-1.5 py-0.5 rounded inline-block mt-0.5 bg-white/10 text-gray-300">
             {node.entity_type}
           </span>
@@ -496,7 +497,7 @@ export default function OrganizationUserCapPreviewPage() {
                     seen.add(instanceKey);
                     const nd = findInTree(code, edgeId);
                     const idx = i;
-                    breadcrumbNodes.push({ label: nd?.name || code, goTo: () => setStepHistory((h) => h.slice(0, idx + 1)) });
+                    breadcrumbNodes.push({ label: nd?.name || "Unnamed entity", goTo: () => setStepHistory((h) => h.slice(0, idx + 1)) });
                   }
                 }
               }
@@ -510,14 +511,10 @@ export default function OrganizationUserCapPreviewPage() {
 
               if (step.mode === "cards") {
                 const parent = step.parentCode ? findInTree(step.parentCode, step.parentOrgTreeId) : tree;
-                const cards = parent
-                  ? (step.parentCode === null
-                    ? ([parent].filter((n) => subtreeHasCaps(n, capsMap))
-                      .length
-                      ? [parent]
-                      : (parent.children || []).filter((c) => subtreeHasCaps(c, capsMap)))
-                    : (parent.children || []).filter((c) => subtreeHasCaps(c, capsMap)))
-                  : [];
+                const cards = parent ? getPreviewCards(
+                  parent,
+                  isRoot && parent.code !== '__root__' && getCapQuestionsForNode(parent, capsMap).length > 0,
+                ) : [];
 
                 return (
                   <div className="space-y-5">
@@ -556,7 +553,7 @@ export default function OrganizationUserCapPreviewPage() {
               const edgeId = node?.edge_id ?? step.orgTreeId ?? null;
               const key = progressKey(entityCode, edgeId);
               const qs = (capsMap[key] || []);
-              const hasSubEntityQuestions = (node?.children || []).some(c => subtreeHasCaps(c, capsMap));
+              const hasSubEntities = (node?.children || []).length > 0;
 
               return (
                 <div className="space-y-5">
@@ -598,7 +595,7 @@ export default function OrganizationUserCapPreviewPage() {
                     >
                       <ArrowLeft size={14} /> Back
                     </button>
-                    {hasSubEntityQuestions && (
+                    {hasSubEntities && (
                       <button
                         onClick={() => setStepHistory(h => [...h, { mode: "cards", parentCode: entityCode, parentOrgTreeId: edgeId }])}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-secondary-500 text-primary-950 hover:bg-secondary-400 transition-all shadow-lg shadow-secondary-500/20"

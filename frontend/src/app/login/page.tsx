@@ -9,11 +9,14 @@ import { Eye, EyeOff, Loader2, CheckCircle, ArrowLeft, Clock3, Mail, X } from "l
 import { useAuth, type SubscriptionStatus } from "@/context/AuthContext";
 import { authApi, type PaymentDetails } from "@/lib/api";
 import SubscriptionExpiredModal from "@/components/auth/SubscriptionExpiredModal";
+import { useNativeApp } from "@/lib/native/useNativeApp";
 
 function LoginForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { login, admin, isLoading } = useAuth();
+  // The Android app is for auditors: no home page, registration or plans.
+  const native = useNativeApp();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -158,7 +161,7 @@ function LoginForm() {
         {/* Form Card */}
         <form onSubmit={handleSubmit} className="bg-[#053B36] backdrop-blur-xl rounded-2xl p-6 sm:p-8 border border-white/10 shadow-2xl">
           {/* Back to Home */}
-          <div className="flex items-center gap-2 mb-6">
+          {!native && <div className="flex items-center gap-2 mb-6">
             <button
               type="button"
               onClick={() => router.push("/")}
@@ -173,18 +176,22 @@ function LoginForm() {
             >
               Back to Home
             </button>
-          </div>
+          </div>}
 
           {/* Logo and Welcome Text */}
           <div className="text-center mb-8">
-            <Link href="/" className="inline-block mb-4">
-              <Image src={auditoLogo} alt="Audito" width={125} height={30} className="h-10 mx-auto" />
-            </Link>
+            {native ? (
+              <Image src={auditoLogo} alt="Audito" width={125} height={30} className="h-10 mx-auto mb-4" />
+            ) : (
+              <Link href="/" className="inline-block mb-4">
+                <Image src={auditoLogo} alt="Audito" width={125} height={30} className="h-10 mx-auto" />
+              </Link>
+            )}
             <h1 className="text-2xl font-bold text-white mb-2">
               Welcome Back
             </h1>
             <p className="text-gray-400 text-sm">
-              Sign in to your account to continue
+              {native ? "Sign in with your auditor account" : "Sign in to your account to continue"}
             </p>
           </div>
 
@@ -275,15 +282,15 @@ function LoginForm() {
           </div>
 
           {/* Sign Up Link */}
-          <p className="text-center text-sm text-gray-400 mt-6">
+          {!native && <p className="text-center text-sm text-gray-400 mt-6">
             Don't have an account?{" "}
             <Link
-              href="/register"
+              href="/register/select-package"
               className="text-[#059669] hover:text-[#047A55] font-medium transition-colors"
             >
               Create Account
             </Link>
-          </p>
+          </p>}
 
         
 

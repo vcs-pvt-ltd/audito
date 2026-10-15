@@ -59,7 +59,9 @@ const CustomSolutionModel = {
 
   async findByOrgCode(root_entity_code) {
     const [rows] = await db.query(
-      `SELECT * FROM custom_solution_requests WHERE root_entity_code = ? LIMIT 1`,
+      `SELECT * FROM custom_solution_requests
+       WHERE root_entity_code = ?
+       ORDER BY id DESC LIMIT 1`,
       [root_entity_code]
     );
     return rows[0] || null;
@@ -100,12 +102,13 @@ const CustomSolutionModel = {
     return rows[0] || null;
   },
 
-  async assignPrice(request_id, { assigned_price, assigned_billing_cycle, admin_notes }) {
+  async assignPrice(request_id, { assigned_price, token_unit_price, included_tokens, admin_notes }) {
     await db.query(
       `UPDATE custom_solution_requests
-       SET status = 'priced', assigned_price = ?, assigned_billing_cycle = ?, admin_notes = ?
+       SET status = 'priced', assigned_price = ?, assigned_billing_cycle = 'None',
+           token_unit_price = ?, included_tokens = ?, admin_notes = ?
        WHERE request_id = ?`,
-      [assigned_price, assigned_billing_cycle, admin_notes || null, request_id]
+      [assigned_price, token_unit_price, included_tokens, admin_notes || null, request_id]
     );
   },
 

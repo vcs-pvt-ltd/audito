@@ -6,6 +6,8 @@ import { authApi, usersApi } from "@/lib/api";
 import { CheckCircle2, XCircle, Loader2, ArrowRight, Eye, EyeOff, Lock, Check, Mail } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui";
+import AuditoContactCard from "@/components/shared/AuditoContactCard";
+import { DEFAULT_AUDITO_CONTACT, type AuditoContact } from "@/lib/auditoContact";
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -17,6 +19,8 @@ function VerifyEmailContent() {
   const [paymentCode, setPaymentCode] = useState<string | null>(null);
   const [customSolutionPending, setCustomSolutionPending] = useState(false);
   const [alreadyVerified, setAlreadyVerified] = useState(false);
+  // Set for Customer and Audit Firm review requests.
+  const [reviewContact, setReviewContact] = useState<AuditoContact | null>(null);
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -87,6 +91,10 @@ function VerifyEmailContent() {
             } else if (data?.custom_solution_pending) {
               setCustomSolutionPending(true);
               setMessage("Your email has been verified! Your custom solution request is being reviewed by our team. We'll notify you via email once pricing is ready.");
+            } else if (data?.contact_review_verified) {
+              setCustomSolutionPending(true);
+              setReviewContact(data.contact || DEFAULT_AUDITO_CONTACT);
+              setMessage("Your email is verified. The Audito team is reviewing your request and will email your quote.");
             } else {
               setMessage("Your email has been successfully verified! You can now log in to your account.");
             }
@@ -148,6 +156,7 @@ function VerifyEmailContent() {
             <CheckCircle2 className="text-green-500 mb-4" size={48} />
             <h1 className="text-xl font-bold text-white mb-2">{alreadyVerified ? "Already Verified" : "Email Verified"}</h1>
             <p className="text-gray-400 mb-8">{message}</p>
+            {reviewContact && <div className="mb-6 w-full"><AuditoContactCard contact={reviewContact} title="Questions? Contact the Audito team" /></div>}
             {paymentCode ? (
               <Link
                 href={`/payment?code=${paymentCode}`}

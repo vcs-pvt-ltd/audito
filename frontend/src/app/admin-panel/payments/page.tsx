@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { adminApi, type AdminPayment } from "@/lib/api";
+import { snapshotHierarchyLabel } from "@/lib/packageHierarchy";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -61,9 +62,56 @@ function PlanBadge({ plan }: { plan: string }) {
   };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-semibold ${config[plan] || config.Basic}`}>
-      {plan}
+      {plan === "Package" ? "Company package" : plan}
     </span>
   );
+}
+
+function isTokenReload(payment: AdminPayment) {
+  return payment.purpose === "token_reload";
+}
+
+function paymentTypeLabel(payment: AdminPayment) {
+  if (isTokenReload(payment)) return "Token reload";
+  if (payment.plan_name === "Package") return "Company package";
+  return "Registration";
+}
+
+function PackageBreakdown({ payment }: { payment: AdminPayment }) {
+  if (payment.plan_name !== "Package" || !payment.pricing_snapshot) return null;
+  const snapshot = typeof payment.pricing_snapshot === "string" ? JSON.parse(payment.pricing_snapshot) : payment.pricing_snapshot;
+  return <div className="mt-1 text-[11px] leading-5 text-gray-400">
+    {snapshotHierarchyLabel(snapshot)} · {String(snapshot.departments)} departments · {String(snapshot.lines_per_audit)} audit lines<br />
+    ${Number(snapshot.company_level_charge).toFixed(2)} levels + ${Number(snapshot.department_charge).toFixed(2)} departments + ${Number(snapshot.line_charge).toFixed(2)} lines<br />
+    {String(snapshot.additional_tokens)} extra tokens · {String(snapshot.total_tokens)} total · ${Number(snapshot.token_unit_price).toFixed(2)}/token
+  </div>;
+}
+
+function tokenAllocationLabel(payment: AdminPayment) {
+  const purchased = Number(payment.token_quantity || 0);
+  const bonus = Number(payment.bonus_token_quantity || 0);
+  if (purchased + bonus <= 0) return "No token allocation";
+  return `${purchased.toLocaleString()} tokens${bonus > 0 ? ` + ${bonus.toLocaleString()} bonus` : ""}`;
+}
+
+function TokenAllocation({ payment }: { payment: AdminPayment }) {
+  const purchased = Number(payment.token_quantity || 0);
+  const bonus = Number(payment.bonus_token_quantity || 0);
+  if (purchased + bonus <= 0) return <span className="text-xs text-gray-500">No token allocation</span>;
+  return (
+    <div>
+      <p className="text-sm font-semibold text-white">{purchased.toLocaleString()} tokens</p>
+      <p className="mt-0.5 text-[11px] text-gray-500">
+        {bonus > 0 ? `+${bonus.toLocaleString()} bonus` : "No bonus"}
+        {payment.token_unit_price != null ? ` · ${payment.currency} ${Number(payment.token_unit_price).toLocaleString(undefined, { maximumFractionDigits: 4 })}/token` : ""}
+      </p>
+    </div>
+  );
+}
+
+function PaymentTypeBadge({ payment }: { payment: AdminPayment }) {
+  const isReload = isTokenReload(payment);
+  return <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${isReload ? "border-sky-500/30 bg-sky-500/10 text-sky-300" : "border-secondary-500/30 bg-secondary-500/10 text-secondary-300"}`}>{paymentTypeLabel(payment)}</span>;
 }
 
 function reportDate(value: string | null) {
@@ -89,7 +137,7 @@ export default function PaymentsPage() {
   const [filter, setFilter] = useState<"all" | "paid" | "pending" | "approval" | "other">("all");
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [planFilter, setPlanFilter] = useState("all");
-  const [billingFilter, setBillingFilter] = useState("all");
+  const [activeTab, setActiveTab] = useState<"registration" | "token_reload">("registration");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
@@ -132,15 +180,17 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, planFilter, billingFilter, search, filterStartDate, filterEndDate]);
+  }, [activeTab, filter, planFilter, search, filterStartDate, filterEndDate]);
 
   const filtered = payments.filter((p) => {
+    if (activeTab === "registration" && isTokenReload(p)) return false;
+    if (activeTab === "token_reload" && !isTokenReload(p)) return false;
     if (filter === "paid" && p.status !== "paid") return false;
     if (filter === "pending" && p.status !== "pending") return false;
     if (filter === "approval" && !(p.status === "pending" && p.manual_approval_status === "requested")) return false;
     if (filter === "other" && (p.status === "paid" || p.status === "pending")) return false;
-    if (planFilter !== "all" && p.plan_name !== planFilter) return false;
-    if (billingFilter !== "all" && p.billing_cycle !== billingFilter) return false;
+    if (planFilter === "package" && p.plan_name !== "Package") return false;
+    if (planFilter === "legacy" && (p.plan_name === "Package" || isTokenReload(p))) return false;
     const createdDate = new Date(p.created_at).getTime();
     if (filterStartDate && createdDate < new Date(`${filterStartDate}T00:00:00`).getTime()) return false;
     if (filterEndDate && createdDate > new Date(`${filterEndDate}T23:59:59.999`).getTime()) return false;
@@ -164,13 +214,14 @@ export default function PaymentsPage() {
     setIsReportModalOpen(true);
   };
 
-  const activeFilterCount = [filterStartDate, filterEndDate, planFilter !== "all", billingFilter !== "all", filter !== "all"].filter(Boolean).length;
+  const activeFilterCount = [filterStartDate, filterEndDate, planFilter !== "all", filter !== "all"].filter(Boolean).length;
+  const registrationApprovalCount = payments.filter((payment) => !isTokenReload(payment) && payment.status === "pending" && payment.manual_approval_status === "requested").length;
+  const reloadApprovalCount = payments.filter((payment) => isTokenReload(payment) && payment.status === "pending" && payment.manual_approval_status === "requested").length;
   const resetFilters = () => {
     setSearch("");
     setFilterStartDate("");
     setFilterEndDate("");
     setPlanFilter("all");
-    setBillingFilter("all");
     setFilter("all");
   };
 
@@ -178,7 +229,7 @@ export default function PaymentsPage() {
     if (!accessToken || approvingId) return;
     const accepted = await confirm({
       title: "Approve this payment?",
-      message: `Confirm that Audito has received and verified ${payment.currency} ${Number(payment.amount).toLocaleString()} from ${payment.org_name_resolved || payment.org_name || "this organization"}. Approval activates the subscription immediately.`,
+      message: `Confirm that Audito has received and verified ${payment.currency} ${Number(payment.amount).toLocaleString()} from ${payment.org_name_resolved || payment.org_name || "this organization"}. Approval will ${isTokenReload(payment) ? `reload ${tokenAllocationLabel(payment)}.` : payment.plan_name === "Package" ? `activate the Company package and grant ${tokenAllocationLabel(payment)}.` : `apply the ${payment.plan_name} workspace plan and grant ${tokenAllocationLabel(payment)}.`}`,
       confirmText: "Approve payment",
       cancelText: "Cancel",
       variant: "warning",
@@ -188,7 +239,7 @@ export default function PaymentsPage() {
     setApprovingId(payment.transaction_id);
     const res = await adminApi.approvePayment(accessToken, payment.transaction_id);
     if (res.success) {
-      toast("Payment approved and subscription activated.", "success");
+      toast(isTokenReload(payment) ? "Payment approved and tokens reloaded." : "Payment approved and initial tokens granted.", "success");
       await loadPayments();
     } else {
       toast(res.message || "Failed to approve payment.", "error");
@@ -209,6 +260,8 @@ export default function PaymentsPage() {
     const rangeStart = new Date(`${reportStartDate}T00:00:00`).getTime();
     const rangeEnd = new Date(`${reportEndDate}T23:59:59.999`).getTime();
     const reportPayments = payments.filter((payment) => {
+      if (activeTab === "registration" && isTokenReload(payment)) return false;
+      if (activeTab === "token_reload" && !isTokenReload(payment)) return false;
       const createdAt = new Date(payment.created_at).getTime();
       return Number.isFinite(createdAt) && createdAt >= rangeStart && createdAt <= rangeEnd;
     });
@@ -231,7 +284,7 @@ export default function PaymentsPage() {
 
     autoTable(doc, {
       startY: 76,
-      head: [["Invoice", "Organization", "Account Type", "Admin", "Admin Email", "Plan", "Billing Cycle", "Purpose", "Amount", "Currency", "Date"]],
+      head: [["Invoice", "Organization", "Account Type", "Admin", "Admin Email", "Purchase", "Payment Type", "Token Allocation", "Amount", "Currency", "Date"]],
       body: reportPayments.map((payment) => [
         payment.invoice_number || "-",
         payment.org_name_resolved || payment.org_name || "",
@@ -239,8 +292,8 @@ export default function PaymentsPage() {
         [payment.admin_first_name, payment.admin_last_name].filter(Boolean).join(" "),
         payment.admin_email || "",
         payment.plan_name,
-        payment.billing_cycle,
-        payment.purpose,
+        paymentTypeLabel(payment),
+        tokenAllocationLabel(payment),
         Number(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         payment.currency,
         reportDate(payment.paid_at || payment.created_at),
@@ -271,12 +324,23 @@ export default function PaymentsPage() {
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <ShieldCheck size={22} className="text-secondary-400" /> Payments
           </h1>
-          <p className="text-sm text-gray-400 mt-1">Review manual approval requests and view all platform payments.</p>
+          <p className="text-sm text-gray-400 mt-1">Approve registrations and token reloads, then review the complete payment trail.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button onClick={openReportModal} disabled={loading} size="md" leftIcon={<Download size={15} />}>Download report</Button>
           <Button onClick={loadPayments} disabled={loading} variant="secondary" size="md" leftIcon={<RefreshCw size={14} className={loading ? "animate-spin" : ""} />} aria-label="Refresh payments" />
         </div>
+      </div>
+
+      <div role="tablist" aria-label="Payment types" className="flex w-full gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1 sm:w-fit">
+        <button type="button" role="tab" aria-selected={activeTab === "registration"} onClick={() => setActiveTab("registration")} className={`relative flex min-h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors ${activeTab === "registration" ? "bg-secondary-500/15 text-secondary-300" : "text-gray-400 hover:bg-white/[0.04] hover:text-white"}`}>
+          Registration
+          {registrationApprovalCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full border border-primary-950 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">{registrationApprovalCount > 99 ? "99+" : registrationApprovalCount}</span>}
+        </button>
+        <button type="button" role="tab" aria-selected={activeTab === "token_reload"} onClick={() => setActiveTab("token_reload")} className={`relative flex min-h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors ${activeTab === "token_reload" ? "bg-sky-500/15 text-sky-300" : "text-gray-400 hover:bg-white/[0.04] hover:text-white"}`}>
+          Token reload
+          {reloadApprovalCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full border border-primary-950 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">{reloadApprovalCount > 99 ? "99+" : reloadApprovalCount}</span>}
+        </button>
       </div>
 
       <section className="glass overflow-hidden rounded-xl">
@@ -290,18 +354,16 @@ export default function PaymentsPage() {
             <FilterDate label="Start date" value={filterStartDate} max={filterEndDate || undefined} onChange={setFilterStartDate} />
             <FilterDate label="End date" value={filterEndDate} min={filterStartDate || undefined} onChange={setFilterEndDate} />
           </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            <FilterSelect label="Plan" value={planFilter} onChange={setPlanFilter}><option value="all">All plans</option><option value="Basic">Basic</option><option value="Pro">Pro</option><option value="Elite">Elite</option><option value="Custom">Custom</option></FilterSelect>
-            <FilterSelect label="Billing cycle" value={billingFilter} onChange={setBillingFilter}><option value="all">All cycles</option><option value="Monthly">Monthly</option><option value="Yearly">Yearly</option><option value="None">None</option></FilterSelect>
+          <div>
+            <FilterSelect label="Purchase" value={planFilter} onChange={setPlanFilter}><option value="all">All purchases</option><option value="package">Company packages</option><option value="legacy">Legacy plans</option></FilterSelect>
           </div>
           <FilterSelect label="Status" value={filter} onChange={(value) => setFilter(value as "all" | "paid" | "pending" | "approval" | "other")}><option value="all">All statuses</option><option value="approval">Approval requested</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="other">Other</option></FilterSelect>
         </div>}
-        <div className="hidden grid-cols-4 gap-2.5 p-3 sm:p-4 md:grid xl:grid-cols-7 sm:gap-4">
+        <div className="hidden grid-cols-4 gap-2.5 p-3 sm:p-4 md:grid xl:grid-cols-6 sm:gap-4">
           <div className="relative"><label className="mb-1 block text-[11px] text-gray-400">Search</label><Search size={14} className="absolute left-3 top-[31px] text-gray-500" /><input type="text" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search payments..." className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-white placeholder:text-gray-500 focus:border-secondary-500/50 focus:outline-none" /></div>
           <FilterDate label="Start date" value={filterStartDate} max={filterEndDate || undefined} onChange={setFilterStartDate} />
           <FilterDate label="End date" value={filterEndDate} min={filterStartDate || undefined} onChange={setFilterEndDate} />
-          <FilterSelect label="Plan" value={planFilter} onChange={setPlanFilter}><option value="all">All plans</option><option value="Basic">Basic</option><option value="Pro">Pro</option><option value="Elite">Elite</option><option value="Custom">Custom</option></FilterSelect>
-          <FilterSelect label="Billing cycle" value={billingFilter} onChange={setBillingFilter}><option value="all">All cycles</option><option value="Monthly">Monthly</option><option value="Yearly">Yearly</option><option value="None">None</option></FilterSelect>
+          <FilterSelect label="Purchase" value={planFilter} onChange={setPlanFilter}><option value="all">All purchases</option><option value="package">Company packages</option><option value="legacy">Legacy plans</option></FilterSelect>
           <FilterSelect label="Status" value={filter} onChange={(value) => setFilter(value as "all" | "paid" | "pending" | "approval" | "other")}><option value="all">All statuses</option><option value="approval">Approval requested</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="other">Other</option></FilterSelect>
           <div className="flex items-end"><Button variant="secondary" fullWidth onClick={resetFilters}>Reset</Button></div>
         </div>
@@ -339,11 +401,12 @@ export default function PaymentsPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={ShieldCheck}
-          title="No payments found"
-          message="Payment transactions will appear here once users start paying."
+          title={activeTab === "registration" ? "No registration payments found" : "No token reload payments found"}
+          message={activeTab === "registration" ? "Registration payments will appear here once a workspace completes its first payment." : "Token reload payments will appear here once a workspace purchases a reload package."}
         />
       ) : (
         <>
+          <div role="tabpanel" aria-label={activeTab === "registration" ? "Registration payments" : "Token reload payments"}>
           <div className="hidden md:block">
           <Table>
             <THead>
@@ -353,8 +416,8 @@ export default function PaymentsPage() {
               <Th>Account Type</Th>
               <Th>Admin</Th>
               
-              <Th>Plan</Th>
-              <Th>Billing</Th>
+              <Th>Purchase</Th>
+              <Th>Token allocation</Th>
               <Th>Amount</Th>
               <Th>Status</Th>
               <Th>Date</Th>
@@ -383,7 +446,7 @@ export default function PaymentsPage() {
                     </div>
                   </Td>
                   <Td><PlanBadge plan={p.plan_name} /></Td>
-                  <Td><span className="text-xs text-gray-400">{p.billing_cycle}</span></Td>
+                  <Td><TokenAllocation payment={p} /><PackageBreakdown payment={p} /></Td>
                   <Td>
                     <span className="text-sm font-semibold text-white">
                       {p.currency} {Number(p.amount).toLocaleString()}
@@ -409,9 +472,13 @@ export default function PaymentsPage() {
                   <div className="flex shrink-0 flex-col items-end gap-2"><StatusBadge status={p.status} manualApprovalStatus={p.manual_approval_status} /><span className="text-sm font-semibold text-white">{p.currency} {Number(p.amount).toLocaleString()}</span></div>
                 </div>
                 <div className="grid grid-cols-2 gap-px border-y border-white/[0.08] bg-white/[0.08] text-xs">
-                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Plan</p><div className="mt-1"><PlanBadge plan={p.plan_name} /></div></div>
-                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Billing</p><p className="mt-1 truncate text-gray-200">{p.billing_cycle || "—"}</p></div>
+                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Purchase</p><div className="mt-1"><PlanBadge plan={p.plan_name} /></div></div>
+                  <div className="min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Payment type</p><div className="mt-1"><PaymentTypeBadge payment={p} /></div></div>
                   <div className="col-span-2 min-w-0 bg-[#08251a]/60 px-3 py-2.5"><p className="text-[10px] uppercase tracking-wide text-gray-500">Account · date</p><p className="mt-1 truncate text-gray-200">{p.entity_type || "—"} · {new Date(p.created_at).toLocaleDateString()}</p></div>
+                </div>
+                <div className="border-b border-white/[0.08] bg-[#08251a]/60 px-3 py-2.5 text-xs">
+                  <p className="text-[10px] uppercase tracking-wide text-gray-500">Token allocation</p><div className="mt-1"><TokenAllocation payment={p} /></div>
+                  <PackageBreakdown payment={p} />
                 </div>
                 {p.status === "pending" && p.manual_approval_status === "requested" && (
                   <div className="p-3"><Button fullWidth disabled={Boolean(approvingId)} loading={approvingId === p.transaction_id} onClick={() => void approvePayment(p)}>Approve payment</Button></div>
@@ -427,6 +494,7 @@ export default function PaymentsPage() {
             pageSize={pageSize}
             onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
           />
+          </div>
         </>
       )}
     </div>

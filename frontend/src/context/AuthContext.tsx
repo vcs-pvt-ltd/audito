@@ -1,7 +1,14 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
-import { authApi, type LoginPayload, type RegisterPayload, type PaymentDetails } from "@/lib/api";
+import { App as NativeApp } from "@capacitor/app";
+import { authApi, setSessionRefresher, type LoginPayload, type RegisterPayload, type PaymentDetails } from "@/lib/api";
+import { apiBaseUrl, nativeApiConfigProblem } from "@/lib/apiConfig";
+import { AUTH_STORAGE_KEY, clearStoredAuth, readStoredAuth, writeStoredAuth } from "@/lib/native/authStorage";
+import { isNativeApp } from "@/lib/native/platform";
+
+/** The only role that can use the Audito Auditor Android app. */
+const NATIVE_APP_ROLE = "auditor";
 
 interface Admin {
   id: string;
@@ -50,9 +57,10 @@ export interface AccountInfo {
   profile_image?: string | null;
 }
 
+/** The workspace package: "Package" (Company package) or "Custom" (quoted account); null until paid. */
 export interface SubscriptionStatus {
   has_subscription: boolean;
-  plan_name: string;
+  plan_name: string | null;
   billing_cycle: string | null;
   start_date: string | null;
   end_date: string | null;
@@ -163,21 +171,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading: true,
   });
   const loginPasswordRef = useRef<string | null>(null);
+  // Latest session, readable from callbacks that outlive a render (token refresh).
+  const stateRef = useRef<AuthState>(state);
+  stateRef.current = state;
 
   useEffect(() => {
-    const stored = localStorage.getItem("audito_auth");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        setState(
-          normalizeAuthState({ accounts: [], ...parsed, isLoading: false } as AuthState)
-        );
-      } catch {
+    let cancelled = false;
+    (async () => {
+      const stored = await readStoredAuth().catch(() => null);
+      let restored: AuthState | null = null;
+      if (stored) {
+        try {
+          restored = normalizeAuthState({ accounts: [], ...JSON.parse(stored), isLoading: false } as AuthState);
+        } catch {
+          restored = null;
+        }
+      }
+      // The Android app only ever restores an auditor session.
+      if (restored && isNativeApp() && restored.admin?.role !== NATIVE_APP_ROLE) {
+        await clearStoredAuth();
+        restored = null;
+      }
+      if (cancelled) return;
+      if (restored) {
+        stateRef.current = restored;
+        setState(restored);
+      } else {
         setState((s) => ({ ...s, isLoading: false }));
       }
-    } else {
-      setState((s) => ({ ...s, isLoading: false }));
-    }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const persist = useCallback((admin: Admin, accounts: AccountInfo[], accessToken: string, refreshToken: string, subscription: SubscriptionStatus | null = null) => {
@@ -189,14 +212,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshToken,
       isLoading: false,
     });
-    localStorage.setItem("audito_auth", JSON.stringify(data));
+    // Updated at once so a request that refreshes right after uses the new tokens.
+    stateRef.current = data;
+    void writeStoredAuth(JSON.stringify(data)).catch(() => { /* the session still works until the app closes */ });
     setState(data);
+  }, []);
+
+  const clearSession = useCallback(() => {
+    loginPasswordRef.current = null;
+    const signedOut: AuthState = { admin: null, accounts: [], subscription: null, accessToken: null, refreshToken: null, isLoading: false };
+    stateRef.current = signedOut;
+    void clearStoredAuth();
+    setState(signedOut);
   }, []);
 
   const login = useCallback(
     async (payload: LoginPayload) => {
-      const preferredRole = getLastRoleForEmail(payload.email);
-      const res = await authApi.login({ ...payload, ...(preferredRole ? { preferred_role: preferredRole } : {}) }) as {
+      const native = isNativeApp();
+      if (native) {
+        const configProblem = nativeApiConfigProblem();
+        if (configProblem) return { success: false, message: configProblem };
+      }
+      const preferredRole = native ? undefined : getLastRoleForEmail(payload.email);
+      // The Android app asks the server for the auditor account only; it never falls back to another role.
+      const res = await authApi.login(native
+        ? { email: payload.email, password: payload.password, required_role: NATIVE_APP_ROLE }
+        : { ...payload, ...(preferredRole ? { preferred_role: preferredRole } : {}) }) as {
         success: boolean;
         data?: { admin?: Admin; accounts?: AccountInfo[]; subscription?: SubscriptionStatus; subscription_expired?: boolean; payment_required?: boolean; custom_solution_pending?: boolean; email_verification_required?: boolean; email?: string; payment?: PaymentDetails | null; tokens?: { accessToken: string; refreshToken: string } };
         message?: string;
@@ -219,7 +260,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, message: res.message, emailVerificationRequired: true, email: res.data.email };
       }
       if (res.success && res.data?.admin && res.data?.tokens) {
-        loginPasswordRef.current = payload.password;
+        // Checked before anything is stored: the app keeps auditor sessions only.
+        if (native && normalizeRole(res.data.admin.role) !== NATIVE_APP_ROLE) {
+          void authApi.logout(res.data.tokens.refreshToken).catch(() => { });
+          return { success: false, message: "The Audito app is for auditor accounts. Sign in with your auditor email and password." };
+        }
+        if (!native) loginPasswordRef.current = payload.password;
         rememberLastRoleForEmail(res.data.admin.email, res.data.admin.role);
         persist(res.data.admin, res.data.accounts || [], res.data.tokens.accessToken, res.data.tokens.refreshToken, res.data.subscription ?? null);
         // Return the role so login page can redirect correctly
@@ -248,6 +294,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const switchAccount = useCallback(
     async (targetRole: string, password?: string) => {
       if (!state.accessToken) return { success: false, message: "Not authenticated" };
+      if (isNativeApp()) return { success: false, message: "Switching accounts is not available in the Audito app." };
 
       const pw = password ?? loginPasswordRef.current;
       if (!pw) return { success: false, message: "Password required.", needsPassword: true };
@@ -277,23 +324,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (state.refreshToken) {
       await authApi.logout(state.refreshToken).catch(() => { });
     }
-    loginPasswordRef.current = null;
-    localStorage.removeItem("audito_auth");
-    setState({ admin: null, accounts: [], subscription: null, accessToken: null, refreshToken: null, isLoading: false });
-  }, [state.refreshToken]);
+    clearSession();
+  }, [state.refreshToken, clearSession]);
 
   // ── Auto-logout when API returns 401 (token expired) ───────────
   useEffect(() => {
     const handleExpired = () => {
       // Only act if a session exists — avoids firing on login page 401s
-      if (!localStorage.getItem("audito_auth")) return;
-      loginPasswordRef.current = null;
-      localStorage.removeItem("audito_auth");
-      setState({ admin: null, accounts: [], subscription: null, accessToken: null, refreshToken: null, isLoading: false });
+      const hasSession = isNativeApp() ? Boolean(stateRef.current.accessToken) : Boolean(localStorage.getItem(AUTH_STORAGE_KEY));
+      if (!hasSession) return;
+      clearSession();
     };
     window.addEventListener("auth:expired", handleExpired);
     return () => window.removeEventListener("auth:expired", handleExpired);
-  }, []);
+  }, [clearSession]);
+
+  // ── Android app: renew the session with the refresh token ──────
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    setSessionRefresher(async () => {
+      const current = stateRef.current;
+      if (!current.admin || !current.refreshToken) return null;
+      try {
+        const res = await fetch(`${apiBaseUrl()}/auth/refresh-token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: current.refreshToken, required_role: NATIVE_APP_ROLE }),
+        });
+        // A server error is not a sign-out: keep the session and let the user retry.
+        if (res.status >= 500) return "offline";
+        const json = await res.json().catch(() => null);
+        const tokens = json?.data?.tokens;
+        if (!res.ok || !json?.success || !tokens?.accessToken || !tokens?.refreshToken) return null;
+        // Another refresh or sign-out may have happened meanwhile; keep only a still-current session.
+        if (stateRef.current.refreshToken !== current.refreshToken || !stateRef.current.admin) return null;
+        persist(stateRef.current.admin, stateRef.current.accounts, tokens.accessToken, tokens.refreshToken, stateRef.current.subscription);
+        return tokens.accessToken as string;
+      } catch {
+        return "offline";
+      }
+    });
+    return () => setSessionRefresher(null);
+  }, [persist]);
 
   // Sync auth state across tabs
   useEffect(() => {
@@ -352,10 +424,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       success: boolean;
       data?: { admin: Admin; accounts: AccountInfo[]; subscription?: SubscriptionStatus };
     };
-    if (res.success && res.data && state.refreshToken) {
-      persist(res.data.admin, res.data.accounts || state.accounts, state.accessToken, state.refreshToken, res.data.subscription ?? null);
+    // Tokens may have been renewed while this request ran; keep the newest.
+    const latest = stateRef.current;
+    if (res.success && res.data && latest.accessToken && latest.refreshToken) {
+      if (isNativeApp() && normalizeRole(res.data.admin.role) !== NATIVE_APP_ROLE) {
+        await logout();
+        return;
+      }
+      persist(res.data.admin, res.data.accounts || latest.accounts, latest.accessToken, latest.refreshToken, res.data.subscription ?? null);
     }
-  }, [state.accessToken, state.refreshToken, state.accounts, persist]);
+  }, [state.accessToken, persist, logout]);
+
+  // ── Android app: confirm the session on start and whenever the app returns ──
+  // Expired tokens are renewed, revoked or deactivated accounts are signed out.
+  const refreshMeRef = useRef(refreshMe);
+  refreshMeRef.current = refreshMe;
+  const sessionChecked = useRef(false);
+  useEffect(() => {
+    if (!isNativeApp() || state.isLoading || !state.accessToken || sessionChecked.current) return;
+    sessionChecked.current = true;
+    void refreshMeRef.current();
+  }, [state.isLoading, state.accessToken]);
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const listener = NativeApp.addListener("resume", () => {
+      if (stateRef.current.accessToken) void refreshMeRef.current();
+    });
+    return () => { void listener.then((handle) => handle.remove()); };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ ...state, login, register, logout, switchAccount, refreshMe }}>

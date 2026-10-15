@@ -29,6 +29,9 @@ const authenticate = async (req, res, next) => {
     const tokenRole = decoded.role || 'admin';
     // Keep sessions issued before the terminology migration valid until expiry.
     const role = tokenRole === 'entity_head' ? 'organization_user' : tokenRole;
+    // Audito Auditor app sessions are only ever auditor sessions.
+    const client = decoded.client === 'auditor_app' ? 'auditor_app' : null;
+    if (client && role !== 'auditor') return errorResponse(res, 'Invalid token role.', 401);
 
     if (role === 'admin' || role === 'audito_admin') {
       const adminId = decoded.userId || decoded.adminId; // backward compat
@@ -67,7 +70,9 @@ const authenticate = async (req, res, next) => {
         orgLevel:            0,
         assignedEntityType:  auditor.assigned_entity_type,
         assignedEntityCode:  auditor.assigned_entity_code,
+        assignedOrgTreeId:   auditor.assigned_org_tree_id || null,
         createdByEntityCode: auditor.created_by_entity_code,
+        client,
       };
 
     } else if (role === 'organization_user') {

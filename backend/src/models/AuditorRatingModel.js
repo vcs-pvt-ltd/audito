@@ -12,6 +12,19 @@ const AuditorRatingModel = {
     return rows[0] || null;
   },
 
+  /** Ratings for many audits at once, keyed by audit_id. */
+  async findByAuditIds(auditIds) {
+    const ids = [...new Set((auditIds || []).filter(Boolean).map(String))];
+    if (!ids.length) return new Map();
+    const [rows] = await db.query(
+      `SELECT audit_id, stars, comment, updated_at
+         FROM auditor_audit_ratings
+        WHERE audit_id IN (?)`,
+      [ids]
+    );
+    return new Map(rows.map((row) => [String(row.audit_id), row]));
+  },
+
   async upsert({ auditor_rating_id, audit_id, auditor_id, rated_by_admin_id, stars, comment }) {
     const existing = await this.findByAuditId(audit_id);
     if (existing) {

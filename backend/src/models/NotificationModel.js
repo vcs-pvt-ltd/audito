@@ -24,7 +24,7 @@ const NotificationModel = {
     await db.query(
       `INSERT INTO user_notifications
          (notification_id, recipient_user_code, recipient_role, created_by_entity_code, type, title, message, audit_id, notify_date, notification_key, is_read)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)`,
       [id, recipientCode, recipientRole, created_by_entity_code, type, title, message, audit_id, notify_date, notification_key]
     );
     return id;
@@ -80,7 +80,7 @@ const NotificationModel = {
       `UPDATE user_notifications
        SET is_read = ?
        WHERE notification_id = ? AND recipient_user_code = ? AND recipient_role = ?`,
-      [isRead ? 1 : 0, notificationId, userCode, userRole]
+      [Boolean(isRead), notificationId, userCode, userRole]
     );
     return result.affectedRows > 0;
   },
@@ -88,8 +88,8 @@ const NotificationModel = {
   async markAllReadForUser(userCode, userRole) {
     await db.query(
       `UPDATE user_notifications
-       SET is_read = 1
-       WHERE recipient_user_code = ? AND recipient_role = ? AND is_active = TRUE AND is_read = 0`,
+       SET is_read = TRUE
+       WHERE recipient_user_code = ? AND recipient_role = ? AND is_active = TRUE AND is_read = FALSE`,
       [userCode, userRole]
     );
   },

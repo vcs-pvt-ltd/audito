@@ -5,7 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useUiFeedback } from "@/context/UiFeedbackContext";
 import { auditExecutionApi } from "@/lib/api";
+import { answerDraftKey, clearAnswerDraft, pruneAnswerDrafts, readAnswerDraft, writeAnswerDraft } from "@/lib/answerDrafts";
 import { isPastAuditEndDate } from "@/lib/auditSchedule";
+import { useNativeBackHandler } from "@/lib/native/backButton";
+import { evidenceSizeProblem } from "@/utils/imageOptimizer";
 import { useExecution } from "@/context/ExecutionContext";
 
 // Shared utilities
@@ -18,7 +21,6 @@ import {
   getEvidenceUrl,
   inferEvidenceKind,
   normalizeSelectedOptionIds,
-  compressImage,
   progressKey,
   calculateProgress,
 } from "@/utils/executionService";
@@ -59,6 +61,7 @@ interface QuestionCardHandle {
 
 interface QuestionCardProps {
   question: ChecklistQuestion;
+  displayNumber: number;
   response?: AuditResponse;
   auditId: string;
   entityCode: string;
@@ -160,7 +163,6 @@ interface AuditDetail {
 
 // ENTITY_TYPE_COLORS moved to utils/executionFormatters
 
-const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
 
 // ─── Tree helpers ─────────────────────────────────────────────────
 
@@ -208,7 +210,7 @@ function EntityCard({
           {index}
         </span>
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-white truncate block">{node.name || node.code}</span>
+          <span className="text-sm font-semibold text-white truncate block">{node.name || "Unnamed entity"}</span>
           <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded inline-block mt-0.5 ${ENTITY_TYPE_COLORS[node.entity_type] ?? "bg-gray-500/20 text-gray-300"}`}>{node.entity_type}</span>
         </div>
         <ChevronRight size={18} className="text-white/60 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
@@ -243,6 +245,7 @@ function EntityCard({
 const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function QuestionCard(
   {
     question,
+    displayNumber,
     response,
     auditId,
     entityCode,
@@ -266,11 +269,14 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     };
   }, [response?.answer_text, response?.selected_option_ids, response?.marks_obtained, response?.remarks, response?.cap_required]);
 
-  const [answerText, setAnswerText] = useState(baseline.answerText);
-  const [selectedOptions, setSelectedOptions] = useState<string[]>(baseline.selectedOptions);
-  const [freeTextMarks, setFreeTextMarks] = useState(baseline.freeTextMarks);
-  const [remarks, setRemarks] = useState(baseline.remarks);
-  const [capRequired, setCapRequired] = useState(baseline.capRequired);
+  // Unsaved answers are kept in this browser until saved (see lib/answerDrafts).
+  const draftKey = answerDraftKey("audit", auditId, entityCode, orgTreeId, question.checklist_question_id);
+  const [initial] = useState(() => readAnswerDraft(draftKey, baseline) ?? baseline);
+  const [answerText, setAnswerText] = useState(initial.answerText);
+  const [selectedOptions, setSelectedOptions] = useState<string[]>(initial.selectedOptions);
+  const [freeTextMarks, setFreeTextMarks] = useState(initial.freeTextMarks);
+  const [remarks, setRemarks] = useState(initial.remarks);
+  const [capRequired, setCapRequired] = useState(initial.capRequired);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [evidence, setEvidence] = useState<Evidence[]>(response?.evidence || []);
@@ -325,16 +331,25 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
   }, [dirty, onDirtyChange]);
 
   useEffect(() => {
-    // When response is refreshed from server, reset the local state baseline
-    setAnswerText(baseline.answerText);
-    setSelectedOptions(baseline.selectedOptions);
-    setFreeTextMarks(baseline.freeTextMarks);
-    setRemarks(baseline.remarks);
-    setCapRequired(baseline.capRequired);
+    // When the response is refreshed from the server, start from it again,
+    // keeping an unsaved answer from this browser that still applies.
+    const values = readAnswerDraft(draftKey, baseline) ?? baseline;
+    setAnswerText(values.answerText);
+    setSelectedOptions(values.selectedOptions);
+    setFreeTextMarks(values.freeTextMarks);
+    setRemarks(values.remarks);
+    setCapRequired(values.capRequired);
     setEvidence(response?.evidence || []);
-    setShowRemarks(!!baseline.remarks);
+    setShowRemarks(!!values.remarks);
     setShowEvidence((response?.evidence || []).length > 0);
-  }, [baseline, response?.evidence]);
+  }, [baseline, response?.evidence]); // draftKey is fixed for a mounted question
+
+  // Keep a changed answer in this browser until it is saved. Runs after the
+  // refresh above, so a just-saved answer is never stored again as a draft.
+  useEffect(() => {
+    if (dirty) writeAnswerDraft(draftKey, { answerText, selectedOptions, freeTextMarks, remarks, capRequired }, baseline);
+    else clearAnswerDraft(draftKey);
+  }, [dirty, answerText, selectedOptions, freeTextMarks, remarks, capRequired, baseline, draftKey]);
 
   useEffect(() => {
     if (marksObtained >= maxMarks) setCapRequired(false);
@@ -355,6 +370,7 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     });
     setSaving(false);
     if (!res.success) return false;
+    clearAnswerDraft(draftKey);
     await onSaved();
     return true;
   };
@@ -373,10 +389,12 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
       cap_required: canToggleCap ? capRequired : false,
     });
     setSaving(false);
+    if (res.success) clearAnswerDraft(draftKey);
     return res.success;
   };
 
   const discard = () => {
+    clearAnswerDraft(draftKey);
     setAnswerText(baseline.answerText);
     setSelectedOptions(baseline.selectedOptions);
     setFreeTextMarks(baseline.freeTextMarks);
@@ -402,8 +420,9 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     }
     setEvidenceErr("");
     setSaveErr("");
-    if (file.size > MAX_EVIDENCE_BYTES) {
-      setEvidenceErr(`File size must be 2MB or less. Selected: ${fmtFileSize(file.size)}`);
+    const sizeProblem = evidenceSizeProblem(file);
+    if (sizeProblem) {
+      setEvidenceErr(sizeProblem);
       return false;
     }
 
@@ -478,7 +497,7 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
     }
   };
 
-  const isAnswered = response?.status === "answered";
+  const isAnswered = ["answered", "completed"].includes(String(response?.status || "").toLowerCase());
   const answerTypeConfig: Record<string, { label: string; icon: React.ReactNode }> = {
     free_text: { label: "Free Text", icon: <AlignLeft size={11} /> },
     single_option: { label: "Single Choice", icon: <CheckSquare size={11} /> },
@@ -489,24 +508,24 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
 
   return (
     <div className={`rounded-xl border overflow-hidden transition-all ${
-      isAnswered ? "border-emerald-500/20 bg-white/[0.03]" : "border-white/[0.06] bg-white/[0.02]"
+      dirty ? "border-amber-400/40 bg-amber-400/[0.04]" : isAnswered ? "border-emerald-500/20 bg-white/[0.03]" : "border-white/[0.06] bg-white/[0.02]"
     }`}>
       {/* Accordion header */}
       <button
         onClick={() => onToggle?.(question.id)}
         className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-white/[0.03] transition-colors"
       >
-        <span className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold transition-colors ${
-          isAnswered ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" : "bg-white/5 text-gray-500"
+        <span aria-label={`Question ${displayNumber}${dirty ? ", unsaved changes" : isAnswered ? ", saved" : ", not answered"}`} className={`shrink-0 w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold transition-colors ${
+          dirty ? "bg-amber-400 text-primary-950 border-amber-300 shadow-sm shadow-amber-400/30" : isAnswered ? "bg-emerald-500 text-white border-emerald-400" : "bg-white/5 text-gray-300 border-white/15"
         }`}>
-          {question.order_index + 1}
+          {displayNumber}
         </span>
         <p className={`text-sm flex-1 ${isOpen ? "text-white font-medium" : "text-gray-300 truncate"}`}>
           {question.question_text}
         </p>
         <div className="flex items-center gap-2 shrink-0">
           <span className={`text-[10px] font-medium px-2 py-0.5 rounded transition-colors ${
-            isAnswered ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20" : "text-gray-500 bg-white/5"
+            dirty ? "text-amber-300 bg-amber-400/10 border border-amber-400/20" : isAnswered ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20" : "text-gray-500 bg-white/5"
           }`}>
             {marksObtained}/{maxMarks}
           </span>
@@ -526,11 +545,8 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
             {atCfg.icon} {atCfg.label}
           </span>
           <span className="text-[10px] text-gray-500">{maxMarks} marks</span>
-          {isAnswered && (
-            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-              <CheckCircle2 size={10} /> Answered
-            </span>
-          )}
+          {dirty ? <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/20">Unsaved changes</span>
+            : isAnswered && <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"><CheckCircle2 size={10} /> Answered</span>}
         </div>
 
         {/* Answer input */}
@@ -751,7 +767,7 @@ const QuestionCard = forwardRef<QuestionCardHandle, QuestionCardProps>(function 
               </div>
             )}
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] text-gray-600">Max 2MB</span>
+              <span className="text-[10px] text-gray-600">Photos up to 5MB · video and audio up to 2MB</span>
               {uploading && (
                 <div className="flex items-center gap-1.5 text-xs text-secondary-400">
                   <div className="w-3 h-3 border border-secondary-400 border-t-transparent rounded-full animate-spin" />
@@ -811,7 +827,11 @@ export default function MyAuditExecutePage() {
 
   const questionCardRefs = useRef<Record<number, QuestionCardHandle | null>>({});
   const dirtyMapRef = useRef<Record<number, boolean>>({});
+  // Drop answer drafts of audits left unfinished for a long time.
+  useEffect(() => { pruneAnswerDrafts(); }, []);
   const [hasUnsaved, setHasUnsaved] = useState(false);
+  // How many questions on this entity have unsaved answers (for the header Save button).
+  const [unsavedCount, setUnsavedCount] = useState(0);
   const [navModalOpen, setNavModalOpen] = useState(false);
   const pendingNavRef = useRef<null | (() => void)>(null);
   const [openQuestionId, setOpenQuestionId] = useState<number | null>(null);
@@ -882,8 +902,9 @@ export default function MyAuditExecutePage() {
 
   const handleDirtyChange = useCallback((questionId: number, dirty: boolean) => {
     dirtyMapRef.current[questionId] = dirty;
-    const anyDirty = Object.values(dirtyMapRef.current).some(Boolean);
-    setHasUnsaved(anyDirty);
+    const count = Object.values(dirtyMapRef.current).filter(Boolean).length;
+    setHasUnsaved(count > 0);
+    setUnsavedCount(count);
   }, []);
 
   const discardAllDirty = useCallback(() => {
@@ -893,7 +914,7 @@ export default function MyAuditExecutePage() {
       questionCardRefs.current[n]?.discard();
       dirtyMapRef.current[n] = false;
     }
-    setHasUnsaved(false);
+    setHasUnsaved(false); setUnsavedCount(0);
   }, []);
 
   const refreshResponses = useCallback(async () => {
@@ -939,10 +960,18 @@ export default function MyAuditExecutePage() {
       dirtyMapRef.current[n] = false;
     }
     await refreshResponses();
-    setHasUnsaved(false);
+    setHasUnsaved(false); setUnsavedCount(0);
     setIsSaving(false);
     return true;
   }, [refreshResponses]);
+
+  // Android back: one step up the areas, then back to the audit, asking first about unsaved answers.
+  useNativeBackHandler(() => {
+    if (isSaving) return true;
+    if (stepHistory.length > 1) requestNav(() => setStepHistory((h) => h.length > 1 ? h.slice(0, -1) : h));
+    else requestNav(() => router.push(`/my-audits/details?id=${auditId}`));
+    return true;
+  });
 
 
   if (isLoading) {
@@ -1022,6 +1051,21 @@ export default function MyAuditExecutePage() {
     }
   }
 
+  // The questions view's Next (to the areas below that still have questions),
+  // also offered in the header. Same rules as the Next button under the questions.
+  let headerNext: (() => void) | null = null;
+  if (activeStep?.mode === "questions" && prunedTree) {
+    const node = activeStep.orgTreeId ? findNodeByEdgeId(prunedTree, activeStep.orgTreeId) : findNode(prunedTree, activeStep.entityCode);
+    const kids = node?.children ?? [];
+    const hasNext = kids.some((child) => getAggProgress(child, auditEntityKeys, progressMap, (code, n) => progressKey(code, n.edge_id ?? null), questionsMap).tQ > 0);
+    if (hasNext) {
+      const matches = (audit?.entities || []).filter((e) => e.entity_code === activeStep.entityCode).map((e) => (e as any).org_tree_id ?? (e as any).assigned_org_tree_id ?? null);
+      const parentOrgTreeId = activeStep.orgTreeId || node?.edge_id || (matches.length === 1 ? matches[0] : null);
+      const entityCode = activeStep.entityCode;
+      headerNext = () => setStepHistory((history) => [...history, { mode: "cards", parentCode: entityCode, parentOrgTreeId }]);
+    }
+  }
+
   return (
     <div className="h-full min-h-full bg-transparent flex">
 
@@ -1042,9 +1086,21 @@ export default function MyAuditExecutePage() {
             </div>
           </div>
 
-          {/* Progress */}
+          {/* Progress and Save */}
           <div className="flex items-center gap-4 shrink-0">
-            
+            <Button size="sm" leftIcon={<Save size={14} />} loading={isSaving} disabled={!hasUnsaved || isSaving}
+              title={hasUnsaved ? "Save all unsaved answers" : "No unsaved answers"}
+              onClick={async () => {
+                const ok = await saveAllDirty();
+                toast(ok ? "All changes saved." : "Failed to save response.", ok ? "success" : "error");
+              }}>
+              Save{unsavedCount > 0 ? ` (${unsavedCount})` : ""}
+            </Button>
+            {headerNext && (
+              <Button size="sm" variant="secondary" rightIcon={<ChevronRight size={14} />} disabled={isSaving} onClick={headerNext}>
+                Next
+              </Button>
+            )}
             <div className="hidden md:flex items-center gap-3">
               <div className="text-right">
                 <span className="text-xs text-gray-400">{answeredQ}/{totalQ} questions</span>
@@ -1121,7 +1177,7 @@ export default function MyAuditExecutePage() {
                       ? (edgeId ? findNodeByEdgeId(prunedTree, edgeId) : findNode(prunedTree, code))
                       : null;
                     const ent = audit.entities.find(e => e.entity_code === code);
-                    const lbl = nd?.name || ent?.entity_name || code;
+                    const lbl = nd?.name || ent?.entity_name || "Unnamed entity";
                     const idx = i;
                     breadcrumbNodes.push({ label: lbl, goTo: () => setStepHistory(h => h.slice(0, idx + 1)) });
                   }
@@ -1220,7 +1276,7 @@ export default function MyAuditExecutePage() {
                             className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] cursor-pointer transition-all hover:border-white/20 hover:shadow-lg group">
                             <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary-800 to-primary-800/60">
                               <span className="w-8 h-8 rounded-full bg-secondary-500 flex items-center justify-center text-sm font-bold text-white">{i + 1}</span>
-                              <span className="text-sm font-semibold text-white flex-1 truncate">{e.entity_name || e.entity_code}</span>
+                              <span className="text-sm font-semibold text-white flex-1 truncate">{e.entity_name || "Unnamed entity"}</span>
                               <ChevronRight size={18} className="text-white/60 group-hover:text-white transition-all" />
                             </div>
                             <div className="p-4 flex items-center gap-5">
@@ -1304,6 +1360,11 @@ export default function MyAuditExecutePage() {
                   {/* Questions */}
                   {isAudit && questions.length > 0 && (
                     <div className="space-y-2 mb-6">
+                      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-400">
+                        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" />Answered, not saved (kept on this device)</span>
+                        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Saved answer</span>
+                        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border border-white/20 bg-white/5" />Not answered</span>
+                      </p>
                       {hasUnsaved && (
                         <div className="flex justify-end">
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
@@ -1311,13 +1372,14 @@ export default function MyAuditExecutePage() {
                           </span>
                         </div>
                       )}
-                      {questions.map((q) => {
+                      {questions.map((q, index) => {
                         const resp = entityResponses.find(r => r.checklist_question_id === q.checklist_question_id);
                         return (
                           <QuestionCard
                             key={q.checklist_question_id}
                             ref={(r) => { questionCardRefs.current[q.id] = r; }}
                             question={q}
+                            displayNumber={index + 1}
                             response={resp}
                             auditId={audit.audit_id}
                             entityCode={entityCode}

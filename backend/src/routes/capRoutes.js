@@ -58,4 +58,7 @@ router.put('/:id/resolve', ctrl.resolveCap);
 router.post('/:id/evidence', ctrl.capUpload.single('evidence_file'), ctrl.uploadCapEvidence);
 router.delete('/evidence/:evidenceId', ctrl.deleteCapEvidence);
 
+// Permanent CAP deletion (organization admin + current password required)
+router.delete('/:id', ctrl.deleteCap);
+
 module.exports = router;

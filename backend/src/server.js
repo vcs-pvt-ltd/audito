@@ -5,7 +5,6 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const { connectDB } = require('./config/db');
-const { startSubscriptionReminderScheduler } = require('./services/subscriptionReminderService');
 
 // Import routes
 const authRoutes       = require('./routes/authRoutes');
@@ -26,7 +25,9 @@ const myLearningRoutes = require('./routes/myLearningRoutes');
 const landingRoutes    = require('./routes/landingRoutes');
 const paymentRoutes    = require('./routes/paymentRoutes');
 const adminRoutes      = require('./routes/adminRoutes');
-const billingCreditRoutes = require('./routes/billingCreditRoutes');
+const organizationAiSetupRoutes = require('./routes/organizationAiSetupRoutes');
+const visualScanRoutes = require('./routes/visualScanRoutes');
+const tokenRoutes = require('./routes/tokenRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -40,7 +41,9 @@ app.use((req, res, next) => {
   next();
 });
 
-const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001'].filter(Boolean);
+// https://localhost is the Audito Auditor Android app's WebView origin (Capacitor, androidScheme "https").
+const ANDROID_APP_ORIGIN = 'https://localhost';
+const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001', ANDROID_APP_ORIGIN].filter(Boolean);
 const corsOptions = {
   origin(origin, callback) {
     // Server-to-server gateway notifications do not send an Origin header.
@@ -89,7 +92,9 @@ app.use('/api/my-learning',    myLearningRoutes);
 app.use('/api/landing',        landingRoutes);
 app.use('/api/payments',       paymentRoutes);
 app.use('/api/admin',          adminRoutes);
-app.use('/api/billing/credits', billingCreditRoutes);
+app.use('/api/organization-ai-setup', organizationAiSetupRoutes);
+app.use('/api/visual-scans', visualScanRoutes);
+app.use('/api/tokens', tokenRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -105,7 +110,6 @@ app.use((err, req, res, next) => {
 // Start server after successful DB connection
 const startServer = async () => {
   await connectDB();
-  startSubscriptionReminderScheduler();
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });

@@ -63,7 +63,7 @@ export default function LimitReachedModal({
               <div>
                 <p className="text-sm font-medium text-white">Need more?</p>
                 <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">
-                  Upgrade your subscription to the Elite plan to get unlimited access and higher quotas.
+                  Your package sets these limits. Contact the Audito team to extend your workspace.
                 </p>
               </div>
             </div>
@@ -81,7 +81,7 @@ export default function LimitReachedModal({
               router.push("/settings/billing");
             }}
           >
-            Upgrade Plan
+            View Package
           </Button>
         </div>
       </div>

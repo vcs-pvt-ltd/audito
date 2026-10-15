@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, XCircle, X } from "lucide-react";
+import { useNativeBackHandler } from "@/lib/native/backButton";
 
 type ToastType = "success" | "error" | "info" | "warning";
 
@@ -20,8 +21,20 @@ type AlertOptions = {
   variant?: ToastType;
 };
 
+type DecisionResult = "primary" | "secondary" | "cancel";
+
+type DecisionOptions = {
+  title?: string;
+  message: string;
+  primaryText?: string;
+  secondaryText?: string;
+  cancelText?: string;
+  variant?: ToastType;
+};
+
 type UiFeedbackContextType = {
   confirm: (options: ConfirmOptions | string) => Promise<boolean>;
+  decision: (options: DecisionOptions) => Promise<DecisionResult>;
   alert: (options: AlertOptions | string) => Promise<void>;
   toast: (message: string, type?: ToastType) => void;
 };
@@ -30,6 +43,7 @@ const UiFeedbackContext = createContext<UiFeedbackContextType | null>(null);
 
 type ModalState =
   | { kind: "confirm"; options: ConfirmOptions; resolve: (value: boolean) => void }
+  | { kind: "decision"; options: DecisionOptions; resolve: (value: DecisionResult) => void }
   | { kind: "alert"; options: AlertOptions; resolve: () => void }
   | null;
 
@@ -107,12 +121,26 @@ export function UiFeedbackProvider({ children }: { children: React.ReactNode }) 
     return new Promise<boolean>(resolve => setModal({ kind: "confirm", options, resolve }));
   }, []);
 
+  const decision = useCallback((options: DecisionOptions) => {
+    return new Promise<DecisionResult>(resolve => setModal({ kind: "decision", options, resolve }));
+  }, []);
+
   const alert = useCallback((input: AlertOptions | string) => {
     const options: AlertOptions = typeof input === "string" ? { message: input } : input;
     return new Promise<void>(resolve => setModal({ kind: "alert", options, resolve }));
   }, []);
 
-  const value = useMemo(() => ({ confirm, alert, toast }), [confirm, alert, toast]);
+  const value = useMemo(() => ({ confirm, decision, alert, toast }), [confirm, decision, alert, toast]);
+
+  // Android app: back answers the open dialog the same way as tapping outside it.
+  useNativeBackHandler(() => {
+    if (!modal) return false;
+    if (modal.kind === "confirm") modal.resolve(false);
+    else if (modal.kind === "decision") modal.resolve("cancel");
+    else modal.resolve();
+    setModal(null);
+    return true;
+  }, Boolean(modal));
 
   return (
     <UiFeedbackContext.Provider value={value}>
@@ -125,11 +153,12 @@ export function UiFeedbackProvider({ children }: { children: React.ReactNode }) 
             className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
             onClick={() => {
               if (modal.kind === "confirm") modal.resolve(false);
+              else if (modal.kind === "decision") modal.resolve("cancel");
               else modal.resolve();
               setModal(null);
             }}
           />
-          <div className="relative w-full max-w-sm animate-in fade-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200">
+          <div className={`relative w-full ${modal.kind === "decision" ? "max-w-lg" : "max-w-sm"} animate-in fade-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200`}>
             {/* Glass card */}
             <div className="glass border border-white/[0.12] rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden">
               {/* Colored top accent line */}
@@ -145,14 +174,35 @@ export function UiFeedbackProvider({ children }: { children: React.ReactNode }) 
                   <ModalIcon type={modal.options.variant || "info"} />
                   <div className="flex-1 min-w-0 pt-0.5">
                     <h3 className="text-sm font-semibold text-white leading-snug">
-                      {modal.options.title || (modal.kind === "confirm" ? "Are you sure?" : "Notice")}
+                      {modal.options.title || (modal.kind === "alert" ? "Notice" : "Are you sure?")}
                     </h3>
                     <p className="text-sm text-gray-400 mt-1 leading-relaxed">{modal.options.message}</p>
                   </div>
                 </div>
 
-                <div className="mt-5 flex items-center gap-2 justify-end">
-                  {modal.kind === "confirm" ? (
+                <div className={modal.kind === "decision" ? "mt-5 grid gap-2 sm:grid-cols-3" : "mt-5 flex items-center gap-2 justify-end"}>
+                  {modal.kind === "decision" ? (
+                    <>
+                      <button
+                        onClick={() => { modal.resolve("cancel"); setModal(null); }}
+                        className="px-3 py-2 rounded-xl text-sm text-gray-400 border border-white/10 hover:text-white hover:border-white/20 hover:bg-white/5 transition-all"
+                      >
+                        {modal.options.cancelText || "Cancel"}
+                      </button>
+                      <button
+                        onClick={() => { modal.resolve("secondary"); setModal(null); }}
+                        className="px-3 py-2 rounded-xl text-sm font-semibold text-red-300 border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 transition-all"
+                      >
+                        {modal.options.secondaryText || "Discard"}
+                      </button>
+                      <button
+                        onClick={() => { modal.resolve("primary"); setModal(null); }}
+                        className="px-3 py-2 rounded-xl text-sm font-semibold bg-secondary-500 hover:bg-secondary-400 text-primary-950 transition-all"
+                      >
+                        {modal.options.primaryText || "Save"}
+                      </button>
+                    </>
+                  ) : modal.kind === "confirm" ? (
                     <>
                       <button
                         onClick={() => { modal.resolve(false); setModal(null); }}

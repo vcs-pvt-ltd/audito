@@ -29,9 +29,11 @@ router.post('/reset-password', authController.resetPassword);
 router.post('/verify-email', authController.verifyEmail);
 router.post('/set-admin-password', authController.setAdminPassword);
 router.post('/check-registration-email', authController.checkRegistrationEmail);
-router.get('/custom-solution/setup-admin/:paymentCode', authController.getCustomSolutionAdminSetup);
-router.post('/custom-solution/setup-admin', authController.setupCustomSolutionAdmin);
-router.post('/validate-promo-code', authController.validatePromoCode);
+// Customer and Audit Firm registration from an Audito quote (one-time emailed link).
+router.get('/quote-registration/:token', require('../controllers/quoteRegistrationController').getQuoteRegistration);
+router.post('/quote-registration', require('../controllers/quoteRegistrationController').registerFromQuote);
+// Promo codes are checked on the payment page, with an attempt limit per payment.
+router.post('/validate-promo-code', (_req, res) => res.status(410).json({ success: false, message: 'Enter promo codes on the payment page.' }));
 
 // Protected routes
 router.get('/me', authenticate, authController.getMe);

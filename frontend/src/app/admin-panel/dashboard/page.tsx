@@ -15,11 +15,10 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from "recharts";
 
-const PLAN_COLORS: Record<string, string> = {
-  Basic: "#6b7280",
-  Pro: "#10b981",
-  Elite: "#8b5cf6",
-  Custom: "#f59e0b",
+// Paid workspaces by package type.
+const PACKAGE_TYPES: Record<string, { label: string; color: string }> = {
+  Package: { label: "Company package", color: "#10b981" },
+  Custom: { label: "Quoted account", color: "#f59e0b" },
 };
 
 const PERIODS = [
@@ -104,9 +103,9 @@ export default function AuditoAdminDashboard() {
   }));
 
   const planData = (charts?.plan_distribution ?? []).map((p) => ({
-    name: p.plan_name,
-    value: p.count,
-    color: PLAN_COLORS[p.plan_name] || "#6b7280",
+    name: PACKAGE_TYPES[p.plan_name]?.label || p.plan_name,
+    value: Number(p.count),
+    color: PACKAGE_TYPES[p.plan_name]?.color || "#6b7280",
   }));
   const incomeData = (charts?.income_distribution ?? []).map((item) => ({
     label: item.period_label,
@@ -140,11 +139,11 @@ export default function AuditoAdminDashboard() {
             />
             <StatCard
               icon={Puzzle}
-              label="Custom Solutions"
-              value={c!.custom_solutions}
+              label="Account Reviews"
+              value={c!.contact_reviews}
               accent="bg-purple-500/15"
-              href="/admin-panel/custom-solutions"
-              sub={`${c!.custom_solutions_pending} pending`}
+              href="/admin-panel/contact-reviews"
+              sub={`${c!.contact_reviews_pending} need a quote`}
             />
             <StatCard
               icon={Building2}
@@ -289,11 +288,11 @@ export default function AuditoAdminDashboard() {
               )}
             </div>
 
-            {/* Plan Distribution Pie */}
+            {/* Package Distribution Pie */}
             <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
               <div className="flex items-center gap-2 mb-4">
                 <Tag size={16} className="text-secondary-400" />
-                <h3 className="text-sm font-semibold text-white">Plan Distribution</h3>
+                <h3 className="text-sm font-semibold text-white">Package Distribution</h3>
               </div>
               {planData.length === 0 ? (
                 <div className="h-[250px] flex items-center justify-center text-xs text-gray-500">No data yet</div>
@@ -344,8 +343,8 @@ export default function AuditoAdminDashboard() {
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               {[
                 { icon: Mail, label: "Messages", href: "/admin-panel/messages", color: "text-blue-400" },
-                { icon: CreditCard, label: "Promo Codes", href: "/admin-panel/promo-codes", color: "text-emerald-400" },
-                { icon: Puzzle, label: "Custom Solutions", href: "/admin-panel/custom-solutions", color: "text-purple-400" },
+                { icon: CreditCard, label: "Pricing Settings", href: "/admin-panel/plans", color: "text-emerald-400" },
+                { icon: Puzzle, label: "Account Reviews", href: "/admin-panel/contact-reviews", color: "text-purple-400" },
                 { icon: ShieldCheck, label: "Payments", href: "/admin-panel/payments", color: "text-amber-400" },
                 { icon: ShieldCheck, label: "Admins", href: "/admin-panel/admins", color: "text-cyan-400" },
               ].map((a) => (

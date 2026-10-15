@@ -7,13 +7,25 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "android:web": "node scripts/android/build-web.mjs",
+    "android:sync": "npm run android:web && cap sync android",
+    "android:apk": "npm run android:sync && node scripts/android/gradle.mjs assembleDebug && node scripts/android/verify-apk.mjs",
+    "android:verify": "node scripts/android/verify-apk.mjs",
+    "android:open": "cap open android"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/filesystem": "8.1.4",
+    "@capacitor/share": "8.0.3",
+    "@capacitor/splash-screen": "8.0.2",
     "@next/third-parties": "^16.2.10",
+    "capacitor-secure-storage-plugin": "0.13.0",
     "framer-motion": "^12.38.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
@@ -26,6 +38,7 @@
     "tailwind-scrollbar": "^4.0.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.3",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^25.4.0",
     "@types/react": "^19.2.14",

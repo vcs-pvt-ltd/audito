@@ -9,7 +9,7 @@ export default function CustomSolutionPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/register?plan=Custom");
+    router.replace("/register?contact=1");
   }, [router]);
 
   return (

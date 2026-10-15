@@ -12,7 +12,7 @@ const AuditExecutionModel = {
 
   // ── RESPONSES ────────────────────────────────────────────────────
 
-  async upsertResponse({ audit_response_id, audit_id, org_tree_id, entity_code, checklist_question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by }) {
+  async upsertResponse({ audit_response_id, audit_id, org_tree_id, entity_code, checklist_question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by }, executor = db) {
     const normId = (org_tree_id !== null && org_tree_id !== undefined) ? (org_tree_id || null) : null;
     const vals = [
       answer_text || null,
@@ -22,21 +22,21 @@ const AuditExecutionModel = {
     ];
 
     if (normId === null) {
-      // MySQL treats NULLs as distinct in UNIQUE keys, so ON DUPLICATE KEY UPDATE never fires.
+      // PostgreSQL unique keys also treat NULLs as distinct by default.
       // Use explicit UPDATE → INSERT to prevent duplicate rows.
-      const [upd] = await db.query(
+      const [upd] = await executor.query(
         `UPDATE audit_responses SET answer_text=?, selected_option_ids=?, marks_obtained=?, remarks=?, cap_required=?, status=?, answered_by=?, answered_at=NOW()
          WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=? AND checklist_question_id=?`,
         [...vals, audit_id, entity_code, checklist_question_id]
       );
       if (upd.affectedRows > 0) {
-        const [r] = await db.query(
+        const [r] = await executor.query(
           'SELECT audit_response_id FROM audit_responses WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=? AND checklist_question_id=? ORDER BY audit_response_id DESC LIMIT 1',
           [audit_id, entity_code, checklist_question_id]
         );
         return r[0]?.audit_response_id;
       }
-      const [ins] = await db.query(
+      await executor.query(
         `INSERT INTO audit_responses (audit_response_id, audit_id, org_tree_id, entity_code, checklist_question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by, answered_at)
          VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [audit_response_id, audit_id, entity_code, checklist_question_id, ...vals]
@@ -44,7 +44,7 @@ const AuditExecutionModel = {
       return audit_response_id;
     }
 
-    const [res] = await db.query(
+    await executor.query(
       `INSERT INTO audit_responses
          (audit_response_id, audit_id, org_tree_id, entity_code, checklist_question_id, answer_text, selected_option_ids, marks_obtained, remarks, cap_required, status, answered_by, answered_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
@@ -58,8 +58,7 @@ const AuditExecutionModel = {
          answered_at = NOW()`,
       [audit_response_id, audit_id, normId, entity_code, checklist_question_id, ...vals]
     );
-    if (res.insertId) return audit_response_id;
-    const [rows] = await db.query(
+    const [rows] = await executor.query(
       'SELECT audit_response_id FROM audit_responses WHERE audit_id=? AND org_tree_id<=>? AND entity_code=? AND checklist_question_id=?',
       [audit_id, normId, entity_code, checklist_question_id]
     );
@@ -68,11 +67,11 @@ const AuditExecutionModel = {
 
   async getResponse(audit_id, org_tree_id, checklist_question_id) {
     const [rows] = await db.query(
-      `SELECT r.*, GROUP_CONCAT(e.audit_evidence_id) AS evidence_ids
+      `SELECT r.*, (SELECT STRING_AGG(e.audit_evidence_id::text, ',')
+                    FROM audit_evidence e WHERE e.audit_response_id = r.audit_response_id) AS evidence_ids
        FROM audit_responses r
-       LEFT JOIN audit_evidence e ON e.audit_response_id = r.audit_response_id
        WHERE r.audit_id = ? AND r.org_tree_id <=> ? AND r.checklist_question_id = ?
-       GROUP BY r.audit_response_id`,
+       ORDER BY r.id DESC LIMIT 1`,
       [audit_id, org_tree_id || null, checklist_question_id]
     );
     return rows[0] || null;
@@ -89,7 +88,7 @@ const AuditExecutionModel = {
          GROUP BY checklist_question_id
        ) dedup ON r.audit_response_id = dedup.max_audit_response_id
        ORDER BY r.checklist_question_id`,
-      [audit_id, org_tree_id ?? null, entity_code, audit_id, org_tree_id ?? null, entity_code]
+      [audit_id, org_tree_id ?? null, entity_code]
     );
     return rows;
   },
@@ -216,6 +215,36 @@ const AuditExecutionModel = {
     return rows;
   },
 
+  /**
+   * Adds `selected_option_texts` (the chosen answers' labels, in checklist
+   * order) to audit or CAP response rows. Choice answers store only option ids,
+   * as an array (jsonb) or JSON text.
+   */
+  async attachSelectedOptionTexts(items) {
+    const idsOf = (value) => {
+      if (Array.isArray(value)) return value.map(String);
+      if (typeof value !== 'string' || !value.trim()) return [];
+      try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.map(String) : [String(parsed)]; }
+      catch { return value.split(',').map((id) => id.trim()).filter(Boolean); }
+    };
+    const allIds = [...new Set(items.flatMap((item) => idsOf(item.selected_option_ids)))];
+    if (!allIds.length) return items.map((item) => ({ ...item, selected_option_texts: [] }));
+    const [options] = await db.query(
+      `SELECT checklist_question_option_id, option_text, order_index
+         FROM checklist_question_options WHERE checklist_question_option_id IN (?)`,
+      [allIds]
+    );
+    const byId = new Map(options.map((option) => [String(option.checklist_question_option_id), option]));
+    return items.map((item) => ({
+      ...item,
+      selected_option_texts: idsOf(item.selected_option_ids)
+        .map((id) => byId.get(id))
+        .filter(Boolean)
+        .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+        .map((option) => option.option_text),
+    }));
+  },
+
   async listCorrectiveActionsByAudit(audit_id) {
     const [rows] = await db.query(
       `SELECT * FROM corrective_actions WHERE audit_id = ? ORDER BY created_at`,
@@ -284,20 +313,20 @@ const AuditExecutionModel = {
 
   // ── ENTITY PROGRESS ──────────────────────────────────────────────
 
-  async upsertProgress({ audit_entity_progress_id, audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status }) {
+  async upsertProgress({ audit_entity_progress_id, audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status }, executor = db) {
     const normId = (org_tree_id !== null && org_tree_id !== undefined) ? (org_tree_id || null) : null;
     const completedAt = status === 'completed' ? new Date() : null;
     const updateVals = [total_questions, answered_questions, total_marks, obtained_marks, status, completedAt];
 
     if (normId === null) {
-      // MySQL treats NULLs as distinct in UNIQUE keys, so ON DUPLICATE KEY UPDATE never fires.
-      const [upd] = await db.query(
+      // PostgreSQL unique keys also treat NULLs as distinct by default.
+      const [upd] = await executor.query(
         `UPDATE audit_entity_progress SET total_questions=?, answered_questions=?, total_marks=?, obtained_marks=?, status=?, completed_at=?
          WHERE audit_id=? AND org_tree_id IS NULL AND entity_code=?`,
         [...updateVals, audit_id, entity_code]
       );
       if (upd.affectedRows === 0) {
-        await db.query(
+        await executor.query(
           `INSERT INTO audit_entity_progress (audit_entity_progress_id, audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status, completed_at)
            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
           [audit_entity_progress_id, audit_id, entity_code, ...updateVals]
@@ -306,7 +335,7 @@ const AuditExecutionModel = {
       return;
     }
 
-    await db.query(
+    await executor.query(
       `INSERT INTO audit_entity_progress
          (audit_entity_progress_id, audit_id, org_tree_id, entity_code, total_questions, answered_questions, total_marks, obtained_marks, status, completed_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -340,15 +369,15 @@ const AuditExecutionModel = {
 
   async deleteUnassignedProgress(audit_id) {
     await db.query(
-      `DELETE p
-       FROM audit_entity_progress p
-       LEFT JOIN audit_assignment_entities aae
-         ON aae.audit_id = p.audit_id
-        AND aae.entity_code = p.entity_code
-        AND aae.org_tree_id <=> p.org_tree_id
-        AND aae.is_active = TRUE
+      `DELETE FROM audit_entity_progress p
        WHERE p.audit_id = ?
-         AND aae.id IS NULL`,
+         AND NOT EXISTS (
+           SELECT 1 FROM audit_assignment_entities aae
+           WHERE aae.audit_id = p.audit_id
+             AND aae.entity_code = p.entity_code
+             AND aae.org_tree_id IS NOT DISTINCT FROM p.org_tree_id
+             AND aae.is_active = TRUE
+         )`,
       [audit_id]
     );
   },
@@ -401,10 +430,9 @@ const AuditExecutionModel = {
     );
     const auditRootCode = audit?.created_by || null;
 
-    // For execution UI we want the full org tree under the audit root so sibling
-    // nodes (e.g. Unit 2) remain visible even if no assigned leaf edge references them.
-    // We still build node instances keyed by edge id, so reused entity codes can
-    // appear under multiple parents without collapsing.
+    // Build only the branches required to reach the entity instances assigned to
+    // this audit. Keeping the edge id is essential because the same entity code
+    // can be reused under more than one parent.
     let filteredEdges = [];
     if (auditRootCode) {
       const assignedEdgeIds = [...new Set(entities.map(e => e.org_tree_id).filter(Boolean))];
@@ -421,7 +449,24 @@ const AuditExecutionModel = {
       }
 
       const allowedRootCodes = [...new Set([auditRootCode, ...assignedRootCodes])];
-      filteredEdges = await OrganizationTreeModel.getTreeDescendants(auditRootCode, allowedRootCodes);
+      const visibleEdges = await OrganizationTreeModel.getTreeDescendants(auditRootCode, allowedRootCodes);
+
+      // Each edge_path contains the selected edge and all of its ancestors. The
+      // union of those paths gives us a minimal audit tree: selected instances
+      // remain in their hierarchy context, while unselected siblings and
+      // descendants are excluded. Selecting every checklist entity naturally
+      // produces the same complete tree as before.
+      const selectedPathEdgeIds = new Set();
+      if (assignedEdgeIds.length) {
+        const assignedEdgeIdSet = new Set(assignedEdgeIds.map(String));
+        for (const edge of visibleEdges) {
+          if (!assignedEdgeIdSet.has(String(edge.org_tree_id))) continue;
+          for (const pathEdgeId of String(edge.edge_path || edge.org_tree_id).split(',')) {
+            if (pathEdgeId) selectedPathEdgeIds.add(String(pathEdgeId));
+          }
+        }
+      }
+      filteredEdges = visibleEdges.filter((edge) => selectedPathEdgeIds.has(String(edge.org_tree_id)));
     } else {
       // Fallback: when we don't know the audit root, build a minimal tree from assigned edges.
       const assignedEdgeIds = [...new Set(entities.map(e => e.org_tree_id).filter(Boolean))];

@@ -9,22 +9,17 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import type { AccountInfo } from "@/context/AuthContext";
 import { noticeApi, linksApi } from "@/lib/api";
+import { mediaUrl } from "@/lib/apiConfig";
 import {
   LogOut, LayoutDashboard, Building2, Link as LinkIcon, ClipboardList, Menu, X,
   ChevronDown, PanelLeftClose, PanelLeftOpen, FolderTree, Users, Shield, FileCheck, Repeat, Eye, EyeOff,
-  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Trash2, Inbox, Tag, BadgePercent, Bot, CheckCheck,
+  Loader2, Settings, MapPin, Bell, UserCircle2, CreditCard, HelpCircle, Mail, Puzzle, Banknote, Trash2, Inbox, Tag, BadgePercent, CheckCheck, ScanSearch,
 } from "lucide-react";
 
 // ─── Avatar helper (mirrors profile page) ────────────────────────
-const MEDIA_ORIGIN =
-  process.env.NEXT_PUBLIC_MEDIA_URL ||
-  (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/api\/?$/, "");
-
 function getAvatarUrl(path: string | null | undefined): string | null {
   if (!path) return null;
-  if (path.startsWith("data:")) return path;
-  if (path.startsWith("http")) return path;
-  return `${MEDIA_ORIGIN}${path}`;
+  return mediaUrl(path) || null;
 }
 
 // ─── Avatar component — image if available, else initials ────────
@@ -178,8 +173,8 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
       { label: "Evaluation Papers", path: "/learning/evaluation-papers", icon: ClipboardList },
     ]},
     { label: "Settings", icon: Settings, items: [
-      { label: "TimeZone", path: "/settings/timezone", icon: MapPin, minOrgLevel: 4 },
-      { label: "Notices", path: "/settings/notices", icon: Bell, minOrgLevel: 4 },
+      { label: "TimeZone", path: "/settings/timezone", icon: MapPin },
+      { label: "Notices", path: "/settings/notices", icon: Bell },
       { label: "Organization Info", path: "/settings/organization", icon: Building2 },
       { label: "Billing", path: "/settings/billing", icon: CreditCard },
       { label: "Help", path: "/settings/help", icon: HelpCircle },
@@ -203,8 +198,8 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
       { label: "Evaluation Papers", path: "/learning/evaluation-papers", icon: ClipboardList },
     ]},
     { label: "Settings", icon: Settings, items: [
-      { label: "TimeZone", path: "/settings/timezone", icon: MapPin, minOrgLevel: 5 },
-      { label: "Notices", path: "/settings/notices", icon: Bell, minOrgLevel: 5 },
+      { label: "TimeZone", path: "/settings/timezone", icon: MapPin },
+      { label: "Notices", path: "/settings/notices", icon: Bell },
       { label: "Organization Info", path: "/settings/organization", icon: Building2 },
       { label: "Billing", path: "/settings/billing", icon: CreditCard },
       { label: "Help", path: "/settings/help", icon: HelpCircle },
@@ -214,6 +209,7 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
     { type: "link", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { type: "link", label: "My Audits", path: "/my-audits", icon: FileCheck, matchPrefix: true },
     { type: "link", label: "My CAPs", path: "/my-caps", icon: FileCheck, matchPrefix: true },
+    { type: "link", label: "AI Site Scan", path: "/ai-site-scan", icon: ScanSearch, matchPrefix: true },
     { label: "My Learning", icon: ClipboardList, items: [
       { label: "Trainings", path: "/my-learning/trainings", icon: FileCheck },
       { label: "Field Visits", path: "/my-learning/field-visits", icon: MapPin },
@@ -229,15 +225,14 @@ const NAV_CONFIG: Record<string, NavEntry[]> = {
   ],
   audito_admin: [
     { type: "link", label: "Dashboard", path: "/admin-panel/dashboard", icon: LayoutDashboard },
-    { type: "link", label: "Plans & Limits", path: "/admin-panel/plans", icon: Settings, matchPrefix: true },
-    { type: "link", label: "AI Knowledge", path: "/admin-panel/ai-knowledge", icon: Bot, matchPrefix: true },
+    { type: "link", label: "Pricing Settings", path: "/admin-panel/plans", icon: Settings, matchPrefix: true },
+    { type: "link", label: "Account Reviews", path: "/admin-panel/contact-reviews", icon: Puzzle, matchPrefix: true },
     { type: "link", label: "Privacy Policies", path: "/admin-panel/privacy-policies", icon: FileCheck, matchPrefix: true },
     { type: "link", label: "Messages", path: "/admin-panel/messages", icon: Mail, matchPrefix: true },
     { label: "Promotions", icon: Tag, items: [
       { label: "Campaigns", path: "/admin-panel/promotions", icon: BadgePercent },
       { label: "Promo Codes", path: "/admin-panel/promo-codes", icon: CreditCard },
     ]},
-    { type: "link", label: "Custom Solutions", path: "/admin-panel/custom-solutions", icon: Puzzle, matchPrefix: true },
     { type: "link", label: "Payments", path: "/admin-panel/payments", icon: Banknote, matchPrefix: true },
     { type: "link", label: "Organizations", path: "/admin-panel/organizations", icon: Building2, matchPrefix: true },
     { type: "link", label: "Admins", path: "/admin-panel/admins", icon: Shield, matchPrefix: true },

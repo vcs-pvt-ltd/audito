@@ -6,7 +6,7 @@
  *   GET    /api/audits                     List audit assignments
  *   GET    /api/audits/:id                  Get one with entities
  *   PUT    /api/audits/:id                  Update assignment
- *   DELETE /api/audits/:id                  Permanently delete a planned audit
+ *   DELETE /api/audits/:id                  Permanently delete an audit (admin password required)
  *
  * HELPER
  *   GET    /api/audits/checklist/:id/entities  Get entities that have questions in this checklist
@@ -26,12 +26,14 @@ const {
   getAccessibleEntityCodes,
 } = require('../utils/accessHelper');
 const AuditExecutionModel = require('../models/AuditExecutionModel');
-const LimitsEnforcer = require('../utils/limitsEnforcer');
 const { sendAuditAssignedEmail, sendAuditFirmAssignmentEmail } = require('../services/emailService');
 const NotificationModel = require('../models/NotificationModel');
 const { notifyOrganizationUsersForEntities } = require('../utils/organizationUserNotifications');
 const { getCountryDialingCode } = require('../utils/orgLookup');
 const { generateAuditorRatingId } = require('../utils/codeGenerator');
+const RecordDeletionService = require('../services/recordDeletionService');
+const TokenWalletModel = require('../models/TokenWalletModel');
+const { verifyAdminPassword, removeStoredMedia } = require('../utils/criticalDeletion');
 
 function formatPhoneWithDialingCode(phoneNumber, dialingCode) {
   const phone = String(phoneNumber || '').trim();
@@ -50,21 +52,22 @@ function auditScore(marks, total) {
   };
 }
 
-// Generate a unique audit_code like AUD-20260316-0001
+// Generate a unique audit_code like AUD-20260316-0001.
+// A deleted audit keeps its token reservation (token history), so codes still
+// referenced by a reservation are never handed out again.
 async function generateAuditCode() {
   const date = new Date();
   const ymd = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
   const prefix = `AUD-${ymd}-`;
   const [rows] = await db.query(
-    `SELECT audit_id FROM audit_assignments WHERE audit_id LIKE ? ORDER BY audit_id DESC LIMIT 1`,
-    [`${prefix}%`]
+    `SELECT audit_id FROM audit_assignments WHERE audit_id LIKE ?
+     UNION ALL
+     SELECT audit_id FROM token_reservations WHERE audit_id LIKE ?`,
+    [`${prefix}%`, `${prefix}%`]
   );
-  let seq = 1;
-  if (rows.length) {
-    const last = rows[0].audit_id.split('-').pop();
-    seq = parseInt(last, 10) + 1;
-  }
-  return `${prefix}${String(seq).padStart(4, '0')}`;
+  // Compare numerically: the sequence can grow past four digits.
+  const last = rows.reduce((max, row) => Math.max(max, Number.parseInt(String(row.audit_id).split('-').pop(), 10) || 0), 0);
+  return `${prefix}${String(last + 1).padStart(4, '0')}`;
 }
 
 // Resolve entity names fresh from source tables — never rely on stored cache.
@@ -485,19 +488,12 @@ const createAudit = async (req, res) => {
       }
     }
 
-    const creation = await LimitsEnforcer.withQuotaLock(
-      req.user.entityCode,
-      'audit',
-      async () => {
-        const limitError = await LimitsEnforcer.checkAuditLimit(req.user.entityCode);
-        if (limitError) return { limitError };
-
-        const audit_code = await generateAuditCode();
-
-        const connection = await db.getConnection();
-        try {
-          await connection.beginTransaction();
-          const id = await AuditModel.create({
+    const audit_code = await generateAuditCode();
+    const connection = await db.getConnection();
+    let creation;
+    try {
+      await connection.beginTransaction();
+      const id = await AuditModel.create({
           audit_id: audit_code, checklist_id, title, audit_type,
           assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
           budget: budget ?? checklist.budget,
@@ -506,27 +502,34 @@ const createAudit = async (req, res) => {
           start_date, end_date, notes,
           created_by: req.user.entityCode,
           status: 'plan',
-          }, connection);
+      }, connection);
 
         // Store only codes+types (+ org_tree_id if provided) — names are always resolved fresh on read
-        const entitiesToStore = entities.map(({ org_tree_id, entity_code, entity_type }) => ({
-          org_tree_id: org_tree_id || null,
-          entity_code,
-          entity_type,
-        }));
-          await AuditModel.addEntities(id, entitiesToStore, connection);
-          await connection.commit();
-          return { id };
-        } catch (error) {
-          await connection.rollback();
-          throw error;
-        } finally {
-          connection.release();
-        }
+      const entitiesToStore = entities.map(({ org_tree_id, entity_code, entity_type }) => ({
+        org_tree_id: org_tree_id || null,
+        entity_code,
+        entity_type,
+      }));
+      await AuditModel.addEntities(id, entitiesToStore, connection);
+      const tokenReservation = await TokenWalletModel.reserveForAudit(connection, {
+        rootEntityCode: req.user.entityCode,
+        auditId: id,
+        questions: checklistQuestions,
+        entities: entitiesToStore,
+        startDate: start_date,
+      });
+      await connection.commit();
+      creation = { id, tokenReservation };
+    } catch (error) {
+      await connection.rollback();
+      if (['INSUFFICIENT_TOKENS', 'INSUFFICIENT_ELIGIBLE_TOKENS'].includes(error.code)) {
+        return errorResponse(res, error.message, 402, error.details);
       }
-    );
-    if (creation.limitError) return errorResponse(res, creation.limitError, 403);
-    const { id } = creation;
+      throw error;
+    } finally {
+      connection.release();
+    }
+    const { id, tokenReservation } = creation;
 
     const created = await AuditModel.getWithEntities(id);
     if (created && created.entities && created.entities.length > 0) {
@@ -612,10 +615,39 @@ const createAudit = async (req, res) => {
       }
     }
 
-    return successResponse(res, { audit: created }, 'Audit assignment created.', 201);
+    return successResponse(res, {
+      audit: created,
+      token_reservation: tokenReservation,
+    }, 'Audit assignment created and tokens put on hold.', 201);
   } catch (err) {
     console.error('createAudit error:', err);
     return errorResponse(res, 'Failed to create audit assignment.', 500);
+  }
+};
+
+// POST /api/audits/quote
+const quoteAuditTokens = async (req, res) => {
+  try {
+    const { checklist_id, entities, start_date } = req.body;
+    if (!checklist_id || !Array.isArray(entities) || entities.length === 0 || !start_date) {
+      return errorResponse(res, 'checklist_id, start_date, and at least one entity are required.', 400);
+    }
+    const checklist = await ChecklistModel.findById(checklist_id);
+    const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
+    if (!checklist || !accessibleCodes.includes(checklist.created_by)) {
+      return errorResponse(res, 'Checklist not found.', 404);
+    }
+    const questions = await ChecklistModel.listQuestions(checklist_id);
+    const quote = await TokenWalletModel.quoteAudit({
+      rootEntityCode: req.user.entityCode,
+      questions,
+      entities,
+      startDate: start_date,
+    });
+    return successResponse(res, { quote });
+  } catch (error) {
+    console.error('quoteAuditTokens error:', error);
+    return errorResponse(res, 'Failed to calculate audit tokens.', 500);
   }
 };
 
@@ -653,6 +685,14 @@ const listAudits = async (req, res) => {
       } else {
         const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
         audits = await AuditModel.list(accessibleCodes);
+        // The creating workspace rates the auditor of a completed audit from the list.
+        const ratings = await AuditorRatingModel.findByAuditIds(
+          audits.filter((a) => a.created_by === req.user.entityCode && String(a.status || '').toLowerCase() === 'completed').map((a) => a.audit_id)
+        );
+        for (const a of audits) {
+          const rating = ratings.get(String(a.audit_id));
+          a.auditor_rating = rating ? { stars: Number(rating.stars), comment: rating.comment || null } : null;
+        }
       }
     }
     // Attach entity count and calculate progress per audit
@@ -883,6 +923,9 @@ const updateAudit = async (req, res) => {
     if (isFirmAdmin && auditHasStarted && assignmentChanged) {
       return errorResponse(res, 'The auditor assignment cannot be changed after the audit has started.', 409);
     }
+    if (auditHasStarted && Array.isArray(req.body.entities)) {
+      return errorResponse(res, 'The audit scope cannot be changed after the audit has started.', 409);
+    }
 
     // Firm admin is only allowed to assign/update the assigned_auditor_id (handover internal assignment).
     if (isFirmAdmin && !isCreatorAdmin) {
@@ -950,19 +993,9 @@ const updateAudit = async (req, res) => {
     const previousAssignedAuditor = audit.assigned_auditor_id || null;
     const previousAssignedFirm = audit.assigned_firm_code || null;
 
-    // Allow status-only updates without requiring other fields
+    // Status changes are commands because they also mutate token reservations.
     if (status && !title && !audit_type) {
-      // Update only the status field
-      await db.query(
-        `UPDATE audit_assignments SET status = ? WHERE audit_id = ?`,
-        [status, id]
-      );
-      const updated = await AuditModel.getWithEntities(id);
-      if (updated && updated.entities && updated.entities.length > 0) {
-        const nameMap = await resolveEntityNames(updated.entities);
-        for (const e of updated.entities) e.entity_name = nameMap[e.entity_code] || e.entity_code;
-      }
-      return successResponse(res, { audit: updated }, 'Audit status updated.');
+      return errorResponse(res, 'Use the audit start, cancel, restore, or complete action to change status.', 409);
     }
 
     // Full update requires all core fields
@@ -978,18 +1011,45 @@ const updateAudit = async (req, res) => {
       if (!firmRows.length) return errorResponse(res, 'Select an active audit firm.', 400);
     }
 
-    await AuditModel.update(id, {
-      title, audit_type, assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
-      budget, currency: currency || '$', num_workers, start_date, end_date, notes, status,
-    });
-
-    if (Array.isArray(entities) && entities.length > 0) {
-      const entitiesToStore = entities.map(({ org_tree_id, entity_code, entity_type }) => ({
-        org_tree_id: org_tree_id || null,
-        entity_code,
-        entity_type,
-      }));
-      await AuditModel.updateEntities(id, entitiesToStore);
+    const nextEntities = Array.isArray(entities) && entities.length > 0
+      ? entities.map(({ org_tree_id, entity_code, entity_type }) => ({
+        org_tree_id: org_tree_id || null, entity_code, entity_type,
+      }))
+      : await AuditModel.getEntities(id);
+    const refreshFunding = audit.status === 'plan' && (
+      (Array.isArray(entities) && entities.length > 0) ||
+      String(start_date).slice(0, 10) !== String(audit.start_date).slice(0, 10)
+    );
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.query('SELECT audit_id FROM audit_assignments WHERE audit_id = ? FOR UPDATE', [id]);
+      await AuditModel.update(id, {
+        title, audit_type, assigned_auditor_id, assigned_firm_code, assigned_org_tree_id,
+        budget, currency: currency || '$', num_workers, start_date, end_date, notes, status: audit.status,
+      }, connection);
+      if (Array.isArray(entities) && entities.length > 0) {
+        await AuditModel.updateEntities(id, nextEntities, connection);
+      }
+      if (refreshFunding) {
+        await TokenWalletModel.fundExistingReservation(connection, {
+          auditId: id,
+          rootEntityCode: audit.created_by,
+          questions: await ChecklistModel.listQuestions(audit.checklist_id),
+          entities: nextEntities,
+          startDate: start_date,
+          convertLegacy: Array.isArray(entities) && entities.length > 0,
+        });
+      }
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      if (['INSUFFICIENT_TOKENS', 'INSUFFICIENT_ELIGIBLE_TOKENS'].includes(error.code)) {
+        return errorResponse(res, error.message, 402, error.details);
+      }
+      throw error;
+    } finally {
+      connection.release();
     }
 
     const updated = await AuditModel.getWithEntities(id);
@@ -1073,20 +1133,109 @@ const cancelAudit = async (req, res) => {
       return errorResponse(res, 'Audit not found.', 404);
     }
 
-    // Check if user has access to the audit (creator or linked partner)
-    const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
-    if (!accessibleCodes.includes(audit.created_by)) {
+    // Linked companies can view each other's audits. A delegated reservation
+    // still belongs to its recorded payer, so only the creating workspace can
+    // cancel it and trigger the corresponding release.
+    if (req.user.role !== 'admin' || audit.created_by !== req.user.entityCode) {
       return errorResponse(res, 'Audit not found.', 404);
     }
 
     if (audit.status === 'completed') {
       return errorResponse(res, 'Completed audits cannot be cancelled.', 400);
     }
-    await db.query('UPDATE audit_assignments SET status = ? WHERE audit_id = ?', ['cancelled', id]);
-    return successResponse(res, null, 'Audit cancelled.');
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [locked] = await connection.query(
+        'SELECT status FROM audit_assignments WHERE audit_id = ? FOR UPDATE',
+        [id]
+      );
+      if (!locked[0]) {
+        await connection.rollback();
+        return errorResponse(res, 'Audit not found.', 404);
+      }
+      if (locked[0].status === 'completed') {
+        await connection.rollback();
+        return errorResponse(res, 'Completed audits cannot be cancelled.', 400);
+      }
+      const release = await TokenWalletModel.releaseReservation(connection, id, 'audit_cancelled');
+      await connection.query('UPDATE audit_assignments SET status = ? WHERE audit_id = ?', ['cancelled', id]);
+      await connection.commit();
+      return successResponse(res, {
+        restored_tokens: Number(release?.restored_tokens || 0),
+        expired_tokens: Number(release?.expired_tokens || 0),
+      }, release?.restored_tokens ? 'Audit cancelled and on-hold tokens restored.' : 'Audit cancelled.');
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   } catch (err) {
     console.error('cancelAudit error:', err);
     return errorResponse(res, 'Failed to cancel audit.', 500);
+  }
+};
+
+// POST /api/audits/:id/restore
+const restoreAudit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const audit = await AuditModel.findById(id);
+    if (!audit || req.user.role !== 'admin' || audit.created_by !== req.user.entityCode) {
+      return errorResponse(res, 'Audit not found.', 404);
+    }
+    if (audit.status !== 'cancelled') return errorResponse(res, 'Only a cancelled audit can be restored.', 409);
+
+    const [entities, questions] = await Promise.all([
+      AuditModel.getEntities(id),
+      ChecklistModel.listQuestions(audit.checklist_id),
+    ]);
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [locked] = await connection.query(
+        'SELECT status FROM audit_assignments WHERE audit_id = ? FOR UPDATE',
+        [id]
+      );
+      if (locked[0]?.status !== 'cancelled') {
+        await connection.rollback();
+        return errorResponse(res, 'Audit status changed. Refresh and try again.', 409);
+      }
+      const [reservations] = await connection.query(
+        'SELECT status FROM token_reservations WHERE audit_id = ? FOR UPDATE',
+        [id]
+      );
+      const reservationStatus = reservations[0]?.status;
+      let nextStatus = 'plan';
+      let funding = null;
+      if (reservationStatus === 'burned') {
+        nextStatus = 'in_progress';
+      } else {
+        funding = await TokenWalletModel.fundExistingReservation(connection, {
+          auditId: id,
+          rootEntityCode: audit.created_by,
+          questions,
+          entities,
+          startDate: audit.start_date,
+        });
+      }
+      await connection.query('UPDATE audit_assignments SET status = ? WHERE audit_id = ?', [nextStatus, id]);
+      await connection.commit();
+      return successResponse(res, { audit_status: nextStatus, token_reservation: funding },
+        nextStatus === 'plan' ? 'Audit restored and tokens put on hold again.' : 'Started audit restored without a token refund.');
+    } catch (error) {
+      await connection.rollback();
+      if (['INSUFFICIENT_TOKENS', 'INSUFFICIENT_ELIGIBLE_TOKENS'].includes(error.code)) {
+        return errorResponse(res, error.message, 402, error.details);
+      }
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (err) {
+    console.error('restoreAudit error:', err);
+    return errorResponse(res, 'Failed to restore audit.', 500);
   }
 };
 
@@ -1094,26 +1243,39 @@ const cancelAudit = async (req, res) => {
 const deleteAudit = async (req, res) => {
   try {
     const { id } = req.params;
+    if (req.user.role !== 'admin') {
+      return errorResponse(res, 'Only an organization administrator can permanently delete an audit.', 403);
+    }
+
     const audit = await AuditModel.findById(id);
-    if (!audit) {
+    // Permanent deletion is deliberately limited to the workspace that created
+    // the audit. Linked organizations and assigned audit firms may view the
+    // audit, but cannot erase the owner's records.
+    if (!audit || audit.created_by !== req.user.entityCode) {
       return errorResponse(res, 'Audit not found.', 404);
     }
 
-    // Check if user has access to the audit (creator or linked partner)
-    const accessibleCodes = await getAccessibleEntityCodes(req.user.entityCode, req.user.entityType);
-    if (!accessibleCodes.includes(audit.created_by)) {
-      return errorResponse(res, 'Audit not found.', 404);
-    }
-    
-    // As per user request: dont allow to delete if audit exist in progress status
-    if (audit.status !== 'plan') {
-      return errorResponse(res, `Audits in "${audit.status}" status cannot be deleted. You can only cancel them.`, 400);
+    const passwordCheck = await verifyAdminPassword(req.user, req.body?.password);
+    if (!passwordCheck.ok) {
+      return errorResponse(res, passwordCheck.message, passwordCheck.status);
     }
 
-    await AuditModel.delete(id);
-    return successResponse(res, null, 'Audit deleted successfully.');
+    const deletion = await RecordDeletionService.deleteAudit({
+      auditId: id,
+      ownerEntityCode: req.user.entityCode,
+    });
+    const media = await removeStoredMedia(deletion.evidencePaths);
+
+    return successResponse(res, {
+      deleted_caps: deletion.deletedCaps,
+      removed_media_files: media.removed,
+      media_cleanup_failed: media.failed,
+    }, media.failed
+      ? 'Audit data was deleted, but some media files could not be removed from the server.'
+      : 'Audit and all related data were permanently deleted.');
   } catch (err) {
     console.error('deleteAudit error:', err);
+    if (err?.status) return errorResponse(res, err.message, err.status);
     return errorResponse(res, 'Failed to delete audit.', 500);
   }
 };
@@ -1144,6 +1306,7 @@ module.exports = {
   getComparisonCandidates,
   compareAudits,
   createAudit,
+  quoteAuditTokens,
   listAudits,
   getAuditorRating,
   saveAuditorRating,
@@ -1151,5 +1314,6 @@ module.exports = {
   updateAudit,
   deleteAudit,
   cancelAudit,
+  restoreAudit,
   getAuditCount,
 };

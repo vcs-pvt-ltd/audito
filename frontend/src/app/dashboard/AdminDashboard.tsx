@@ -8,15 +8,15 @@ import {
   LayoutGrid, Bell,
   Maximize2, Minimize2, Layers, GitBranch, Building2,
   PlusCircle, ClipboardCheck, FileCheck, Settings, ArrowRight,
-  Clock, AlertCircle, CheckCircle
+  Clock, AlertCircle, CheckCircle, Coins, Sparkles
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LabelList,
+  ResponsiveContainer, LabelList, PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
-import type { DashboardFilters } from "@/lib/api";
+import type { DashboardFilters, TokenWallet } from "@/lib/api";
 
 /* ─── Types & Interfaces ────────────────────────────────────────── */
 
@@ -107,7 +107,7 @@ function flattenTree(
 ): { code: string; name: string; entity_type: string; depth: number; uniqueKey: string }[] {
   if (!node) return list;
   const code = node.code || node.comp_code || node.cust_code || node.afc_code || "";
-  const name = node.name || code;
+  const name = node.name || "Unnamed entity";
   const entityType = node.entity_type || "";
   const edgeId = node.edge_id || node.id || 0;
   const uniqueKey = parentPath ? `${parentPath}/${code}-${edgeId}` : `${code}-${edgeId}`;
@@ -292,12 +292,13 @@ function PerformanceChart({ data, isFullScreen }: { data: ChartItem[]; isFullScr
 
 /* ─── Main Admin Dashboard Component ────────────────────────────── */
 
-export default function AdminDashboard({ overview, admin, orgTree, filters, onFiltersChange }: {
+export default function AdminDashboard({ overview, admin, orgTree, filters, onFiltersChange, tokenWallet }: {
   overview: DashboardOverview;
   admin: any;
   orgTree: any;
   filters: DashboardFilters;
   onFiltersChange: (f: DashboardFilters) => void;
+  tokenWallet: TokenWallet | null;
 }) {
   const router = useRouter();
   const summaries = overview.summaries;
@@ -644,6 +645,13 @@ export default function AdminDashboard({ overview, admin, orgTree, filters, onFi
   };
 
   const people = summaries.people;
+  const tokenSummary = useMemo(() => [
+    { name: "Available", value: Number(tokenWallet?.available_tokens || 0), color: "#fbbf24" },
+    { name: "On hold", value: Number(tokenWallet?.held_tokens || 0), color: "#60a5fa" },
+    { name: "Burned", value: Number(tokenWallet?.lifetime_burned_tokens || 0), color: "#fb7185" },
+  ], [tokenWallet]);
+  const hasTokenActivity = tokenSummary.some((item) => item.value > 0);
+  const usesLinkedTokenPool = (tokenWallet?.wallet_members?.length || 0) > 1;
 
   const getEntityCards = () => {
     if (!people) return [];
@@ -699,7 +707,7 @@ export default function AdminDashboard({ overview, admin, orgTree, filters, onFi
     }
 
     base.push(
-      { icon: Briefcase, title: "Auditors", value: people.auditors || 0, accent: "bg-violet-500", href: "/users/list?type=auditor" },
+      { icon: Briefcase, title: "Auditors", value: people.auditors || 0, accent: "bg-violet-500", href: "/users/list?type=auditors" },
       { icon: Users, title: "Organization Users", value: people.organization_users || 0, accent: "bg-orange-500", href: "/users/list?type=organization-users" },
     );
 
@@ -824,6 +832,25 @@ export default function AdminDashboard({ overview, admin, orgTree, filters, onFi
               ))}
             </div>
           </div>
+
+          {/* AI Tools */}
+          <div className="flex flex-col gap-2">
+            <h2 className="flex items-center gap-1.5 text-sm font-medium text-[#ffffffe6] tracking-wide px-0.5">
+              <Sparkles size={13} className="text-violet-400" /> AI Tools
+            </h2>
+            <div className="grid grid-cols-2 gap-2">
+              <MiniCard icon={Sparkles} title="Setup with AI" value="Organization" accent="bg-violet-500" onClick={() => router.push('/organization/ai-setup')} />
+              <MiniCard icon={Sparkles} title="Create with AI" value="Checklist" accent="bg-fuchsia-500" onClick={() => router.push('/checklists/create?ai=1')} />
+            </div>
+          </div>
+
+          {!isAuditFirm && (
+            <button type="button" onClick={() => router.push('/settings/billing')} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 text-left transition hover:border-amber-400/20 hover:bg-white/[0.035]">
+              <div className="flex items-center justify-between px-0.5"><h2 className="flex items-center gap-2 text-sm font-medium tracking-wide text-[#ffffffe6]"><Coins size={15} className="text-amber-300" />{usesLinkedTokenPool ? "Linked Token Pool" : "Token Summary"}</h2><span className="text-[10px] text-white/35">{usesLinkedTokenPool ? "Combined balance" : "Lifetime usage"}</span></div>
+              {hasTokenActivity ? <div className="mt-1 h-[180px] w-full"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={tokenSummary} dataKey="value" nameKey="name" cx="50%" cy="45%" innerRadius={38} outerRadius={62} paddingAngle={3} stroke="none">{tokenSummary.map((item) => <Cell key={item.name} fill={item.color} />)}</Pie><Tooltip contentStyle={{ background: '#052e2a', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, color: '#fff', fontSize: 11 }} formatter={(value) => Number(value || 0).toLocaleString()} /><Legend verticalAlign="bottom" iconType="circle" iconSize={7} formatter={(value) => <span className="text-[10px] text-white/55">{value}</span>} /></PieChart></ResponsiveContainer></div> : <div className="flex h-[150px] items-center justify-center text-xs text-white/30">No token activity yet</div>}
+              <div className="mt-1 grid grid-cols-3 gap-2 border-t border-white/[0.06] pt-3">{tokenSummary.map((item) => <span key={item.name}><span className="block text-[9px] uppercase tracking-wider text-white/35">{item.name}</span><span className="mt-0.5 block text-sm font-extrabold text-white">{item.value.toLocaleString()}</span></span>)}</div>
+            </button>
+          )}
 
           {!isAuditFirm && (
             <>

@@ -139,8 +139,8 @@ const OrganizationTreeModel = {
     `WITH RECURSIVE tree AS (
       -- Anchor: Start with direct children of our entity within authorized tree instances
       SELECT
-        org_tree_id, parent_type, parent_code, child_type, child_code, root_entity_code, 1 AS depth,
-        CAST(org_tree_id AS CHAR(2000)) AS edge_path
+        org_tree_id, parent_type, parent_code, parent_edge_id, child_type, child_code, root_entity_code, 1 AS depth,
+        CAST(org_tree_id AS TEXT) AS edge_path
       FROM organization_tree
       WHERE parent_code = ?
         AND root_entity_code IN (${placeholders})
@@ -152,7 +152,7 @@ const OrganizationTreeModel = {
       -- 1. Follow parent_edge_id for internal tree consistency
       -- 2. Follow parent_code for bridging across authorized tree roots (parent_edge_id IS NULL)
       SELECT
-        ot.org_tree_id, ot.parent_type, ot.parent_code, ot.child_type, ot.child_code, ot.root_entity_code, t.depth + 1,
+        ot.org_tree_id, ot.parent_type, ot.parent_code, ot.parent_edge_id, ot.child_type, ot.child_code, ot.root_entity_code, t.depth + 1,
         CONCAT(t.edge_path, ',', ot.org_tree_id)
       FROM organization_tree ot
       INNER JOIN tree t ON (
@@ -163,7 +163,7 @@ const OrganizationTreeModel = {
         AND ot.is_active = TRUE
         AND t.depth < 20
     )
-    SELECT org_tree_id, parent_type, parent_code, child_type, child_code,
+    SELECT org_tree_id, parent_type, parent_code, parent_edge_id, child_type, child_code,
            root_entity_code, depth, edge_path
     FROM tree
     ORDER BY depth`,
@@ -306,6 +306,83 @@ const OrganizationTreeModel = {
     if (auditEntityRows[0].count > 0) return true;
 
     return false;
+  },
+
+  /**
+   * Return direct system usage for organization-tree edges. Callers can
+   * propagate these usages to ancestors when a branch-level lock is needed.
+   * This is intentionally broader than removal-only checks because changing a
+   * used edge would also change the meaning of historical audit/CAP records.
+   */
+  async getDependencyUsage(edgeIds) {
+    const ids = [...new Set((edgeIds || []).filter(Boolean).map(String))];
+    const usage = new Map();
+    if (!ids.length) return usage;
+
+    const placeholders = ids.map(() => '?').join(',');
+    const checks = [
+      { label: 'organization users', sql: `SELECT DISTINCT assigned_org_tree_id AS org_tree_id FROM organization_users WHERE assigned_org_tree_id IN (${placeholders}) AND is_active = TRUE` },
+      { label: 'organization user access', sql: `SELECT DISTINCT org_tree_id FROM organization_user_scopes WHERE org_tree_id IN (${placeholders}) AND is_active = TRUE` },
+      { label: 'auditors', sql: `SELECT DISTINCT assigned_org_tree_id AS org_tree_id FROM auditors WHERE assigned_org_tree_id IN (${placeholders}) AND is_active = TRUE` },
+      { label: 'checklists', sql: `SELECT DISTINCT org_tree_id FROM checklist_questions WHERE org_tree_id IN (${placeholders}) AND is_active = TRUE` },
+      { label: 'AI checklist suggestions', sql: `SELECT DISTINCT org_tree_id FROM ai_checklist_question_suggestions WHERE org_tree_id IN (${placeholders}) AND status != 'discarded'` },
+      { label: 'audits', sql: `SELECT DISTINCT assigned_org_tree_id AS org_tree_id FROM audit_assignments WHERE assigned_org_tree_id IN (${placeholders}) AND is_active = TRUE AND status != 'cancelled'` },
+      { label: 'audits', sql: `SELECT DISTINCT aae.org_tree_id FROM audit_assignment_entities aae INNER JOIN audit_assignments aa ON aa.audit_id = aae.audit_id WHERE aae.org_tree_id IN (${placeholders}) AND aae.is_active = TRUE AND aa.is_active = TRUE AND aa.status != 'cancelled'` },
+      { label: 'audit progress', sql: `SELECT DISTINCT org_tree_id FROM audit_entity_progress WHERE org_tree_id IN (${placeholders})` },
+      { label: 'audit responses', sql: `SELECT DISTINCT org_tree_id FROM audit_responses WHERE org_tree_id IN (${placeholders})` },
+      { label: 'corrective actions', sql: `SELECT DISTINCT org_tree_id FROM corrective_actions WHERE org_tree_id IN (${placeholders})` },
+      { label: 'corrective action plans', sql: `SELECT DISTINCT org_tree_id FROM cap_assignment_entities WHERE org_tree_id IN (${placeholders}) AND is_active = TRUE` },
+      { label: 'corrective action plans', sql: `SELECT DISTINCT org_tree_id FROM cap_entity_progress WHERE org_tree_id IN (${placeholders})` },
+      { label: 'corrective action plans', sql: `SELECT DISTINCT org_tree_id FROM cap_questions WHERE org_tree_id IN (${placeholders})` },
+      { label: 'organization links', sql: `SELECT DISTINCT target_org_tree_id AS org_tree_id FROM organization_links WHERE target_org_tree_id IN (${placeholders}) AND status IN ('pending', 'accepted') AND is_active = TRUE` },
+    ];
+
+    const results = await Promise.all(checks.map((check) => db.query(check.sql, ids)));
+    results.forEach(([rows], index) => {
+      const label = checks[index].label;
+      for (const row of rows) {
+        if (!row.org_tree_id) continue;
+        const id = String(row.org_tree_id);
+        if (!usage.has(id)) usage.set(id, new Set());
+        usage.get(id).add(label);
+      }
+    });
+    return usage;
+  },
+
+  /** Usage records created without an org_tree_id still protect the underlying
+   * entity record (for example, generic checklist questions on a reusable
+   * entity). */
+  async getEntityCodeDependencyUsage(entityCodes) {
+    const codes = [...new Set((entityCodes || []).filter(Boolean).map(String))];
+    const usage = new Map();
+    if (!codes.length) return usage;
+    const placeholders = codes.map(() => '?').join(',');
+    const checks = [
+      { label: 'organization users', sql: `SELECT DISTINCT assigned_entity_code AS entity_code FROM organization_users WHERE assigned_entity_code IN (${placeholders}) AND assigned_org_tree_id IS NULL AND is_active = TRUE` },
+      { label: 'organization user access', sql: `SELECT DISTINCT entity_code FROM organization_user_scopes WHERE entity_code IN (${placeholders}) AND org_tree_id IS NULL AND is_active = TRUE` },
+      { label: 'auditors', sql: `SELECT DISTINCT assigned_entity_code AS entity_code FROM auditors WHERE assigned_entity_code IN (${placeholders}) AND assigned_org_tree_id IS NULL AND is_active = TRUE` },
+      { label: 'checklists', sql: `SELECT DISTINCT entity_code FROM checklist_questions WHERE entity_code IN (${placeholders}) AND org_tree_id IS NULL AND is_active = TRUE` },
+      { label: 'AI checklist suggestions', sql: `SELECT DISTINCT entity_code FROM ai_checklist_question_suggestions WHERE entity_code IN (${placeholders}) AND org_tree_id IS NULL AND status != 'discarded'` },
+      { label: 'audits', sql: `SELECT DISTINCT aae.entity_code FROM audit_assignment_entities aae INNER JOIN audit_assignments aa ON aa.audit_id = aae.audit_id WHERE aae.entity_code IN (${placeholders}) AND aae.org_tree_id IS NULL AND aae.is_active = TRUE AND aa.is_active = TRUE AND aa.status != 'cancelled'` },
+      { label: 'audit progress', sql: `SELECT DISTINCT entity_code FROM audit_entity_progress WHERE entity_code IN (${placeholders}) AND org_tree_id IS NULL` },
+      { label: 'audit responses', sql: `SELECT DISTINCT entity_code FROM audit_responses WHERE entity_code IN (${placeholders}) AND org_tree_id IS NULL` },
+      { label: 'corrective actions', sql: `SELECT DISTINCT entity_code FROM corrective_actions WHERE entity_code IN (${placeholders}) AND org_tree_id IS NULL` },
+      { label: 'corrective action plans', sql: `SELECT DISTINCT entity_code FROM cap_assignment_entities WHERE entity_code IN (${placeholders}) AND org_tree_id IS NULL AND is_active = TRUE` },
+      { label: 'corrective action plans', sql: `SELECT DISTINCT entity_code FROM cap_entity_progress WHERE entity_code IN (${placeholders}) AND org_tree_id IS NULL` },
+      { label: 'corrective action plans', sql: `SELECT DISTINCT entity_code FROM cap_questions WHERE entity_code IN (${placeholders}) AND org_tree_id IS NULL` },
+    ];
+    const results = await Promise.all(checks.map((check) => db.query(check.sql, codes)));
+    results.forEach(([rows], index) => {
+      const label = checks[index].label;
+      for (const row of rows) {
+        if (!row.entity_code) continue;
+        const code = String(row.entity_code);
+        if (!usage.has(code)) usage.set(code, new Set());
+        usage.get(code).add(label);
+      }
+    });
+    return usage;
   }
 };
 

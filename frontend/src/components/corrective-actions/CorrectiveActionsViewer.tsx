@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { auditExecutionApi, capApi } from "@/lib/api";
 import { dateValueKey, localDateKey } from "@/lib/auditSchedule";
+import { responseText } from "@/lib/responseText";
 import Loading from "@/components/shared/Loading";
 import EmptyState from "@/components/shared/EmptyState";
 import { IconButton } from "@/components/ui";
@@ -46,6 +47,8 @@ interface CorrectiveActionItem {
   question_text?: string;
   answer_text?: string | null;
   selected_option_ids?: string | string[] | number[] | null;
+  /** Labels of the chosen answers, for choice questions. */
+  selected_option_texts?: string[];
   remarks?: string | null;
   evidence?: EvidenceAttachment[];
   marks_obtained?: string | number | null;
@@ -244,7 +247,7 @@ function CorrectiveActionCard({ row, index, showStatus, viewerRole }: { row: Act
         {item && (item.answer_text || item.selected_option_ids) && (
           <div className="mt-3 border-t border-white/[0.06] pt-3">
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Response</p>
-            <p className="mt-1 text-sm text-gray-300">{item.answer_text || "Response recorded"}</p>
+            <p className="mt-1 text-sm text-gray-300">{responseText(item) || "Response recorded"}</p>
           </div>
         )}
         {item?.remarks && (
@@ -593,7 +596,7 @@ export default function CorrectiveActionsViewer({ sourceType, requiredRole, back
                       {item && (item.answer_text || item.selected_option_ids) && (
                         <div className="mt-3 border-t border-white/[0.06] pt-3">
                           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Response</p>
-                          <p className="mt-1 text-sm text-gray-300">{item.answer_text || "Response recorded"}</p>
+                          <p className="mt-1 text-sm text-gray-300">{responseText(item) || "Response recorded"}</p>
                         </div>
                       )}
                       {item?.remarks && (

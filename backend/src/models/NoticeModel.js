@@ -22,12 +22,10 @@ const NoticeModel = {
     const ph = codes.map(() => '?').join(',');
     const [rows] = await db.query(
       `SELECT n.*, 
-              GROUP_CONCAT(a.auditor_id) AS assigned_auditor_ids,
-              COUNT(DISTINCT a.notice_auditor_assignment_id) AS assigned_count
+              (SELECT STRING_AGG(a.auditor_id::text, ',') FROM notice_auditor_assignments a WHERE a.notice_id = n.notice_id) AS assigned_auditor_ids,
+              (SELECT COUNT(DISTINCT a.notice_auditor_assignment_id) FROM notice_auditor_assignments a WHERE a.notice_id = n.notice_id) AS assigned_count
        FROM notices n
-       LEFT JOIN notice_auditor_assignments a ON n.notice_id = a.notice_id
        WHERE n.created_by_entity_code IN (${ph}) AND n.is_active = TRUE
-       GROUP BY n.notice_id
        ORDER BY n.notice_date DESC, n.created_at DESC`,
       codes
     );

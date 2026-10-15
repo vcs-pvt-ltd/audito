@@ -6,6 +6,7 @@ const {
   getComparisonCandidates,
   compareAudits,
   createAudit,
+  quoteAuditTokens,
   listAudits,
   getAuditorRating,
   saveAuditorRating,
@@ -13,6 +14,7 @@ const {
   updateAudit,
   deleteAudit,
   cancelAudit,
+  restoreAudit,
   getAuditCount,
 } = require('../controllers/auditController');
 
@@ -26,6 +28,7 @@ router.get('/checklist/:checklist_id/entities', getChecklistEntities);
 router.get('/count', getAuditCount);
 router.get('/comparison/candidates', getComparisonCandidates);
 router.post('/comparison', compareAudits);
+router.post('/quote', quoteAuditTokens);
 
 router.post('/',     createAudit);
 router.get('/',      listAudits);
@@ -35,5 +38,6 @@ router.get('/:id',   getAudit);
 router.put('/:id',   updateAudit);
 router.delete('/:id', deleteAudit);
 router.post('/:id/cancel', cancelAudit);
+router.post('/:id/restore', restoreAudit);
 
 module.exports = router;

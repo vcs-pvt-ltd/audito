@@ -1,8 +1,8 @@
 import ClientPage from "./ClientPage";
 
 export const metadata = {
-  title: "Billing & Subscription | Audito",
-  description: "Manage your Audito subscription and resource limits.",
+  title: "Tokens & Billing | Audito",
+  description: "Manage your permanent workspace plan, audit tokens, and token reloads.",
 };
 
 export default function BillingPage() {

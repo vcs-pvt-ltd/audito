@@ -280,6 +280,40 @@ main select[class*="bg-white/5"]:focus {
   }
 }
 
+/* Onboarding hides the app header, so older pages do not need room for it. */
+[data-onboarding] main main[class*="pt-20"] {
+  padding-top: 1.25rem;
+}
+@media (min-width: 1024px) {
+  [data-onboarding] main main[class*="pt-20"] {
+    padding-top: 2rem;
+  }
+}
+
+/* A short glow on items that changed after an AI correction. The "Updated"
+   label next to them stays, so the change is still clear without motion. */
+@keyframes onboarding-changed {
+  0% { box-shadow: 0 0 0 0 rgba(229, 178, 70, 0); }
+  25% { box-shadow: 0 0 0 3px rgba(229, 178, 70, 0.4), 0 0 24px rgba(229, 178, 70, 0.18); }
+  100% { box-shadow: 0 0 0 0 rgba(229, 178, 70, 0); }
+}
+.onboarding-changed {
+  animation: onboarding-changed 2.4s ease-out 1;
+}
+
+/* A soft light sweeping along the onboarding progress fill. */
+@keyframes onboarding-progress-shine {
+  0% { transform: translateX(-100%); }
+  60%, 100% { transform: translateX(100%); }
+}
+.onboarding-progress-shine {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: onboarding-progress-shine 2.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-progress-shine { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;
@@ -320,6 +354,20 @@ main select[class*="bg-white/5"]:focus {
 [role="dialog"] {
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+.package-card-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(169, 211, 185, 0.5) transparent;
+}
+.package-card-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.package-card-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(169, 211, 185, 0.5);
 }
 
 html, body {

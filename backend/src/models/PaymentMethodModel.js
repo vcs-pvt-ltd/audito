@@ -89,7 +89,7 @@ const PaymentMethodModel = {
     const method = await this.findActiveById(paymentMethodId, rootEntityCode);
     if (!method) return null;
     await db.query(
-      `UPDATE payment_methods SET is_default = CASE WHEN payment_method_id = ? THEN 1 ELSE 0 END, updated_at = NOW()
+      `UPDATE payment_methods SET is_default = (payment_method_id = ?), updated_at = NOW()
        WHERE root_entity_code = ? AND revoked_at IS NULL`,
       [paymentMethodId, rootEntityCode]
     );

@@ -15,10 +15,13 @@ import {
   RefreshCw,
   Building2,
   Search,
+  Trash2,
 } from "lucide-react";
 import TablePagination from "@/components/shared/TablePagination";
 import EmptyState from "@/components/shared/EmptyState";
+import CriticalDeleteModal from "@/components/modals/CriticalDeleteModal";
 import { Table, THead, Th } from "@/components/ui";
+import { useUiFeedback } from "@/context/UiFeedbackContext";
 
 interface CapSummary {
   cap_id: string;
@@ -31,6 +34,8 @@ interface CapSummary {
   created_by: string;
   created_at: string;
   updated_at: string;
+  parent_cap_id?: string | null;
+  owner_entity_code?: string | null;
   total_questions: number;
   completed_questions: number;
   entity_name?: string | null;
@@ -79,6 +84,7 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
 
 export default function CapsPage() {
   const { admin, accessToken, isLoading } = useAuth();
+  const { toast } = useUiFeedback();
   const router = useRouter();
 
   const [caps, setCaps] = useState<CapSummary[]>([]);
@@ -92,6 +98,8 @@ export default function CapsPage() {
   const [auditorFilter, setAuditorFilter] = useState<string>("all");
   const [progressFilter, setProgressFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("newest");
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CapSummary | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -179,6 +187,25 @@ export default function CapsPage() {
 
   useEffect(() => { loadCaps(); }, [loadCaps]);
 
+  const confirmPermanentDelete = async (password: string) => {
+    const target = deleteTarget;
+    if (!target || !accessToken) return;
+
+    setDeleting(target.cap_id);
+    const res = await capApi.delete(accessToken, target.cap_id, password);
+    if (res.success) {
+      setDeleteTarget(null);
+      toast(
+        res.message || "CAP and all related records were deleted.",
+        res.data?.media_cleanup_failed ? "warning" : "success"
+      );
+      await loadCaps();
+    } else {
+      toast(res.message || "Failed to delete CAP.", "error");
+    }
+    setDeleting(null);
+  };
+
   const filtered = useMemo(() => {
     const base = filter === "all" ? caps : caps.filter(c => c.status === filter);
     const query = q.trim().toLowerCase();
@@ -237,6 +264,21 @@ export default function CapsPage() {
   return (
     <div className="h-screen bg-transparent flex">
       <main className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8 overflow-y-auto">
+        <CriticalDeleteModal
+          isOpen={Boolean(deleteTarget)}
+          title="Permanently delete CAP?"
+          itemName={deleteTarget?.title || "Corrective Action Plan"}
+          description="This action cannot be undone. The linked audit and its original findings will remain available."
+          consequences={[
+            "This CAP's assignments, progress, responses, and evidence",
+            "Any sub-CAPs created beneath this CAP and their stored evidence",
+            "Follow-on corrective actions created only from the removed CAP responses",
+          ]}
+          confirmLabel="Delete CAP"
+          busy={Boolean(deleteTarget && deleting === deleteTarget.cap_id)}
+          onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+          onConfirm={confirmPermanentDelete}
+        />
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -367,7 +409,22 @@ export default function CapsPage() {
                           {fmtDate(cap.created_at)}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex justify-end">
+                          <div className="flex justify-end gap-2">
+                            {admin.role === "admin" && cap.owner_entity_code === admin.entity_code && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteTarget(cap);
+                                }}
+                                disabled={deleting === cap.cap_id}
+                                className="rounded-lg border border-white/10 p-1.5 text-gray-500 transition hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+                                title="Delete CAP permanently"
+                              >
+                                {deleting === cap.cap_id
+                                  ? <span className="block h-3.5 w-3.5 animate-spin rounded-full border border-current border-t-transparent" />
+                                  : <Trash2 size={14} />}
+                              </button>
+                            )}
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -427,6 +484,20 @@ export default function CapsPage() {
                       <span className="text-gray-500">Progress</span>
                       <span className="font-semibold text-gray-300">{pct}%</span>
                     </div>
+
+                    {admin.role === "admin" && cap.owner_entity_code === admin.entity_code && (
+                      <div className="mt-3 flex justify-end border-t border-white/[0.06] pt-3" onClick={(event) => event.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(cap)}
+                          disabled={deleting === cap.cap_id}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/15 bg-red-500/[0.06] px-3 py-1.5 text-xs font-medium text-red-300 transition hover:border-red-500/30 hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                          <Trash2 size={13} />
+                          Delete CAP
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
