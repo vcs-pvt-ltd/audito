@@ -1,0 +1,385 @@
+{
+  "_readme": "Single source of truth for 'which thread owns which file'. Paths are relative to the repo root, globs use * and **. When several patterns match a file, the most specific one wins (exact path > longer literal text). Run: node .claude/threads/check-ownership.mjs   (see CLAUDE.md).",
+  "version": 1,
+
+  "ignore": [
+    ".git/**",
+    "**/node_modules/**",
+    "**/.env",
+    "frontend/.env.android",
+    "frontend/.next/**",
+    "frontend/out/**",
+    "frontend/android-web/**",
+    "frontend/tsconfig.tsbuildinfo",
+    "frontend/android/.gradle/**",
+    "frontend/android/.kotlin/**",
+    "frontend/android/local.properties",
+    "frontend/android/**/build/**",
+    "backend/storage/**",
+    "backend/src/public/uploads/**",
+    "backend/.postgres-test/**",
+    "backend/.postgres-test.log"
+  ],
+
+  "threads": {
+    "identity-access": {
+      "title": "Identity & Access (sign-up, login, sessions, account profile)",
+      "paths": [
+        "backend/src/controllers/authController.js",
+        "backend/src/controllers/quoteRegistrationController.js",
+        "backend/src/routes/authRoutes.js",
+        "backend/src/middleware/auth.js",
+        "backend/src/models/AdminModel.js",
+        "backend/src/utils/emailResendCooldown.js",
+        "frontend/src/app/login/**",
+        "frontend/src/app/register/**",
+        "frontend/src/app/forgot-password/**",
+        "frontend/src/app/verify-email/**",
+        "frontend/src/app/profile/page.tsx",
+        "frontend/src/context/AuthContext.tsx",
+        "frontend/src/components/auth/**"
+      ]
+    },
+
+    "org-structure": {
+      "title": "Organization Structure, Org Tree & Cross-Organization Links",
+      "paths": [
+        "backend/src/controllers/structureController.js",
+        "backend/src/controllers/organizationTreeController.js",
+        "backend/src/controllers/linkController.js",
+        "backend/src/routes/structureRoutes.js",
+        "backend/src/routes/organizationTreeRoutes.js",
+        "backend/src/routes/linkRoutes.js",
+        "backend/src/routes/billingCreditRoutes.js",
+        "backend/src/models/CompanyModel.js",
+        "backend/src/models/CustomerModel.js",
+        "backend/src/models/AuditFirmModel.js",
+        "backend/src/models/OrganizationTreeModel.js",
+        "backend/src/models/LinkModel.js",
+        "backend/src/models/LinkBillingCreditModel.js",
+        "backend/src/config/organizationHierarchy.js",
+        "backend/src/utils/accessHelper.js",
+        "backend/src/utils/linkRules.js",
+        "backend/src/utils/orgLookup.js",
+        "frontend/src/app/structure/**",
+        "frontend/src/app/organization/page.tsx",
+        "frontend/src/app/links/**",
+        "frontend/src/app/settings/organization/**",
+        "frontend/src/components/structure/**",
+        "frontend/src/components/organization/**",
+        "frontend/src/lib/organizationLogo.ts",
+        "frontend/src/lib/previewHierarchy.ts",
+        "frontend/src/utils/treeHelpers.ts"
+      ]
+    },
+
+    "people-users": {
+      "title": "People: Users, Auditors, Organization Users & Auditor Profiles",
+      "paths": [
+        "backend/src/controllers/usersController.js",
+        "backend/src/controllers/auditorProfileController.js",
+        "backend/src/routes/usersRoutes.js",
+        "backend/src/routes/auditorProfileRoutes.js",
+        "backend/src/models/AuditorModel.js",
+        "backend/src/models/OrganizationUserModel.js",
+        "backend/src/models/OrganizationUserScopeModel.js",
+        "frontend/src/app/users/**",
+        "frontend/src/app/profile/AuditorProfileTabs.tsx"
+      ]
+    },
+
+    "setup-onboarding": {
+      "title": "Onboarding & AI Organization Setup",
+      "paths": [
+        "backend/src/controllers/organizationAiSetupController.js",
+        "backend/src/routes/organizationAiSetupRoutes.js",
+        "backend/src/models/OrganizationAiSetupModel.js",
+        "backend/src/services/onboardingDraftService.js",
+        "backend/src/services/onboardingPublishService.js",
+        "backend/src/services/organizationAiSetupService.js",
+        "backend/src/services/organizationDraftHierarchy.js",
+        "backend/src/utils/documentReader.js",
+        "backend/src/utils/answerScoring.js",
+        "frontend/src/app/onboarding/**",
+        "frontend/src/app/organization/ai-setup/**",
+        "frontend/src/app/organization/setup-choice/**",
+        "frontend/src/components/onboarding/**",
+        "frontend/src/context/OnboardingContext.tsx"
+      ]
+    },
+
+    "checklists": {
+      "title": "Checklists, Checklist Types & AI Question Generation",
+      "paths": [
+        "backend/src/controllers/checklistController.js",
+        "backend/src/routes/checklistRoutes.js",
+        "backend/src/models/ChecklistModel.js",
+        "backend/src/models/AiChecklistModel.js",
+        "backend/src/utils/aiDocumentFiles.js",
+        "frontend/src/app/checklists/**",
+        "frontend/src/components/checklist/**",
+        "frontend/src/lib/checklistAiWorkspace.ts",
+        "frontend/src/utils/aiDocumentFiles.ts"
+      ]
+    },
+
+    "audit-planning": {
+      "title": "Audit Planning: create, assign, schedule, compare, rate",
+      "paths": [
+        "backend/src/controllers/auditController.js",
+        "backend/src/routes/auditRoutes.js",
+        "backend/src/models/AuditModel.js",
+        "backend/src/models/AuditorRatingModel.js",
+        "frontend/src/app/audits/**",
+        "frontend/src/components/audit/AuditorRatingModal.tsx",
+        "frontend/src/lib/auditSchedule.ts"
+      ]
+    },
+
+    "audit-execution": {
+      "title": "Audit Execution, Evidence & Reports",
+      "paths": [
+        "backend/src/controllers/auditExecutionController.js",
+        "backend/src/routes/auditExecutionRoutes.js",
+        "backend/src/models/AuditExecutionModel.js",
+        "backend/src/utils/evidencePolicy.js",
+        "frontend/src/app/my-audits/**",
+        "frontend/src/app/organization-user/audits/**",
+        "frontend/src/components/audit/AuditPdfRenderer.tsx",
+        "frontend/src/components/audit/CompleteAuditModal.tsx",
+        "frontend/src/components/audit/EvidenceModal.tsx",
+        "frontend/src/components/report/**",
+        "frontend/src/components/shared/ExecutionListPage.tsx",
+        "frontend/src/context/ExecutionContext.tsx",
+        "frontend/src/lib/answerDrafts.ts",
+        "frontend/src/utils/executionFormatters.ts",
+        "frontend/src/utils/executionService.ts"
+      ]
+    },
+
+    "cap-followup": {
+      "title": "Corrective Action Plans (CAP) & Follow-up",
+      "paths": [
+        "backend/src/controllers/capController.js",
+        "backend/src/routes/capRoutes.js",
+        "backend/src/models/CapModel.js",
+        "frontend/src/app/caps/**",
+        "frontend/src/app/my-caps/**",
+        "frontend/src/app/organization-user/caps/**",
+        "frontend/src/components/cap/**",
+        "frontend/src/components/corrective-actions/**",
+        "frontend/src/components/audit/CAPModal.tsx"
+      ]
+    },
+
+    "learning": {
+      "title": "Learning: Trainings, Field Visits & Evaluation Papers",
+      "paths": [
+        "backend/src/controllers/learningController.js",
+        "backend/src/controllers/myLearningController.js",
+        "backend/src/routes/learningRoutes.js",
+        "backend/src/routes/myLearningRoutes.js",
+        "backend/src/models/LearningModel.js",
+        "frontend/src/app/learning/**",
+        "frontend/src/app/my-learning/**"
+      ]
+    },
+
+    "site-scan": {
+      "title": "AI Site Scan (auditor photo analysis)",
+      "paths": [
+        "backend/src/controllers/visualScanController.js",
+        "backend/src/routes/visualScanRoutes.js",
+        "backend/src/models/VisualScanModel.js",
+        "frontend/src/app/ai-site-scan/**"
+      ]
+    },
+
+    "billing-tokens": {
+      "title": "Billing, Subscriptions, Tokens, Pricing & Payments",
+      "paths": [
+        "backend/src/controllers/paymentController.js",
+        "backend/src/controllers/tokenController.js",
+        "backend/src/routes/paymentRoutes.js",
+        "backend/src/routes/tokenRoutes.js",
+        "backend/src/models/PaymentModel.js",
+        "backend/src/models/PaymentMethodModel.js",
+        "backend/src/models/PackagePricingModel.js",
+        "backend/src/models/PlanSettingsModel.js",
+        "backend/src/models/PromoCodeModel.js",
+        "backend/src/models/PromotionCampaignModel.js",
+        "backend/src/models/SubscriptionModel.js",
+        "backend/src/models/TokenReloadPackageModel.js",
+        "backend/src/models/TokenWalletModel.js",
+        "backend/src/services/paymentSettlementService.js",
+        "backend/src/services/promoCheckoutService.js",
+        "backend/src/services/sampathGatewayService.js",
+        "backend/src/services/subscriptionReminderService.js",
+        "backend/src/config/packageHierarchy.js",
+        "backend/src/utils/limitsEnforcer.js",
+        "backend/src/utils/tokenFunding.js",
+        "frontend/src/app/payment/**",
+        "frontend/src/app/settings/billing/**",
+        "frontend/src/components/billing/**",
+        "frontend/src/components/pricing/**",
+        "frontend/src/components/modals/LimitReachedModal.tsx",
+        "frontend/src/components/layout/SubscriptionBanner.tsx",
+        "frontend/src/components/auth/SubscriptionExpiredModal.tsx",
+        "frontend/src/lib/planLimits.ts",
+        "frontend/src/lib/packageHierarchy.ts"
+      ]
+    },
+
+    "insights-notifications": {
+      "title": "Dashboards, Notices, Notifications & Settings",
+      "paths": [
+        "backend/src/controllers/dashboardController.js",
+        "backend/src/controllers/noticeController.js",
+        "backend/src/controllers/settingsController.js",
+        "backend/src/routes/dashboardRoutes.js",
+        "backend/src/routes/noticeRoutes.js",
+        "backend/src/routes/settingsRoutes.js",
+        "backend/src/models/DashboardModel.js",
+        "backend/src/models/NoticeModel.js",
+        "backend/src/models/NotificationModel.js",
+        "backend/src/utils/organizationUserNotifications.js",
+        "frontend/src/app/dashboard/**",
+        "frontend/src/app/settings/notices/**",
+        "frontend/src/app/settings/timezone/**",
+        "frontend/src/app/settings/help/**"
+      ]
+    },
+
+    "backoffice-admin": {
+      "title": "Back-office: Audito Admin Panel (audito_admin)",
+      "paths": [
+        "backend/src/controllers/adminController.js",
+        "backend/src/routes/adminRoutes.js",
+        "frontend/src/app/admin-panel/**"
+      ]
+    },
+
+    "public-site": {
+      "title": "Public Website, Contact/Quote Requests, Landing AI Assistant & Privacy Policy",
+      "paths": [
+        "backend/src/controllers/landingController.js",
+        "backend/src/controllers/landingAssistantController.js",
+        "backend/src/routes/landingRoutes.js",
+        "backend/src/models/ContactMessageModel.js",
+        "backend/src/models/ContactReviewModel.js",
+        "backend/src/models/CustomSolutionModel.js",
+        "backend/src/models/PrivacyPolicyModel.js",
+        "backend/src/services/landingAssistantService.js",
+        "backend/src/services/landingPageContentService.js",
+        "backend/src/services/landingVoiceService.js",
+        "backend/src/utils/auditoContact.js",
+        "frontend/src/app/page.tsx",
+        "frontend/src/app/privacy-policies/**",
+        "frontend/src/app/custom-solution/**",
+        "frontend/src/components/landing/**",
+        "frontend/src/components/layout/Navbar.tsx",
+        "frontend/src/components/layout/Footer.tsx",
+        "frontend/src/components/shared/AuditoContactCard.tsx",
+        "frontend/src/context/LandingContext.tsx",
+        "frontend/src/lib/auditoContact.ts",
+        "frontend/src/assets/landing/**",
+        "frontend/public/videos/**"
+      ]
+    },
+
+    "mobile-android": {
+      "title": "Audito Auditor Android App (Capacitor)",
+      "paths": [
+        "frontend/capacitor.config.ts",
+        "frontend/android/**",
+        "frontend/scripts/android/**",
+        "frontend/src/lib/native/**",
+        "frontend/src/components/native/**"
+      ]
+    },
+
+    "platform-core": {
+      "title": "Platform Core: API server skeleton, shared frontend shell, api client, UI kit, dependencies",
+      "paths": [
+        "backend/src/server.js",
+        "backend/src/config/db.js",
+        "backend/src/config/postgresDialect.js",
+        "backend/src/services/emailService.js",
+        "backend/src/services/recordDeletionService.js",
+        "backend/src/utils/helpers.js",
+        "backend/src/utils/codeGenerator.js",
+        "backend/src/utils/criticalDeletion.js",
+        "backend/src/utils/emailTemplates.js",
+        "backend/src/utils/aiErrors.js",
+        "backend/src/utils/nameNormalizer.js",
+        "backend/src/public/audito-logo-white.png",
+        "backend/package.json",
+        "backend/package-lock.json",
+        "backend/.env.example",
+        "backend/CLAUDE.md",
+        "frontend/package.json",
+        "frontend/package-lock.json",
+        "frontend/.env.example",
+        "frontend/CLAUDE.md",
+        "frontend/next.config.js",
+        "frontend/next-env.d.ts",
+        "frontend/postcss.config.js",
+        "frontend/tsconfig.json",
+        "frontend/public/logo.png",
+        "frontend/public/logo2.png",
+        "frontend/src/app/layout.tsx",
+        "frontend/src/app/error.tsx",
+        "frontend/src/app/global-error.tsx",
+        "frontend/src/app/globals.css",
+        "frontend/src/lib/api.ts",
+        "frontend/src/lib/apiConfig.ts",
+        "frontend/src/lib/responseText.ts",
+        "frontend/src/lib/countryTimezones.ts",
+        "frontend/src/utils/imageOptimizer.ts",
+        "frontend/src/types/**",
+        "frontend/src/context/UiFeedbackContext.tsx",
+        "frontend/src/components/ui/**",
+        "frontend/src/components/shared/**",
+        "frontend/src/components/layout/AppLayout.tsx",
+        "frontend/src/components/layout/Sidebar.tsx",
+        "frontend/src/components/layout/MobileBottomNav.tsx",
+        "frontend/src/components/modals/CriticalDeleteModal.tsx",
+        "frontend/src/assets/logo/**",
+        "frontend/src/assets/images/**"
+      ]
+    },
+
+    "database": {
+      "title": "Database schema, migrations & DB tooling (PostgreSQL)",
+      "paths": [
+        "backend/src/database/**",
+        "backend/scripts/**"
+      ]
+    },
+
+    "quality-release": {
+      "title": "Quality, Security Hardening, CI/CD, Build & Deploy",
+      "paths": [
+        ".gitignore",
+        ".github/**",
+        "README.md",
+        "docs/**",
+        "backend/test/**",
+        "frontend/tests/**",
+        "frontend/.gitignore",
+        "frontend/public/.htaccess",
+        "frontend/eslint.config.*",
+        "frontend/.eslintrc*",
+        "frontend/vitest.config.*"
+      ]
+    }
+  },
+
+  "governance": {
+    "title": "Router / thread governance (edited only through the 'new idea' protocol in CLAUDE.md)",
+    "paths": [
+      "CLAUDE.md",
+      ".claude/**"
+    ]
+  }
+}
