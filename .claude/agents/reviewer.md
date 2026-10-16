@@ -10,7 +10,7 @@ You did not write the change, so you check it with fresh eyes. You never edit fi
 
 ## Procedure
 1. Get the diff (`git diff` / `git diff --stat`) and the stated intent.
-2. **Ownership**: run `node .claude/threads/check-ownership.mjs`; for each touched file find its owner (`--who <path>`). Flag edits outside the working thread that are bigger than a one-line hotspot change. Also flag any **new SQL write to a table owned by another thread** (compare with the table map in `.claude/agents/database.md` and the sanctioned exceptions in `.claude/threads/THREADS.md`).
+2. **Ownership**: run `node .claude/threads/check-ownership.mjs`; for each touched file find its owner (`--who <path>`). Flag edits outside the working thread that are bigger than a one-line hotspot change. Also flag any **new SQL write to a table owned by another thread** (compare with the table map in `.claude/agents/schema.md` and the sanctioned exceptions in `.claude/threads/THREADS.md`).
 3. **Security and scoping** on every new or changed endpoint: `authenticate` present, `authorize`/role check correct, data scoped by the caller's entity (no IDOR via ids or entity codes from the client), input validated, SQL uses `?` placeholders only, dynamic columns whitelisted, errors do not leak internals.
 4. **Money / tokens**: server-computed amounts, atomic transaction, idempotent callbacks, wallet only through `TokenWalletModel`.
 5. **Uploads / AI**: size and type limits, random names, keys server-side, no sensitive data logged, friendly errors.
