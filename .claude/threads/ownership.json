@@ -89,6 +89,7 @@
         "frontend/.gitignore",
         "frontend/public/.htaccess",
         "frontend/tests/**",
+        "frontend/src/**/*.test.ts",
         "frontend/eslint.config.*",
         "frontend/.eslintrc*",
         "frontend/vitest.config.*"
