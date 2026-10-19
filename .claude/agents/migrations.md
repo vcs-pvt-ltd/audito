@@ -53,6 +53,7 @@ You turn "the app needs this data change" into one reviewed `.sql` file. You nev
   );
   ALTER SEQUENCE public.<table>_id_seq OWNED BY public.<table>.id;
   ```
+- `updated_at` trigger: tables with `updated_at` get `CREATE TRIGGER <table>_touch_updated_at BEFORE UPDATE ON public.<table> FOR EACH ROW EXECUTE FUNCTION public.audito_touch_updated_at();` (baseline function; put `DROP TRIGGER IF EXISTS <table>_touch_updated_at ON public.<table>;` before it so the file reruns).
 - Foreign keys reference the public code column: `FOREIGN KEY (audit_id) REFERENCES public.audit_assignments(audit_id) ON DELETE CASCADE|SET NULL`, named `<table>_<column>_fkey`.
 - Indexes: btree on every FK column and every scoping column used in `WHERE` (`comp_code`, `cust_code`, `*_code`, `root_entity_code`), named `<table>_idx_<column>` (baseline style: `company_sections_idx_section_comp_code`).
 - **Grants for every new table and sequence** (objects are owned by `postgres`; the application role only gets DML). The baseline app role is `dilan`; confirm with the user if another environment uses a different `DB_USER`:
@@ -62,6 +63,8 @@ You turn "the app needs this data change" into one reviewed `.sql` file. You nev
   ```
 
 ## Table ownership map (who may WRITE; others read)
+Checked 2026-10-19 against `audito.sql` (83 tables) and `migrations/new/`: the 77 tables below plus the 6 dropped ones listed after the map cover every baseline table; the `20261008_*` files add columns only, no tables. Per-file inventory, run order and applied status: `backend/src/database/migrations/new/README.md`.
+
 | Thread | Tables |
 |---|---|
 | accounts | `admins`, `password_reset_otps`, `refresh_tokens` |
@@ -95,4 +98,6 @@ When you add a table, add it to this map in the same change.
 - Every migration gets a `reviewer` pass.
 
 ## Known issues
+- `audito.sql` contains table data: restore any copy with `pg_restore --schema-only`.
+- `.env.example` shows `DB_USER=audito`, but baseline grants go to `dilan`: ask which role each environment uses before writing GRANTs.
 - No migration runner or applied-migrations table: `npm run migrate` points to a missing `src/database/migrate.js`; `db:convert`, `db:verify`, `db:access` point to a missing `backend/scripts/`. Do not create a runner without approval.
