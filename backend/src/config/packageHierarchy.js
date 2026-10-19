@@ -19,7 +19,7 @@ function canRegisterPackageEntry(entityType, selectedLevels) {
 
 function packageHierarchyDepth(snapshot) {
   const levels = Number(snapshot.company_levels);
-  return Number(snapshot.pricing_version) === 3 ? levels - 1 : levels;
+  return Number(snapshot.pricing_version) >= 3 ? levels - 1 : levels;
 }
 
 /** Workspace limits bought with a Company package; audits and users are governed by tokens. */

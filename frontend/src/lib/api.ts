@@ -1679,6 +1679,8 @@ export interface PackagePricing {
   free_departments: number;
   company_level_price: number;
   department_price: number;
+  /** Line tokens included free with the free levels (pricing v4+). */
+  free_line_tokens?: number;
   updated_at?: string;
 }
 

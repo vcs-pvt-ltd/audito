@@ -18,7 +18,7 @@ export function hierarchySelectionLabel(levels: number) {
 export function snapshotHierarchyLabel(snapshot: Record<string, unknown>) {
   const version = Number(snapshot.pricing_version);
   const levels = Number(snapshot.company_levels);
-  if (version === 3) return hierarchySelectionLabel(levels);
+  if (version >= 3) return hierarchySelectionLabel(levels);
   if (version === 2) return hierarchySelectionLabel(levels + 1);
   return `${levels} company levels`;
 }

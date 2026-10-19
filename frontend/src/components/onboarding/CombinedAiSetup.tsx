@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Info, MessageSquareText, Save, Sparkles, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Info, Save, Sparkles, X } from "lucide-react";
 import { Button, Modal } from "@/components/ui";
 import Loading from "@/components/shared/Loading";
 import { useAuth } from "@/context/AuthContext";
@@ -397,7 +397,7 @@ export default function CombinedAiSetup() {
         <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-white">Set up from your audit sheet</h1>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        {step > 0 && <Button size="sm" variant="secondary" leftIcon={<MessageSquareText size={15} />} disabled={reading} onClick={() => setAssistantOpen(true)} className="min-h-10">Ask AI</Button>}
+        {step > 0 && <Button size="sm" variant="secondary" leftIcon={<Sparkles size={15} />} disabled={reading} onClick={() => setAssistantOpen(true)} className="min-h-10">Ask AI</Button>}
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(async () => { if (dirty) await save(); router.push("/organization/setup-choice?onboarding=1"); })} className="min-h-10">Change method</Button>
       </div>
     </header>

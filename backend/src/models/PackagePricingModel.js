@@ -1,14 +1,17 @@
 const { db } = require('../config/db');
 
 const RULES = Object.freeze({
-  pricing_version: 3,
+  // v4: Group $50, Enterprise $100, only departments above 5 charged, 100 free line tokens on levels 1–3.
+  pricing_version: 4,
   free_company_levels: 3,
   free_departments: 5,
   company_level_price: 50,
-  company_level_charges: Object.freeze({ 3: 0, 4: 100, 5: 150 }),
+  company_level_charges: Object.freeze({ 3: 0, 4: 50, 5: 100 }),
   department_price: 10,
   // 1 audit line = 1 token; a package includes at least this many line tokens.
   min_audit_lines: 100,
+  // Line tokens included free with the free levels (Essentials, levels 1–3).
+  free_line_tokens: 100,
 });
 
 function validateUnitPrice(value) {
@@ -19,8 +22,10 @@ function validateUnitPrice(value) {
   return cents;
 }
 
-// Departments 1–5 are free; with 6 or more, every department is charged.
-const departmentChargeCents = departments => (departments <= RULES.free_departments ? 0 : departments * RULES.department_price * 100);
+// Departments 1–5 are free; each department above 5 is charged.
+const departmentChargeCents = departments => Math.max(0, departments - RULES.free_departments) * RULES.department_price * 100;
+// Only the free levels (Essentials) include free line tokens.
+const freeLineTokens = levels => (levels <= RULES.free_company_levels ? RULES.free_line_tokens : 0);
 
 /**
  * Price of raising a workspace's departments from `fromDepartments` to
@@ -57,7 +62,8 @@ function quote(selection, unitPrice) {
   const tokenCents = validateUnitPrice(unitPrice);
   const levelCents = RULES.company_level_charges[levels] * 100;
   const departmentCents = departmentChargeCents(departments);
-  const lineCents = lines * tokenCents;
+  const freeLines = Math.min(lines, freeLineTokens(levels));
+  const lineCents = (lines - freeLines) * tokenCents;
   const additionalTokens = (levelCents + departmentCents) / tokenCents;
   if (!Number.isSafeInteger(additionalTokens)) throw new Error('Token price cannot convert capacity charges into whole tokens.');
   return {
@@ -65,7 +71,7 @@ function quote(selection, unitPrice) {
     token_unit_price: tokenCents / 100,
     company_level_charge: levelCents / 100,
     department_charge: departmentCents / 100,
-    line_tokens: lines, line_charge: lineCents / 100,
+    line_tokens: lines, free_line_tokens_applied: freeLines, line_charge: lineCents / 100,
     additional_tokens: additionalTokens,
     total_tokens: lines + additionalTokens,
     total_price: (levelCents + departmentCents + lineCents) / 100,

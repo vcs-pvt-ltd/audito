@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"src/**/*.test.ts\"",
     "android:web": "node scripts/android/build-web.mjs",
     "android:sync": "npm run android:web && cap sync android",
     "android:apk": "npm run android:sync && node scripts/android/gradle.mjs assembleDebug && node scripts/android/verify-apk.mjs",
@@ -49,7 +50,7 @@
     "eslint-config-next": "^16.1.6",
     "lucide-react": "^0.577.0",
     "postcss": "^8.5.8",
-    "tailwindcss": "^4.2.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3"
   }
 }

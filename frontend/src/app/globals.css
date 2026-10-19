@@ -56,6 +56,24 @@
   --color-surface-light: #12352a;
   --color-surface-dark:  #071510;
 
+  /* Workspace setup (/register/start): single-screen layout from 1200px. A named breakpoint
+     sorts after md:; an arbitrary min-[1200px]: rule was emitted before it and lost. */
+  --breakpoint-desk: 75rem;
+  --color-ws-bg:        #0C261E;
+  --color-ws-panel:     #11332A;
+  --color-ws-raised:    #183F33;
+  --color-ws-input:     #2E5D4D;
+  --color-ws-gold:      #E8B34A;
+  --color-ws-gold-ink:  #1A1606;
+  --color-ws-level:     #2BBF85;
+  /* Darker than the #1E8F63 mock so white labels reach 4.5:1. */
+  --color-ws-level-in:  #1A7A55;
+  --color-ws-mint:      #34C98B;
+  --color-ws-mint-soft: #5FD9A6;
+  --color-ws-ink:       #F1F5F3;
+  --color-ws-muted:     #A9BDB5;
+  --color-ws-soft:      #C9D6D0;
+
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -339,6 +357,20 @@ main select[class*="bg-white/5"]:focus {
   .reveal { opacity: 1 !important; transform: none !important; transition: none; }
 }
 
+/* Landing section title highlight (same as the Features and Contact sections). */
+@keyframes sectionTitleShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.section-gradient-text {
+  background: linear-gradient(90deg, #A8D0AF, #8BB9AC, #D4AF37, #A8D0AF);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: sectionTitleShimmer 5s linear infinite;
+}
+
 /* ─── Scrollbar (hidden) ──────────────────────────────────────── */
 .sidebar-scroll::-webkit-scrollbar,
 .modal-scroll::-webkit-scrollbar,
@@ -354,20 +386,6 @@ main select[class*="bg-white/5"]:focus {
 [role="dialog"] {
   scrollbar-width: none;
   -ms-overflow-style: none;
-}
-
-.package-card-scroll {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(169, 211, 185, 0.5) transparent;
-}
-.package-card-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-.package-card-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(169, 211, 185, 0.5);
 }
 
 html, body {

@@ -285,7 +285,7 @@ function LoginForm() {
           {!native && <p className="text-center text-sm text-gray-400 mt-6">
             Don't have an account?{" "}
             <Link
-              href="/register/select-package"
+              href="/register/start"
               className="text-[#059669] hover:text-[#047A55] font-medium transition-colors"
             >
               Create Account

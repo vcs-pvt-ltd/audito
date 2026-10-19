@@ -44,6 +44,7 @@ const { db } = require('../config/db');
 const crypto = require('crypto');
 const { sendOrganizationRegistrationVerificationEmail, sendUserInvitationEmail, sendOtpEmail } = require('../services/emailService');
 const PaymentModel = require('../models/PaymentModel');
+const { settleVerifiedPayment } = require('../services/paymentSettlementService');
 const { getOrgName, getOrgDetails, getCountryDialingCode } = require('../utils/orgLookup');
 const { getResendCooldownSeconds, recordResend } = require('../utils/emailResendCooldown');
 const SubscriptionModel = require('../models/SubscriptionModel');
@@ -365,7 +366,6 @@ const register = async (req, res) => {
     let packageQuote;
     try { packageQuote = PackagePricingModel.quote(req.body.package_selection, packagePricing.token_unit_price); }
     catch (error) { return errorResponse(res, error.message, 400); }
-    if (!(packageQuote.total_price > 0)) return errorResponse(res, 'The selected package has no price. Review your package selection.', 400);
     if (!canRegisterPackageEntry(entity_type, packageQuote.company_levels)) {
       return errorResponse(res, `${entity_type || 'This account type'} is unavailable with the selected company hierarchy. Add Cluster or Company in pricing, or choose an included starting type.`, 403);
     }
@@ -512,27 +512,28 @@ const register = async (req, res) => {
     });
     recordResend(`verification:${email}`);
 
-    // For a paid plan, create the pending registration payment so the client
-    // can redirect into the payment flow.
+    // The registration payment carries the package snapshot. A paid package stays
+    // pending so the client can redirect into the payment flow; a free package
+    // (Essentials within its free allowances) is settled at once.
     let payment = null;
+    const created = await PaymentModel.create({
+      rootEntityCode: orgCode,
+      purpose: 'registration',
+      planName: 'Package',
+      billingCycle: 'None',
+      amount: planAmount,
+      tokenQuantity: packageQuote.total_tokens,
+      tokenUnitPrice: packageQuote.token_unit_price,
+      pricingSnapshot: {
+        purchase_type: 'company_package',
+        ...packageQuote,
+      },
+      payerName: `${first_name} ${last_name}`,
+      payerEmail: email,
+      orgName: org_name,
+      listAmount,
+    });
     if (planAmount > 0) {
-      const created = await PaymentModel.create({
-        rootEntityCode: orgCode,
-        purpose: 'registration',
-        planName: 'Package',
-        billingCycle: 'None',
-        amount: planAmount,
-        tokenQuantity: packageQuote.total_tokens,
-        tokenUnitPrice: packageQuote.token_unit_price,
-        pricingSnapshot: {
-          purchase_type: 'company_package',
-          ...packageQuote,
-        },
-        payerName: `${first_name} ${last_name}`,
-        payerEmail: email,
-        orgName: org_name,
-        listAmount,
-      });
       payment = {
         payment_code: created.payment_code,
         plan_name: created.plan_name,
@@ -540,6 +541,13 @@ const register = async (req, res) => {
         amount: Number(created.amount),
         currency: created.currency,
       };
+    } else {
+      try {
+        await settleVerifiedPayment(created, { gateway: 'manual', gatewayReference: 'free_package' });
+      } catch (settleError) {
+        // The workspace exists; its $0 payment stays pending for an Audito admin to approve.
+        console.error(`Failed to activate free package ${created.payment_transaction_id}:`, settleError);
+      }
     }
 
     return successResponse(res, { payment }, 'Registration successful. Please check your email to verify your account.', 201);

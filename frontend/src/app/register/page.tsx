@@ -8,7 +8,8 @@ import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, ImagePlus, Loader2 } from "l
 import logo from "@/assets/logo/audito_logo.png";
 import { authApi, countriesApi, landingApi, packagePricingApi, type AllEntityType, type ContactReviewInput, type Country, type PackagePricing, type PrivacyPolicy, type RegisterPayload } from "@/lib/api";
 import { canRegisterPackageEntry, FREE_COMPANY_LEVELS, MIN_AUDIT_LINES, hierarchySelectionLabel, type CompanyEntryType } from "@/lib/packageHierarchy";
-import AccountTypeStep, { type AccountGroup } from "./AccountTypeStep";
+import { PRICING_VERSION, calculatePackage } from "@/lib/pricing/calculatePackage";
+import { LADDERS, groupFor, packageFor, parseAccountType, parseIntIn, toPricingConfig, type AccountGroup, type AccountTypeKey, type LadderLevel } from "@/lib/registration/workspaceOptions";
 import OrganizationLogoCropModal from "@/components/organization/OrganizationLogoCropModal";
 import type { OrganizationLogoCrop } from "@/lib/organizationLogo";
 import { COUNTRY_TIMEZONE_MAP } from "@/lib/countryTimezones";
@@ -22,10 +23,23 @@ const money = (amount: number) => `$${amount.toFixed(2)}`;
 const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const validPhone = (phone: string) => /^[+()\d\s.-]{7,60}$/.test(phone);
 
-function Progress({ step, contactMode }: { step: number; contactMode: boolean }) {
-  const total = contactMode ? 2 : 3;
-  return <div className="mx-auto mb-2 flex max-w-xs items-center justify-center gap-2" aria-label={`Step ${step + 1} of ${total}`}>
-    {Array.from({ length: total }, (_, index) => <div key={index} className={`h-1.5 rounded-full transition-all duration-300 ${index === step ? "w-10 bg-secondary-400 shadow-[0_0_12px_rgba(217,163,70,.32)]" : index < step ? "w-7 bg-secondary-500/50" : "w-7 bg-white/10"}`} />)}
+/** Review requests may also come from a Company selection ("Contact our team"). */
+const CONTACT_LEVELS: Record<AccountTypeKey, LadderLevel[]> = {
+  ...LADDERS,
+  company: [
+    { level: 4, label: "Cluster", entityType: "Cluster" },
+    { level: 3, label: "Factory", entityType: "Factory" },
+    { level: 2, label: "Unit", entityType: "Unit" },
+    { level: 1, label: "Department", entityType: "Department" },
+  ],
+};
+const CONTACT_ACCOUNT_TYPES: { key: AccountTypeKey; label: string }[] = [{ key: "customer", label: "Customers" }, { key: "company", label: "Company" }, { key: "audit_firm", label: "Audit Firms" }];
+
+/** Step 1 (workspace and package) happens on /register/start. */
+function Progress() {
+  return <div className="mx-auto mb-2 flex max-w-xs items-center justify-center gap-2" aria-label="Step 2 of 2">
+    <div className="h-1.5 w-7 rounded-full bg-secondary-500/50" />
+    <div className="h-1.5 w-10 rounded-full bg-secondary-400 shadow-[0_0_12px_rgba(217,163,70,.32)]" />
   </div>;
 }
 
@@ -36,14 +50,17 @@ function RegistrationContent() {
   const selection = useMemo(() => ({ company_levels: Number(search.get("company_levels") || FREE_COMPANY_LEVELS), departments: Number(search.get("departments") || 5), lines_per_audit: Number(search.get("lines_per_audit") || MIN_AUDIT_LINES) }), [search]);
   const validSelection = Number.isSafeInteger(selection.company_levels) && selection.company_levels >= FREE_COMPANY_LEVELS && selection.company_levels <= 5 && Number.isSafeInteger(selection.departments) && selection.departments >= 1 && selection.departments <= 10000 && Number.isSafeInteger(selection.lines_per_audit) && selection.lines_per_audit >= MIN_AUDIT_LINES && selection.lines_per_audit <= 1000000;
   const needsPackageSetup = !contactMode && (search.get("package") === "1" || !search.has("company_levels") || !search.has("departments") || !search.has("lines_per_audit") || !validSelection);
-  const packageSetupHref = `/register/select-package?company_levels=${selection.company_levels}&departments=${selection.departments}&lines_per_audit=${selection.lines_per_audit}`;
-  const automaticEntityType: AllEntityType | "" = !contactMode && validSelection
-    ? selection.company_levels === 5 ? "Company" : selection.company_levels === 4 ? "Cluster" : ""
-    : "";
+  const packageSetupHref = `/register/start?account_type=company&company_levels=${selection.company_levels}&departments=${selection.departments}&lines_per_audit=${selection.lines_per_audit}`;
+  // Review requests: account type and starting level chosen on /register/start (editable in the form).
+  const [contactAccount, setContactAccount] = useState<AccountTypeKey>(() => parseAccountType(search.get("account_type")) ?? "customer");
+  const [contactLevel, setContactLevel] = useState(() => parseIntIn(search.get("starting_level"), 1, 7));
+  const contactLevels = CONTACT_LEVELS[contactAccount];
+  const contactEntry = contactLevels.find((item) => item.level === contactLevel) ?? contactLevels[0];
+  const contactStartHref = `/register/start?account_type=${contactAccount}${contactAccount === "company" ? "" : `&starting_level=${contactEntry.level}`}`;
+  const accountType: AccountGroup = contactMode ? groupFor(contactAccount) : "Company";
+  const entityType: AllEntityType | "" = contactMode ? contactEntry.entityType : validSelection ? packageFor(selection.company_levels).entityType : "";
   const [pricing, setPricing] = useState<PackagePricing | null>(null);
   const [privacy, setPrivacy] = useState<PrivacyPolicy | null>(null);
-  const [accountType, setAccountType] = useState<AccountGroup | "">(automaticEntityType ? "Company" : "");
-  const [entityType, setEntityType] = useState<AllEntityType | "">(automaticEntityType);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -51,7 +68,7 @@ function RegistrationContent() {
   const [agreed, setAgreed] = useState(false);
   const [organization, setOrganization] = useState({ name: "", registrationNumber: "", email: "", phone: "", companyType: "", country: "Sri Lanka", address1: "", address2: "", address3: "", timezone: "Asia/Colombo", logo: null as string | null });
   const [administrator, setAdministrator] = useState({ firstName: "", lastName: "", email: "", phone: "", password: "" });
-  const [contact, setContact] = useState({ organizationName: "", contactName: "", email: "", phone: "", country: "Sri Lanka", departments: "", lines: "", notes: "" });
+  const [contact, setContact] = useState(() => ({ organizationName: "", contactName: "", email: "", phone: "", country: "Sri Lanka", departments: search.get("departments") ?? "", lines: search.get("lines_per_audit") ?? "", notes: "" }));
   const [teamContact, setTeamContact] = useState<AuditoContact>(DEFAULT_AUDITO_CONTACT);
   const [verificationSent, setVerificationSent] = useState(true);
   const [countries, setCountries] = useState<Country[]>([]);
@@ -61,7 +78,7 @@ function RegistrationContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const company = accountType === "Company";
+  const company = !contactMode;
   const selectedCountry = countries.find((country) => country.country === organization.country);
   const dialCode = selectedCountry?.international_dialing || "";
   const contactDialCode = countries.find((country) => country.country === contact.country)?.international_dialing || "";
@@ -72,35 +89,26 @@ function RegistrationContent() {
   };
 
   const quote = useMemo(() => {
-    if (!pricing || pricing.pricing_version !== 3 || !validSelection) return null;
-    const levelCharge = pricing.company_level_charges[selection.company_levels];
-    const departmentCharge = selection.departments <= 5 ? 0 : selection.departments * 10;
-    const lineCharge = selection.lines_per_audit * pricing.token_unit_price;
-    const extraTokens = (levelCharge + departmentCharge) / pricing.token_unit_price;
-    return Number.isSafeInteger(extraTokens) ? { total: levelCharge + departmentCharge + lineCharge, tokens: selection.lines_per_audit + extraTokens } : null;
+    if (!pricing || pricing.pricing_version !== PRICING_VERSION || !validSelection) return null;
+    const result = calculatePackage({ levels: selection.company_levels, departments: selection.departments, lines: selection.lines_per_audit }, toPricingConfig(pricing));
+    return { total: result.total, tokens: result.credits };
   }, [pricing, selection, validSelection]);
 
   useEffect(() => {
-    if (!contactMode && !needsPackageSetup) packagePricingApi.get().then((result) => { if (result.success && result.data?.pricing_version === 3) setPricing(result.data); else setError(result.message || "Package pricing is unavailable."); });
+    if (!contactMode && !needsPackageSetup) packagePricingApi.get().then((result) => { if (result.success && result.data?.pricing_version === PRICING_VERSION) setPricing(result.data); else setError(result.message || "Package pricing is unavailable."); });
     landingApi.getPrivacyPolicy().then((result) => { if (result.success && result.data) setPrivacy(result.data); });
   }, [contactMode, needsPackageSetup]);
   useEffect(() => { if (needsPackageSetup) router.replace(packageSetupHref); }, [needsPackageSetup, packageSetupHref, router]);
   useEffect(() => {
-    setAccountType(automaticEntityType ? "Company" : "");
-    setEntityType(automaticEntityType);
     setStep(0);
     setError("");
-  }, [contactMode, automaticEntityType, needsPackageSetup]);
+  }, [contactMode, needsPackageSetup]);
   useEffect(() => { countriesApi.getAll().then(setCountries); }, []);
   useEffect(() => {
     if (!contactMode) return;
     landingApi.getContactDetails().then((result) => { if (result.success && result.data?.email) setTeamContact(result.data); }).catch(() => undefined);
   }, [contactMode]);
 
-  function chooseAccount(type: AccountGroup) {
-    if (contactMode ? type === "Company" : type !== "Company") return;
-    setAccountType(type); setEntityType(""); setError("");
-  }
   function chooseLogo(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -109,13 +117,6 @@ function RegistrationContent() {
     setLogoFile(file);
   }
   function back() { setStep((current) => current - 1); setError(""); }
-  function continueFromAccount() {
-    if (!accountType || !entityType) return setError("Select an account type and a starting level.");
-    if (!contactMode && accountType !== "Company") return setError("This package is for Company workspaces. Contact the Audito team for Customer or Audit Firm accounts.");
-    if (contactMode && accountType === "Company") return setError("Choose a Company package in pricing to continue.");
-    if (company && (!quote || !canRegisterPackageEntry(entityType as CompanyEntryType, selection.company_levels))) return setError("Select an available starting level for your package.");
-    setError(""); setStep(1);
-  }
   async function continueFromOrganization(event: FormEvent) {
     event.preventDefault();
     if (!organization.name.trim() || !validEmail(organization.email) || !validPhone(organization.phone) || !organization.country.trim() || !organization.address1.trim() || !organization.address2.trim()) return setError("Complete the required organization details, including country and address.");
@@ -125,7 +126,7 @@ function RegistrationContent() {
     setBusy(false);
     if (!result.success) return setError(result.message || "Unable to check the organization email.");
     setAdministrator((current) => ({ ...current, email: organization.email.trim(), phone: current.phone || organization.phone }));
-    setError(""); setStep(2);
+    setError(""); setStep(1);
   }
   async function submitCompany(event: FormEvent) {
     event.preventDefault();
@@ -150,7 +151,7 @@ function RegistrationContent() {
   }
   async function submitContact(event: FormEvent) {
     event.preventDefault();
-    if (!accountType || accountType === "Company" || !entityType) return setError("Select a Customer or Audit Firm account type.");
+    if (!entityType) return setError("Select an account type and a starting level.");
     if (!contact.organizationName.trim() || !contact.contactName.trim() || !validEmail(contact.email) || !validPhone(contact.phone)) return setError("Enter your organization, name, valid email, and phone number.");
     if (!contact.country) return setError("Select your country.");
     const departments = Number(contact.departments);
@@ -179,7 +180,7 @@ function RegistrationContent() {
     <div className="glass relative mx-auto max-w-4xl overflow-hidden rounded-3xl border-white/10 pt-6 shadow-2xl shadow-black/20 sm:pt-8">
       <div className="mb-5 px-5 text-center sm:px-8"><Link href="/" className="inline-block"><Image src={logo} alt="Audito" width={110} height={30} className="mx-auto h-8" priority /></Link><p className="mb-1 mt-3 text-[10px] font-semibold uppercase tracking-[2px] text-secondary-500">Create your workspace</p></div>
       {done ? company
-        ? <div className="p-8 text-center sm:p-12"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-secondary-500/15 text-secondary-300"><Check size={30} /></div><h1 className="mt-5 text-2xl font-semibold text-white">Check your email</h1><p className="mx-auto mt-3 max-w-lg text-sm text-gray-400">Verify your email to continue to payment for your package.</p><Link href="/" className={`${primaryClass} mt-7`}>Return home <ArrowRight size={18} /></Link></div>
+        ? <div className="p-8 text-center sm:p-12"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-secondary-500/15 text-secondary-300"><Check size={30} /></div><h1 className="mt-5 text-2xl font-semibold text-white">Check your email</h1><p className="mx-auto mt-3 max-w-lg text-sm text-gray-400">{quote && quote.total === 0 ? "Verify your email to sign in. Your free package and 100 audit credits are ready." : "Verify your email to continue to payment for your package."}</p><Link href="/" className={`${primaryClass} mt-7`}>Return home <ArrowRight size={18} /></Link></div>
         : <div className="mx-auto max-w-xl p-6 sm:p-10">
           <div className="text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-secondary-500/15 text-secondary-300"><Check size={30} /></div>
             <h1 className="mt-5 text-2xl font-semibold text-white">Request sent for review</h1>
@@ -195,25 +196,12 @@ function RegistrationContent() {
           <div className="mt-4"><AuditoContactCard contact={teamContact} title="Questions? Contact the Audito team" description="Message us on WhatsApp or by email. Mention your organization name." message={`Hello Audito team, I sent a ${accountType} account request for ${contact.organizationName.trim()}.`} /></div>
           <Link href="/" className={`${primaryClass} mt-6`}>Return home <ArrowRight size={18} /></Link>
         </div> : <>
-        <Progress step={step} contactMode={contactMode} />
-        <p className="mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8">Step {step + 1} of {contactMode ? 2 : 3} — {step === 0 ? "Account Type" : company ? step === 1 ? "Organization Details" : "Admin Account" : "Contact Details"}</p>
-        {step > 0 && error && <p role="alert" className="mx-5 mb-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400 sm:mx-8">{error}</p>}
-        {step === 0 && <AccountTypeStep
-          selectedGroup={accountType}
-          selectedEntityType={entityType}
-          companyLevels={selection.company_levels}
-          hasPackage={!contactMode && Boolean(quote)}
-          defaultGroup={contactMode ? "Customer" : "Company"}
-          mode={contactMode ? "contact" : "package"}
-          packageSetupHref={packageSetupHref}
-          onGroupSelect={chooseAccount}
-          onEntityTypeSelect={(type) => { setEntityType(type); setError(""); }}
-          onNext={continueFromAccount}
-          error={error}
-        />}
-        {step === 1 && company && <form onSubmit={continueFromOrganization} className="p-5 pt-1 sm:p-8 sm:pt-2">
+        <Progress />
+        <p className="mb-5 px-5 text-center text-xs font-medium text-gray-500 sm:px-8">Step 2 of 2 — {company ? step === 0 ? "Organization Details" : "Admin Account" : "Contact Details"}</p>
+        {error && <p role="alert" className="mx-5 mb-5 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400 sm:mx-8">{error}</p>}
+        {step === 0 && company && <form onSubmit={continueFromOrganization} className="p-5 pt-1 sm:p-8 sm:pt-2">
           <div className="mb-7 flex items-start gap-3">
-            <button type="button" onClick={back} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"><ArrowLeft size={18} /></button>
+            <Link href={packageSetupHref} aria-label="Back to workspace and package" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"><ArrowLeft size={18} /></Link>
             <div><h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Organization details</h3><p className="mt-1 text-sm leading-relaxed text-gray-400">Tell us about the organization this Audito workspace belongs to.</p></div>
           </div>
           <div className="space-y-5">
@@ -248,7 +236,7 @@ function RegistrationContent() {
           </div>
           <p className="mt-4 text-center text-sm text-gray-400">Already have an account? <Link href="/login" className="font-medium text-secondary-400 hover:text-secondary-300">Log in</Link></p>
         </form>}
-        {step === 2 && company && <form onSubmit={submitCompany} className="p-5 pt-1 sm:p-8 sm:pt-2">
+        {step === 1 && company && <form onSubmit={submitCompany} className="p-5 pt-1 sm:p-8 sm:pt-2">
           <div className="mb-7 flex items-start gap-3"><button type="button" onClick={back} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"><ArrowLeft size={18} /></button><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Admin account</h3><span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-400">Company</span></div><p className="mt-1 text-sm leading-relaxed text-gray-400">Create the primary administrator who will manage this workspace.</p></div></div>
           <div className="space-y-5">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{input("First Name", administrator.firstName, (value) => setAdministrator((current) => ({ ...current, firstName: value })), "text", true, "First name")}{input("Last Name", administrator.lastName, (value) => setAdministrator((current) => ({ ...current, lastName: value })), "text", true, "Last name")}</div>
@@ -267,9 +255,19 @@ function RegistrationContent() {
           </div>
           <p className="mt-4 text-center text-sm text-gray-400">Already have an account? <Link href="/login" className="font-medium text-secondary-400 hover:text-secondary-300">Log in</Link></p>
         </form>}
-        {step === 1 && !company && <form onSubmit={submitContact} className="p-5 pt-1 sm:p-8 sm:pt-2">
-          <div className="mb-7 flex items-start gap-3"><button type="button" onClick={back} aria-label="Go back" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"><ArrowLeft size={18} /></button><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Contact the Audito team</h3><span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-400">{accountType}</span></div><p className="mt-1 text-sm leading-relaxed text-gray-400">Tell us about the organization requesting a {entityType} account.</p></div></div>
+        {step === 0 && !company && <form onSubmit={submitContact} className="p-5 pt-1 sm:p-8 sm:pt-2">
+          <div className="mb-7 flex items-start gap-3"><Link href={contactStartHref} aria-label="Back to workspace and package" className="absolute left-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] hover:text-white sm:left-6 sm:top-6"><ArrowLeft size={18} /></Link><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Contact the Audito team</h3><span className="rounded-full border border-secondary-500/20 bg-secondary-500/10 px-2.5 py-1 text-[10px] font-semibold text-secondary-400">{accountType}</span></div><p className="mt-1 text-sm leading-relaxed text-gray-400">Tell us about the organization requesting a {contactEntry.label} account.</p></div></div>
           <div className="space-y-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div><label htmlFor="review-account-type" className="mb-2 block text-sm font-medium text-gray-300">Account type <span className="text-red-400">*</span></label>
+                <select id="review-account-type" value={contactAccount} onChange={(event) => { setContactAccount(event.target.value as AccountTypeKey); setContactLevel(null); }} className={fieldClass}>
+                  {CONTACT_ACCOUNT_TYPES.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                </select></div>
+              <div><label htmlFor="review-starting-level" className="mb-2 block text-sm font-medium text-gray-300">Starting level <span className="text-red-400">*</span></label>
+                <select id="review-starting-level" value={contactEntry.level} onChange={(event) => setContactLevel(Number(event.target.value))} className={fieldClass}>
+                  {contactLevels.map((item) => <option key={item.level} value={item.level}>L{item.level} · {item.label}</option>)}
+                </select></div>
+            </div>
             {input("Organization Name", contact.organizationName, (value) => setContact((current) => ({ ...current, organizationName: value })), "text", true, "Enter organization name")}
             {input("Your Name", contact.contactName, (value) => setContact((current) => ({ ...current, contactName: value })), "text", true, "Your full name")}
             {input("Email", contact.email, (value) => setContact((current) => ({ ...current, email: value })), "email", true, "you@company.com")}

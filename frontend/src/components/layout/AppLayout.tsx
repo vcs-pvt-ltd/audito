@@ -63,7 +63,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { admin, isLoading } = useAuth();
   const router = useRouter();
 
-  const publicRoutes = ["/", "/login", "/register/select-package", "/register", "/forgot-password", "/verify-email", "/payment", "/custom-solution", "/privacy-policies"];
+  const publicRoutes = ["/", "/login", "/register/start", "/register/select-package", "/register", "/forgot-password", "/verify-email", "/payment", "/custom-solution", "/privacy-policies"];
   const isPublicRoute =
     publicRoutes.includes(pathname) ||
     pathname.startsWith("/login") ||
@@ -79,7 +79,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [admin, isLoading, isPublicRoute, router]);
 
   useEffect(() => {
-    const isAuthPage = pathname === "/" || pathname === "/login" || pathname === "/register/select-package" || pathname === "/register";
+    const isAuthPage = pathname === "/" || pathname === "/login" || pathname === "/register/start" || pathname === "/register/select-package" || pathname === "/register";
     if (!isLoading && admin && isAuthPage) {
       if (admin.role === "audito_admin") {
         router.replace("/admin-panel/dashboard");
