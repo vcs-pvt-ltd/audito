@@ -53,10 +53,13 @@ jobs:
         run: npx next typegen
       - name: Type check
         run: npx tsc --noEmit
-      # Lint: enable once Platform & Release's fix for the broken `next lint`
-      # script has landed on Dev (Next 16 removed `next lint`).
-      # - name: Lint
-      #   run: npm run lint
+      # Lint is non-blocking: `npm run lint` becomes `eslint .` with Platform &
+      # Release's fix (claude/platform-lint-fix-467096; until it reaches Dev the
+      # old `next lint` script fails). The baseline has 400 errors in existing
+      # code; drop continue-on-error once the owning threads have cleared them.
+      - name: Lint (non-blocking)
+        continue-on-error: true
+        run: npm run lint
       - name: Tests
         # frontend/package.json has no "test" script yet; run it once one exists.
         run: |
