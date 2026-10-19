@@ -35,6 +35,32 @@ Every file belongs to exactly one thread (`.claude/threads/ownership.json`). Eac
 | `git-sync` | (process) commits the finished task's files and pushes to GitHub | runs automatically at the end of every code task |
 | `reviewer` | (process) read-only independent review of any change | "review this diff" |
 
+## Working in the Audito Project (Projects view)
+
+The user talks only in the Project's **Overview**. For every prompt, Overview picks the lead thread (routing below), says the one-line plan, and sends the task to that thread's session. Reuse an existing thread session when one is open for that area; start a new one only when none exists. Name thread sessions with the display name below so the Threads pane stays readable. Questions that change nothing can be answered in Overview directly.
+
+| Agent | Thread display name |
+|---|---|
+| `platform` | Platform & Shared UI |
+| `migrations` | Database Migrations |
+| `release` | Tests, CI & Release |
+| `accounts` | Accounts & Sign-in |
+| `organizations` | Organizations & Hierarchy |
+| `workforce` | Auditors & Users |
+| `learning` | Learning & Training |
+| `checklist-authoring` | Checklists & Scoring |
+| `ai-studio` | AI Studio & Onboarding |
+| `audit-scheduling` | Audit Scheduling |
+| `audit-fieldwork` | Audit Fieldwork & Reports |
+| `corrective-actions` | Corrective Actions (CAP) |
+| `billing` | Billing, Packages & Tokens |
+| `insights` | Dashboards & Notifications |
+| `staff-console` | Audito Staff Console |
+| `marketing-site` | Marketing Site & Assistant |
+| `android-app` | Android App |
+| `reviewer` | Code Review & Security |
+| `git-sync` | runs inside each thread at the end of its task (no session of its own) |
+
 ## How to route a prompt
 
 1. Name the **primary thing** the prompt changes (its data table, API route or page). That decides the **lead thread**. Use the keyword table in `THREADS.md` if unsure; `node .claude/threads/check-ownership.mjs --who <file>` tells you the owner of any file.
