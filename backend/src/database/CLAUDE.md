@@ -1,5 +1,7 @@
 # Database rules (PostgreSQL 18)
 
+Owned by the `migrations` thread (`.claude/agents/migrations.md`: file format, column conventions, new-table template, grants, table ownership map). Every database change goes through it.
+
 - `audito.sql` is the baseline dump (~500KB, ~80 tables, schema `public`). **Read-only reference. Never edit it.**
 - New changes: one file per change in `migrations/new/`, named `YYYYMMDD_short_description.sql`. Existing: `20261008_*` (backfill manual payment notifications, company sections timezone/logo, drop plan tables, link security columns).
 - **Never edit a migration once it has been applied anywhere.** Not sure if applied? Ask the user.

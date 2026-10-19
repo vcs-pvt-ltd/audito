@@ -1,11 +1,12 @@
 {
-  "_readme": "Single source of truth for 'which thread owns which file' (version 2, re-cut from the code structure). Paths are relative to the repo root, globs use * and **. When several patterns match a file, the most specific one wins (exact path > longer literal text). Run: node .claude/threads/check-ownership.mjs   (see CLAUDE.md).",
-  "version": 2,
+  "_readme": "Single source of truth for 'which thread owns which file' (version 3). Paths are relative to the repo root, globs use * and **. When several patterns match a file, the most specific one wins (exact path > longer literal text). Run: node .claude/threads/check-ownership.mjs   (see CLAUDE.md). Process threads (git-sync, reviewer) own no files.",
+  "version": 3,
 
   "ignore": [
     ".git/**",
     "**/node_modules/**",
     "**/.env",
+    "**/*.zip",
     "frontend/.env.android",
     "frontend/.next/**",
     "frontend/out/**",
@@ -67,8 +68,8 @@
       ]
     },
 
-    "schema": {
-      "title": "Schema: PostgreSQL schema, migrations, baseline dump, grants, indexes, DB tooling",
+    "migrations": {
+      "title": "Migrations: PostgreSQL schema changes as files in migrations/new, baseline dump, grants, indexes, table ownership map, DB tooling (never runs SQL)",
       "paths": [
         "backend/src/database/**",
         "backend/scripts/**"
@@ -95,7 +96,7 @@
     },
 
     "accounts": {
-      "title": "Accounts: sign-up, login, sessions, passwords/OTP, email verification, quote registration, route authorization",
+      "title": "Accounts: sign-up, login, sessions, passwords/OTP, email verification, quote registration, route authorization, account profile",
       "paths": [
         "backend/src/controllers/authController.js",
         "backend/src/controllers/quoteRegistrationController.js",
@@ -263,7 +264,7 @@
     },
 
     "billing": {
-      "title": "Billing: packages, subscriptions, payments (manual + Sampath), promo/campaigns, token wallet, plan limits, link billing credits",
+      "title": "Billing: Company packages and quoted accounts, package pricing and the registration package builder, payments (manual + Sampath), promo/campaigns, token wallet, plan limits",
       "paths": [
         "backend/src/controllers/paymentController.js",
         "backend/src/controllers/tokenController.js",
@@ -289,14 +290,18 @@
         "backend/src/utils/tokenFunding.js",
         "frontend/src/app/payment/**",
         "frontend/src/app/register/select-package/**",
+        "frontend/src/app/register/start/**",
         "frontend/src/app/settings/billing/**",
         "frontend/src/components/billing/**",
         "frontend/src/components/pricing/**",
+        "frontend/src/components/registration/**",
         "frontend/src/components/modals/LimitReachedModal.tsx",
         "frontend/src/components/auth/SubscriptionExpiredModal.tsx",
         "frontend/src/components/layout/SubscriptionBanner.tsx",
         "frontend/src/lib/packageHierarchy.ts",
-        "frontend/src/lib/planLimits.ts"
+        "frontend/src/lib/planLimits.ts",
+        "frontend/src/lib/pricing/**",
+        "frontend/src/lib/registration/**"
       ]
     },
 

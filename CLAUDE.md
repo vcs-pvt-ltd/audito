@@ -1,74 +1,85 @@
 # Audito: project router
 
-Multi-tenant audit management SaaS. Organizations (**Company**, **Customer**, **Audit Firm**) model their structure, admins plan audits from checklists, auditors execute them on the web and in an Android app, organization users follow up with corrective action plans (CAPs), the Audito team runs a back-office, and usage is paid with subscriptions and tokens.
+Multi-tenant audit management SaaS. Organizations (**Company**, **Customer**, **Audit Firm**) model their structure, admins plan audits from checklists, auditors execute them on the web and in an Android app, organization users follow up with corrective action plans (CAPs), auditors train through Learning, the Audito team runs a back-office, and usage is paid with permanent packages plus tokens.
 
 - Backend `backend/`: Express 5, CommonJS, raw SQL on PostgreSQL 18 (`?` placeholders), JWT auth. Rules: `backend/CLAUDE.md`, `backend/src/database/CLAUDE.md`.
 - Frontend `frontend/`: Next.js 16 static export, React 19, TypeScript, Tailwind 4. Rules: `frontend/CLAUDE.md`.
 - Android auditor app: Capacitor wrapper of the same pages (`frontend/android`, `frontend/scripts/android`).
-- External: OpenAI (checklist AI, org setup AI, site scan, landing assistant), Sampath Bank gateway, SMTP.
+- External: OpenAI (checklist AI, org setup AI, site scan, landing assistant chat/voice), Sampath Bank gateway, SMTP.
 - Roles: `admin` (organization administrator), `auditor`, `organization_user`, `audito_admin` (Audito staff).
+- GitHub: `origin` = https://github.com/vcs-pvt-ltd/audito.git; work branch `Dev`, production branch `main`.
 
 ## Threads (areas of ownership)
 
-Every file belongs to exactly one thread (`.claude/threads/ownership.json`). Each thread has an agent in `.claude/agents/<name>.md` with its scope, flows, tables, boundaries and hard rules. Read the agent file before working in that area.
+Every file belongs to exactly one thread (`.claude/threads/ownership.json`). Each thread has an agent in `.claude/agents/<name>.md` with its scope, data, boundaries and hard rules. Read the agent file before working in that area. Full routing table, workflows and reserved ideas: `.claude/threads/THREADS.md`.
 
 | Thread (agent) | Owns | Typical prompt |
 |---|---|---|
-| `platform` | server skeleton, db layer, helpers, email service, Sidebar, UI kit, `api.ts`, dependencies | "new shared component", "add npm package" |
-| `schema` | migrations, indexes, grants, table ownership map | "add a column", "review migration" |
-| `release` | tests, CI, lint/build, deploy, README, security hardening | "set up tests", "rate limiting", "deploy" |
-| `accounts` | sign-up, login, tokens, passwords/OTP, quote registration, authorize middleware, account profile | "login fails", "add a role check", "registration form" |
-| `organizations` | entity hierarchy, org tree, cross-organization links, access scope, organization info | "add a Section", "link a supplier", "who can see this entity" |
-| `workforce` | invite/manage auditors and organization users, scopes, auditor profile | "invite flow", "users page", "auditor qualifications" |
+| `platform` | server skeleton, db layer, helpers, email service, Sidebar, UI kit, `api.ts` plumbing, dependencies | "new shared component", "add npm package" |
+| `migrations` | new DB change files in `backend/src/database/migrations/new/`, baseline, grants, indexes, table map | "add a column", "new table", "data fix" |
+| `release` | tests, CI, lint/build, deploy, README, security hardening, PRs to `main` | "set up tests", "rate limiting", "deploy" |
+| `accounts` | sign-up, login, tokens, passwords/OTP, registration form, quote registration, authorize middleware | "login fails", "add a role check" |
+| `organizations` | entity hierarchy, org tree, cross-organization links, access scope, organization info | "add a Section field", "link a supplier" |
+| `workforce` | invite/manage auditors and organization users, scopes, auditor profile | "invite flow", "auditor qualifications" |
 | `learning` | trainings, field visits, evaluation papers, My Learning | "evaluation paper", "assign training" |
 | `checklist-authoring` | checklist types, questions/options, scoring, Excel import | "question editor", "scoring options" |
-| `ai-studio` | all OpenAI document-to-draft (checklist AI, org AI setup, site scan), onboarding journey | "AI setup upload", "onboarding step", "scan result format" |
+| `ai-studio` | OpenAI document-to-draft (checklist AI, org AI setup, site scan), onboarding journey | "AI setup upload", "onboarding step" |
 | `audit-scheduling` | create/assign/cancel/compare audits, token quote, auditor rating | "assign audit", "audit list filter" |
-| `audit-fieldwork` | auditor execution, answers, evidence, completion, audit report/PDF | "execute screen", "evidence upload", "report PDF" |
+| `audit-fieldwork` | auditor execution, answers, evidence, completion, audit report/PDF | "execute screen", "evidence upload" |
 | `corrective-actions` | CAPs, follow-up audits, CAP responses/PDF | "CAP status", "follow-up audit" |
-| `billing` | packages, subscriptions, payments, promo, tokens, limits | "payment callback", "token wallet", "promo code" |
+| `billing` | package pricing + registration package builder, payments, promos, tokens, limits | "price per department", "token wallet" |
 | `insights` | dashboards, notices, notifications, timezone/help settings | "dashboard widget", "notification bell" |
 | `staff-console` | Audito admin panel (`audito_admin`) | "admin panel page", "approve payment UI" |
 | `marketing-site` | landing page, contact/quote requests, landing AI assistant, privacy page | "landing section", "assistant answer" |
 | `android-app` | Android app build, native shell, route allow-list | "APK build", "works in app?" |
-| `reviewer` | read-only independent review of any change (never edits) | "review this diff" |
+| `git-sync` | (process) commits the finished task's files and pushes to GitHub | runs automatically at the end of every code task |
+| `reviewer` | (process) read-only independent review of any change | "review this diff" |
 
 ## How to route a prompt
 
-1. Name the **primary thing** the prompt changes (its data table, API route or page). That decides the **lead thread**. Use `.claude/threads/THREADS.md` (keyword table and workflows) if unsure; `node .claude/threads/check-ownership.mjs --who <file>` tells you the owner of any file.
-2. If it also needs changes elsewhere, list **supporting threads** and run them in this order: `schema` -> backend of the domain thread -> `platform` plumbing (`api.ts`, `Sidebar`) -> frontend of the domain thread -> `reviewer`.
-3. Say the plan in one line before starting: `Lead: billing. Support: database, platform. Review: reviewer.`
-4. Hand each thread only the files it owns. A thread that finds it needs a bigger change in someone else's area stops and reports the exact change, instead of editing.
+1. Name the **primary thing** the prompt changes (its data table, API route or page). That decides the **lead thread**. Use the keyword table in `THREADS.md` if unsure; `node .claude/threads/check-ownership.mjs --who <file>` tells you the owner of any file.
+2. If it also needs changes elsewhere, list **supporting threads** in this order: `migrations` -> backend of the domain thread -> `platform` plumbing (`api.ts`, `Sidebar`, `server.js`) -> frontend of the domain thread -> `android-app` (auditor pages) -> checks -> `reviewer` -> `git-sync`.
+3. Say the plan in one line before starting: `Lead: billing. Support: migrations, platform. Review: reviewer. Sync: git-sync.`
+4. Each thread edits only files it owns. A thread that needs a bigger change in someone else's area stops and reports the exact change instead of editing. Small tasks can be done directly in the main session following the lead agent's rules; use the agent (subagent) for larger or parallel work.
+5. Questions that change nothing (explain, investigate) need no `git-sync`.
 
-## Shared hotspots (many threads touch them; follow these)
+## Database changes
+Every schema or data change is a new file written by the `migrations` thread in `backend/src/database/migrations/new/YYYYMMDD_short_description.sql`, in the existing style (header comment with why + "Safe to rerun", `public.` qualified, idempotent, `audito_ci` collation, indexes, grants). Nothing is run against a database by Claude: the user applies the file with `psql`.
+
+## GitHub sync (automatic)
+At the end of every task that changed files, after the definition of done passes, run the `git-sync` agent with the thread name, a one-line summary and the exact list of changed files. It commits only those files and pushes the current branch (`Dev`) to `origin`. It never pushes `main`, never force-pushes, never commits `.env`, zips, uploads or build output, and leaves the user's other uncommitted work alone. If checks failed, do not sync; report instead. The user can say "don't push" for a task to skip it. PRs to `main` happen only on request (`release`).
+
+## Shared hotspots (many threads touch them)
 
 | File | Rule |
 |---|---|
-| `frontend/src/lib/api.ts` | Edit only your own `xxxApi` block (`authApi`, `auditApi`, `capApi`, ...). Shared plumbing at the top belongs to `platform`. |
+| `frontend/src/lib/api.ts` | Edit only your own `xxxApi` block. Shared plumbing at the top belongs to `platform`. |
 | `frontend/src/components/layout/Sidebar.tsx` | Add only your own menu item(s) per role; do not restructure. |
 | `backend/src/server.js` | Add only your router `require` + `app.use('/api/...')` line. |
 | `backend/src/services/emailService.js` | Add a new function/template; never change existing ones. |
-| `NotificationModel`, `accessHelper`, `orgLookup`, `middleware/auth.js`, `TokenWalletModel`, `SubscriptionModel` | Used by many threads. Keep signatures backward compatible; list all callers (`grep -rn`) before changing and ask `reviewer`. |
+| `NotificationModel`, `accessHelper`, `orgLookup`, `middleware/auth.js`, `TokenWalletModel`, `SubscriptionModel`, `limitsEnforcer` | Used by many threads. Keep signatures backward compatible; grep all callers before changing and ask `reviewer`. |
+| `frontend/src/lib/pricing/calculatePackage.ts` <-> `PackagePricingModel.js` | `PRICING_VERSION` and the department rule must match on both sides (billing). |
 | `backend/src/database/audito.sql` | Never edit. New schema = new file in `migrations/new/`. |
-| Files over ~50 KB (`authController`, `checklistController`, `adminController`, `api.ts`, `Sidebar`, `ai-setup/page.tsx`, ...) | Do not make them bigger; extract helpers/components. |
+| Files over ~50 KB (`checklistController`, `onboardingDraftService`, `authController`, `organizationAiSetupController`, `auditController`, `learningController`, `api.ts`, `Sidebar`, `organization/ai-setup/page.tsx`) | Do not make them bigger; extract helpers/components. |
 
-## New idea protocol (the thread structure grows with the product)
+## New idea protocol (the structure grows with the product)
 
-1. **Classify**: (a) extends one existing thread -> that thread leads; (b) touches several -> lead + supporting threads (see routing step 2); (c) a **new bounded area**.
-2. A new thread is justified only if **all** are true: it has its own data (tables) or its own API area, its own pages, a distinct set of rules, and it will be worked on repeatedly. Otherwise extend an existing thread. Do not create a thread for one-off tasks or just because a feature is "big".
-3. To create one: add an entry to `.claude/threads/ownership.json` (with its paths, moving them out of the old owner), create `.claude/agents/<name>.md` (copy a similar agent), add a row to the table above and to `THREADS.md`, and run `node .claude/threads/check-ownership.mjs` until it says OK.
-4. Possible future threads and their triggers are listed in `.claude/threads/THREADS.md` ("Reserved ideas"). Do not create them early.
-5. Every new file added to the repo must fall under an existing pattern; if the check reports an unowned file, assign it before finishing.
+1. **Classify**: (a) extends one existing thread -> that thread leads; (b) touches several -> lead + supporting threads (routing step 2); (c) a **new bounded area**.
+2. A new thread is justified only if **all** are true: its own data (tables) or API area, its own pages, a distinct set of rules, and it will be worked on repeatedly. Otherwise extend an existing thread. No threads for one-off tasks or just because a feature is "big".
+3. To create one: add it to `.claude/threads/ownership.json` (moving paths out of the old owner), create `.claude/agents/<name>.md` (copy a similar agent), add a row here and in `THREADS.md`, add its tables to `migrations.md`, and run `node .claude/threads/check-ownership.mjs` until it says OK. Tell the user the new thread and why.
+4. Reserved future threads and their triggers are in `THREADS.md`. Do not create them early.
+5. Every new file must fall under an existing pattern; if the check reports an unowned file, assign it before finishing.
 
 ## Definition of done (every thread)
 
 - Backend: `node --check` on touched files; `cd backend && npm test` when tests exist.
-- Frontend: `cd frontend && npx tsc --noEmit` and `npm run build`.
+- Frontend: `cd frontend && npx tsc --noEmit` and `npm run build`; `npm test` when pricing or other tested code changed.
 - New/changed endpoint: `authenticate` + role check + entity scoping + input validation + parameterized SQL.
-- New schema: migration file reviewed against `backend/src/database/CLAUDE.md`; nothing run against a database by the agent.
+- New schema: migration file from `migrations`, reviewed; nothing run against a database.
 - `node .claude/threads/check-ownership.mjs` reports OK.
 - High-risk areas (auth, payments/tokens, access scoping, uploads, AI calls, migrations): `reviewer` pass.
+- Then `git-sync`.
 
 ## Never, in any thread
 
-Never read, print or commit `.env` files or keys. Never run SQL against a database. Never edit applied migrations or `audito.sql`. Never delete files without the user's say-so (dead code is listed in the agents' "Known issues"). Never install a dependency without approval.
+Never read, print or commit `.env` files or keys. Never run SQL against a database. Never edit applied migrations or `audito.sql`. Never delete files without the user's say-so (dead code is listed in the agents' "Known issues"). Never install a dependency without approval. Never force-push or push to `main`.
