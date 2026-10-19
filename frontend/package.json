@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "android:web": "node scripts/android/build-web.mjs",
     "android:sync": "npm run android:web && cap sync android",
     "android:apk": "npm run android:sync && node scripts/android/gradle.mjs assembleDebug && node scripts/android/verify-apk.mjs",

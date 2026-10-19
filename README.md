@@ -1,5 +1,8 @@
 # Audito
 
+Building, running and deploying the backend, database and website:
+[docs/BUILD_AND_DEPLOY.md](docs/BUILD_AND_DEPLOY.md).
+
 ## Audito Auditor Android App
 
 An installable Android app for **auditors only** (shown on the device as
