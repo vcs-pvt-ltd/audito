@@ -7,7 +7,7 @@ Multi-tenant audit management SaaS. Organizations (**Company**, **Customer**, **
 - Android auditor app: Capacitor wrapper of the same pages (`frontend/android`, `frontend/scripts/android`).
 - External: OpenAI (checklist AI, org setup AI, site scan, landing assistant chat/voice), Sampath Bank gateway, SMTP.
 - Roles: `admin` (organization administrator), `auditor`, `organization_user`, `audito_admin` (Audito staff).
-- GitHub: `origin` = https://github.com/vcs-pvt-ltd/audito.git; work branch `Dev`, production branch `main`.
+- GitHub: `origin` = https://github.com/vcs-pvt-ltd/audito.git; integration branch `Dev` (each task on its own branch, PR into `Dev`), production branch `main` (PR from `Dev` on request).
 
 ## Threads (areas of ownership)
 
@@ -32,34 +32,22 @@ Every file belongs to exactly one thread (`.claude/threads/ownership.json`). Eac
 | `staff-console` | Audito admin panel (`audito_admin`) | "admin panel page", "approve payment UI" |
 | `marketing-site` | landing page, contact/quote requests, landing AI assistant, privacy page | "landing section", "assistant answer" |
 | `android-app` | Android app build, native shell, route allow-list | "APK build", "works in app?" |
-| `git-sync` | (process) commits the finished task's files and pushes to GitHub | runs automatically at the end of every code task |
+| `git-sync` | (process) commits the finished task's files on its task branch, pushes it and opens a PR into `Dev` | runs automatically at the end of every code task |
 | `reviewer` | (process) read-only independent review of any change | "review this diff" |
 
 ## Working in the Audito Project (Projects view)
 
-The user talks only in the Project's **Overview**. For every prompt, Overview picks the lead thread (routing below), says the one-line plan, and sends the task to that thread's session. Reuse an existing thread session when one is open for that area; start a new one only when none exists. Name thread sessions with the display name below so the Threads pane stays readable. Questions that change nothing can be answered in Overview directly.
+The user talks only in the Project's **Overview** session, which coordinates. For every prompt, Overview picks the lead agent (routing below), says the one-line plan, and sends the task to the **working thread** (session) that groups that agent. There are 7 working threads: reuse the open session for that thread, start one only when none exists, and name it exactly as below so the Threads pane stays readable. The agent files in `.claude/agents/` and `ownership.json` stay the per-area rules: a working thread follows the rules of the agent(s) whose files it touches. Bugs go to the working thread that groups the owner of the file (`check-ownership.mjs --who <file>`). Questions that change nothing can be answered in Overview directly.
 
-| Agent | Thread display name |
+| Working thread (session name) | Groups these agents |
 |---|---|
-| `platform` | Platform & Shared UI |
-| `migrations` | Database Migrations |
-| `release` | Tests, CI & Release |
-| `accounts` | Accounts & Sign-in |
-| `organizations` | Organizations & Hierarchy |
-| `workforce` | Auditors & Users |
-| `learning` | Learning & Training |
-| `checklist-authoring` | Checklists & Scoring |
-| `ai-studio` | AI Studio & Onboarding |
-| `audit-scheduling` | Audit Scheduling |
-| `audit-fieldwork` | Audit Fieldwork & Reports |
-| `corrective-actions` | Corrective Actions (CAP) |
-| `billing` | Billing, Packages & Tokens |
-| `insights` | Dashboards & Notifications |
-| `staff-console` | Audito Staff Console |
-| `marketing-site` | Marketing Site & Assistant |
-| `android-app` | Android App |
-| `reviewer` | Code Review & Security |
-| `git-sync` | runs inside each thread at the end of its task (no session of its own) |
+| GitHub Sync | `git-sync` (remote/auth, branches, PR flow, `.gitignore`, repo hygiene) |
+| Platform & Release | `platform`, `release` (build, deploy, docs), `android-app` |
+| Database & Migrations | `migrations` |
+| Code Review & Security | `reviewer`, `release` (security hardening) |
+| QA & Testing | `release` (tests, CI, lint/type checks) |
+| Audit Workflow | `organizations`, `workforce`, `checklist-authoring`, `audit-scheduling`, `audit-fieldwork`, `corrective-actions`, `learning`, `insights` |
+| Commercial & Onboarding | `accounts`, `billing`, `ai-studio`, `staff-console`, `marketing-site` |
 
 ## How to route a prompt
 
@@ -72,8 +60,14 @@ The user talks only in the Project's **Overview**. For every prompt, Overview pi
 ## Database changes
 Every schema or data change is a new file written by the `migrations` thread in `backend/src/database/migrations/new/YYYYMMDD_short_description.sql`, in the existing style (header comment with why + "Safe to rerun", `public.` qualified, idempotent, `audito_ci` collation, indexes, grants). Nothing is run against a database by Claude: the user applies the file with `psql`.
 
-## GitHub sync (automatic)
-At the end of every task that changed files, after the definition of done passes, run the `git-sync` agent with the thread name, a one-line summary and the exact list of changed files. It commits only those files and pushes the current branch (`Dev`) to `origin`. It never pushes `main`, never force-pushes, never commits `.env`, zips, uploads or build output, and leaves the user's other uncommitted work alone. If checks failed, do not sync; report instead. The user can say "don't push" for a task to skip it. PRs to `main` happen only on request (`release`).
+## GitHub sync (branch per task, PR into Dev)
+`origin` = https://github.com/vcs-pvt-ltd/audito.git. `Dev` is the integration branch, `main` is production.
+1. Every task that changes files works on **its own branch cut from the latest `Dev`** (`<thread>/<short-task>`, or the worktree branch the app created).
+2. At the end, after the definition of done passes, run `git-sync` with the thread name, a one-line summary and the exact list of changed files. It commits only those files, pushes **that branch** to `origin` and gives the user the PR link into `Dev` (`gh pr create --base Dev`, or the compare URL `https://github.com/vcs-pvt-ltd/audito/compare/Dev...<branch>?expand=1` when `gh` is not available).
+3. The user (or a reviewer) merges the PR into `Dev`. Nobody pushes straight to `Dev`.
+4. `Dev` -> `main` only through a PR the user asks for (`release`, run by Platform & Release).
+
+Never push `main` or `Dev` directly, never force-push, never rewrite pushed history, never commit `.env`, zips, uploads or build output, and leave the user's other uncommitted work alone. If checks failed, do not sync; report instead. The user can say "don't push" for a task to keep the commit local.
 
 ## Shared hotspots (many threads touch them)
 
@@ -104,8 +98,8 @@ At the end of every task that changed files, after the definition of done passes
 - New schema: migration file from `migrations`, reviewed; nothing run against a database.
 - `node .claude/threads/check-ownership.mjs` reports OK.
 - High-risk areas (auth, payments/tokens, access scoping, uploads, AI calls, migrations): `reviewer` pass.
-- Then `git-sync`.
+- Then `git-sync` (task branch -> push -> PR into `Dev`).
 
 ## Never, in any thread
 
-Never read, print or commit `.env` files or keys. Never run SQL against a database. Never edit applied migrations or `audito.sql`. Never delete files without the user's say-so (dead code is listed in the agents' "Known issues"). Never install a dependency without approval. Never force-push or push to `main`.
+Never read, print or commit `.env` files or keys. Never run SQL against a database. Never edit applied migrations or `audito.sql`. Never delete files without the user's say-so (dead code is listed in the agents' "Known issues"). Never install a dependency without approval. Never force-push, and never push directly to `main` or `Dev` (task branch + PR only).

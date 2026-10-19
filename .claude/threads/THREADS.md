@@ -23,8 +23,11 @@ A **thread** is an area of ownership: a set of files, tables and rules with one 
 | Business | `staff-console` | `audito_admin` back-office |
 | Business | `marketing-site` | landing, contact/quote requests, landing assistant, privacy page |
 | Client | `android-app` | Capacitor app, native shell, route allow-list |
-| Process | `git-sync` | commit exactly the task's files and push the current branch to GitHub |
+| Process | `git-sync` | commit exactly the task's files on its task branch, push it, PR into `Dev`; owns `.gitignore` and repo hygiene |
 | Process | `reviewer` | read-only independent review (never edits) |
+
+## Working threads (sessions)
+The 19 agents above are the per-area rules. Day-to-day work runs in **7 working threads** (sessions) that group them; the table is in `CLAUDE.md` ("Working in the Audito Project"): GitHub Sync, Platform & Release, Database & Migrations, Code Review & Security, QA & Testing, Audit Workflow, Commercial & Onboarding. Route by keyword to the lead agent below, then send the task to the working thread that groups it. A bug goes to the working thread that groups the owner of the file.
 
 ## Routing: keyword -> lead thread
 
@@ -47,7 +50,7 @@ A **thread** is an area of ownership: a set of files, tables and rules with one 
 | new column/table/index, migration, data fix, backfill | migrations |
 | tests, CI, deploy, README, rate limiting, lint, PR to main | release |
 | shared component, Sidebar, `api.ts` plumbing, npm package, email template | platform |
-| commit, push, sync GitHub | git-sync |
+| commit, push, sync GitHub, branch, PR into Dev, .gitignore, remote, branch protection | git-sync |
 
 If the prompt names a screen, find its route under `frontend/src/app`, then `--who <file>` for the owner. If it changes data, the **table owner** (see `migrations.md`) is the lead.
 

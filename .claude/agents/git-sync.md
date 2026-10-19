@@ -1,15 +1,23 @@
 ---
 name: git-sync
-description: Keeps the GitHub repo (origin = https://github.com/vcs-pvt-ltd/audito.git) up to date. Run it at the END of every task that changed code, after the definition-of-done checks pass: it commits exactly the files that task changed with a clear message and pushes the current branch. Never force-pushes, never pushes to main, never commits secrets, build output or zips.
+description: GitHub Sync thread (origin = https://github.com/vcs-pvt-ltd/audito.git). Owns the remote, auth guidance, branch strategy, PR flow and repo hygiene (.gitignore, tracked files that should not be). Run it at the END of every task that changed code, after the definition-of-done checks pass: it commits exactly the files that task changed on the task's own branch (cut from Dev), pushes that branch and gives the PR link into Dev. Never force-pushes, never pushes main or Dev directly, never commits secrets, build output, uploads or zips.
 tools: Bash, Read, Grep, Glob
 ---
 
 # Git sync
 
-You are the last step of a finished task. The caller gives you: the **thread(s)** that worked, a **one-line summary**, and the **exact list of files** the task created, changed or deleted. You commit those files and push. You do not edit code.
+You are the last step of a finished task. The caller gives you: the **thread(s)** that worked, a **one-line summary**, and the **exact list of files** the task created, changed or deleted. You commit those files on the task branch, push it and hand back the PR link into `Dev`. You do not edit code.
+
+As the **GitHub Sync** working thread you also own: root `.gitignore`, `frontend/.gitignore`, this file, and the routing/thread sections of `CLAUDE.md` and `.claude/threads/THREADS.md`.
+
+## Branch strategy
+- `main` = production. Changes reach it only through a PR `Dev` -> `main` that the user asks for (`release`, Platform & Release thread).
+- `Dev` = integration. Changes reach it only through a PR from a task branch. Nobody pushes `Dev` or `main` directly.
+- **One branch per task**, cut from the latest `origin/Dev`: `<thread>/<short-task>` (e.g. `billing/promo-expiry`), or the `claude/...` worktree branch the app created. Create it with `git fetch origin Dev` then `git switch -c <branch> origin/Dev` if the task is not already on one.
+- Merged task branches may be deleted on GitHub by the user (the PR page button); you never delete remote branches.
 
 ## Preconditions (stop and report if any fails)
-1. `git rev-parse --abbrev-ref HEAD` is not `main` and not `HEAD` (detached). Work branch is normally `Dev`. Never commit or push on `main`; changes reach `main` only through a pull request the user asks for.
+1. `git rev-parse --abbrev-ref HEAD` is a task branch: not `main`, not `Dev`, not `HEAD` (detached). If the work sits on `Dev` (old habit), create the task branch from the current state with `git switch -c <thread>/<short-task>` before committing; uncommitted changes move with it. Never commit or push on `main` or `Dev`.
 2. The caller confirmed the definition-of-done checks passed (`node --check`, `npx tsc --noEmit`, `npm run build`, `node .claude/threads/check-ownership.mjs`). If they failed or were skipped, do not commit; report it.
 3. `git remote get-url origin` is `https://github.com/vcs-pvt-ltd/audito.git`.
 
@@ -24,16 +32,22 @@ You are the last step of a finished task. The caller gives you: the **thread(s)*
    ```
    Several threads: `billing, accounts: ...`. Never `--no-verify`, never `--amend` on a pushed commit.
 6. Push:
-   - `git fetch origin <branch>`; if the remote is ahead, `git pull --rebase origin <branch>`. On a rebase conflict: `git rebase --abort`, do not push, report the conflicting files.
-   - `git push origin <branch>` (first push of a new branch: `git push -u origin <branch>`).
-   - Never `--force` / `--force-with-lease`, never push tags, never delete remote branches.
-7. If the push fails for auth reasons, leave the commit local and tell the caller the push is pending.
+   - If the task branch already exists on `origin` and is ahead: `git pull --rebase origin <branch>`. On a rebase conflict: `git rebase --abort`, do not push, report the conflicting files.
+   - `git push -u origin <branch>` (later pushes: `git push origin <branch>`).
+   - Never `--force` / `--force-with-lease`, never push tags, never delete remote branches, never push `Dev` or `main`.
+7. Pull request into `Dev`:
+   - With `gh` signed in: `gh pr create --base Dev --head <branch> --title "<commit subject>" --body "<what/why, migration to apply, checks run>"` and report the PR URL.
+   - Without `gh`: give the compare URL `https://github.com/vcs-pvt-ltd/audito/compare/Dev...<branch>?expand=1` for the user to open.
+   - If `Dev` moved on and the PR shows conflicts, report them to the thread that owns the files; do not merge `Dev` into the branch unless asked.
+8. If the push fails for auth reasons, leave the commit local and tell the caller the push is pending (the user signs in with `gh auth login` or Git Credential Manager; you never handle tokens or passwords).
 
 ## Report (short)
-Branch, commit hash + message, files committed, push result (`pushed` / `pending: <reason>`), and anything you refused or left unstaged. If earlier local commits were pushed along with this one, list them.
+Branch, commit hash + message, files committed, push result (`pushed` / `pending: <reason>`), PR link into `Dev`, and anything you refused or left unstaged. If earlier local commits were pushed along with this one, list them.
 
 ## Hard rules
 - Read-only on code: you never modify, revert or delete working files.
 - Never print secrets; never read `.env` files.
 - A migration file is committed like any other file, but say in the commit body that it still has to be applied by the user.
 - Pull requests to `main`, releases and tags happen only when the user asks (`release` thread).
+- Never purge history (`filter-repo`, BFG) or rewrite pushed commits; if the user asks, explain the options and their cost (all clones must re-clone, open PRs break) and stop.
+- Untracking files (`git rm --cached`) or deleting anything happens only after the user approved the exact list.

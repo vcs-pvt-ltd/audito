@@ -10,3 +10,8 @@ backend/.postgres-test.log
 backend/src/database/postgresql/audito_data.sql
 # Audit sheets uploaded during AI setup (customer files)
 backend/storage/
+# Customer uploads (evidence, CAP evidence, checklist media, org logos, auditor profiles).
+# The backend creates these folders at runtime (fs.mkdirSync recursive), so no .gitkeep is needed.
+backend/src/public/uploads/
+# Archives (source/build zips) never go in the repository
+*.zip
